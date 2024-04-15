@@ -1,118 +1,27 @@
 [0/2] Re-checking globbed directories...
-[1/998] Building CXX object scratch/Edge-Core-Network-Measurement-Consistency/CMakeFiles/monitors_module.dir/monitors_module/AppKey.cc.o
-[2/998] Building CXX object scratch/Edge-Core-Network-Measurement-Consistency/CMakeFiles/monitors_module.dir/monitors_module/PacketKey.cc.o
-[3/998] Building CXX object scratch/Edge-Core-Network-Measurement-Consistency/CMakeFiles/monitors_module.dir/monitors_module/PacketMonitor.cc.o
-[4/998] Building CXX object scratch/Edge-Core-Network-Measurement-Consistency/CMakeFiles/monitors_module.dir/monitors_module/SwitchMonitor.cc.o
-[5/998] Linking CXX static library lib/libmonitors_module.a
-[6/998] Building CXX object scratch/Edge-Core-Network-Measurement-Consistency/CMakeFiles/helper_classes.dir/helper_classes/HelperMethods.cc.o
-[7/998] Linking CXX static library lib/libhelper_classes.a
-[8/998] Building CXX object scratch/Edge-Core-Network-Measurement-Consistency/CMakeFiles/traffic_generator_module.dir/traffic_generator_module/background_replay/BackgroundReplay.cc.o
-[9/998] Building CXX object scratch/Edge-Core-Network-Measurement-Consistency/CMakeFiles/traffic_generator_module.dir/traffic_generator_module/background_replay/TraceReplayReceiver.cc.o
-[10/998] Building CXX object scratch/Edge-Core-Network-Measurement-Consistency/CMakeFiles/traffic_generator_module.dir/traffic_generator_module/background_replay/TraceReplayReceiverHelper.cc.o
-[11/998] Building CXX object scratch/Edge-Core-Network-Measurement-Consistency/CMakeFiles/traffic_generator_module.dir/traffic_generator_module/background_replay/TraceReplaySender.cc.o
-[12/998] Building CXX object scratch/Edge-Core-Network-Measurement-Consistency/CMakeFiles/traffic_generator_module.dir/traffic_generator_module/background_replay/TraceReplaySenderHelper.cc.o
-[13/998] Linking CXX static library lib/libtraffic_generator_module.a
-[14/998] Building CXX object CMakeFiles/stdlib_pch_exec.dir/cmake_pch.hxx.gch
-[15/998] Building CXX object CMakeFiles/stdlib_pch_exec.dir/build-support/empty-main.cc.o
-[16/998] Linking CXX executable ns3.41-stdlib_pch_exec-debug
-[17/998] Building CXX object src/fd-net-device/CMakeFiles/raw-sock-creator.dir/helper/creator-utils.cc.o
-[18/998] Building CXX object src/fd-net-device/CMakeFiles/tap-device-creator.dir/helper/tap-device-creator.cc.o
-[19/998] Building CXX object CMakeFiles/stdlib_pch-debug.dir/cmake_pch.hxx.gch
-[20/998] Building CXX object src/fd-net-device/CMakeFiles/raw-sock-creator.dir/helper/raw-sock-creator.cc.o
-[21/998] Building CXX object src/fd-net-device/CMakeFiles/raw-sock-creator.dir/helper/encode-decode.cc.o
-[22/998] Building CXX object src/antenna/CMakeFiles/libantenna-obj.dir/model/angles.cc.o
-[23/998] Building CXX object src/antenna/CMakeFiles/libantenna-obj.dir/model/antenna-model.cc.o
-[24/998] Building CXX object src/antenna/CMakeFiles/libantenna-obj.dir/model/cosine-antenna-model.cc.o
-[25/998] Building CXX object src/antenna/CMakeFiles/libantenna-obj.dir/model/isotropic-antenna-model.cc.o
-[26/998] Building CXX object src/antenna/CMakeFiles/libantenna-obj.dir/model/parabolic-antenna-model.cc.o
-[27/998] Building CXX object src/antenna/CMakeFiles/libantenna-obj.dir/model/three-gpp-antenna-model.cc.o
-[28/998] Building CXX object src/antenna/CMakeFiles/libantenna-obj.dir/model/phased-array-model.cc.o
-[29/998] Building CXX object src/antenna/CMakeFiles/libantenna-obj.dir/model/uniform-planar-array.cc.o
-[30/998] Building CXX object src/aodv/CMakeFiles/libaodv-obj.dir/model/aodv-dpd.cc.o
-[31/998] Building CXX object src/aodv/CMakeFiles/libaodv-obj.dir/helper/aodv-helper.cc.o
-[32/998] Building CXX object src/aodv/CMakeFiles/libaodv-obj.dir/model/aodv-id-cache.cc.o
-[33/998] Building CXX object src/aodv/CMakeFiles/libaodv-obj.dir/model/aodv-packet.cc.o
-[34/998] Building CXX object src/aodv/CMakeFiles/libaodv-obj.dir/model/aodv-neighbor.cc.o
-[35/998] Building CXX object src/aodv/CMakeFiles/libaodv-obj.dir/model/aodv-rqueue.cc.o
-[36/998] Building CXX object src/core/CMakeFiles/libcore-obj.dir/model/attribute.cc.o
-[37/998] Building CXX object src/aodv/CMakeFiles/libaodv-obj.dir/model/aodv-rtable.cc.o
-[38/998] Building CXX object src/applications/CMakeFiles/libapplications-obj.dir/helper/bulk-send-helper.cc.o
-[39/998] Building CXX object src/applications/CMakeFiles/libapplications-obj.dir/helper/on-off-helper.cc.o
-[40/998] Building CXX object src/applications/CMakeFiles/libapplications-obj.dir/helper/packet-sink-helper.cc.o
-[41/998] Building CXX object src/applications/CMakeFiles/libapplications-obj.dir/helper/three-gpp-http-helper.cc.o
-[42/998] Building CXX object src/applications/CMakeFiles/libapplications-obj.dir/helper/udp-client-server-helper.cc.o
-[43/998] Building CXX object src/applications/CMakeFiles/libapplications-obj.dir/helper/udp-echo-helper.cc.o
-[44/998] Building CXX object src/applications/CMakeFiles/libapplications-obj.dir/model/application-packet-probe.cc.o
-[45/998] Building CXX object src/aodv/CMakeFiles/libaodv-obj.dir/model/aodv-routing-protocol.cc.o
-[46/998] Building CXX object src/applications/CMakeFiles/libapplications-obj.dir/model/packet-loss-counter.cc.o
-[47/998] Building CXX object src/applications/CMakeFiles/libapplications-obj.dir/model/bulk-send-application.cc.o
-[48/998] Building CXX object src/applications/CMakeFiles/libapplications-obj.dir/model/seq-ts-echo-header.cc.o
-[49/998] Building CXX object src/applications/CMakeFiles/libapplications-obj.dir/model/onoff-application.cc.o
-[50/998] Building CXX object src/applications/CMakeFiles/libapplications-obj.dir/model/seq-ts-header.cc.o
-[51/998] Building CXX object src/applications/CMakeFiles/libapplications-obj.dir/model/seq-ts-size-header.cc.o
-[52/998] Building CXX object src/applications/CMakeFiles/libapplications-obj.dir/model/packet-sink.cc.o
-[53/998] Building CXX object src/applications/CMakeFiles/libapplications-obj.dir/model/three-gpp-http-header.cc.o
-[54/998] Building CXX object src/applications/CMakeFiles/libapplications-obj.dir/model/three-gpp-http-variables.cc.o
-[55/998] Building CXX object src/applications/CMakeFiles/libapplications-obj.dir/model/three-gpp-http-client.cc.o
-[56/998] Building CXX object src/applications/CMakeFiles/libapplications-obj.dir/model/udp-client.cc.o
-[57/998] Building CXX object src/applications/CMakeFiles/libapplications-obj.dir/model/three-gpp-http-server.cc.o
-[58/998] Building CXX object src/applications/CMakeFiles/libapplications-obj.dir/model/udp-echo-client.cc.o
-[59/998] Building CXX object src/applications/CMakeFiles/libapplications-obj.dir/model/udp-echo-server.cc.o
-[60/998] Building CXX object src/applications/CMakeFiles/libapplications-obj.dir/model/udp-trace-client.cc.o
-[61/998] Building CXX object src/applications/CMakeFiles/libapplications-obj.dir/model/udp-server.cc.o
-[62/998] Building CXX object src/bridge/CMakeFiles/libbridge-obj.dir/helper/bridge-helper.cc.o
-[63/998] Building CXX object src/bridge/CMakeFiles/libbridge-obj.dir/model/bridge-channel.cc.o
-[64/998] Building CXX object src/buildings/CMakeFiles/libbuildings-obj.dir/helper/building-container.cc.o
-[65/998] Building CXX object src/buildings/CMakeFiles/libbuildings-obj.dir/helper/building-allocator.cc.o
-[66/998] Building CXX object src/bridge/CMakeFiles/libbridge-obj.dir/model/bridge-net-device.cc.o
-[67/998] Building CXX object src/buildings/CMakeFiles/libbuildings-obj.dir/helper/buildings-helper.cc.o
-[68/998] Building CXX object src/buildings/CMakeFiles/libbuildings-obj.dir/model/building-list.cc.o
-[69/998] Building CXX object src/buildings/CMakeFiles/libbuildings-obj.dir/helper/building-position-allocator.cc.o
-[70/998] Building CXX object src/buildings/CMakeFiles/libbuildings-obj.dir/model/building.cc.o
-[71/998] Building CXX object src/buildings/CMakeFiles/libbuildings-obj.dir/model/buildings-channel-condition-model.cc.o
-[72/998] Building CXX object src/buildings/CMakeFiles/libbuildings-obj.dir/model/buildings-propagation-loss-model.cc.o
-[73/998] Building CXX object src/buildings/CMakeFiles/libbuildings-obj.dir/model/itu-r-1238-propagation-loss-model.cc.o
-[74/998] Building CXX object src/buildings/CMakeFiles/libbuildings-obj.dir/model/hybrid-buildings-propagation-loss-model.cc.o
-[75/998] Building CXX object src/buildings/CMakeFiles/libbuildings-obj.dir/model/mobility-building-info.cc.o
-[76/998] Building CXX object src/buildings/CMakeFiles/libbuildings-obj.dir/model/oh-buildings-propagation-loss-model.cc.o
-[77/998] Building CXX object src/buildings/CMakeFiles/libbuildings-obj.dir/model/three-gpp-v2v-channel-condition-model.cc.o
-[78/998] Building CXX object src/buildings/CMakeFiles/libbuildings-obj.dir/model/random-walk-2d-outdoor-mobility-model.cc.o
-[79/998] Building CXX object src/config-store/CMakeFiles/libconfig-store-obj.dir/model/gtk-config-store.cc.o
-[80/998] Building CXX object src/config-store/CMakeFiles/libconfig-store-obj.dir/model/display-functions.cc.o
-[81/998] Building CXX object src/config-store/CMakeFiles/libconfig-store-obj.dir/model/model-node-creator.cc.o
-[82/998] Building CXX object src/config-store/CMakeFiles/libconfig-store-obj.dir/model/attribute-default-iterator.cc.o
-[83/998] Building CXX object src/config-store/CMakeFiles/libconfig-store-obj.dir/model/xml-config.cc.o
-[84/998] Building CXX object src/config-store/CMakeFiles/libconfig-store-obj.dir/model/model-typeid-creator.cc.o
-[85/998] Building CXX object src/config-store/CMakeFiles/libconfig-store-obj.dir/model/file-config.cc.o
-[86/998] Building CXX object src/config-store/CMakeFiles/libconfig-store-obj.dir/model/attribute-iterator.cc.o
-[87/998] Building CXX object src/core/CMakeFiles/libcore-obj.dir/model/int64x64-128.cc.o
-[88/998] Building CXX object src/config-store/CMakeFiles/libconfig-store-obj.dir/model/config-store.cc.o
-[89/998] Building CXX object src/config-store/CMakeFiles/libconfig-store-obj.dir/model/raw-text-config.cc.o
-[90/998] Building CXX object src/core/CMakeFiles/libcore-obj.dir/helper/random-variable-stream-helper.cc.o
-[91/998] Building CXX object src/core/CMakeFiles/libcore-obj.dir/helper/csv-reader.cc.o
-[92/998] Building CXX object src/core/CMakeFiles/libcore-obj.dir/model/unix-fd-reader.cc.o
-[93/998] Building CXX object src/core/CMakeFiles/libcore-obj.dir/helper/event-garbage-collector.cc.o
-[94/998] Building CXX object src/core/CMakeFiles/libcore-obj.dir/model/event-id.cc.o
-[95/998] Building CXX object src/core/CMakeFiles/libcore-obj.dir/model/time.cc.o
-[96/998] Building CXX object src/core/CMakeFiles/libcore-obj.dir/model/scheduler.cc.o
-[97/998] Building CXX object src/core/CMakeFiles/libcore-obj.dir/model/list-scheduler.cc.o
-[98/998] Building CXX object src/core/CMakeFiles/libcore-obj.dir/model/map-scheduler.cc.o
-[99/998] Building CXX object src/core/CMakeFiles/libcore-obj.dir/model/heap-scheduler.cc.o
-[100/998] Building CXX object src/core/CMakeFiles/libcore-obj.dir/model/calendar-scheduler.cc.o
-[101/998] Building CXX object src/core/CMakeFiles/libcore-obj.dir/model/event-impl.cc.o
-[102/998] Building CXX object src/core/CMakeFiles/libcore-obj.dir/model/priority-queue-scheduler.cc.o
-[103/998] Building CXX object src/core/CMakeFiles/libcore-obj.dir/model/simulator-impl.cc.o
-[104/998] Building CXX object src/core/CMakeFiles/libcore-obj.dir/model/simulator.cc.o
-[105/998] Building CXX object src/core/CMakeFiles/libcore-obj.dir/model/default-simulator-impl.cc.o
-[106/998] Building CXX object src/core/CMakeFiles/libcore-obj.dir/model/timer.cc.o
-[107/998] Building CXX object src/core/CMakeFiles/libcore-obj.dir/model/watchdog.cc.o
-[108/998] Building CXX object src/core/CMakeFiles/libcore-obj.dir/model/make-event.cc.o
-[109/998] Building CXX object src/core/CMakeFiles/libcore-obj.dir/model/synchronizer.cc.o
-[110/998] Building CXX object src/core/CMakeFiles/libcore-obj.dir/model/breakpoint.cc.o
-[111/998] Building CXX object src/core/CMakeFiles/libcore-obj.dir/model/environment-variable.cc.o
-[112/998] Building CXX object src/core/CMakeFiles/libcore-obj.dir/model/log.cc.o
-[113/998] Building CXX object src/core/CMakeFiles/libcore-obj.dir/model/attribute-construction-list.cc.o
-[114/998] Building CXX object src/core/CMakeFiles/libcore-obj.dir/model/type-id.cc.o
-[115/998] Building CXX object src/core/CMakeFiles/libcore-obj.dir/model/object-base.cc.o
-[116/998] Building CXX object src/core/CMakeFiles/libcore-obj.dir/model/object.cc.o
-[117/998] Building CXX object src/core/CMakeFiles/libcore-obj.dir/model/rng-seed-manager.cc.o
+ninja: no work to do.
+
+Start
+Hosts and Switches IP addresses
+Rack: 0 Host: 0 Id:0 IP: 10.1.1.1
+Rack: 0 Host: 1 Id:1 IP: 10.1.2.1
+Rack: 0 Host: 2 Id:2 IP: 10.1.3.1
+Rack: 0 Host: 3 Id:3 IP: 10.1.4.1
+Rack: 1 Host: 0 Id:4 IP: 10.2.1.1
+Rack: 1 Host: 1 Id:5 IP: 10.2.2.1
+Rack: 1 Host: 2 Id:6 IP: 10.2.3.1
+Rack: 1 Host: 3 Id:7 IP: 10.2.4.1
+Config Parameters
+hostToTorLinkRate: 50Mbps
+hostToTorLinkDelay: 3ms
+torToAggLinkRate: 50Mbps
+torToAggLinkDelay: 3ms
+aggToCoreLinkRate: 50Mbps
+aggToCoreLinkDelay: 3ms
+appDataRate: 50Mbps
+duration: 10
+pctPacedBack: 0.8
+enableSwitchECN: 1
+enableECMP: 0
+Done 
+Total execution time = 137944587 microsecond
