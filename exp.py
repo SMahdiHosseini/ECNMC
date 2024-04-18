@@ -15,6 +15,7 @@ class ExperimentConfig:
         self.pct_paced_back = 0.8
         self.app_data_rate = "20Mbps"
         self.duration = "10s"
+        self.sampleRate="10.0"
 
     def read_config_file(self, config_file):
         config = configparser.ConfigParser()
@@ -28,6 +29,7 @@ class ExperimentConfig:
         self.pct_paced_back = config.getfloat('Settings', 'pctPacedBack')
         self.app_data_rate = config.get('Settings', 'appDataRate')
         self.duration = config.get('Settings', 'duration')
+        self.sampleRate = config.get('Settings', 'sampleRate')
 
 
 
@@ -52,6 +54,7 @@ def run_experiment():
         '--pctPacedBack={} '.format(expConfig.pct_paced_back) +
         '--appDataRate={} '.format(expConfig.app_data_rate) +
         '--duration={} '.format(expConfig.duration) +
+        '--sampleRate={} '.format(expConfig.sampleRate) +
         '\' > {}/scratch/ECNMC/results/result.txt'.format(get_ns3_path())
     )
  

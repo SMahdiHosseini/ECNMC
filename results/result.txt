@@ -23,5 +23,6 @@ duration: 10
 pctPacedBack: 0.8
 enableSwitchECN: 1
 enableECMP: 0
+sampleRate: 10
 Done 
-Total execution time = 137944587 microsecond
+Total execution time = 197383832 microsecond

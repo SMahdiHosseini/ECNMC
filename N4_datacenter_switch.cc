@@ -35,10 +35,10 @@ int main(int argc, char* argv[])
     string aggToCoreLinkRate = "10Mbps";              // Links bandwith between Agg and Core switches
     string aggToCoreLinkDelay = "10us";               // Links delay between Agg and Core switches
     string appDataRate = "10Mbps";                    // Application data rate
-    string duration = "10";                                // Duration of the simulation
+    string duration = "10";                           // Duration of the simulation
     double pctPacedBack = 0.8;                        // the percentage of tcp flows of the CAIDA trace to be paced
-    bool enableSwitchECN = true;
-    bool enableECMP = false;
+    bool enableSwitchECN = true;                       // Enable ECN on the switches
+    bool enableECMP = false;                           // Enable ECMP on the switches
 
     /*command line input*/
     CommandLine cmd;
@@ -174,15 +174,15 @@ int main(int argc, char* argv[])
 
 
     /* ########## START: Application Setup ########## */
-    // // r0h0 -> r1h0
-    // auto* appTraffic = new BackgroundReplay(racks[0].Get(0), racks[1].Get(0));
-    // appTraffic->SetPctOfPacedTcps(pctPacedBack);
-    // string tracesPath = "/home/mahdi/Documents/NAL/Data/chicago_2010_traffic_10min_2paths/path0";
-    // if (std::filesystem::exists(tracesPath)) {
-    //     appTraffic->RunAllTraces(tracesPath, 0);
-    // } else {
-    //     cout << "requested Background Directory does not exist" << endl;
-    // }
+    // r0h0 -> r1h0
+    auto* appTraffic = new BackgroundReplay(racks[0].Get(0), racks[1].Get(0));
+    appTraffic->SetPctOfPacedTcps(pctPacedBack);
+    string tracesPath = "/home/mahdi/Documents/NAL/Data/chicago_2010_traffic_10min_2paths/path0";
+    if (std::filesystem::exists(tracesPath)) {
+        appTraffic->RunAllTraces(tracesPath, 0);
+    } else {
+        cout << "requested Background Directory does not exist" << endl;
+    }
 
     // // R0h1 -> R1h1
     // auto* appTraffic2 = new BackgroundReplay(racks[0].Get(1), racks[1].Get(1));
@@ -225,25 +225,25 @@ int main(int argc, char* argv[])
     S2ClientApp.Start(startTime);
     S2ClientApp.Stop(stopTime);
 
-    // r0h0 -> r1h0
-    uint16_t port2 = 50001;
-    Address sinkLocalAddress2 = Address(InetSocketAddress(Ipv4Address::GetAny(), port2));
-    PacketSinkHelper sinkHelper2 = PacketSinkHelper("ns3::TcpSocketFactory", sinkLocalAddress2);
-    ApplicationContainer sinkApp2 = sinkHelper2.Install(racks[1].Get(0));
-    Ptr<PacketSink> s1r1PacketSink = sinkApp2.Get(0)->GetObject<PacketSink>();
-    sinkApp2.Start(startTime);
-    sinkApp2.Stop(stopTime);
-    OnOffHelper S1ClientHelper("ns3::TcpSocketFactory", Address());
-    S1ClientHelper.SetAttribute("OnTime", StringValue("ns3::ConstantRandomVariable[Constant=1]"));
-    S1ClientHelper.SetAttribute("OffTime", StringValue("ns3::ConstantRandomVariable[Constant=0]"));
-    S1ClientHelper.SetAttribute("DataRate", DataRateValue(DataRate(appDataRate)));
-    S1ClientHelper.SetAttribute("PacketSize", UintegerValue(1000));
-    ApplicationContainer S1ClientApp;
-    AddressValue remoteAddress2 = AddressValue(InetSocketAddress(ipsRacks[1][0].GetAddress(0), port2));
-    S1ClientHelper.SetAttribute("Remote", remoteAddress2);
-    S1ClientApp.Add(S1ClientHelper.Install(racks[0].Get(0)));
-    S1ClientApp.Start(startTime);
-    S1ClientApp.Stop(stopTime);
+    // // r0h0 -> r1h0
+    // uint16_t port2 = 50001;
+    // Address sinkLocalAddress2 = Address(InetSocketAddress(Ipv4Address::GetAny(), port2));
+    // PacketSinkHelper sinkHelper2 = PacketSinkHelper("ns3::TcpSocketFactory", sinkLocalAddress2);
+    // ApplicationContainer sinkApp2 = sinkHelper2.Install(racks[1].Get(0));
+    // Ptr<PacketSink> s1r1PacketSink = sinkApp2.Get(0)->GetObject<PacketSink>();
+    // sinkApp2.Start(startTime);
+    // sinkApp2.Stop(stopTime);
+    // OnOffHelper S1ClientHelper("ns3::TcpSocketFactory", Address());
+    // S1ClientHelper.SetAttribute("OnTime", StringValue("ns3::ConstantRandomVariable[Constant=1]"));
+    // S1ClientHelper.SetAttribute("OffTime", StringValue("ns3::ConstantRandomVariable[Constant=0]"));
+    // S1ClientHelper.SetAttribute("DataRate", DataRateValue(DataRate(appDataRate)));
+    // S1ClientHelper.SetAttribute("PacketSize", UintegerValue(1000));
+    // ApplicationContainer S1ClientApp;
+    // AddressValue remoteAddress2 = AddressValue(InetSocketAddress(ipsRacks[1][0].GetAddress(0), port2));
+    // S1ClientHelper.SetAttribute("Remote", remoteAddress2);
+    // S1ClientApp.Add(S1ClientHelper.Install(racks[0].Get(0)));
+    // S1ClientApp.Start(startTime);
+    // S1ClientApp.Stop(stopTime);
 
     // // r1h2 -> r1h0
     // uint16_t port3 = 50002;
