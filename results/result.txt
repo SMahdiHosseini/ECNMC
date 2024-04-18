@@ -1,5 +1,4 @@
-[0/2] Re-checking globbed directories...
-ninja: no work to do.
+Consolidate compiler generated dependencies of target scratch_ECNMC_N4_datacenter_switch
 
 Start
 Hosts and Switches IP addresses
@@ -19,10 +18,9 @@ torToAggLinkDelay: 3ms
 aggToCoreLinkRate: 50Mbps
 aggToCoreLinkDelay: 3ms
 appDataRate: 50Mbps
-duration: 10
+duration: 60
 pctPacedBack: 0.8
 enableSwitchECN: 1
 enableECMP: 0
-sampleRate: 10
 Done 
-Total execution time = 197383832 microsecond
+Total execution time = 73813135 microsecond

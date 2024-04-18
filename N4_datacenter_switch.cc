@@ -177,7 +177,8 @@ int main(int argc, char* argv[])
     // r0h0 -> r1h0
     auto* appTraffic = new BackgroundReplay(racks[0].Get(0), racks[1].Get(0));
     appTraffic->SetPctOfPacedTcps(pctPacedBack);
-    string tracesPath = "/home/mahdi/Documents/NAL/Data/chicago_2010_traffic_10min_2paths/path0";
+    // string tracesPath = "/home/mahdi/Documents/NAL/Data/chicago_2010_traffic_10min_2paths/path0";
+    string tracesPath = "/home/mahdi/Documents/Data/chicago_2010_traffic_10min_2paths/path0";
     if (std::filesystem::exists(tracesPath)) {
         appTraffic->RunAllTraces(tracesPath, 0);
     } else {

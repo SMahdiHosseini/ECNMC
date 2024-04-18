@@ -2,7 +2,7 @@ import os
 import time
 import configparser
 
-__ns3_path = os.popen('locate "ns-3-dev" | grep /ns-3-dev$').read().splitlines()[0]
+__ns3_path = os.popen('locate "ns-3.41" | grep /ns-3.41$').read().splitlines()[0]
 
 class ExperimentConfig:
     def __init__(self):
@@ -54,7 +54,6 @@ def run_experiment():
         '--pctPacedBack={} '.format(expConfig.pct_paced_back) +
         '--appDataRate={} '.format(expConfig.app_data_rate) +
         '--duration={} '.format(expConfig.duration) +
-        '--sampleRate={} '.format(expConfig.sampleRate) +
         '\' > {}/scratch/ECNMC/results/result.txt'.format(get_ns3_path())
     )
  
