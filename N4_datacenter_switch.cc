@@ -15,6 +15,7 @@
 #include "ns3/flow-monitor-module.h"
 #include "monitors_module/PacketMonitor.h"
 #include "monitors_module/SwitchMonitor.h"
+#include "monitors_module/PoissonSampler.h"
 #include "traffic_generator_module/background_replay/BackgroundReplay.h"
 #include <iomanip>
 #include <iostream>
@@ -29,16 +30,17 @@ int main(int argc, char* argv[])
     cout << endl<< "Start" << endl;
     /* ########## START: Config ########## */
     string hostToTorLinkRate = "53Mbps";               // Links bandwith between hosts and ToR switches
-    string hostToTorLinkDelay = "10us";               // Links delay between hosts and ToR switches
-    string torToAggLinkRate = "10Mbps";               // Links bandwith between ToR and Agg switches
-    string torToAggLinkDelay = "10us";                // Links delay between ToR and Agg switches
-    string aggToCoreLinkRate = "10Mbps";              // Links bandwith between Agg and Core switches
-    string aggToCoreLinkDelay = "10us";               // Links delay between Agg and Core switches
-    string appDataRate = "10Mbps";                    // Application data rate
-    string duration = "10";                           // Duration of the simulation
-    double pctPacedBack = 0.8;                        // the percentage of tcp flows of the CAIDA trace to be paced
+    string hostToTorLinkDelay = "10us";                // Links delay between hosts and ToR switches
+    string torToAggLinkRate = "10Mbps";                // Links bandwith between ToR and Agg switches
+    string torToAggLinkDelay = "10us";                 // Links delay between ToR and Agg switches
+    string aggToCoreLinkRate = "10Mbps";               // Links bandwith between Agg and Core switches
+    string aggToCoreLinkDelay = "10us";                // Links delay between Agg and Core switches
+    string appDataRate = "10Mbps";                     // Application data rate
+    string duration = "10";                            // Duration of the simulation
+    double pctPacedBack = 0.8;                         // the percentage of tcp flows of the CAIDA trace to be paced
     bool enableSwitchECN = true;                       // Enable ECN on the switches
     bool enableECMP = false;                           // Enable ECMP on the switches
+    double sampleRate = 10;                            // Sample rate for the PoissonSampler
 
     /*command line input*/
     CommandLine cmd;
@@ -53,12 +55,13 @@ int main(int argc, char* argv[])
     cmd.AddValue("enableECMP", "Enable ECMP on the switches", enableECMP);
     cmd.AddValue("duration", "Duration of the simulation", duration);
     cmd.AddValue("pctPacedBack", "the percentage of tcp flows of the CAIDA trace to be paced", pctPacedBack);
+    cmd.AddValue("sampleRate", "Sample rate for the PoissonSampler", sampleRate);
     cmd.Parse(argc, argv);
 
     /*set default values*/
     Time startTime = Seconds(0);
-    Time stopTime = Seconds(stod(duration));
-    Time convergenceTime = Seconds(1);
+    Time stopTime = Seconds(stof(duration));
+    Time convergenceTime = Seconds(0.005);
 
     Config::SetDefault("ns3::TcpL4Protocol::SocketType", StringValue("ns3::TcpDctcp"));
     Config::SetDefault("ns3::Ipv4GlobalRouting::RandomEcmpRouting", BooleanValue(enableECMP));
@@ -129,8 +132,10 @@ int main(int argc, char* argv[])
                                   "LinkDelay", StringValue(torToAggLinkDelay), 
                                   "MinTh", DoubleValue(50),
                                   "MaxTh", DoubleValue(150));
+    vector<QueueDiscContainer> torTotorQueueDiscs;
     for (int i = 0; i < nRacks - 1; i++) {
-        torToTorTCH.Install(torToTorNetDevices[i]);
+        QueueDiscContainer qdisc = torToTorTCH.Install(torToTorNetDevices[i]);
+        torTotorQueueDiscs.push_back(qdisc);
     }
 
     TrafficControlHelper hosToTorTCH;
@@ -139,10 +144,14 @@ int main(int argc, char* argv[])
                                  "LinkDelay", StringValue(hostToTorLinkDelay), 
                                  "MinTh", DoubleValue(20),
                                  "MaxTh", DoubleValue(60));
+    vector<vector<QueueDiscContainer>> hostToTorQueueDiscs;
     for (int i = 0; i < nRacks; i++) {
+        vector<QueueDiscContainer> qdiscs;
         for (int j = 0; j < nHosts; j++) {
-            hosToTorTCH.Install(hostsToTorsNetDevices[i][j].Get(1));
+            QueueDiscContainer qdisc = hosToTorTCH.Install(hostsToTorsNetDevices[i][j].Get(1));
+            qdiscs.push_back(qdisc);
         }
+        hostToTorQueueDiscs.push_back(qdiscs);
     }
     
     // Assign IP addresses
@@ -177,8 +186,8 @@ int main(int argc, char* argv[])
     // r0h0 -> r1h0
     auto* appTraffic = new BackgroundReplay(racks[0].Get(0), racks[1].Get(0));
     appTraffic->SetPctOfPacedTcps(pctPacedBack);
-    // string tracesPath = "/home/mahdi/Documents/NAL/Data/chicago_2010_traffic_10min_2paths/path0";
-    string tracesPath = "/home/mahdi/Documents/Data/chicago_2010_traffic_10min_2paths/path0";
+    string tracesPath = "/home/mahdi/Documents/NAL/Data/chicago_2010_traffic_10min_2paths/path0";
+    // string tracesPath = "/home/mahdi/Documents/Data/chicago_2010_traffic_10min_2paths/path0";
     if (std::filesystem::exists(tracesPath)) {
         appTraffic->RunAllTraces(tracesPath, 0);
     } else {
@@ -271,6 +280,7 @@ int main(int argc, char* argv[])
 
     /* ########## START: Monitoring ########## */
     // p2pHostToTor.EnablePcapAll("N4_datacenter_switch_");
+    ns3::PacketMetadata::Enable();
 
     // End to End Monitors
     vector<PacketMonitor *> endToendMonitors;
@@ -304,6 +314,19 @@ int main(int argc, char* argv[])
     T1SwitchMonitor->AddAppKey(AppKey(ipsRacks[0][1].GetAddress(0), ipsRacks[1][1].GetAddress(0), 0, 0));
     switchMonitors.push_back(T1SwitchMonitor);
 
+    // Poisson Samplers on the ToR switches
+    vector<PoissonSampler *> poissonSamplers;
+    // T0 -> T1 Poisson Sampler
+    auto *T0PoissonSampler = new PoissonSampler(startTime, stopTime + convergenceTime, DynamicCast<RedQueueDisc>(torTotorQueueDiscs[0].Get(0)), DynamicCast<PointToPointNetDevice>(torToTorNetDevices[0].Get(0))->GetQueue(), DynamicCast<PointToPointNetDevice>(torToTorNetDevices[0].Get(0)), "T0T1", sampleRate);
+    poissonSamplers.push_back(T0PoissonSampler);
+
+    // T1 -> R1h0 Poisson Sampler
+    auto *T1R1h0PoissonSampler = new PoissonSampler(startTime, stopTime + convergenceTime, DynamicCast<RedQueueDisc>(hostToTorQueueDiscs[1][0].Get(0)), DynamicCast<PointToPointNetDevice>(hostsToTorsNetDevices[1][0].Get(1))->GetQueue(), DynamicCast<PointToPointNetDevice>(hostsToTorsNetDevices[1][0].Get(1)), "T1.R1h0", sampleRate);
+    poissonSamplers.push_back(T1R1h0PoissonSampler);
+
+    // T1 -> R1h1 Poisson Sampler
+    auto *T1R1h1PoissonSampler = new PoissonSampler(startTime, stopTime + convergenceTime, DynamicCast<RedQueueDisc>(hostToTorQueueDiscs[1][1].Get(0)), DynamicCast<PointToPointNetDevice>(hostsToTorsNetDevices[1][1].Get(1))->GetQueue(), DynamicCast<PointToPointNetDevice>(hostsToTorsNetDevices[1][1].Get(1)), "T1.R1h1", sampleRate);
+    poissonSamplers.push_back(T1R1h1PoissonSampler);
     /* ########## END: Monitoring ########## */
 
 
@@ -329,12 +352,13 @@ int main(int argc, char* argv[])
     cout << "pctPacedBack: " << pctPacedBack << endl;
     cout << "enableSwitchECN: " << enableSwitchECN << endl;
     cout << "enableECMP: " << enableECMP << endl;
+    cout << "sampleRate: " << sampleRate << endl;
 
     /* ########## END: Check Config ########## */
 
 
     /* ########## START: Scheduling and  Running ########## */
-    Simulator::Stop(stopTime + convergenceTime);
+    Simulator::Stop(stopTime + convergenceTime + convergenceTime);
     Simulator::Run();
     Simulator::Destroy();
 
@@ -343,6 +367,9 @@ int main(int argc, char* argv[])
     }
     for (auto monitor: switchMonitors) {
         monitor->SavePacketRecords((string) (getenv("PWD")) + "/results/" + monitor->GetMonitorTag() + "_Switch.csv");
+    }
+    for (auto sampler: poissonSamplers) {
+        sampler->SaveSamples((string) (getenv("PWD")) + "/results/" + sampler->GetSampleTag() + "_PoissonSampler.csv");
     }
     /* ########## END: Scheduling and  Running ########## */
 

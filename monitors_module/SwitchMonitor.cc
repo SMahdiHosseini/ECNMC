@@ -37,6 +37,13 @@ void SwitchMonitor::Connect(const Ptr<Node> &node) {
         if (netDevice->GetInstanceTypeId().GetName() == "ns3::PointToPointNetDevice") {
             Ptr<PointToPointNetDevice> p2pNetDevice = DynamicCast<PointToPointNetDevice>(netDevice);
             p2pNetDevice->TraceConnectWithoutContext("PromiscSniffer", MakeCallback(&SwitchMonitor::RecordPacket, this));
+            // // check if the queue is a RED queue
+            // if (p2pNetDevice->GetNode()->GetObject<TrafficControlLayer>()->GetRootQueueDiscOnDevice(p2pNetDevice)->GetInstanceTypeId() == ns3::RedQueueDisc::GetTypeId()) {
+            //     std::cout << "RED queue detected" << std::endl;
+            // }
+            // else {
+            //     std::cout << "RED queue not detected" << std::endl;
+            // }
         }
     }
 }
@@ -52,7 +59,7 @@ void SwitchMonitor::Disconnect(const Ptr<Node> &node) {
 }
 
 void SwitchMonitor::RecordPacket(Ptr<const Packet> packet) {
-    PacketKey* packetKey = PacketKey::Packet2PacketKey(packet, false);
+    PacketKey* packetKey = PacketKey::Packet2PacketKey(packet, FIRST_HEADER_PPP);
     if(_appsKey.count(AppKey::PacketKey2AppKey(*packetKey))) {
         auto packetKeyEventPair = _recordedPackets.find(*packetKey);
         if (packetKeyEventPair != _recordedPackets.end()) {

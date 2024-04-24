@@ -69,21 +69,26 @@ const SequenceNumber32 &PacketKey::GetAckNb() const { return _ackNb; }
 uint32_t PacketKey::GetSize() const { return _size; }
 size_t PacketKey::GetPayloadHash() const { return _payloadHash; }
 
-PacketKey* PacketKey::Packet2PacketKey(Ptr<const Packet> packet, bool isIpv4) {
+PacketKey* PacketKey::Packet2PacketKey(Ptr<const Packet> packet, uint8_t firstHeaderType) {
     const Ptr<Packet> &pktCopy = packet->Copy();
 
     // extract ppp information
     PppHeader pppHeader;
-    if(!isIpv4) {
+    if(firstHeaderType == FIRST_HEADER_PPP) {
         pktCopy->RemoveHeader(pppHeader);
     }
 
     // extract ipv4 information
     Ipv4Header ipHeader;
-    pktCopy->RemoveHeader(ipHeader);
-    Ipv4Address srcIp = ipHeader.GetSource();
-    Ipv4Address dstIp = ipHeader.GetDestination();
-    uint16_t id = ipHeader.GetIdentification();
+    Ipv4Address srcIp;
+    Ipv4Address dstIp;
+    uint16_t id = 0;
+    if (firstHeaderType <= FIRST_HEADER_IPV4) {
+        pktCopy->RemoveHeader(ipHeader);
+        srcIp = ipHeader.GetSource();
+        dstIp = ipHeader.GetDestination();
+        id = ipHeader.GetIdentification();
+    }
 
     // extract transport layer info
     uint16_t srcPort = 0, dstPort = 0;
@@ -91,7 +96,7 @@ PacketKey* PacketKey::Packet2PacketKey(Ptr<const Packet> packet, bool isIpv4) {
     uint32_t size = 0;
     hash<string> hasher;
     size_t payloadHash = 0;
-    if(ipHeader.GetProtocol() == 6) {
+    if(ipHeader.GetProtocol() == 6 || ipHeader.GetProtocol() == 0){
         TcpHeader tcpHeader;
         pktCopy->RemoveHeader(tcpHeader);
         srcPort = tcpHeader.GetSourcePort();
@@ -112,9 +117,11 @@ PacketKey* PacketKey::Packet2PacketKey(Ptr<const Packet> packet, bool isIpv4) {
         pktCopy->AddHeader(udpHeader);
     }
 
-    pktCopy->AddHeader(ipHeader);
+    if (firstHeaderType <= FIRST_HEADER_IPV4){
+        pktCopy->AddHeader(ipHeader);
+    }
 
-    if(!isIpv4) {
+    if(firstHeaderType == FIRST_HEADER_PPP) {
         pktCopy->AddHeader(pppHeader);
     }
 
@@ -134,3 +141,13 @@ std::size_t PacketKeyHash::operator()(PacketKey const &packetKey) const noexcept
     boost::hash_combine(seed, packetKey.GetPayloadHash());
     return seed;
 }
+
+void PacketKey::SetPayloadHash(size_t payloadHash) { _payloadHash = payloadHash; }
+void PacketKey::SetSize(uint32_t size) { _size = size; }
+void PacketKey::SetAckNb(const SequenceNumber32 &ackNb) { _ackNb = ackNb; }
+void PacketKey::SetSeqNb(const SequenceNumber32 &seqNb) { _seqNb = seqNb; }
+void PacketKey::SetDstPort(uint16_t dstPort) { _dstPort = dstPort; }
+void PacketKey::SetSrcPort(uint16_t srcPort) { _srcPort = srcPort; }
+void PacketKey::SetSrcIp(const Ipv4Address &srcIp) { _srcIp = srcIp; }
+void PacketKey::SetDstIp(const Ipv4Address &dstIp) { _dstIp = dstIp; }
+void PacketKey::SetId(uint16_t id) { _id = id; }

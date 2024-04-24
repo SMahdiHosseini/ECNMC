@@ -51,6 +51,7 @@ add_library(
   monitors_module/PacketKey.cc
   monitors_module/PacketMonitor.cc
   monitors_module/SwitchMonitor.cc
+  monitors_module/PoissonSampler.cc
 )
 
 add_library(

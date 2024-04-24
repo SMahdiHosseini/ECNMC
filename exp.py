@@ -54,6 +54,7 @@ def run_experiment():
         '--pctPacedBack={} '.format(expConfig.pct_paced_back) +
         '--appDataRate={} '.format(expConfig.app_data_rate) +
         '--duration={} '.format(expConfig.duration) +
+        '--sampleRate={} '.format(expConfig.sampleRate) +
         '\' > {}/scratch/ECNMC/results/result.txt'.format(get_ns3_path())
     )
  

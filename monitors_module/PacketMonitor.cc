@@ -49,7 +49,7 @@ void PacketMonitor::AddAppKey(AppKey appKey) {
 }
 
 void PacketMonitor::RecordIpv4PacketSent(Ptr<const Packet> packet, Ptr<Ipv4> ipv4, uint32_t interface) {
-    PacketKey* packetKey = PacketKey::Packet2PacketKey(packet, true);
+    PacketKey* packetKey = PacketKey::Packet2PacketKey(packet, FIRST_HEADER_IPV4);
     if(_appsKey.count(AppKey::PacketKey2AppKey(*packetKey))) {
         auto *packetEvent = new PacketMonitorEvent(packetKey);
         packetEvent->SetSent();
@@ -58,7 +58,7 @@ void PacketMonitor::RecordIpv4PacketSent(Ptr<const Packet> packet, Ptr<Ipv4> ipv
 }
 
 void PacketMonitor::RecordIpv4PacketReceived(Ptr<const Packet> packet, Ptr<Ipv4> ipv4, uint32_t interface) {
-    PacketKey* packetKey = PacketKey::Packet2PacketKey(packet, true);
+    PacketKey* packetKey = PacketKey::Packet2PacketKey(packet, FIRST_HEADER_IPV4);
     if(_appsKey.count(AppKey::PacketKey2AppKey(*packetKey))) {
         auto packetKeyEventPair = _recordedPackets.find(*packetKey);
         if (packetKeyEventPair != _recordedPackets.end()) {

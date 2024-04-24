@@ -8,6 +8,10 @@
 #include "ns3/core-module.h"
 #include "ns3/internet-module.h"
 
+#define FIRST_HEADER_PPP 0
+#define FIRST_HEADER_IPV4 1
+#define FIRST_HEADER_TCP 2
+
 using namespace ns3;
 using namespace std;
 
@@ -43,7 +47,17 @@ public:
     bool operator!=(const PacketKey &rhs) const;
 
     friend ostream &operator<<(ostream &os, const PacketKey &event);
-    static PacketKey* Packet2PacketKey(Ptr<const Packet> packet, bool isIpv4);
+    static PacketKey* Packet2PacketKey(Ptr<const Packet> packet, uint8_t firstHeaderType);
+
+    void SetPayloadHash(size_t payloadHash);
+    void SetSize(uint32_t size);
+    void SetAckNb(const SequenceNumber32 &ackNb);
+    void SetSeqNb(const SequenceNumber32 &seqNb);
+    void SetDstPort(uint16_t dstPort);
+    void SetSrcPort(uint16_t srcPort);
+    void SetSrcIp(const Ipv4Address &srcIp);
+    void SetDstIp(const Ipv4Address &dstIp);
+    void SetId(uint16_t id);
 };
 
 struct PacketKeyHash {
