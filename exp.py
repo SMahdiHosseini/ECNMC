@@ -16,6 +16,7 @@ class ExperimentConfig:
         self.app_data_rate = "20Mbps"
         self.duration = "10s"
         self.sampleRate="10.0"
+        experiments="100"
 
     def read_config_file(self, config_file):
         config = configparser.ConfigParser()
@@ -30,6 +31,7 @@ class ExperimentConfig:
         self.app_data_rate = config.get('Settings', 'appDataRate')
         self.duration = config.get('Settings', 'duration')
         self.sampleRate = config.get('Settings', 'sampleRate')
+        self.experiments = config.get('Settings', 'experiments')
 
 
 
@@ -42,24 +44,25 @@ def run_experiment():
     expConfig = ExperimentConfig()
     expConfig.read_config_file('Parameters.config')
     os.system('mkdir -p {}/scratch/ECNMC/results/'.format(get_ns3_path()))
-    
-    os.system(
-        '{}/ns3 run \'N4_datacenter_switch '.format(get_ns3_path()) +
-        '--hostToTorLinkRate={} '.format(expConfig.host_to_tor_link_rate) +
-        '--torToAggLinkRate={} '.format(expConfig.tor_to_agg_link_rate) +
-        '--aggToCoreLinkRate={} '.format(expConfig.agg_to_core_link_rate) +
-        '--hostToTorLinkDelay={} '.format(expConfig.host_to_tor_link_delay) +
-        '--torToAggLinkDelay={} '.format(expConfig.tor_to_agg_link_delay) +
-        '--aggToCoreLinkDelay={} '.format(expConfig.agg_to_core_link_delay) +
-        '--pctPacedBack={} '.format(expConfig.pct_paced_back) +
-        '--appDataRate={} '.format(expConfig.app_data_rate) +
-        '--duration={} '.format(expConfig.duration) +
-        '--sampleRate={} '.format(expConfig.sampleRate) +
-        '\' > {}/scratch/ECNMC/results/result.txt'.format(get_ns3_path())
-    )
+
+    for i in range(int(expConfig.experiments)):
+        os.system(
+            '{}/ns3 run \'N4_datacenter_switch '.format(get_ns3_path()) +
+            '--hostToTorLinkRate={} '.format(expConfig.host_to_tor_link_rate) +
+            '--torToAggLinkRate={} '.format(expConfig.tor_to_agg_link_rate) +
+            '--aggToCoreLinkRate={} '.format(expConfig.agg_to_core_link_rate) +
+            '--hostToTorLinkDelay={} '.format(expConfig.host_to_tor_link_delay) +
+            '--torToAggLinkDelay={} '.format(expConfig.tor_to_agg_link_delay) +
+            '--aggToCoreLinkDelay={} '.format(expConfig.agg_to_core_link_delay) +
+            '--pctPacedBack={} '.format(expConfig.pct_paced_back) +
+            '--appDataRate={} '.format(expConfig.app_data_rate) +
+            '--duration={} '.format(expConfig.duration) +
+            '--sampleRate={} '.format(expConfig.sampleRate) +
+            '\' > {}/scratch/ECNMC/results/result.txt'.format(get_ns3_path())
+        )
  
-    os.system('mkdir -p {}/scratch/Results/'.format(get_ns3_path()))
-    os.system('mv {}/scratch/ECNMC/results/*.csv {}/scratch/Results/'.format(get_ns3_path(), get_ns3_path()))
+        os.system('mkdir -p {}/scratch/Results/{}/{}'.format(get_ns3_path(), expConfig.tor_to_agg_link_rate, i))
+        os.system('mv {}/scratch/ECNMC/results/*.csv {}/scratch/Results/{}/{}'.format(get_ns3_path(), get_ns3_path(), expConfig.tor_to_agg_link_rate, i))
 
 # main
 # rebuild_project()

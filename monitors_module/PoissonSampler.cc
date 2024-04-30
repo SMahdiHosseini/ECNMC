@@ -36,6 +36,12 @@ PoissonSampler::PoissonSampler(const Time &startTime, const Time &duration, Ptr<
 
 void PoissonSampler::EnqueueQueueDisc(Ptr<const QueueDiscItem> item) {
     lastItem = item;
+    // PacketKey* packetKey = PacketKey::Packet2PacketKey(lastItem->GetPacket(), FIRST_HEADER_TCP);
+    // Ipv4Header ipHeader = DynamicCast<const Ipv4QueueDiscItem>(lastItem)->GetHeader();
+    // packetKey->SetId(ipHeader.GetIdentification());
+    // packetKey->SetSrcIp(ipHeader.GetSource());
+    // packetKey->SetDstIp(ipHeader.GetDestination());
+    // std::cout << Simulator::Now().GetNanoSeconds() << " : " << packetKey->GetSrcIp() << "," << packetKey->GetSrcPort() << "," << packetKey->GetDstIp() << "," << packetKey->GetDstPort() << "," << packetKey->GetSeqNb() << std::endl;
 }
 
 void PoissonSampler::EnqueueNetDeviceQueue(Ptr<const Packet> packet) {
@@ -79,6 +85,10 @@ void PoissonSampler::EventHandler() {
     
     // add the event to the recorded samples
     samplingEvent* event = new samplingEvent(packetKey);
+    // check if the packet is already recorded, add 1 to the record field of the packet and add the event to the recorded samples
+    while (_recordedSamples.find(*packetKey) != _recordedSamples.end()) {
+        packetKey->SetRecords(packetKey->GetRecords() + 1);
+    }
     event->SetSampleTime();
     _recordedSamples[*packetKey] = event;
     // if there is no packet in the queue, then add the event pair with zero delay
@@ -94,6 +104,13 @@ void PoissonSampler::RecordPacket(Ptr<const Packet> packet) {
     PacketKey* packetKey = PacketKey::Packet2PacketKey(packet, FIRST_HEADER_PPP);
     if (_recordedSamples.find(*packetKey) != _recordedSamples.end()) {
         _recordedSamples[*packetKey]->SetDepartureTime();
+        // check if there exists a packet with the same key but different record field
+        packetKey->SetRecords(packetKey->GetRecords() + 1);
+        while (_recordedSamples.find(*packetKey) != _recordedSamples.end())
+        {
+            _recordedSamples[*packetKey]->SetDepartureTime();
+            packetKey->SetRecords(packetKey->GetRecords() + 1);
+        }
     }
 }
 

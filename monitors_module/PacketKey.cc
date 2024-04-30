@@ -14,7 +14,7 @@ PacketKey::PacketKey(const Ipv4Address &srcIp, const Ipv4Address &dstIp, uint16_
                      uint16_t srcPort, uint16_t dstPort, const SequenceNumber32& seqNb, const SequenceNumber32& ackNb,
                      uint32_t size, size_t payloadHash) : _srcIp(srcIp), _dstIp(dstIp), _id(id),
                         _srcPort(srcPort), _dstPort(dstPort), _seqNb(seqNb), _ackNb(ackNb),
-                        _size(size), _payloadHash(payloadHash) {}
+                        _size(size), _payloadHash(payloadHash), records(0) {}
 
 bool PacketKey::operator<(const PacketKey &rhs) const {
     if (_srcIp < rhs._srcIp) return true;
@@ -68,6 +68,7 @@ const SequenceNumber32 &PacketKey::GetSeqNb() const { return _seqNb; }
 const SequenceNumber32 &PacketKey::GetAckNb() const { return _ackNb; }
 uint32_t PacketKey::GetSize() const { return _size; }
 size_t PacketKey::GetPayloadHash() const { return _payloadHash; }
+int PacketKey::GetRecords() const { return records; }
 
 PacketKey* PacketKey::Packet2PacketKey(Ptr<const Packet> packet, uint8_t firstHeaderType) {
     const Ptr<Packet> &pktCopy = packet->Copy();
@@ -139,6 +140,7 @@ std::size_t PacketKeyHash::operator()(PacketKey const &packetKey) const noexcept
     boost::hash_combine(seed, packetKey.GetSeqNb().GetValue());
     boost::hash_combine(seed, packetKey.GetAckNb().GetValue());
     boost::hash_combine(seed, packetKey.GetPayloadHash());
+    boost::hash_combine(seed, packetKey.GetRecords());
     return seed;
 }
 
@@ -151,3 +153,4 @@ void PacketKey::SetSrcPort(uint16_t srcPort) { _srcPort = srcPort; }
 void PacketKey::SetSrcIp(const Ipv4Address &srcIp) { _srcIp = srcIp; }
 void PacketKey::SetDstIp(const Ipv4Address &dstIp) { _dstIp = dstIp; }
 void PacketKey::SetId(uint16_t id) { _id = id; }
+void PacketKey::SetRecords(int records) { PacketKey::records = records; }

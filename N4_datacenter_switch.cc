@@ -24,6 +24,27 @@
 using namespace ns3;
 using namespace std;
 
+void queueDiscSize(uint32_t oldValue, uint32_t newValue) {
+    std::cout << "Queue Disc Size: " << newValue << endl;
+}
+
+void queueSize(uint32_t oldValue, uint32_t newValue) {
+    std::cout << "Queue Size: " << newValue << endl;
+}
+
+void enqueue(Ptr< const Packet > packet){
+    std::cout << "Packet enqueued: ";
+    packet->Print(std::cout);
+    std::cout << endl;
+}
+
+void enqueueDisc(Ptr< const QueueDiscItem > item){
+    std::cout << "Packet enqueued Disc: ";
+    item->Print(std::cout);
+    item->GetPacket()->Print(std::cout);
+    std::cout << endl;
+}
+
 int main(int argc, char* argv[])
 {
     auto start = std::chrono::high_resolution_clock::now();
@@ -194,15 +215,15 @@ int main(int argc, char* argv[])
         cout << "requested Background Directory does not exist" << endl;
     }
 
-    // // R0h1 -> R1h1
-    // auto* appTraffic2 = new BackgroundReplay(racks[0].Get(1), racks[1].Get(1));
-    // appTraffic2->SetPctOfPacedTcps(pctPacedBack);
-    // string tracesPath2 = "/home/mahdi/Documents/NAL/Data/chicago_2010_traffic_10min_2paths/path1";
-    // if (std::filesystem::exists(tracesPath2)) {
-    //     appTraffic2->RunAllTraces(tracesPath2, 0);
-    // } else {
-    //     cout << "requested Background Directory does not exist" << endl;
-    // }
+    // R0h1 -> R1h1
+    auto* appTraffic2 = new BackgroundReplay(racks[0].Get(1), racks[1].Get(1));
+    appTraffic2->SetPctOfPacedTcps(pctPacedBack);
+    string tracesPath2 = "/home/mahdi/Documents/NAL/Data/chicago_2010_traffic_10min_2paths/path1";
+    if (std::filesystem::exists(tracesPath2)) {
+        appTraffic2->RunAllTraces(tracesPath2, 0);
+    } else {
+        cout << "requested Background Directory does not exist" << endl;
+    }
 
     // // R1h2 -> R1h0
     // auto* appTraffic3 = new BackgroundReplay(racks[1].Get(2), racks[1].Get(0));
@@ -215,25 +236,25 @@ int main(int argc, char* argv[])
     // }
 
     // NS3 application
-    // r0h1 -> r1h1
-    uint16_t port = 50000;
-    Address sinkLocalAddress(InetSocketAddress(Ipv4Address::GetAny(), port));
-    PacketSinkHelper sinkHelper("ns3::TcpSocketFactory", sinkLocalAddress);
-    ApplicationContainer sinkApp = sinkHelper.Install(racks[1].Get(1));
-    Ptr<PacketSink> s2r2PacketSink = sinkApp.Get(0)->GetObject<PacketSink>();
-    sinkApp.Start(startTime);
-    sinkApp.Stop(stopTime);
-    OnOffHelper S2ClientHelper("ns3::TcpSocketFactory", Address());
-    S2ClientHelper.SetAttribute("OnTime", StringValue("ns3::ConstantRandomVariable[Constant=1]"));
-    S2ClientHelper.SetAttribute("OffTime", StringValue("ns3::ConstantRandomVariable[Constant=0]"));
-    S2ClientHelper.SetAttribute("DataRate", DataRateValue(DataRate(appDataRate)));
-    S2ClientHelper.SetAttribute("PacketSize", UintegerValue(1000));
-    ApplicationContainer S2ClientApp;
-    AddressValue remoteAddress(InetSocketAddress(ipsRacks[1][1].GetAddress(0), port));
-    S2ClientHelper.SetAttribute("Remote", remoteAddress);
-    S2ClientApp.Add(S2ClientHelper.Install(racks[0].Get(1)));
-    S2ClientApp.Start(startTime);
-    S2ClientApp.Stop(stopTime);
+    // // r0h1 -> r1h1
+    // uint16_t port = 50000;
+    // Address sinkLocalAddress(InetSocketAddress(Ipv4Address::GetAny(), port));
+    // PacketSinkHelper sinkHelper("ns3::TcpSocketFactory", sinkLocalAddress);
+    // ApplicationContainer sinkApp = sinkHelper.Install(racks[1].Get(1));
+    // Ptr<PacketSink> s2r2PacketSink = sinkApp.Get(0)->GetObject<PacketSink>();
+    // sinkApp.Start(startTime);
+    // sinkApp.Stop(stopTime);
+    // OnOffHelper S2ClientHelper("ns3::TcpSocketFactory", Address());
+    // S2ClientHelper.SetAttribute("OnTime", StringValue("ns3::ConstantRandomVariable[Constant=1]"));
+    // S2ClientHelper.SetAttribute("OffTime", StringValue("ns3::ConstantRandomVariable[Constant=0]"));
+    // S2ClientHelper.SetAttribute("DataRate", DataRateValue(DataRate(appDataRate)));
+    // S2ClientHelper.SetAttribute("PacketSize", UintegerValue(1000));
+    // ApplicationContainer S2ClientApp;
+    // AddressValue remoteAddress(InetSocketAddress(ipsRacks[1][1].GetAddress(0), port));
+    // S2ClientHelper.SetAttribute("Remote", remoteAddress);
+    // S2ClientApp.Add(S2ClientHelper.Install(racks[0].Get(1)));
+    // S2ClientApp.Start(startTime);
+    // S2ClientApp.Stop(stopTime);
 
     // // r0h0 -> r1h0
     // uint16_t port2 = 50001;
@@ -358,6 +379,8 @@ int main(int argc, char* argv[])
 
 
     /* ########## START: Scheduling and  Running ########## */
+    // DynamicCast<RedQueueDisc>(torTotorQueueDiscs[0].Get(0))->TraceConnectWithoutContext("PacketsInQueue", MakeCallback(&queueDiscSize));
+    // DynamicCast<PointToPointNetDevice>(torToTorNetDevices[0].Get(0))->GetQueue()->TraceConnectWithoutContext("PacketsInQueue", MakeCallback(&queueSize));
     Simulator::Stop(stopTime + convergenceTime + convergenceTime);
     Simulator::Run();
     Simulator::Destroy();

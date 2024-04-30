@@ -19,10 +19,10 @@ torToAggLinkDelay: 3ms
 aggToCoreLinkRate: 50Mbps
 aggToCoreLinkDelay: 3ms
 appDataRate: 50Mbps
-duration: 1
+duration: 10
 pctPacedBack: 0.8
 enableSwitchECN: 1
 enableECMP: 0
-sampleRate: 100
+sampleRate: 1000
 Done 
-Total execution time = 6809292 microsecond
+Total execution time = 62024998 microsecond

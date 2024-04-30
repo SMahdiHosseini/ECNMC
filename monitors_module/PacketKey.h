@@ -24,6 +24,7 @@ private:
     SequenceNumber32 _seqNb, _ackNb;
     uint32_t _size;
     size_t _payloadHash;
+    int records;
 
 public:
     PacketKey(const Ipv4Address &srcIp, const Ipv4Address &dstIp, uint16_t id, uint16_t srcPort, uint16_t dstPort,
@@ -38,6 +39,7 @@ public:
     [[nodiscard]] const SequenceNumber32 &GetAckNb() const;
     [[nodiscard]] uint32_t GetSize() const;
     [[nodiscard]] size_t GetPayloadHash() const;
+    [[nodiscard]] int GetRecords() const;
 
     bool operator<(const PacketKey &rhs) const;
     bool operator>(const PacketKey &rhs) const;
@@ -58,6 +60,7 @@ public:
     void SetSrcIp(const Ipv4Address &srcIp);
     void SetDstIp(const Ipv4Address &dstIp);
     void SetId(uint16_t id);
+    void SetRecords(int records);
 };
 
 struct PacketKeyHash {
