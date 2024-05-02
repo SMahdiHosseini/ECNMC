@@ -393,7 +393,7 @@ def __main__():
 
 
     for rate in serviceRateScales:
-        prtint("Analyzing experiments for rate: ", rate)
+        print("\nAnalyzing experiments for rate: ", rate)
         analyze_all_experiments(rate, steadyStart, steadyEnd, confidenceValue, experiments, __ns3_path)
         print("Rate {} done".format(rate))
 
