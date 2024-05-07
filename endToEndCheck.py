@@ -156,6 +156,12 @@ def ECNMC_V2(endToEnd_delayMean, sumOfSegments_DelayMeans, maxEpsilon):
         return True
     else:  
         return False
+
+def ECNMC_V3(endToEnd_delayMean, sumOfSegments_DelayMeans, maxEpsilon):
+    if abs(endToEnd_delayMean - sumOfSegments_DelayMeans) <= maxEpsilon:
+        return True
+    else:  
+        return False
     
 def check_single_delayConsistency(endToEnd_statistics, switches_statistics, interLinks_statistics, confidenceValue):
     switches_delayMeans = [value['DelayMean'] for value in switches_statistics.values()]
@@ -185,13 +191,34 @@ def check_single_delayConsistency_V2(endToEnd_statistics, switches_statistics, i
 
     return ECNMC_V2(endToEnd_statistics['DelayMean'], sumOfSegmentsDelayMeans, maxEpsilon)
 
+def check_single_delayConsistency_V3(endToEnd_statistics, switches_statistics, interLinks_statistics, confidenceValue):
+    # calculate the epsilon = confidenceValue * (switches_delayStd / (sqrt(switches_sampleSize) * switches_delayMean)) for each switch
+    switches_delayMeans = [value['DelayMean'] for value in switches_statistics.values()]
+    switches_delayStds = [value['DelayStd'] for value in switches_statistics.values()]
+    switches_sampleSizes = [value['sampleSize'] for value in switches_statistics.values()]
+    interLinks_delaymeans = [value['DelayMean'] for value in interLinks_statistics.values()]
+    interLinks_delayStds = [value['DelayStd'] for value in interLinks_statistics.values()]
+    interLinks_sampleSizes = [value['sampleSize'] for value in interLinks_statistics.values()]
+
+    segments_delayMeans = switches_delayMeans + interLinks_delaymeans
+    segments_delayStds = switches_delayStds + interLinks_delayStds
+    segments_sampleSizes = switches_sampleSizes + interLinks_sampleSizes
+
+    epsilons = [confidenceValue * (segments_delayStds[i] / (np.sqrt(segments_sampleSizes[i]))) for i in range(len(segments_delayMeans))]
+    maxEpsilon = max(epsilons)
+    sumOfSegmentsDelayMeans = sum(segments_delayMeans)
+
+    return ECNMC_V3(endToEnd_statistics['DelayMean'], sumOfSegmentsDelayMeans, maxEpsilon)
+
 def check_all_delayConsistency(endToEnd_statistics, switches_statistics, interLinks_statistics, confidenceValue):
     res = {}
     res['DominantAssumption'] = {}
     res['General'] = {}
+    res['General_nonRelative'] = {}
     for flow in endToEnd_statistics.keys():
         res['DominantAssumption'][flow] = check_single_delayConsistency(endToEnd_statistics[flow], switches_statistics[flow], interLinks_statistics[flow], confidenceValue)
         res['General'][flow] = check_single_delayConsistency_V2(endToEnd_statistics[flow], switches_statistics[flow], interLinks_statistics[flow], confidenceValue)
+        res['General_nonRelative'][flow] = check_single_delayConsistency_V3(endToEnd_statistics[flow], switches_statistics[flow], interLinks_statistics[flow], confidenceValue)
     return res
 
 def prepare_results(flows):
@@ -206,10 +233,12 @@ def prepare_results(flows):
     # rounds_results['Overall']['groundtruth']['General'] = {}
     rounds_results['Overall']['samples']['DominantAssumption'] = {}
     rounds_results['Overall']['samples']['General'] = {}
+    rounds_results['Overall']['samples']['General_nonRelative'] = {}
     # rounds_results['PerTrafficStream']['groundtruth']['DominantAssumption'] = {}
     # rounds_results['PerTrafficStream']['groundtruth']['General'] = {}
     rounds_results['PerTrafficStream']['samples']['DominantAssumption'] = {}
     rounds_results['PerTrafficStream']['samples']['General'] = {}
+    rounds_results['PerTrafficStream']['samples']['General_nonRelative'] = {}
     rounds_results['ANOVA'] = 0
     rounds_results['Kruskal'] = 0
     rounds_results['EndToEndMean'] = {}
@@ -220,10 +249,12 @@ def prepare_results(flows):
         # rounds_results['Overall']['groundtruth']['General'][flow] = 0
         rounds_results['Overall']['samples']['DominantAssumption'][flow] = 0
         rounds_results['Overall']['samples']['General'][flow] = 0
+        rounds_results['Overall']['samples']['General_nonRelative'][flow] = 0
         # rounds_results['PerTrafficStream']['groundtruth']['DominantAssumption'][flow] = 0
         # rounds_results['PerTrafficStream']['groundtruth']['General'][flow] = 0
         rounds_results['PerTrafficStream']['samples']['DominantAssumption'][flow] = 0
         rounds_results['PerTrafficStream']['samples']['General'][flow] = 0
+        rounds_results['PerTrafficStream']['samples']['General_nonRelative'][flow] = 0
         rounds_results['EndToEndMean'][flow] = 0
         rounds_results['EndToEndStd'][flow] = 0
         rounds_results['EndToEndSkew'][flow] = 0
@@ -271,6 +302,8 @@ def compatibility_check(confidenceValue, rounds_results, samples_statistics, int
             rounds_results['Overall']['samples']['DominantAssumption'][flow] += 1
         if results['Overall']['samples']['General'][flow]:
             rounds_results['Overall']['samples']['General'][flow] += 1
+        if results['Overall']['samples']['General_nonRelative'][flow]:
+            rounds_results['Overall']['samples']['General_nonRelative'][flow] += 1
         # if results['PerTrafficStream']['groundtruth']['DominantAssumption'][flow]:
         #     rounds_results['PerTrafficStream']['groundtruth']['DominantAssumption'][flow] += 1
         # if results['PerTrafficStream']['groundtruth']['General'][flow]:
@@ -279,6 +312,8 @@ def compatibility_check(confidenceValue, rounds_results, samples_statistics, int
             rounds_results['PerTrafficStream']['samples']['DominantAssumption'][flow] += 1
         if results['PerTrafficStream']['samples']['General'][flow]:
             rounds_results['PerTrafficStream']['samples']['General'][flow] += 1
+        if results['PerTrafficStream']['samples']['General_nonRelative'][flow]:
+            rounds_results['PerTrafficStream']['samples']['General_nonRelative'][flow] += 1
 
 
 def analyze_single_experiment(rate, steadyStart, steadyEnd, confidenceValue, rounds_results, experiment=0, ns3_path=__ns3_path):
@@ -337,8 +372,9 @@ def analyze_single_experiment(rate, steadyStart, steadyEnd, confidenceValue, rou
     rounds_results['experiments'] += 1
 
     delayProcess_consistency_check(flows, rounds_results)
-
-    plot_delay_distribution(rate, switches_dfs, common_switch_sample_df)
+    
+    if experiment == 0:
+        plot_delay_distribution(rate, switches_dfs, common_switch_sample_df)
 
     compatibility_check(confidenceValue, rounds_results, samples_statistics, interLinks_statistics, endToEnd_statistics, endToEnd_dfs.keys())
 

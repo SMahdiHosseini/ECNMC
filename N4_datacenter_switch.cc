@@ -207,8 +207,8 @@ int main(int argc, char* argv[])
     // r0h0 -> r1h0
     auto* appTraffic = new BackgroundReplay(racks[0].Get(0), racks[1].Get(0));
     appTraffic->SetPctOfPacedTcps(pctPacedBack);
-    string tracesPath = "/home/mahdi/Documents/NAL/Data/chicago_2010_traffic_10min_2paths/path0";
-    // string tracesPath = "/home/mahdi/Documents/Data/chicago_2010_traffic_10min_2paths/path0";
+    // string tracesPath = "/home/mahdi/Documents/NAL/Data/chicago_2010_traffic_10min_2paths/path0";
+    string tracesPath = "/home/mahdi/Documents/Data/chicago_2010_traffic_10min_2paths/path0";
     if (std::filesystem::exists(tracesPath)) {
         appTraffic->RunAllTraces(tracesPath, 0);
     } else {
@@ -218,8 +218,8 @@ int main(int argc, char* argv[])
     // R0h1 -> R1h1
     auto* appTraffic2 = new BackgroundReplay(racks[0].Get(1), racks[1].Get(1));
     appTraffic2->SetPctOfPacedTcps(pctPacedBack);
-    string tracesPath2 = "/home/mahdi/Documents/NAL/Data/chicago_2010_traffic_10min_2paths/path1";
-    // string tracesPath2 = "/home/mahdi/Documents/Data/chicago_2010_traffic_10min_2paths/path1";
+    // string tracesPath2 = "/home/mahdi/Documents/NAL/Data/chicago_2010_traffic_10min_2paths/path1";
+    string tracesPath2 = "/home/mahdi/Documents/Data/chicago_2010_traffic_10min_2paths/path1";
     if (std::filesystem::exists(tracesPath2)) {
         appTraffic2->RunAllTraces(tracesPath2, 0);
     } else {
