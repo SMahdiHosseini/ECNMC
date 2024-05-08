@@ -1,1 +1,0 @@
-{"Overall": {"samples": {"DominantAssumption": {"R0h1R1h1": 0, "R0h0R1h0": 0}, "General": {"R0h1R1h1": 1, "R0h0R1h0": 1}}}, "PerTrafficStream": {"samples": {"DominantAssumption": {"R0h1R1h1": 1, "R0h0R1h0": 1}, "General": {"R0h1R1h1": 1, "R0h0R1h0": 1}}}, "ANOVA": 1, "Kruskal": 0}

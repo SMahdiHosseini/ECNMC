@@ -7,6 +7,7 @@ __ns3_path = os.popen('locate "ns-3.41" | grep /ns-3.41$').read().splitlines()[0
 class ExperimentConfig:
     def __init__(self):
         self.host_to_tor_link_rate = "10Mbps"
+        self.host_to_tor_cross_traffic_rate = "10Mbps"
         self.tor_to_agg_link_rate = "100Mbps"
         self.agg_to_core_link_rate = "100Mbps"
         self.host_to_tor_link_delay = "3ms"
@@ -23,6 +24,7 @@ class ExperimentConfig:
         config = configparser.ConfigParser()
         config.read('Parameters.config')
         self.host_to_tor_link_rate = config.get('Settings', 'hostToTorLinkRate')
+        self.host_to_tor_cross_traffic_rate = config.get('Settings', 'hostToTorCrossTrafficRate')
         self.tor_to_agg_link_rate = config.get('Settings', 'torToAggLinkRate')
         self.agg_to_core_link_rate = config.get('Settings', 'aggToCoreLinkRate')
         self.host_to_tor_link_delay = config.get('Settings', 'hostToTorLinkDelay')
@@ -48,11 +50,12 @@ def run_experiment():
     expConfig.read_config_file('Parameters.config')
     os.system('mkdir -p {}/scratch/ECNMC/results/'.format(get_ns3_path()))
     for rate in expConfig.serviceRateScales:
-        exp_tor_to_agg_link_rate = "{}Mbps".format(round(float(expConfig.tor_to_agg_link_rate.split('M')[0]) * rate, 1))
+        exp_tor_to_agg_link_rate = "{}Mbps".format(round(float(expConfig.tor_to_agg_link_rate.split('M')[0]) * rate * 9, 1))
         for i in range(int(expConfig.experiments)):
             os.system(
                 '{}/ns3 run \'N4_datacenter_switch '.format(get_ns3_path()) +
                 '--hostToTorLinkRate={} '.format(expConfig.host_to_tor_link_rate) +
+                '--hostToTorLinkRateCrossTraffic={} '.format(expConfig.host_to_tor_cross_traffic_rate) +
                 '--torToAggLinkRate={} '.format(exp_tor_to_agg_link_rate) +
                 '--aggToCoreLinkRate={} '.format(expConfig.agg_to_core_link_rate) +
                 '--hostToTorLinkDelay={} '.format(expConfig.host_to_tor_link_delay) +

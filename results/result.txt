@@ -1,3 +1,5 @@
+[0/2] Re-checking globbed directories...
+ninja: no work to do.
 
 Start
 Hosts and Switches IP addresses
@@ -10,17 +12,18 @@ Rack: 1 Host: 1 Id:5 IP: 10.2.2.1
 Rack: 1 Host: 2 Id:6 IP: 10.2.3.1
 Rack: 1 Host: 3 Id:7 IP: 10.2.4.1
 Config Parameters
-hostToTorLinkRate: 50Mbps
+hostToTorLinkRate: 10Mbps
+hostToTorLinkRateCrossTraffic: 40Mbps
 hostToTorLinkDelay: 3ms
-torToAggLinkRate: 62.5Mbps
+torToAggLinkRate: 81.0Mbps
 torToAggLinkDelay: 3ms
-aggToCoreLinkRate: 50Mbps
+aggToCoreLinkRate: 10Mbps
 aggToCoreLinkDelay: 3ms
-appDataRate: 50Mbps
+appDataRate: 10Mbps
 duration: 10
 pctPacedBack: 0.8
 enableSwitchECN: 1
 enableECMP: 0
 sampleRate: 1000
 Done 
-Total execution time = 20267658 microsecond
+Total execution time = 65117381 microsecond

@@ -25,11 +25,11 @@ using namespace ns3;
 using namespace std;
 
 void queueDiscSize(uint32_t oldValue, uint32_t newValue) {
-    std::cout << "Queue Disc Size: " << newValue << endl;
+    std::cout << Simulator::Now().GetNanoSeconds() << ": Queue Disc Size: " << newValue << endl;
 }
 
 void queueSize(uint32_t oldValue, uint32_t newValue) {
-    std::cout << "Queue Size: " << newValue << endl;
+    std::cout << Simulator::Now().GetNanoSeconds() << ": Queue Size: " << newValue << endl;
 }
 
 void enqueue(Ptr< const Packet > packet){
@@ -39,7 +39,7 @@ void enqueue(Ptr< const Packet > packet){
 }
 
 void enqueueDisc(Ptr< const QueueDiscItem > item){
-    std::cout << "Packet enqueued Disc: ";
+    std::cout << Simulator::Now().GetNanoSeconds() << ": Packet enqueued Disc: ";
     item->Print(std::cout);
     item->GetPacket()->Print(std::cout);
     std::cout << endl;
@@ -51,6 +51,7 @@ int main(int argc, char* argv[])
     cout << endl<< "Start" << endl;
     /* ########## START: Config ########## */
     string hostToTorLinkRate = "53Mbps";               // Links bandwith between hosts and ToR switches
+    string hostToTorLinkRateCrossTraffic = "53Mbps";   // Links bandwith between hosts and ToR switches for the cross traffic
     string hostToTorLinkDelay = "10us";                // Links delay between hosts and ToR switches
     string torToAggLinkRate = "10Mbps";                // Links bandwith between ToR and Agg switches
     string torToAggLinkDelay = "10us";                 // Links delay between ToR and Agg switches
@@ -77,6 +78,7 @@ int main(int argc, char* argv[])
     cmd.AddValue("duration", "Duration of the simulation", duration);
     cmd.AddValue("pctPacedBack", "the percentage of tcp flows of the CAIDA trace to be paced", pctPacedBack);
     cmd.AddValue("sampleRate", "Sample rate for the PoissonSampler", sampleRate);
+    cmd.AddValue("hostToTorLinkRateCrossTraffic", "Links bandwith between hosts and ToR switches for the cross traffic", hostToTorLinkRateCrossTraffic);
     cmd.Parse(argc, argv);
 
     /*set default values*/
@@ -122,17 +124,26 @@ int main(int argc, char* argv[])
     // connecting the hosts to the ToR switches
     vector<vector<NetDeviceContainer>> hostsToTorsNetDevices;
 
-    PointToPointHelper p2pHostToTor; 
-    p2pHostToTor.SetDeviceAttribute("DataRate", StringValue(hostToTorLinkRate));
-    p2pHostToTor.SetChannelAttribute("Delay", StringValue(hostToTorLinkDelay));
+    PointToPointHelper p2pHostToTorMeasurementTraffic;
+    p2pHostToTorMeasurementTraffic.SetDeviceAttribute("DataRate", StringValue(hostToTorLinkRate));
+    p2pHostToTorMeasurementTraffic.SetChannelAttribute("Delay", StringValue(hostToTorLinkDelay));
+
+    PointToPointHelper p2pHostToTorCrossTraffic;
+    p2pHostToTorCrossTraffic.SetDeviceAttribute("DataRate", StringValue(hostToTorLinkRateCrossTraffic));
+    p2pHostToTorCrossTraffic.SetChannelAttribute("Delay", StringValue(hostToTorLinkDelay));
+
 
     for (int i = 0; i < nRacks; i++) {
         vector<NetDeviceContainer> hostsToTors;
         for (int j = 0; j < nHosts; j++) {
-            hostsToTors.push_back(p2pHostToTor.Install(racks[i].Get(j), torSwitches.Get(i)));
+            if (j < nHosts/2) {
+                hostsToTors.push_back(p2pHostToTorMeasurementTraffic.Install(racks[i].Get(j), torSwitches.Get(i)));
+            } else {
+                hostsToTors.push_back(p2pHostToTorCrossTraffic.Install(racks[i].Get(j), torSwitches.Get(i)));
+            }
         }
         hostsToTorsNetDevices.push_back(hostsToTors);
-    }    
+    }
 
     // connecting the Tor Switches to each other
     vector<NetDeviceContainer> torToTorNetDevices;
@@ -207,8 +218,8 @@ int main(int argc, char* argv[])
     // r0h0 -> r1h0
     auto* appTraffic = new BackgroundReplay(racks[0].Get(0), racks[1].Get(0));
     appTraffic->SetPctOfPacedTcps(pctPacedBack);
-    // string tracesPath = "/home/mahdi/Documents/NAL/Data/chicago_2010_traffic_10min_2paths/path0";
-    string tracesPath = "/home/mahdi/Documents/Data/chicago_2010_traffic_10min_2paths/path0";
+    string tracesPath = "/home/mahdi/Documents/NAL/Data/chicago_2010_traffic_10min_2paths/path0";
+    // string tracesPath = "/home/mahdi/Documents/Data/chicago_2010_traffic_10min_2paths/path0";
     if (std::filesystem::exists(tracesPath)) {
         appTraffic->RunAllTraces(tracesPath, 0);
     } else {
@@ -218,8 +229,8 @@ int main(int argc, char* argv[])
     // R0h1 -> R1h1
     auto* appTraffic2 = new BackgroundReplay(racks[0].Get(1), racks[1].Get(1));
     appTraffic2->SetPctOfPacedTcps(pctPacedBack);
-    // string tracesPath2 = "/home/mahdi/Documents/NAL/Data/chicago_2010_traffic_10min_2paths/path1";
-    string tracesPath2 = "/home/mahdi/Documents/Data/chicago_2010_traffic_10min_2paths/path1";
+    string tracesPath2 = "/home/mahdi/Documents/NAL/Data/chicago_2010_traffic_10min_2paths/path1";
+    // string tracesPath2 = "/home/mahdi/Documents/Data/chicago_2010_traffic_10min_2paths/path1";
     if (std::filesystem::exists(tracesPath2)) {
         appTraffic2->RunAllTraces(tracesPath2, 0);
     } else {
@@ -296,6 +307,41 @@ int main(int argc, char* argv[])
     // S3ClientApp.Add(S3ClientHelper.Install(racks[1].Get(2)));
     // S3ClientApp.Start(startTime);
     // S3ClientApp.Stop(stopTime);
+
+    // r0h2 -> r1h2: BulkSendApplication
+    uint16_t port4 = 50003;
+    Address sinkLocalAddress4 = Address(InetSocketAddress(Ipv4Address::GetAny(), port4));
+    PacketSinkHelper sinkHelper4 = PacketSinkHelper("ns3::TcpSocketFactory", sinkLocalAddress4);
+    ApplicationContainer sinkApp4 = sinkHelper4.Install(racks[1].Get(2));
+    Ptr<PacketSink> s4r2PacketSink = sinkApp4.Get(0)->GetObject<PacketSink>();
+    sinkApp4.Start(startTime);
+    sinkApp4.Stop(stopTime);
+    BulkSendHelper S4ClientHelper("ns3::TcpSocketFactory", Address());
+    S4ClientHelper.SetAttribute("MaxBytes", UintegerValue(0));
+    ApplicationContainer S4ClientApp;
+    AddressValue remoteAddress4 = AddressValue(InetSocketAddress(ipsRacks[1][2].GetAddress(0), port4));
+    S4ClientHelper.SetAttribute("Remote", remoteAddress4);
+    S4ClientApp.Add(S4ClientHelper.Install(racks[0].Get(2)));
+    S4ClientApp.Start(startTime);
+    S4ClientApp.Stop(stopTime);
+
+    // r0h3 -> r1h3: BulkSendApplication
+    uint16_t port5 = 50004;
+    Address sinkLocalAddress5 = Address(InetSocketAddress(Ipv4Address::GetAny(), port5));
+    PacketSinkHelper sinkHelper5 = PacketSinkHelper("ns3::TcpSocketFactory", sinkLocalAddress5);
+    ApplicationContainer sinkApp5 = sinkHelper5.Install(racks[1].Get(3));
+    Ptr<PacketSink> s5r2PacketSink = sinkApp5.Get(0)->GetObject<PacketSink>();
+    sinkApp5.Start(startTime);
+    sinkApp5.Stop(stopTime);
+    BulkSendHelper S5ClientHelper("ns3::TcpSocketFactory", Address());
+    S5ClientHelper.SetAttribute("MaxBytes", UintegerValue(0));
+    ApplicationContainer S5ClientApp;
+    AddressValue remoteAddress5 = AddressValue(InetSocketAddress(ipsRacks[1][3].GetAddress(0), port5));
+    S5ClientHelper.SetAttribute("Remote", remoteAddress5);
+    S5ClientApp.Add(S5ClientHelper.Install(racks[0].Get(3)));
+    S5ClientApp.Start(startTime);
+    S5ClientApp.Stop(stopTime);
+
     /* ########## END: Application Setup ########## */
 
 
@@ -364,6 +410,7 @@ int main(int argc, char* argv[])
     //print config parameters
     cout << "Config Parameters" << endl;
     cout << "hostToTorLinkRate: " << hostToTorLinkRate << endl;
+    cout << "hostToTorLinkRateCrossTraffic: " << hostToTorLinkRateCrossTraffic << endl;
     cout << "hostToTorLinkDelay: " << hostToTorLinkDelay << endl;
     cout << "torToAggLinkRate: " << torToAggLinkRate << endl;
     cout << "torToAggLinkDelay: " << torToAggLinkDelay << endl;
@@ -382,6 +429,10 @@ int main(int argc, char* argv[])
     /* ########## START: Scheduling and  Running ########## */
     // DynamicCast<RedQueueDisc>(torTotorQueueDiscs[0].Get(0))->TraceConnectWithoutContext("PacketsInQueue", MakeCallback(&queueDiscSize));
     // DynamicCast<PointToPointNetDevice>(torToTorNetDevices[0].Get(0))->GetQueue()->TraceConnectWithoutContext("PacketsInQueue", MakeCallback(&queueSize));
+
+    // DynamicCast<RedQueueDisc>(hostToTorQueueDiscs[1][3].Get(0))->TraceConnectWithoutContext("Enqueue", MakeCallback(&enqueueDisc));
+    // DynamicCast<PointToPointNetDevice>(hostsToTorsNetDevices[1][3].Get(0))->GetQueue()->TraceConnectWithoutContext("PacketsInQueue", MakeCallback(&queueSize));
+
     Simulator::Stop(stopTime + convergenceTime + convergenceTime);
     Simulator::Run();
     Simulator::Destroy();
