@@ -243,14 +243,25 @@ def delayProcess_consistency_check(flows, rounds_results):
     if kruskal_res.pvalue > 0.05:
         rounds_results['Kruskal'] += 1
 
-def plot_delay_distribution(rate, switches_dfs, common_switch_sample_df):
+def plot_overall_delay_distribution(rate, switches_dfs, common_switch_sample_df):
     # plot the delay distribution of SWitch T0 and Sample T0
     fig, ax = plt.subplots(1, 2)
-    sns.histplot(common_switch_sample_df['SentTime'] - common_switch_sample_df['ReceiveTime'], ax=ax[0])
-    sns.histplot(switches_dfs['T0']['SentTime'] - switches_dfs['T0']['ReceiveTime'], ax=ax[1])
+    sns.histplot(common_switch_sample_df['SentTime'] - common_switch_sample_df['ReceiveTime'], ax=ax[0], bins=100)
+    sns.histplot(switches_dfs['T0']['SentTime'] - switches_dfs['T0']['ReceiveTime'], ax=ax[1], bins=100)
     ax[0].set_title('Sample T0')
     ax[1].set_title('Switch T0')
+    ax[0].set_xlabel('Delay (ns)')
+    ax[1].set_xlabel('Delay (ns)')
     plt.savefig('results/{}/{}_T0_overall_delayDist.png'.format(rate, rate))
+
+def plot_seperate_delay_distribution(rate, flows):
+    fig, ax = plt.subplots(1, 1)
+    for i in range(len(flows)):
+        sns.histplot(np.array(flows[i]['Delay']), ax=ax, label='Flow {}'.format(i), bins=100)
+    plt.legend()
+    ax.set_title('Delay Distribution of Flows')
+    ax.set_xlabel('Delay (ns)')
+    plt.savefig('results/{}/{}_T0_seperate_delayDist.png'.format(rate, rate))
 
 def compatibility_check(confidenceValue, rounds_results, samples_statistics, interLinks_statistics, endToEnd_statistics, flows_name):
     # End to End and Persegment Compatibility Check
@@ -339,7 +350,8 @@ def analyze_single_experiment(rate, steadyStart, steadyEnd, confidenceValue, rou
     delayProcess_consistency_check(flows, rounds_results)
     
     if experiment == 0:
-        plot_delay_distribution(rate, switches_dfs, common_switch_sample_df)
+        plot_overall_delay_distribution(rate, switches_dfs, common_switch_sample_df)
+        plot_seperate_delay_distribution(rate, flows)
 
     compatibility_check(confidenceValue, rounds_results, samples_statistics, interLinks_statistics, endToEnd_statistics, endToEnd_dfs.keys())
 
