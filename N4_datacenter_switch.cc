@@ -247,6 +247,28 @@ int main(int argc, char* argv[])
     //     cout << "requested Background Directory does not exist" << endl;
     // }
 
+    // r0h2 -> r1h2
+    auto* appTraffic4 = new BackgroundReplay(racks[0].Get(2), racks[1].Get(2));
+    appTraffic4->SetPctOfPacedTcps(pctPacedBack);
+    // string tracesPath4 = "/home/mahdi/Documents/NAL/Data/chicago_2010_traffic_10min_2paths/path1";
+    string tracesPath4 = "/home/mahdi/Documents/Data/chicago_2010_traffic_10min_2paths/path1";
+    if (std::filesystem::exists(tracesPath4)) {
+        appTraffic4->RunAllTraces(tracesPath4, 0);
+    } else {
+        cout << "requested Background Directory does not exist" << endl;
+    }
+
+    // r0h3 -> r1h3
+    auto* appTraffic5 = new BackgroundReplay(racks[0].Get(3), racks[1].Get(3));
+    appTraffic5->SetPctOfPacedTcps(pctPacedBack);
+    // string tracesPath5 = "/home/mahdi/Documents/NAL/Data/chicago_2010_traffic_10min_2paths/path0";
+    string tracesPath5 = "/home/mahdi/Documents/Data/chicago_2010_traffic_10min_2paths/path0";
+    if (std::filesystem::exists(tracesPath5)) {
+        appTraffic5->RunAllTraces(tracesPath5, 0);
+    } else {
+        cout << "requested Background Directory does not exist" << endl;
+    }
+
     // NS3 application
     // // r0h1 -> r1h1
     // uint16_t port = 50000;
@@ -309,38 +331,38 @@ int main(int argc, char* argv[])
     // S3ClientApp.Stop(stopTime);
 
     // r0h2 -> r1h2: BulkSendApplication
-    uint16_t port4 = 50003;
-    Address sinkLocalAddress4 = Address(InetSocketAddress(Ipv4Address::GetAny(), port4));
-    PacketSinkHelper sinkHelper4 = PacketSinkHelper("ns3::TcpSocketFactory", sinkLocalAddress4);
-    ApplicationContainer sinkApp4 = sinkHelper4.Install(racks[1].Get(2));
-    Ptr<PacketSink> s4r2PacketSink = sinkApp4.Get(0)->GetObject<PacketSink>();
-    sinkApp4.Start(startTime);
-    sinkApp4.Stop(stopTime);
-    BulkSendHelper S4ClientHelper("ns3::TcpSocketFactory", Address());
-    S4ClientHelper.SetAttribute("MaxBytes", UintegerValue(0));
-    ApplicationContainer S4ClientApp;
-    AddressValue remoteAddress4 = AddressValue(InetSocketAddress(ipsRacks[1][2].GetAddress(0), port4));
-    S4ClientHelper.SetAttribute("Remote", remoteAddress4);
-    S4ClientApp.Add(S4ClientHelper.Install(racks[0].Get(2)));
-    S4ClientApp.Start(startTime);
-    S4ClientApp.Stop(stopTime);
+    // uint16_t port4 = 50003;
+    // Address sinkLocalAddress4 = Address(InetSocketAddress(Ipv4Address::GetAny(), port4));
+    // PacketSinkHelper sinkHelper4 = PacketSinkHelper("ns3::TcpSocketFactory", sinkLocalAddress4);
+    // ApplicationContainer sinkApp4 = sinkHelper4.Install(racks[1].Get(2));
+    // Ptr<PacketSink> s4r2PacketSink = sinkApp4.Get(0)->GetObject<PacketSink>();
+    // sinkApp4.Start(startTime);
+    // sinkApp4.Stop(stopTime);
+    // BulkSendHelper S4ClientHelper("ns3::TcpSocketFactory", Address());
+    // S4ClientHelper.SetAttribute("MaxBytes", UintegerValue(0));
+    // ApplicationContainer S4ClientApp;
+    // AddressValue remoteAddress4 = AddressValue(InetSocketAddress(ipsRacks[1][2].GetAddress(0), port4));
+    // S4ClientHelper.SetAttribute("Remote", remoteAddress4);
+    // S4ClientApp.Add(S4ClientHelper.Install(racks[0].Get(2)));
+    // S4ClientApp.Start(startTime);
+    // S4ClientApp.Stop(stopTime);
 
-    // r0h3 -> r1h3: BulkSendApplication
-    uint16_t port5 = 50004;
-    Address sinkLocalAddress5 = Address(InetSocketAddress(Ipv4Address::GetAny(), port5));
-    PacketSinkHelper sinkHelper5 = PacketSinkHelper("ns3::TcpSocketFactory", sinkLocalAddress5);
-    ApplicationContainer sinkApp5 = sinkHelper5.Install(racks[1].Get(3));
-    Ptr<PacketSink> s5r2PacketSink = sinkApp5.Get(0)->GetObject<PacketSink>();
-    sinkApp5.Start(startTime);
-    sinkApp5.Stop(stopTime);
-    BulkSendHelper S5ClientHelper("ns3::TcpSocketFactory", Address());
-    S5ClientHelper.SetAttribute("MaxBytes", UintegerValue(0));
-    ApplicationContainer S5ClientApp;
-    AddressValue remoteAddress5 = AddressValue(InetSocketAddress(ipsRacks[1][3].GetAddress(0), port5));
-    S5ClientHelper.SetAttribute("Remote", remoteAddress5);
-    S5ClientApp.Add(S5ClientHelper.Install(racks[0].Get(3)));
-    S5ClientApp.Start(startTime);
-    S5ClientApp.Stop(stopTime);
+    // // r0h3 -> r1h3: BulkSendApplication
+    // uint16_t port5 = 50004;
+    // Address sinkLocalAddress5 = Address(InetSocketAddress(Ipv4Address::GetAny(), port5));
+    // PacketSinkHelper sinkHelper5 = PacketSinkHelper("ns3::TcpSocketFactory", sinkLocalAddress5);
+    // ApplicationContainer sinkApp5 = sinkHelper5.Install(racks[1].Get(3));
+    // Ptr<PacketSink> s5r2PacketSink = sinkApp5.Get(0)->GetObject<PacketSink>();
+    // sinkApp5.Start(startTime);
+    // sinkApp5.Stop(stopTime);
+    // BulkSendHelper S5ClientHelper("ns3::TcpSocketFactory", Address());
+    // S5ClientHelper.SetAttribute("MaxBytes", UintegerValue(0));
+    // ApplicationContainer S5ClientApp;
+    // AddressValue remoteAddress5 = AddressValue(InetSocketAddress(ipsRacks[1][3].GetAddress(0), port5));
+    // S5ClientHelper.SetAttribute("Remote", remoteAddress5);
+    // S5ClientApp.Add(S5ClientHelper.Install(racks[0].Get(3)));
+    // S5ClientApp.Start(startTime);
+    // S5ClientApp.Stop(stopTime);
 
     /* ########## END: Application Setup ########## */
 
@@ -367,6 +389,15 @@ int main(int argc, char* argv[])
     // R1h2R1h1Monitor->AddAppKey(AppKey(ipsRacks[1][2].GetAddress(0), ipsRacks[1][0].GetAddress(0), 0, 0));
     // endToendMonitors.push_back(R1h2R1h1Monitor);
 
+    // // r0h2 -> r1h2 Monitor
+    // auto *R0h2R1h2Monitor = new PacketMonitor(startTime, stopTime + convergenceTime, racks[0].Get(2), racks[1].Get(2), "R0h2R1h2");
+    // R0h2R1h2Monitor->AddAppKey(AppKey(ipsRacks[0][2].GetAddress(0), ipsRacks[1][2].GetAddress(0), 0, 0));
+    // endToendMonitors.push_back(R0h2R1h2Monitor);
+
+    // // r0h3 -> r1h3 Monitor
+    // auto *R0h3R1h3Monitor = new PacketMonitor(startTime, stopTime + convergenceTime, racks[0].Get(3), racks[1].Get(3), "R0h3R1h3");
+    // R0h3R1h3Monitor->AddAppKey(AppKey(ipsRacks[0][3].GetAddress(0), ipsRacks[1][3].GetAddress(0), 0, 0));
+    // endToendMonitors.push_back(R0h3R1h3Monitor);
 
     // Switch Monitors
     vector<SwitchMonitor *> switchMonitors;
