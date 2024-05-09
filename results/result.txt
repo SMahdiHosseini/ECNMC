@@ -1,5 +1,3 @@
-[0/2] Re-checking globbed directories...
-ninja: no work to do.
 
 Start
 Hosts and Switches IP addresses
@@ -15,15 +13,15 @@ Config Parameters
 hostToTorLinkRate: 10Mbps
 hostToTorLinkRateCrossTraffic: 40Mbps
 hostToTorLinkDelay: 3ms
-torToAggLinkRate: 81.0Mbps
+torToAggLinkRate: 121.5Mbps
 torToAggLinkDelay: 3ms
 aggToCoreLinkRate: 10Mbps
 aggToCoreLinkDelay: 3ms
-appDataRate: 10Mbps
+appDataRate: 50Mbps
 duration: 10
 pctPacedBack: 0.8
 enableSwitchECN: 1
 enableECMP: 0
 sampleRate: 1000
 Done 
-Total execution time = 65117381 microsecond
+Total execution time = 25414842 microsecond

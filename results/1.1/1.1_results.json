@@ -2,48 +2,40 @@
     "Overall": {
         "samples": {
             "DominantAssumption": {
-                "R0h1R1h1": 87,
-                "R0h0R1h0": 85
+                "R0h1R1h1": 78,
+                "R0h0R1h0": 82
             },
             "General": {
                 "R0h1R1h1": 100,
                 "R0h0R1h0": 100
-            },
-            "General_nonRelative": {
-                "R0h1R1h1": 88,
-                "R0h0R1h0": 85
             }
         }
     },
     "PerTrafficStream": {
         "samples": {
             "DominantAssumption": {
-                "R0h1R1h1": 89,
-                "R0h0R1h0": 95
+                "R0h1R1h1": 100,
+                "R0h0R1h0": 100
             },
             "General": {
                 "R0h1R1h1": 100,
                 "R0h0R1h0": 100
-            },
-            "General_nonRelative": {
-                "R0h1R1h1": 90,
-                "R0h0R1h0": 94
             }
         }
     },
-    "ANOVA": 55,
-    "Kruskal": 41,
+    "ANOVA": 5,
+    "Kruskal": 4,
     "EndToEndMean": {
-        "R0h1R1h1": 49501911.346035145,
-        "R0h0R1h0": 49931888.03175345
+        "R0h1R1h1": 453014901.926887,
+        "R0h0R1h0": 568703494.2307278
     },
     "EndToEndStd": {
-        "R0h1R1h1": 16339580.017968442,
-        "R0h0R1h0": 16621284.984784953
+        "R0h1R1h1": 468172003.50397164,
+        "R0h0R1h0": 670197156.8628517
     },
     "EndToEndSkew": {
-        "R0h1R1h1": -0.48749809326592525,
-        "R0h0R1h0": -0.5131095255975712
+        "R0h1R1h1": 1.916826928698648,
+        "R0h0R1h0": 2.2778501244838663
     },
     "experiments": 100
 }
