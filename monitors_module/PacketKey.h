@@ -11,6 +11,7 @@
 #define FIRST_HEADER_PPP 0
 #define FIRST_HEADER_IPV4 1
 #define FIRST_HEADER_TCP 2
+#define FIRST_HEADER_UDP 3
 
 using namespace ns3;
 using namespace std;

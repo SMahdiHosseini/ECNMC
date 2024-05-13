@@ -43,6 +43,12 @@ void BackgroundReplay::RunAllTraces(const string& tracesPath, uint32_t nbTCPFlow
 void BackgroundReplay::RunAllTraces(const string& tracesPath, uint8_t dscp) {
     uint32_t nbTCPFlows = GetSubDirCount(tracesPath + "/TCP");
     uint32_t nbUDPFlows = GetSubDirCount(tracesPath + "/UDP");
+    this->RunAllTraces(tracesPath, nbTCPFlows, nbUDPFlows, dscp);
+}
+
+void BackgroundReplay::RunAllTCPTraces(const string& tracesPath, uint8_t dscp) {
+    uint32_t nbTCPFlows = GetSubDirCount(tracesPath + "/TCP");
+    uint32_t nbUDPFlows = GetSubDirCount(tracesPath + "/UDP");
     // in datacenter setting we do not have UDP flows
     nbUDPFlows = 0;
     this->RunAllTraces(tracesPath, nbTCPFlows, nbUDPFlows, dscp);

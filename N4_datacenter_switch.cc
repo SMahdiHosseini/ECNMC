@@ -221,7 +221,7 @@ int main(int argc, char* argv[])
     // string tracesPath = "/home/mahdi/Documents/NAL/Data/chicago_2010_traffic_10min_2paths/path0";
     string tracesPath = "/home/mahdi/Documents/Data/chicago_2010_traffic_10min_2paths/path0";
     if (std::filesystem::exists(tracesPath)) {
-        appTraffic->RunAllTraces(tracesPath, 0);
+        appTraffic->RunAllTCPTraces(tracesPath, 0);
     } else {
         cout << "requested Background Directory does not exist" << endl;
     }
@@ -232,7 +232,7 @@ int main(int argc, char* argv[])
     // string tracesPath2 = "/home/mahdi/Documents/NAL/Data/chicago_2010_traffic_10min_2paths/path1";
     string tracesPath2 = "/home/mahdi/Documents/Data/chicago_2010_traffic_10min_2paths/path1";
     if (std::filesystem::exists(tracesPath2)) {
-        appTraffic2->RunAllTraces(tracesPath2, 0);
+        appTraffic2->RunAllTCPTraces(tracesPath2, 0);
     } else {
         cout << "requested Background Directory does not exist" << endl;
     }
@@ -373,7 +373,7 @@ int main(int argc, char* argv[])
     ns3::PacketMetadata::Enable();
 
     // End to End Monitors
-    vector<PacketMonitor *> endToendMonitors;
+    vector<PacketMonitor *> endToendMonitors, endToEndCrossMonior;
     // r0h0 -> r1h0 Monitor
     auto *R0h0R1h0Monitor = new PacketMonitor(startTime, stopTime + convergenceTime, racks[0].Get(0), racks[1].Get(0), "R0h0R1h0");
     R0h0R1h0Monitor->AddAppKey(AppKey(ipsRacks[0][0].GetAddress(0), ipsRacks[1][0].GetAddress(0), 0, 0));
@@ -389,15 +389,15 @@ int main(int argc, char* argv[])
     // R1h2R1h1Monitor->AddAppKey(AppKey(ipsRacks[1][2].GetAddress(0), ipsRacks[1][0].GetAddress(0), 0, 0));
     // endToendMonitors.push_back(R1h2R1h1Monitor);
 
-    // // r0h2 -> r1h2 Monitor
-    // auto *R0h2R1h2Monitor = new PacketMonitor(startTime, stopTime + convergenceTime, racks[0].Get(2), racks[1].Get(2), "R0h2R1h2");
-    // R0h2R1h2Monitor->AddAppKey(AppKey(ipsRacks[0][2].GetAddress(0), ipsRacks[1][2].GetAddress(0), 0, 0));
-    // endToendMonitors.push_back(R0h2R1h2Monitor);
+    // r0h2 -> r1h2 Monitor
+    auto *R0h2R1h2Monitor = new PacketMonitor(startTime, stopTime + convergenceTime, racks[0].Get(2), racks[1].Get(2), "R0h2R1h2");
+    R0h2R1h2Monitor->AddAppKey(AppKey(ipsRacks[0][2].GetAddress(0), ipsRacks[1][2].GetAddress(0), 0, 0));
+    endToEndCrossMonior.push_back(R0h2R1h2Monitor);
 
-    // // r0h3 -> r1h3 Monitor
-    // auto *R0h3R1h3Monitor = new PacketMonitor(startTime, stopTime + convergenceTime, racks[0].Get(3), racks[1].Get(3), "R0h3R1h3");
-    // R0h3R1h3Monitor->AddAppKey(AppKey(ipsRacks[0][3].GetAddress(0), ipsRacks[1][3].GetAddress(0), 0, 0));
-    // endToendMonitors.push_back(R0h3R1h3Monitor);
+    // r0h3 -> r1h3 Monitor
+    auto *R0h3R1h3Monitor = new PacketMonitor(startTime, stopTime + convergenceTime, racks[0].Get(3), racks[1].Get(3), "R0h3R1h3");
+    R0h3R1h3Monitor->AddAppKey(AppKey(ipsRacks[0][3].GetAddress(0), ipsRacks[1][3].GetAddress(0), 0, 0));
+    endToEndCrossMonior.push_back(R0h3R1h3Monitor);
 
     // Switch Monitors
     vector<SwitchMonitor *> switchMonitors;
@@ -476,6 +476,9 @@ int main(int argc, char* argv[])
     }
     for (auto sampler: poissonSamplers) {
         sampler->SaveSamples((string) (getenv("PWD")) + "/results/" + sampler->GetSampleTag() + "_PoissonSampler.csv");
+    }
+    for (auto monitor: endToEndCrossMonior){
+        monitor->SavePacketRecords((string) (getenv("PWD")) + "/results/" + monitor->GetMonitorTag() + "_EndToEnd_crossTraffic.csv");
     }
     /* ########## END: Scheduling and  Running ########## */
 

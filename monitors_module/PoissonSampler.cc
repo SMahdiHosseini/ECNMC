@@ -69,8 +69,13 @@ void PoissonSampler::EventHandler() {
     // check the quque disc size
     if (REDQueueDisc->GetNPackets() > 0) {
         // extract transport layer info
-        packetKey = PacketKey::Packet2PacketKey(lastItem->GetPacket(), FIRST_HEADER_TCP);
         Ipv4Header ipHeader = DynamicCast<const Ipv4QueueDiscItem>(lastItem)->GetHeader();
+        if (ipHeader.GetProtocol() == 6){
+            packetKey = PacketKey::Packet2PacketKey(lastItem->GetPacket(), FIRST_HEADER_TCP);
+        }
+        else {
+            packetKey = PacketKey::Packet2PacketKey(lastItem->GetPacket(), FIRST_HEADER_UDP);
+        }
         packetKey->SetId(ipHeader.GetIdentification());
         packetKey->SetSrcIp(ipHeader.GetSource());
         packetKey->SetDstIp(ipHeader.GetDestination());

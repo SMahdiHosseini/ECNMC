@@ -152,7 +152,7 @@ def ECNMC(endToEnd_delayMean, sumOfSegments_DelayMeans, endToEnd_delayStd, MinSa
         return False
 
 def ECNMC_V2(endToEnd_delayMean, sumOfSegments_DelayMeans, maxEpsilon):
-    if abs(endToEnd_delayMean - sumOfSegments_DelayMeans) / endToEnd_delayMean <= maxEpsilon:
+    if abs(endToEnd_delayMean - sumOfSegments_DelayMeans) / sumOfSegments_DelayMeans <= maxEpsilon:
         return True
     else:  
         return False
@@ -224,9 +224,9 @@ def prepare_results(flows):
         # rounds_results['PerTrafficStream']['groundtruth']['General'][flow] = 0
         rounds_results['PerTrafficStream']['samples']['DominantAssumption'][flow] = 0
         rounds_results['PerTrafficStream']['samples']['General'][flow] = 0
-        rounds_results['EndToEndMean'][flow] = 0
-        rounds_results['EndToEndStd'][flow] = 0
-        rounds_results['EndToEndSkew'][flow] = 0
+        rounds_results['EndToEndMean'][flow] = []
+        rounds_results['EndToEndStd'][flow] = []
+        rounds_results['EndToEndSkew'][flow] = []
 
     rounds_results['experiments'] = 0
     return rounds_results
@@ -253,6 +253,7 @@ def plot_overall_delay_distribution(rate, switches_dfs, common_switch_sample_df)
     ax[0].set_xlabel('Delay (ns)')
     ax[1].set_xlabel('Delay (ns)')
     plt.savefig('results/{}/{}_T0_overall_delayDist.png'.format(rate, rate))
+    plt.close()
 
 def plot_seperate_delay_distribution(rate, flows):
     fig, ax = plt.subplots(1, 1)
@@ -262,6 +263,7 @@ def plot_seperate_delay_distribution(rate, flows):
     ax.set_title('Delay Distribution of Flows')
     ax.set_xlabel('Delay (ns)')
     plt.savefig('results/{}/{}_T0_seperate_delayDist.png'.format(rate, rate))
+    plt.close()
 
 def compatibility_check(confidenceValue, rounds_results, samples_statistics, interLinks_statistics, endToEnd_statistics, flows_name):
     # End to End and Persegment Compatibility Check
@@ -341,9 +343,9 @@ def analyze_single_experiment(rate, steadyStart, steadyEnd, confidenceValue, rou
     endToEnd_statistics = {}
     for flow in endToEnd_dfs.keys():
         endToEnd_statistics[flow] = get_statistics(endToEnd_dfs[flow])
-        rounds_results['EndToEndMean'][flow] += endToEnd_statistics[flow]['DelayMean']
-        rounds_results['EndToEndStd'][flow] += endToEnd_statistics[flow]['DelayStd']
-        rounds_results['EndToEndSkew'][flow] += endToEnd_statistics[flow]['DelaySkew']
+        rounds_results['EndToEndMean'][flow].append(endToEnd_statistics[flow]['DelayMean'])
+        rounds_results['EndToEndStd'][flow].append(endToEnd_statistics[flow]['DelayStd'])
+        rounds_results['EndToEndSkew'][flow].append(endToEnd_statistics[flow]['DelaySkew'])
 
     rounds_results['experiments'] += 1
 
@@ -362,9 +364,9 @@ def analyze_all_experiments(rate, steadyStart, steadyEnd, confidenceValue, exper
     for experiment in range(experiments):
         analyze_single_experiment(rate, steadyStart, steadyEnd, confidenceValue, rounds_results, experiment, ns3_path)
     
-    rounds_results['EndToEndMean'] = {key: value / experiments for key, value in rounds_results['EndToEndMean'].items()}
-    rounds_results['EndToEndStd'] = {key: value / experiments for key, value in rounds_results['EndToEndStd'].items()}
-    rounds_results['EndToEndSkew'] = {key: value / experiments for key, value in rounds_results['EndToEndSkew'].items()}
+    # rounds_results['EndToEndMean'] = {key: value / experiments for key, value in rounds_results['EndToEndMean'].items()}
+    # rounds_results['EndToEndStd'] = {key: value / experiments for key, value in rounds_results['EndToEndStd'].items()}
+    # rounds_results['EndToEndSkew'] = {key: value / experiments for key, value in rounds_results['EndToEndSkew'].items()}
     
     with open('results/{}/{}_results.json'.format(rate,rate), 'w') as f:
         # save the results in a well formatted json file

@@ -97,7 +97,7 @@ PacketKey* PacketKey::Packet2PacketKey(Ptr<const Packet> packet, uint8_t firstHe
     uint32_t size = 0;
     hash<string> hasher;
     size_t payloadHash = 0;
-    if(ipHeader.GetProtocol() == 6 || ipHeader.GetProtocol() == 0){
+    if(ipHeader.GetProtocol() == 6 || firstHeaderType == FIRST_HEADER_TCP){
         TcpHeader tcpHeader;
         pktCopy->RemoveHeader(tcpHeader);
         srcPort = tcpHeader.GetSourcePort();
@@ -108,7 +108,7 @@ PacketKey* PacketKey::Packet2PacketKey(Ptr<const Packet> packet, uint8_t firstHe
         payloadHash = hasher(pktCopy->ToString());
         pktCopy->AddHeader(tcpHeader);
     }
-    else if (ipHeader.GetProtocol() == 17) {
+    else if (ipHeader.GetProtocol() == 17 || firstHeaderType == FIRST_HEADER_UDP) {
         UdpHeader udpHeader;
         pktCopy->RemoveHeader(udpHeader);
         srcPort = udpHeader.GetSourcePort();
