@@ -198,11 +198,11 @@ def prepare_results(flows):
     rounds_results = {}
     rounds_results['Overall'] = {}
     rounds_results['PerTrafficStream'] = {}
-    # rounds_results['Overall']['groundtruth'] = {}
+    rounds_results['Overall']['groundtruth'] = {}
     rounds_results['Overall']['samples'] = {}
     # rounds_results['PerTrafficStream']['groundtruth'] = {}
     rounds_results['PerTrafficStream']['samples'] = {}
-    # rounds_results['Overall']['groundtruth']['DominantAssumption'] = {}
+    rounds_results['Overall']['groundtruth']['DominantAssumption'] = {}
     # rounds_results['Overall']['groundtruth']['General'] = {}
     rounds_results['Overall']['samples']['DominantAssumption'] = {}
     rounds_results['Overall']['samples']['General'] = {}
@@ -215,8 +215,9 @@ def prepare_results(flows):
     rounds_results['EndToEndMean'] = {}
     rounds_results['EndToEndStd'] = {}
     rounds_results['EndToEndSkew'] = {}
+    rounds_results['EndToEndStd_sumstdi'] = {}
     for flow in flows:
-        # rounds_results['Overall']['groundtruth']['DominantAssumption'][flow] = 0
+        rounds_results['Overall']['groundtruth']['DominantAssumption'][flow] = 0
         # rounds_results['Overall']['groundtruth']['General'][flow] = 0
         rounds_results['Overall']['samples']['DominantAssumption'][flow] = 0
         rounds_results['Overall']['samples']['General'][flow] = 0
@@ -227,6 +228,7 @@ def prepare_results(flows):
         rounds_results['EndToEndMean'][flow] = []
         rounds_results['EndToEndStd'][flow] = []
         rounds_results['EndToEndSkew'][flow] = []
+        rounds_results['EndToEndStd_sumstdi'][flow] = []
 
     rounds_results['experiments'] = 0
     return rounds_results
@@ -265,19 +267,30 @@ def plot_seperate_delay_distribution(rate, flows):
     plt.savefig('results/{}/{}_T0_seperate_delayDist.png'.format(rate, rate))
     plt.close()
 
-def compatibility_check(confidenceValue, rounds_results, samples_statistics, interLinks_statistics, endToEnd_statistics, flows_name):
+def plot_endToEnd_delay_distribution(rate, endToEnd_dfs):
+    fig, ax = plt.subplots(1, 1)
+    for flow in endToEnd_dfs.keys():
+        endToEnd_dfs[flow]['Delay'] = abs(endToEnd_dfs[flow]['ReceiveTime'] - endToEnd_dfs[flow]['SentTime'])
+        sns.histplot(np.array(endToEnd_dfs[flow]['Delay']), ax=ax, label='Flow {}'.format(flow), bins=100)
+    plt.legend()
+    ax.set_title('End To End Delay Distribution of Flows')
+    ax.set_xlabel('Delay (ns)')
+    plt.savefig('results/{}/{}_EndToEnd_delayDist.png'.format(rate, rate))
+    plt.close()
+
+def compatibility_check(confidenceValue, rounds_results, samples_statistics, interLinks_statistics, endToEnd_statistics, groundtruth_statistics, flows_name):
     # End to End and Persegment Compatibility Check
     results = {}
     results['Overall'] = {}
     results['PerTrafficStream'] = {}
-    # results['Overall']['groundtruth'] = check_all_delayConsistency(endToEnd_statistics, groundtruth_statistics['Overall'], interLinks_statistics, confidenceValue)
+    results['Overall']['groundtruth'] = check_all_delayConsistency(endToEnd_statistics, groundtruth_statistics['Overall'], interLinks_statistics, confidenceValue)
     results['Overall']['samples'] = check_all_delayConsistency(endToEnd_statistics, samples_statistics['Overall'], interLinks_statistics, confidenceValue)
     # results['PerTrafficStream']['groundtruth'] = check_all_delayConsistency(endToEnd_statistics, groundtruth_statistics['PerTrafficStream'], interLinks_statistics, confidenceValue)
     results['PerTrafficStream']['samples'] = check_all_delayConsistency(endToEnd_statistics, samples_statistics['PerTrafficStream'], interLinks_statistics, confidenceValue)
 
     for flow in flows_name:
-        # if results['Overall']['groundtruth']['DominantAssumption'][flow]:
-        #     rounds_results['Overall']['groundtruth']['DominantAssumption'][flow] += 1
+        if results['Overall']['groundtruth']['DominantAssumption'][flow]:
+            rounds_results['Overall']['groundtruth']['DominantAssumption'][flow] += 1
         # if results['Overall']['groundtruth']['General'][flow]:
         #     rounds_results['Overall']['groundtruth']['General'][flow] += 1
         if results['Overall']['samples']['DominantAssumption'][flow]:
@@ -329,9 +342,12 @@ def analyze_single_experiment(rate, steadyStart, steadyEnd, confidenceValue, rou
 
     flows = []
     for flow in endToEnd_dfs.keys():
-        # groundtruth_statistics['Overall'][flow] = {}
-        # groundtruth_statistics['Overall'][flow]['T0'] = get_statistics(switches_dfs['T0'])
-        # groundtruth_statistics['Overall'][flow]['T1'] = get_statistics(switches_dfs['T1'])
+        groundtruth_statistics['Overall'][flow] = {}
+        groundtruth_statistics['Overall'][flow]['T0'] = get_statistics(switches_dfs['T0'])
+        groundtruth_statistics['Overall'][flow]['T1'] = get_statistics(switches_dfs['T1'])
+        groundtruth_statistics['Overall'][flow]['T0']['sampleSize'] = samples_statistics['Overall'][flow]['T0']['sampleSize']
+        groundtruth_statistics['Overall'][flow]['T1']['sampleSize'] = samples_statistics['Overall'][flow]['T1']['sampleSize']
+
 
         # groundtruth_statistics['PerTrafficStream'][flow] = {}
         flow_on_switch = switch_data(endToEnd_dfs[flow].drop(columns=['SentTime', 'ReceiveTime']), switches_dfs['T0'], False)
@@ -346,6 +362,8 @@ def analyze_single_experiment(rate, steadyStart, steadyEnd, confidenceValue, rou
         rounds_results['EndToEndMean'][flow].append(endToEnd_statistics[flow]['DelayMean'])
         rounds_results['EndToEndStd'][flow].append(endToEnd_statistics[flow]['DelayStd'])
         rounds_results['EndToEndSkew'][flow].append(endToEnd_statistics[flow]['DelaySkew'])
+        sum_std = sum([value['DelayStd'] for value in interLinks_statistics[flow].values()] + [value['DelayStd'] for value in groundtruth_statistics['Overall'][flow].values()])
+        rounds_results['EndToEndStd_sumstdi'][flow].append(endToEnd_statistics[flow]['DelayStd']/sum_std)
 
     rounds_results['experiments'] += 1
 
@@ -354,8 +372,9 @@ def analyze_single_experiment(rate, steadyStart, steadyEnd, confidenceValue, rou
     if experiment == 0:
         plot_overall_delay_distribution(rate, switches_dfs, common_switch_sample_df)
         plot_seperate_delay_distribution(rate, flows)
+        plot_endToEnd_delay_distribution(rate, endToEnd_dfs)
 
-    compatibility_check(confidenceValue, rounds_results, samples_statistics, interLinks_statistics, endToEnd_statistics, endToEnd_dfs.keys())
+    compatibility_check(confidenceValue, rounds_results, samples_statistics, interLinks_statistics, endToEnd_statistics, groundtruth_statistics, endToEnd_dfs.keys())
 
 def analyze_all_experiments(rate, steadyStart, steadyEnd, confidenceValue, experiments=3, ns3_path=__ns3_path):
     flows_name = read_data_flowIndicator(ns3_path, rate)
@@ -405,7 +424,7 @@ def __main__():
     print("sampleRate", sampleRate)
     print("experiments: ", experiments)
     print("serviceRateScales: ", serviceRateScales)
-
+    serviceRateScales = [0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1.0, 1.05, 1.1, 1.15, 1.2, 1.25, 1.3, 1.35]
 
     for rate in serviceRateScales:
         print("\nAnalyzing experiments for rate: ", rate)

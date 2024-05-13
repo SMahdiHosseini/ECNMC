@@ -31,7 +31,8 @@ __ns3_path = os.popen('locate "ns-3.41" | grep /ns-3.41$').read().splitlines()[0
 
 config = configparser.ConfigParser()
 config.read('Parameters.config')
-serviceRateScales = [float(x) for x in config.get('Settings', 'serviceRateScales').split(',')]
+# serviceRateScales = [float(x) for x in config.get('Settings', 'serviceRateScales').split(',')]
+serviceRateScales = [0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1.0, 1.05, 1.1, 1.15, 1.2, 1.25, 1.3, 1.35]
 print("serviceRateScales: ", serviceRateScales)
 
 
@@ -52,23 +53,115 @@ plt.savefig('results/ANOVA_Kruskal.png')
 plt.clf()
 
 flows = results[list(results.keys())[0]]['EndToEndSkew']
+# claculate Coefficient of Variation for each flow for each service rate scale
+for key in results.keys():
+    results[key]['EndToEndCV'] = {}
+    for flow in flows:
+        results[key]['EndToEndCV'][flow] = [results[key]['EndToEndStd'][flow][i] / results[key]['EndToEndMean'][flow][i] for i in range(len(results[key]['EndToEndMean'][flow]))]
 
-# plot the sqrt of EndToEndStd 
+# plot the EndToEndStd per flow per service rate scale. The end to end std is a list, thus we need to have error bars
 for flow in flows:
-    plt.plot(results.keys(), [value['EndToEndStd'][flow] / value['EndToEndMean'][flow] for value in results.values()])
+    plt.errorbar(list(results.keys()), [np.mean(value['EndToEndStd'][flow]) for value in results.values()], yerr=[np.std(value['EndToEndStd'][flow]) for value in results.values()], fmt='-o')
 plt.legend(flows)
 plt.xticks(list(results.keys()))
 plt.xlabel('Service Rate Scale')
-plt.ylabel('EndToEndStd')
-plt.title('EndToEndStd for Different Service Rate Scales')
+plt.ylabel('End To End Delay Std')
+plt.title('End To End Delay Std for Different Service Rate Scales')
 plt.savefig('results/EndToEndStd.png')
 plt.clf()
 
-# for flow in flows:
-#     plt.plot([value['EndToEndStd'][flow] / value['EndToEndMean'][flow] for value in results.values()], [value['Overall']['samples']['DominantAssumption'][flow] for value in results.values()], 'o')
+# plot the EndToEndMean per flow per service rate scale. The end to end mean is a list, thus we need to have error bars
+for flow in flows:
+    plt.errorbar(list(results.keys()), [np.mean(value['EndToEndMean'][flow]) for value in results.values()], yerr=[np.std(value['EndToEndMean'][flow]) for value in results.values()], fmt='-o')
+plt.legend(flows)
+plt.xticks(list(results.keys()))
+plt.xlabel('Service Rate Scale')
+plt.ylabel('End To End Delay Mean')
+plt.title('End To End Delay Mean for Different Service Rate Scales')
+plt.savefig('results/EndToEndMean.png')
+plt.clf()
 
-# plt.legend(flows)
-# plt.xlabel('End to End std')
-# plt.ylabel('Dominant Assumption Success Rate (%)')
-# plt.title('Dominant Assumption Success Rate for Different End to End std')
-# plt.savefig('results/DominantAssumption.png')
+# plot the EndToEndSkew per flow per service rate scale. The end to end skew is a list, thus we need to have error bars
+for flow in flows:
+    plt.errorbar(list(results.keys()), [np.mean(value['EndToEndSkew'][flow]) for value in results.values()], yerr=[np.std(value['EndToEndSkew'][flow]) for value in results.values()], fmt='-o')
+plt.legend(flows)
+plt.xticks(list(results.keys()))
+plt.xlabel('Service Rate Scale')
+plt.ylabel('End To End Delay Skew')
+plt.title('End To End Delay Skew for Different Service Rate Scales')
+plt.savefig('results/EndToEndSkew.png')
+plt.clf()
+
+# plot the EndToEndCV per flow per service rate scale. The end to end cv is a list, thus we need to have error bars
+for flow in flows:
+    plt.errorbar(list(results.keys()), [np.mean(value['EndToEndCV'][flow]) for value in results.values()], yerr=[np.std(value['EndToEndCV'][flow]) for value in results.values()], fmt='-o')
+plt.legend(flows)
+plt.xticks(list(results.keys()))
+plt.xlabel('Service Rate Scale')
+plt.ylabel('End To End Delay CV')
+plt.title('End To End Delay CV for Different Service Rate Scales')
+plt.savefig('results/EndToEndCV.png')
+plt.clf()
+
+# plot the Dominant Assumption Success Rate per flow per service rate scale
+for flow in flows:
+    plt.plot(list(results.keys()), [value['Overall']['samples']['DominantAssumption'][flow] for value in results.values()], '-o')
+
+plt.legend(flows)
+plt.xlabel('Service Rate Scale')
+plt.ylabel('Dominant Assumption Success Rate (%)')
+plt.title('Dominant Assumption Success Rate for Different Service Rate Scales')
+plt.savefig('results/DominantAssumption_perServiceRateScale.png')
+plt.clf()
+
+# plot the Dominant Assumption Success Rate per flow per std. The end to end std is a list, thus we need to have error bars
+for flow in flows:
+    plt.errorbar([np.mean(value['EndToEndStd'][flow]) for value in results.values()], [value['Overall']['samples']['DominantAssumption'][flow] for value in results.values()], xerr=[np.std(value['EndToEndStd'][flow]) for value in results.values()], fmt='-o')
+plt.legend(flows)
+plt.xlabel('End To End Delay Std')
+plt.ylabel('Dominant Assumption Success Rate (%)')
+plt.title('Dominant Assumption Success Rate for Different End To End Delay Stds')
+plt.savefig('results/DominantAssumption_perEndToEndStd.png')
+plt.clf()
+
+# plot the Dominant Assumption Success Rate per flow per skew. The end to end skew is a list, thus we need to have error bars
+for flow in flows:
+    plt.errorbar([np.mean(value['EndToEndSkew'][flow]) for value in results.values()], [value['Overall']['samples']['DominantAssumption'][flow] for value in results.values()], xerr=[np.std(value['EndToEndSkew'][flow]) for value in results.values()], fmt='o')
+plt.legend(flows)
+plt.xlabel('End To End Delay Skew')
+plt.ylabel('Dominant Assumption Success Rate (%)')
+plt.title('Dominant Assumption Success Rate for Different End To End Delay Skews')
+plt.savefig('results/DominantAssumption_perEndToEndSkew.png')
+plt.clf()
+
+# plot the Dominant Assumption Success Rate per flow per CV. The end to end cv is a list, thus we need to have error bars
+for flow in flows:
+    plt.errorbar([np.mean(value['EndToEndCV'][flow]) for value in results.values()], [value['Overall']['samples']['DominantAssumption'][flow] for value in results.values()], xerr=[np.std(value['EndToEndCV'][flow]) for value in results.values()], fmt='o')
+plt.legend(flows)
+plt.xlabel('End To End Delay CV')
+plt.ylabel('Dominant Assumption Success Rate (%)')
+plt.title('Dominant Assumption Success Rate for Different End To End Delay CVs')
+plt.savefig('results/DominantAssumption_perEndToEndCV.png')
+plt.clf()
+
+# plot the Dominant Assumption Success Rate per flow per EndToEndStd_sumstdi. The EndToEndStd_sumstdi is a list, thus we need to have error bars
+for flow in flows:
+    plt.errorbar([np.mean(value['EndToEndStd_sumstdi'][flow]) for value in results.values()], [value['Overall']['samples']['DominantAssumption'][flow] for value in results.values()], xerr=[np.std(value['EndToEndStd_sumstdi'][flow]) for value in results.values()], fmt='-o')
+plt.legend(flows)
+plt.xlabel('EndToEndStd_sumstdi')
+plt.ylabel('Dominant Assumption Success Rate (%)')
+plt.title('Dominant Assumption Success Rate for Different EndToEndStd_sumstdi')
+plt.savefig('results/DominantAssumption_EndToEndStd_sumstdi.png')
+plt.clf()
+
+# plot EndToEndStd_sumstdi per flow per service rate scale 
+for flow in flows:
+    plt.errorbar(list(results.keys()), [np.mean(value['EndToEndStd_sumstdi'][flow]) for value in results.values()], yerr=[np.std(value['EndToEndStd_sumstdi'][flow]) for value in results.values()], fmt='-o')
+plt.legend(flows)
+plt.xticks(list(results.keys()))
+plt.xlabel('Service Rate Scale')
+plt.ylabel('EndToEndStd_sumstdi')
+plt.title('EndToEndStd_sumstdifor Different Service Rate Scales')
+plt.savefig('results/EndToEndStd_sumstdi.png')
+plt.clf()
+
