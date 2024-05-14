@@ -31,8 +31,8 @@ __ns3_path = os.popen('locate "ns-3.41" | grep /ns-3.41$').read().splitlines()[0
 
 config = configparser.ConfigParser()
 config.read('Parameters.config')
-# serviceRateScales = [float(x) for x in config.get('Settings', 'serviceRateScales').split(',')]
-serviceRateScales = [0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1.0, 1.05, 1.1, 1.15, 1.2, 1.25, 1.3, 1.35]
+serviceRateScales = [float(x) for x in config.get('Settings', 'serviceRateScales').split(',')]
+# serviceRateScales = [0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1.0, 1.05, 1.1, 1.15, 1.2, 1.25, 1.3, 1.35]
 print("serviceRateScales: ", serviceRateScales)
 
 

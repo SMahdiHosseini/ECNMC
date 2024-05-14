@@ -13,7 +13,7 @@ Config Parameters
 hostToTorLinkRate: 10Mbps
 hostToTorLinkRateCrossTraffic: 40Mbps
 hostToTorLinkDelay: 3ms
-torToAggLinkRate: 124.0Mbps
+torToAggLinkRate: 144.0Mbps
 torToAggLinkDelay: 3ms
 aggToCoreLinkRate: 10Mbps
 aggToCoreLinkDelay: 3ms
@@ -23,3 +23,5 @@ pctPacedBack: 0.8
 enableSwitchECN: 1
 enableECMP: 0
 sampleRate: 1000
+Done 
+Total execution time = 38567442 microsecond

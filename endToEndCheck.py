@@ -381,6 +381,9 @@ def analyze_all_experiments(rate, steadyStart, steadyEnd, confidenceValue, exper
 
     rounds_results = prepare_results(flows_name)
     for experiment in range(experiments):
+        if len(os.listdir('{}/scratch/Results/{}/{}'.format(__ns3_path, rate, experiment))) == 0:
+            print(experiment)
+            continue
         analyze_single_experiment(rate, steadyStart, steadyEnd, confidenceValue, rounds_results, experiment, ns3_path)
     
     # rounds_results['EndToEndMean'] = {key: value / experiments for key, value in rounds_results['EndToEndMean'].items()}
@@ -424,7 +427,7 @@ def __main__():
     print("sampleRate", sampleRate)
     print("experiments: ", experiments)
     print("serviceRateScales: ", serviceRateScales)
-    serviceRateScales = [0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1.0, 1.05, 1.1, 1.15, 1.2, 1.25, 1.3, 1.35]
+    # serviceRateScales = [0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1.0, 1.05, 1.1, 1.15, 1.2, 1.25, 1.3, 1.35]
 
     for rate in serviceRateScales:
         print("\nAnalyzing experiments for rate: ", rate)
