@@ -216,6 +216,7 @@ def prepare_results(flows):
     rounds_results['EndToEndStd'] = {}
     rounds_results['EndToEndSkew'] = {}
     rounds_results['EndToEndStd_sumstdi'] = {}
+    rounds_results['EndToEndStd2_sumstdi2'] = {}
     for flow in flows:
         rounds_results['Overall']['groundtruth']['DominantAssumption'][flow] = 0
         # rounds_results['Overall']['groundtruth']['General'][flow] = 0
@@ -229,6 +230,7 @@ def prepare_results(flows):
         rounds_results['EndToEndStd'][flow] = []
         rounds_results['EndToEndSkew'][flow] = []
         rounds_results['EndToEndStd_sumstdi'][flow] = []
+        rounds_results['EndToEndStd2_sumstdi2'][flow] = []
 
     rounds_results['experiments'] = 0
     return rounds_results
@@ -363,7 +365,9 @@ def analyze_single_experiment(rate, steadyStart, steadyEnd, confidenceValue, rou
         rounds_results['EndToEndStd'][flow].append(endToEnd_statistics[flow]['DelayStd'])
         rounds_results['EndToEndSkew'][flow].append(endToEnd_statistics[flow]['DelaySkew'])
         sum_std = sum([value['DelayStd'] for value in interLinks_statistics[flow].values()] + [value['DelayStd'] for value in groundtruth_statistics['Overall'][flow].values()])
-        rounds_results['EndToEndStd_sumstdi'][flow].append(endToEnd_statistics[flow]['DelayStd']/sum_std)
+        sum_std2 = sum([value['DelayStd'] ** 2 for value in interLinks_statistics[flow].values()] + [value['DelayStd'] ** 2 for value in groundtruth_statistics['Overall'][flow].values()])
+        rounds_results['EndToEndStd_sumstdi'][flow].append(endToEnd_statistics[flow]['DelayStd'] / sum_std)
+        rounds_results['EndToEndStd2_sumstdi2'][flow].append(endToEnd_statistics[flow]['DelayStd'] ** 2 / sum_std2)
 
     rounds_results['experiments'] += 1
 

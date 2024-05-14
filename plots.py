@@ -161,7 +161,17 @@ plt.legend(flows)
 plt.xticks(list(results.keys()))
 plt.xlabel('Service Rate Scale')
 plt.ylabel('EndToEndStd_sumstdi')
-plt.title('EndToEndStd_sumstdifor Different Service Rate Scales')
+plt.title('EndToEndStd_sumstdi for Different Service Rate Scales')
 plt.savefig('results/EndToEndStd_sumstdi.png')
 plt.clf()
 
+# plot EndToEndStd2_sumstdi2 per flow per service rate scale 
+for flow in flows:
+    plt.errorbar(list(results.keys()), [np.mean(value['EndToEndStd2_sumstdi2'][flow]) for value in results.values()], yerr=[np.std(value['EndToEndStd2_sumstdi2'][flow]) for value in results.values()], fmt='-o')
+plt.legend(flows)
+plt.xticks(list(results.keys()))
+plt.xlabel('Service Rate Scale')
+plt.ylabel('EndToEndStd2_sumstdi2')
+plt.title('EndToEndStd2_sumstdi2 for Different Service Rate Scales')
+plt.savefig('results/EndToEndStd2_sumstdi2.png')
+plt.clf()
