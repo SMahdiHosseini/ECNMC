@@ -29,6 +29,7 @@ PoissonSampler::PoissonSampler(const Time &startTime, const Time &duration, Ptr<
     m_var->SetAttribute("Mean", DoubleValue(1/sampleRate));
     _sampleRate = sampleRate;
     zeroDelayPort = 0;
+    droppedPackets = 0;
 
     Simulator::Schedule(_startTime, &PoissonSampler::Connect, this, outgoingNetDevice);
     Simulator::Schedule(_startTime + _duration, &PoissonSampler::Disconnect, this, outgoingNetDevice);
@@ -64,6 +65,8 @@ void PoissonSampler::Disconnect(Ptr<PointToPointNetDevice> outgoingNetDevice) {
 }
 
 void PoissonSampler::EventHandler() {
+    QueueDisc::Stats st = REDQueueDisc->GetStats();
+    droppedPackets = st.GetNDroppedPackets(RedQueueDisc::UNFORCED_DROP) + st.GetNDroppedPackets(RedQueueDisc::FORCED_DROP) + st.GetNDroppedPackets(QueueDisc::INTERNAL_QUEUE_DROP);
     PacketKey* packetKey;
     bool zeroDelay = false;
     // check the quque disc size
@@ -133,6 +136,7 @@ void PoissonSampler::SaveSamples(const string& filename) {
         outfile << GetRelativeTime(event->GetSampleTime()).GetNanoSeconds() << ",";
         outfile << event->IsDeparted() << "," << GetRelativeTime(event->GetDepartureTime()).GetNanoSeconds() << endl;
     }
+    outfile << "DroppedPackets: " << droppedPackets << endl;
     outfile.close();
 }
 

@@ -50,7 +50,7 @@ def run_experiment():
     expConfig.read_config_file('Parameters.config')
     os.system('mkdir -p {}/scratch/ECNMC/results/'.format(get_ns3_path()))
     for rate in expConfig.serviceRateScales:
-        exp_tor_to_agg_link_rate = "{}Mbps".format(round(float(expConfig.tor_to_agg_link_rate.split('M')[0]) * rate * 8, 1))
+        exp_tor_to_agg_link_rate = "{}Mbps".format(round(float(expConfig.tor_to_agg_link_rate.split('M')[0]) * rate, 1))
         for i in range(int(expConfig.experiments)):
             os.system(
                 '{}/ns3 run \'N4_datacenter_switch '.format(get_ns3_path()) +

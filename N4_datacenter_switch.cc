@@ -29,7 +29,11 @@ void queueDiscSize(uint32_t oldValue, uint32_t newValue) {
 }
 
 void queueSize(uint32_t oldValue, uint32_t newValue) {
-    std::cout << Simulator::Now().GetNanoSeconds() << ": Queue Size: " << newValue << endl;
+    std::cout << Simulator::Now().GetNanoSeconds() << ": Queue Size Measure: " << newValue << endl;
+}
+
+void queueSize2(uint32_t oldValue, uint32_t newValue) {
+    std::cout << Simulator::Now().GetNanoSeconds() << ": Queue Size Cross: " << newValue << endl;
 }
 
 void dequeue(Ptr< const Packet > packet){
@@ -142,16 +146,16 @@ int main(int argc, char* argv[])
     for (int i = 0; i < nRacks; i++) {
         vector<NetDeviceContainer> hostsToTors;
         for (int j = 0; j < nHosts; j++) {
-            if (i == 0) {
+            // if (i == 0) {
                 if (j < nHosts/2) {
                     hostsToTors.push_back(p2pHostToTorMeasurementTraffic.Install(racks[i].Get(j), torSwitches.Get(i)));
                 } else {
                     hostsToTors.push_back(p2pHostToTorCrossTraffic.Install(racks[i].Get(j), torSwitches.Get(i)));
                 }
-            }
-            else {
-                hostsToTors.push_back(p2pHostToTorCrossTraffic.Install(racks[i].Get(j), torSwitches.Get(i)));
-            }
+            // }
+            // else {
+            //     hostsToTors.push_back(p2pHostToTorCrossTraffic.Install(racks[i].Get(j), torSwitches.Get(i)));
+            // }
         }
         hostsToTorsNetDevices.push_back(hostsToTors);
     }
@@ -473,7 +477,8 @@ int main(int argc, char* argv[])
     // DynamicCast<PointToPointNetDevice>(torToTorNetDevices[0].Get(0))->GetQueue()->TraceConnectWithoutContext("PacketsInQueue", MakeCallback(&queueSize));
 
     // DynamicCast<RedQueueDisc>(hostToTorQueueDiscs[1][0].Get(0))->TraceConnectWithoutContext("Enqueue", MakeCallback(&enqueueDisc));
-    DynamicCast<PointToPointNetDevice>(hostsToTorsNetDevices[1][0].Get(1))->GetQueue()->TraceConnectWithoutContext("PacketsInQueue", MakeCallback(&queueSize));
+    // DynamicCast<PointToPointNetDevice>(hostsToTorsNetDevices[1][0].Get(1))->GetQueue()->TraceConnectWithoutContext("PacketsInQueue", MakeCallback(&queueSize));
+    // DynamicCast<PointToPointNetDevice>(hostsToTorsNetDevices[1][2].Get(1))->GetQueue()->TraceConnectWithoutContext("PacketsInQueue", MakeCallback(&queueSize2));
     // DynamicCast<PointToPointNetDevice>(torToTorNetDevices[0].Get(0))->GetQueue()->TraceConnectWithoutContext("Dequeue", MakeCallback(&dequeue));
 
     Simulator::Stop(stopTime + convergenceTime + convergenceTime);

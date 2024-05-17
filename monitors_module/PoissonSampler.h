@@ -54,6 +54,7 @@ private:
     double _sampleRate;
     std::unordered_map<PacketKey, samplingEvent*, PacketKeyHash> _recordedSamples;
     int zeroDelayPort;
+    uint32_t droppedPackets;
 
     Ptr<const QueueDiscItem> lastItem;
     Ptr<const Packet> lastPacket;
