@@ -32,6 +32,12 @@ void queueSize(uint32_t oldValue, uint32_t newValue) {
     std::cout << Simulator::Now().GetNanoSeconds() << ": Queue Size: " << newValue << endl;
 }
 
+void dequeue(Ptr< const Packet > packet){
+    std::cout << "Packet dequeued: ";
+    packet->Print(std::cout);
+    std::cout << endl;
+}
+
 void enqueue(Ptr< const Packet > packet){
     std::cout << "Packet enqueued: ";
     packet->Print(std::cout);
@@ -136,9 +142,14 @@ int main(int argc, char* argv[])
     for (int i = 0; i < nRacks; i++) {
         vector<NetDeviceContainer> hostsToTors;
         for (int j = 0; j < nHosts; j++) {
-            if (j < nHosts/2) {
-                hostsToTors.push_back(p2pHostToTorMeasurementTraffic.Install(racks[i].Get(j), torSwitches.Get(i)));
-            } else {
+            if (i == 0) {
+                if (j < nHosts/2) {
+                    hostsToTors.push_back(p2pHostToTorMeasurementTraffic.Install(racks[i].Get(j), torSwitches.Get(i)));
+                } else {
+                    hostsToTors.push_back(p2pHostToTorCrossTraffic.Install(racks[i].Get(j), torSwitches.Get(i)));
+                }
+            }
+            else {
                 hostsToTors.push_back(p2pHostToTorCrossTraffic.Install(racks[i].Get(j), torSwitches.Get(i)));
             }
         }
@@ -462,7 +473,8 @@ int main(int argc, char* argv[])
     // DynamicCast<PointToPointNetDevice>(torToTorNetDevices[0].Get(0))->GetQueue()->TraceConnectWithoutContext("PacketsInQueue", MakeCallback(&queueSize));
 
     // DynamicCast<RedQueueDisc>(hostToTorQueueDiscs[1][0].Get(0))->TraceConnectWithoutContext("Enqueue", MakeCallback(&enqueueDisc));
-    // DynamicCast<PointToPointNetDevice>(hostsToTorsNetDevices[1][0].Get(1))->GetQueue()->TraceConnectWithoutContext("PacketsInQueue", MakeCallback(&queueSize));
+    DynamicCast<PointToPointNetDevice>(hostsToTorsNetDevices[1][0].Get(1))->GetQueue()->TraceConnectWithoutContext("PacketsInQueue", MakeCallback(&queueSize));
+    // DynamicCast<PointToPointNetDevice>(torToTorNetDevices[0].Get(0))->GetQueue()->TraceConnectWithoutContext("Dequeue", MakeCallback(&dequeue));
 
     Simulator::Stop(stopTime + convergenceTime + convergenceTime);
     Simulator::Run();
