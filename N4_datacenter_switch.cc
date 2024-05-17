@@ -461,8 +461,8 @@ int main(int argc, char* argv[])
     // DynamicCast<RedQueueDisc>(torTotorQueueDiscs[0].Get(0))->TraceConnectWithoutContext("PacketsInQueue", MakeCallback(&queueDiscSize));
     // DynamicCast<PointToPointNetDevice>(torToTorNetDevices[0].Get(0))->GetQueue()->TraceConnectWithoutContext("PacketsInQueue", MakeCallback(&queueSize));
 
-    // DynamicCast<RedQueueDisc>(hostToTorQueueDiscs[1][3].Get(0))->TraceConnectWithoutContext("Enqueue", MakeCallback(&enqueueDisc));
-    // DynamicCast<PointToPointNetDevice>(hostsToTorsNetDevices[1][3].Get(0))->GetQueue()->TraceConnectWithoutContext("PacketsInQueue", MakeCallback(&queueSize));
+    // DynamicCast<RedQueueDisc>(hostToTorQueueDiscs[1][0].Get(0))->TraceConnectWithoutContext("Enqueue", MakeCallback(&enqueueDisc));
+    // DynamicCast<PointToPointNetDevice>(hostsToTorsNetDevices[1][0].Get(1))->GetQueue()->TraceConnectWithoutContext("PacketsInQueue", MakeCallback(&queueSize));
 
     Simulator::Stop(stopTime + convergenceTime + convergenceTime);
     Simulator::Run();

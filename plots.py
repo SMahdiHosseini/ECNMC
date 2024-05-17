@@ -42,14 +42,24 @@ for rate in serviceRateScales:
         results[rate] = js.load(f)
 
 
-plt.plot(results.keys(), [value['ANOVA'] for value in results.values()], 'b')
-plt.plot(results.keys(), [value['Kruskal'] for value in results.values()], 'r')
+plt.plot(results.keys(), [value['ANOVA']['groundtruth'] for value in results.values()], 'b')
+plt.plot(results.keys(), [value['Kruskal']['groundtruth'] for value in results.values()], 'r')
 plt.legend(['ANOVA', 'Kruskal'])
 plt.xticks(list(results.keys()))
 plt.xlabel('Service Rate Scale')
 plt.ylabel('ANOVA and Kruska success rate (%)')
 plt.title('ANOVA and Kruska Results for Different Service Rate Scales')
-plt.savefig('results/ANOVA_Kruskal.png')
+plt.savefig('results/ANOVA_Kruskal_groundtruth.png')
+plt.clf()
+
+plt.plot(results.keys(), [value['ANOVA']['samples'] for value in results.values()], 'b')
+plt.plot(results.keys(), [value['Kruskal']['samples'] for value in results.values()], 'r')
+plt.legend(['ANOVA', 'Kruskal'])
+plt.xticks(list(results.keys()))
+plt.xlabel('Service Rate Scale')
+plt.ylabel('ANOVA and Kruska success rate (%)')
+plt.title('ANOVA and Kruska Results for Different Service Rate Scales')
+plt.savefig('results/ANOVA_Kruskal_samples.png')
 plt.clf()
 
 flows = results[list(results.keys())[0]]['EndToEndSkew']
@@ -106,7 +116,6 @@ plt.clf()
 # plot the Dominant Assumption Success Rate per flow per service rate scale
 for flow in flows:
     plt.plot(list(results.keys()), [value['Overall']['samples']['DominantAssumption'][flow] for value in results.values()], '-o')
-
 plt.legend(flows)
 plt.xlabel('Service Rate Scale')
 plt.ylabel('Dominant Assumption Success Rate (%)')
@@ -174,4 +183,25 @@ plt.xlabel('Service Rate Scale')
 plt.ylabel('EndToEndStd2_sumstdi2')
 plt.title('EndToEndStd2_sumstdi2 for Different Service Rate Scales')
 plt.savefig('results/EndToEndStd2_sumstdi2.png')
+plt.clf()
+
+# plot T0std_T1std per flow per service rate scale 
+for flow in flows:
+    plt.errorbar(list(results.keys()), [np.mean(value['T0std_T1std'][flow]) for value in results.values()], yerr=[np.std(value['T0std_T1std'][flow]) for value in results.values()], fmt='-o')
+plt.legend(flows)
+plt.xticks(list(results.keys()))
+plt.xlabel('Service Rate Scale')
+plt.ylabel('T0std_T1std')
+plt.title('T0std_T1std for Different Service Rate Scales')
+plt.savefig('results/T0std_T1std.png')
+plt.clf()
+
+# plot the RelaxedDominantAssumption Success Rate per flow per service rate scale
+for flow in flows:
+    plt.plot(list(results.keys()), [value['Overall']['samples']['RelaxedDominantAssumption'][flow] for value in results.values()], '-o')
+plt.legend(flows)
+plt.xlabel('Service Rate Scale')
+plt.ylabel('Relaxed Dominant Assumption Success Rate (%)')
+plt.title('Relaxed Dominant Assumption Success Rate for Different Service Rate Scales')
+plt.savefig('results/RelaxedDominantAssumption_perServiceRateScale.png')
 plt.clf()
