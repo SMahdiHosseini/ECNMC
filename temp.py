@@ -37,7 +37,7 @@ sample_rate = 0.01
 confidenceValue = 1.96 # 95% confidence interval
 
 # convert strings like "2Mbps" to float
-def read_data(__ns3_path, steadyStart, steadyEnd, rate, segment, checkColumn, projectColumn, experiment, remove_duplicates):
+def read_data(__ns3_path, steadyStart, steadyEnd, rate, segment, checkColumn, projectColumn, experiment):
     file_paths = glob.glob('{}/scratch/Results/{}/{}/*_{}.csv'.format(__ns3_path, rate, experiment, segment))
     dfs = {}
     for file_path in file_paths:
@@ -47,12 +47,7 @@ def read_data(__ns3_path, steadyStart, steadyEnd, rate, segment, checkColumn, pr
         df = df.reset_index(drop=True)
         df = df[df[projectColumn] > steadyStart * 1000000000]
         df = df[df[projectColumn] < steadyEnd * 1000000000]
-        df = df.sort_values(by=[projectColumn], ignore_index=True)
         df = df.drop(columns=[checkColumn])
-        if segment == 'EndToEnd' or segment == 'EndToEnd_crossTraffic':
-            df['Delay'] = abs(df['ReceiveTime'] - df['SentTime'])
-        if remove_duplicates:
-            df = df.drop_duplicates(subset=['SourceIp', 'SourcePort', 'DestinationIp', 'DestinationPort', 'PayloadSize', 'SequenceNb'], keep='first', ignore_index=True)
         dfs[df_name] = df
     return dfs
 
@@ -101,6 +96,7 @@ def sample_data(data, sample_column):
         # data_copy = data_copy[data_copy['IsSample'] == True]
         # data_copy = data_copy.sort_values(by=[sample_column])
 
+
         data_copy['InterArrivalTime'] = data_copy[sample_column].diff()
         data_copy = data_copy.dropna().reset_index(drop=True)
         anderson_statistic, anderson_critical_values, _ = anderson(data_copy['InterArrivalTime'], 'expon')
@@ -112,9 +108,8 @@ def sample_data(data, sample_column):
 def get_switch_samples_delays(flowIndicatorDf, switchDf):
     l_df = flowIndicatorDf.copy()
     l_df = pd.merge(l_df, switchDf, on=['SourceIp', 'SourcePort', 'DestinationIp', 'DestinationPort', 'PayloadSize', 'SequenceNb'], how='right')
-    l_df['SentTime'] = l_df['SentTime'].mask(l_df['SourceIp'] == '0.0.0.0', l_df['SampleTime'])
-    l_df['ReceiveTime'] = l_df['ReceiveTime'].mask(l_df['SourceIp'] == '0.0.0.0' , l_df['SampleTime'])
-    l_df = l_df.dropna(subset=['SentTime', 'ReceiveTime'])
+    l_df['ReceiveTime'] = l_df['ReceiveTime'].fillna(l_df['SampleTime'])
+    l_df['SentTime'] = l_df['SentTime'].fillna(l_df['DepartTime'])
     return l_df
 
 def switch_data(flowIndicatorDf, switchDf, sampling):
@@ -124,33 +119,38 @@ def switch_data(flowIndicatorDf, switchDf, sampling):
         l_df = sample_data(l_df, 'ReceiveTime')
     return l_df
 
-def switch_different_traffics_delaymean(switchDf):
-    l_df = switchDf.copy()
-    l_df['Delay'] = abs(l_df['ReceiveTime'] - l_df['SentTime'])
-    l_df = l_df.groupby(['SourceIp', 'DestinationIp']).mean().reset_index()
-    # l_df = l_df.groupby(['SourceIp', 'DestinationIp']).count().reset_index()
-    print(l_df)
-
-def intermediateLink_transmission(flowIndicatorDf, source, dest, linkNum):
+def intermediateLink_data(flowIndicatorDf, source, dest):
     l_df = flowIndicatorDf.copy()
+    print(len(l_df))
     l_df = pd.merge(l_df, source.drop(columns=['ReceiveTime']), on=['SourceIp', 'SourcePort', 'DestinationIp', 'DestinationPort', 'PayloadSize', 'SequenceNb'], how='inner')
+    print(len(l_df))
     l_df = pd.merge(l_df, dest.drop(columns=['SentTime']), on=['SourceIp', 'SourcePort', 'DestinationIp', 'DestinationPort', 'PayloadSize', 'SequenceNb'], how='inner')
-    l_df['Delay_' + str(linkNum)] = abs(l_df['ReceiveTime'] - l_df['SentTime'])
-    return l_df.drop(columns=['ReceiveTime', 'SentTime'])
+    print(len(l_df))
+    # l_df = sample_data(l_df, 'SentTime')
+    return l_df
 
-def addDelay(data):
-    if 'Delay' not in data.columns:
-        data['Delay'] = abs(data['ReceiveTime'] - data['SentTime'])
-    return data
+def get_delayMean(data):
+    data['Delay'] = abs(data['ReceiveTime'] - data['SentTime'])
+    return data['Delay'].mean()
+
+def get_delayStd(data):
+    data['Delay'] = abs(data['ReceiveTime'] - data['SentTime'])
+    return data['Delay'].std()
+
+def get_delaySkew(data):
+    data['Delay'] = abs(data['ReceiveTime'] - data['SentTime'])
+    return data['Delay'].skew()
+
+def get_pcktSize_std(data):
+    return data['PayloadSize'].std()
 
 def get_statistics(data):
     statistics = {}
-    data_copy = addDelay(data.copy())
-    statistics['DelayMean'] = data_copy['Delay'].mean()
-    statistics['DelayStd'] = data_copy['Delay'].std()
-    statistics['sampleSize'] = len(data_copy)
-    statistics['DelaySkew'] = data_copy['Delay'].skew()
-    statistics['sizeStd'] = data_copy['PayloadSize'].std()
+    statistics['DelayMean'] = get_delayMean(data.copy())
+    statistics['DelayStd'] = get_delayStd(data.copy())
+    statistics['sampleSize'] = len(data.copy())
+    statistics['DelaySkew'] = get_delaySkew(data.copy())
+    statistics['sizeStd'] = get_pcktSize_std(data.copy())
     return statistics
 
 def ECNMC(endToEnd_delayMean, sumOfSegments_DelayMeans, endToEnd_delayStd, MinSampleSize, confidenceValue):
@@ -171,23 +171,27 @@ def ECNMC_V3(endToEnd_delayMean, sumOfSegments_DelayMeans, approximate_endToEnd_
     else:  
         return False
 
-def check_single_delayConsistency(endToEnd_statistics, switches_statistics, confidenceValue):
+def check_single_delayConsistency(endToEnd_statistics, switches_statistics, interLinks_statistics, confidenceValue):
     switches_delayMeans = [value['DelayMean'] for value in switches_statistics.values()]
+    interLinks_delaymeans = [value['DelayMean'] for value in interLinks_statistics.values()]
     switches_sampleSizes = [value['sampleSize'] for value in switches_statistics.values()]
     MinSampleSize = min(switches_sampleSizes)
-    sumOfSegmentsDelayMeans = sum(switches_delayMeans)
-    # print(endToEnd_statistics['DelayMean'], sumOfSegmentsDelayMeans, endToEnd_statistics['DelayStd'], MinSampleSize, confidenceValue)
+    sumOfSegmentsDelayMeans = sum(switches_delayMeans + interLinks_delaymeans)
+
     return ECNMC(endToEnd_statistics['DelayMean'], sumOfSegmentsDelayMeans, endToEnd_statistics['DelayStd'], MinSampleSize, confidenceValue)
         
-def check_single_delayConsistency_V2(endToEnd_statistics, switches_statistics, confidenceValue):
+def check_single_delayConsistency_V2(endToEnd_statistics, switches_statistics, interLinks_statistics, confidenceValue):
     # calculate the epsilon = confidenceValue * (switches_delayStd / (sqrt(switches_sampleSize) * switches_delayMean)) for each switch
     switches_delayMeans = [value['DelayMean'] for value in switches_statistics.values()]
     switches_delayStds = [value['DelayStd'] for value in switches_statistics.values()]
     switches_sampleSizes = [value['sampleSize'] for value in switches_statistics.values()]
+    interLinks_delaymeans = [value['DelayMean'] for value in interLinks_statistics.values()]
+    interLinks_delayStds = [value['DelayStd'] for value in interLinks_statistics.values()]
+    interLinks_sampleSizes = [value['sampleSize'] for value in interLinks_statistics.values()]
 
-    segments_delayMeans = switches_delayMeans
-    segments_delayStds = switches_delayStds
-    segments_sampleSizes = switches_sampleSizes
+    segments_delayMeans = switches_delayMeans + interLinks_delaymeans
+    segments_delayStds = switches_delayStds + interLinks_delayStds
+    segments_sampleSizes = switches_sampleSizes + interLinks_sampleSizes
 
     epsilons = [confidenceValue * (segments_delayStds[i] / (np.sqrt(segments_sampleSizes[i]) * segments_delayMeans[i])) for i in range(len(segments_delayMeans))]
     maxEpsilon = max(epsilons)
@@ -195,37 +199,51 @@ def check_single_delayConsistency_V2(endToEnd_statistics, switches_statistics, c
 
     return ECNMC_V2(endToEnd_statistics['DelayMean'], sumOfSegmentsDelayMeans, maxEpsilon)
 
-def check_single_delayConsistency_V3(endToEnd_statistics, switches_statistics, confidenceValue):
+def check_single_delayConsistency_V3(endToEnd_statistics, switches_statistics, interLinks_statistics, confidenceValue):
     switches_delayMeans = [value['DelayMean'] for value in switches_statistics.values()]
     if switches_statistics['T0']['DelayStd'] > switches_statistics['T1']['DelayStd']:
-        approximate_endToEnd_delayStd = switches_statistics['T0']['DelayStd']
+        switches_delayVars = [switches_statistics['T0']['DelayStd'] ** 2]
     else:
-        approximate_endToEnd_delayStd = switches_statistics['T1']['DelayStd']
+        switches_delayVars = [switches_statistics['T1']['DelayStd'] ** 2]
+    # switches_delayVars = [value['DelayStd'] ** 2 for value in switches_statistics.values()]
+    interLinks_delaymeans = [value['DelayMean'] for value in interLinks_statistics.values()]
+    interLinks_delayVars = [value['DelayStd'] ** 2 for value in interLinks_statistics.values()]
 
     switches_sampleSizes = [value['sampleSize'] for value in switches_statistics.values()]
     MinSampleSize = min(switches_sampleSizes)
-    sumOfSegmentsDelayMeans = sum(switches_delayMeans)
+    sumOfSegmentsDelayMeans = sum(switches_delayMeans + interLinks_delaymeans)
+    approximate_endToEnd_delayStd = np.sqrt(sum(switches_delayVars + interLinks_delayVars))
+
     return ECNMC_V3(endToEnd_statistics['DelayMean'], sumOfSegmentsDelayMeans, approximate_endToEnd_delayStd, MinSampleSize, confidenceValue)
 
-def check_all_delayConsistency(endToEnd_statistics, switches_statistics, confidenceValue):
+def check_all_delayConsistency(endToEnd_statistics, switches_statistics, interLinks_statistics, confidenceValue):
     res = {}
     res['DominantAssumption'] = {}
     res['General'] = {}
     res['RelaxedDominantAssumption'] = {}
     for flow in endToEnd_statistics.keys():
-        res['DominantAssumption'][flow] = check_single_delayConsistency(endToEnd_statistics[flow], switches_statistics[flow], confidenceValue)
-        res['General'][flow] = check_single_delayConsistency_V2(endToEnd_statistics[flow], switches_statistics[flow], confidenceValue)
-        res['RelaxedDominantAssumption'][flow] = check_single_delayConsistency_V3(endToEnd_statistics[flow], switches_statistics[flow], confidenceValue)
+        res['DominantAssumption'][flow] = check_single_delayConsistency(endToEnd_statistics[flow], switches_statistics[flow], interLinks_statistics[flow], confidenceValue)
+        res['General'][flow] = check_single_delayConsistency_V2(endToEnd_statistics[flow], switches_statistics[flow], interLinks_statistics[flow], confidenceValue)
+        res['RelaxedDominantAssumption'][flow] = check_single_delayConsistency_V3(endToEnd_statistics[flow], switches_statistics[flow], interLinks_statistics[flow], confidenceValue)
     return res
 
 def prepare_results(flows):
     rounds_results = {}
     rounds_results['Overall'] = {}
     rounds_results['PerTrafficStream'] = {}
+    # rounds_results['Overall']['groundtruth'] = {}
     rounds_results['Overall']['samples'] = {}
+    # rounds_results['PerTrafficStream']['groundtruth'] = {}
+    # rounds_results['PerTrafficStream']['samples'] = {}
+    # rounds_results['Overall']['groundtruth']['DominantAssumption'] = {}
+    # rounds_results['Overall']['groundtruth']['General'] = {}
     rounds_results['Overall']['samples']['DominantAssumption'] = {}
     rounds_results['Overall']['samples']['General'] = {}
     rounds_results['Overall']['samples']['RelaxedDominantAssumption'] = {}
+    # rounds_results['PerTrafficStream']['groundtruth']['DominantAssumption'] = {}
+    # rounds_results['PerTrafficStream']['groundtruth']['General'] = {}
+    # rounds_results['PerTrafficStream']['samples']['DominantAssumption'] = {}
+    # rounds_results['PerTrafficStream']['samples']['General'] = {}
     rounds_results['ANOVA'] = {}
     rounds_results['Kruskal'] = {}
     rounds_results['ANOVA']['samples'] = 0
@@ -235,20 +253,23 @@ def prepare_results(flows):
     rounds_results['EndToEndMean'] = {}
     rounds_results['EndToEndStd'] = {}
     rounds_results['EndToEndSkew'] = {}
-    rounds_results['T0std'] = []
-    rounds_results['T1std'] = {}
-    rounds_results['T0Ineq'] = {}
-    rounds_results['T1Ineq'] = {}
+    rounds_results['EndToEndStd2_sumstdi2'] = {}
+    rounds_results['T0std_T1std'] = {}
     for flow in flows:
+        # rounds_results['Overall']['groundtruth']['DominantAssumption'][flow] = 0
+        # rounds_results['Overall']['groundtruth']['General'][flow] = 0
         rounds_results['Overall']['samples']['DominantAssumption'][flow] = 0
         rounds_results['Overall']['samples']['General'][flow] = 0
         rounds_results['Overall']['samples']['RelaxedDominantAssumption'][flow] = 0
+        # rounds_results['PerTrafficStream']['groundtruth']['DominantAssumption'][flow] = 0
+        # rounds_results['PerTrafficStream']['groundtruth']['General'][flow] = 0
+        # rounds_results['PerTrafficStream']['samples']['DominantAssumption'][flow] = 0
+        # rounds_results['PerTrafficStream']['samples']['General'][flow] = 0
         rounds_results['EndToEndMean'][flow] = []
         rounds_results['EndToEndStd'][flow] = []
         rounds_results['EndToEndSkew'][flow] = []
-        rounds_results['T1std'][flow] = []
-        rounds_results['T0Ineq'][flow] = 0
-        rounds_results['T1Ineq'][flow] = 0
+        rounds_results['EndToEndStd2_sumstdi2'][flow] = []
+        rounds_results['T0std_T1std'][flow] = []
 
 
     rounds_results['experiments'] = 0
@@ -275,15 +296,6 @@ def delayProcess_consistency_check(flows, flows_sampled, rounds_results):
         rounds_results['ANOVA']['samples'] += 1
     if kruskal_res.pvalue > 0.05:
         rounds_results['Kruskal']['samples'] += 1 
-
-def plot_overall_delay_distribution_noncommonSwitch(rate, nonCommon_switch_sample_df, flow):
-    # plot the delay distribution of Sample T1
-    fig, ax = plt.subplots(1, 1)
-    sns.histplot(nonCommon_switch_sample_df['SentTime'] - nonCommon_switch_sample_df['ReceiveTime'], bins=100)
-    ax.set_title('Sample T0')
-    ax.set_xlabel('Delay (ns)')
-    plt.savefig('results/{}/{}_T1_{}_overall_delayDist.png'.format(rate, rate, flow))
-    plt.close()
 
 def plot_overall_delay_distribution(rate, switches_dfs, common_switch_sample_df):
     # plot the delay distribution of SWitch T0 and Sample T0
@@ -318,136 +330,98 @@ def plot_endToEnd_delay_distribution(rate, endToEnd_dfs):
     plt.savefig('results/{}/{}_EndToEnd_delayDist.png'.format(rate, rate))
     plt.close()
 
-def compatibility_check(confidenceValue, rounds_results, samples_statistics, endToEnd_statistics, groundtruth_statistics, flows_name):
+def compatibility_check(confidenceValue, rounds_results, samples_statistics, interLinks_statistics, endToEnd_statistics, groundtruth_statistics, flows_name):
     # End to End and Persegment Compatibility Check
     results = {}
     results['Overall'] = {}
-    results['Overall']['samples'] = check_all_delayConsistency(endToEnd_statistics, samples_statistics['Overall'], confidenceValue)
+    # results['PerTrafficStream'] = {}
+    # results['Overall']['groundtruth'] = check_all_delayConsistency(endToEnd_statistics, groundtruth_statistics['Overall'], interLinks_statistics, confidenceValue)
+    results['Overall']['samples'] = check_all_delayConsistency(endToEnd_statistics, samples_statistics['Overall'], interLinks_statistics, confidenceValue)
+    # results['PerTrafficStream']['groundtruth'] = check_all_delayConsistency(endToEnd_statistics, groundtruth_statistics['PerTrafficStream'], interLinks_statistics, confidenceValue)
+    # results['PerTrafficStream']['samples'] = check_all_delayConsistency(endToEnd_statistics, samples_statistics['PerTrafficStream'], interLinks_statistics, confidenceValue)
 
     for flow in flows_name:
+        # if results['Overall']['groundtruth']['DominantAssumption'][flow]:
+        #     rounds_results['Overall']['groundtruth']['DominantAssumption'][flow] += 1
+        # if results['Overall']['groundtruth']['General'][flow]:
+        #     rounds_results['Overall']['groundtruth']['General'][flow] += 1
         if results['Overall']['samples']['DominantAssumption'][flow]:
                 rounds_results['Overall']['samples']['DominantAssumption'][flow] += 1
         if results['Overall']['samples']['General'][flow]:
             rounds_results['Overall']['samples']['General'][flow] += 1
         if results['Overall']['samples']['RelaxedDominantAssumption'][flow]:
             rounds_results['Overall']['samples']['RelaxedDominantAssumption'][flow] += 1
+        # if results['PerTrafficStream']['groundtruth']['DominantAssumption'][flow]:
+        #     rounds_results['PerTrafficStream']['groundtruth']['DominantAssumption'][flow] += 1
+        # if results['PerTrafficStream']['groundtruth']['General'][flow]:
+        #     rounds_results['PerTrafficStream']['groundtruth']['General'][flow] += 1
+        # if results['PerTrafficStream']['samples']['DominantAssumption'][flow]:
+        #     rounds_results['PerTrafficStream']['samples']['DominantAssumption'][flow] += 1
+        # if results['PerTrafficStream']['samples']['General'][flow]:
+        #     rounds_results['PerTrafficStream']['samples']['General'][flow] += 1
 
-def remove_interlinks_trasmission_delay(endToEnd_dfs, crossTraffic_dfs, switches_dfs):
-    for flow in endToEnd_dfs.keys():
-        src_T0 = intermediateLink_transmission(endToEnd_dfs[flow].drop(columns=['SentTime', 'ReceiveTime', 'Delay']), endToEnd_dfs[flow].drop(columns=['Delay']), switches_dfs['T0'], 0)
-        T0_T1  = intermediateLink_transmission(endToEnd_dfs[flow].drop(columns=['SentTime', 'ReceiveTime', 'Delay']), switches_dfs['T0'], switches_dfs['T1'], 1)
-        T1_dst = intermediateLink_transmission(endToEnd_dfs[flow].drop(columns=['SentTime', 'ReceiveTime', 'Delay']), switches_dfs['T1'], endToEnd_dfs[flow].drop(columns=['Delay']), 2)
-        endToEnd_dfs[flow] = pd.merge(endToEnd_dfs[flow], src_T0, on=['SourceIp', 'SourcePort', 'DestinationIp', 'DestinationPort', 'PayloadSize', 'SequenceNb'], how='inner')
-        endToEnd_dfs[flow] = pd.merge(endToEnd_dfs[flow], T0_T1,  on=['SourceIp', 'SourcePort', 'DestinationIp', 'DestinationPort', 'PayloadSize', 'SequenceNb'], how='inner')
-        endToEnd_dfs[flow] = pd.merge(endToEnd_dfs[flow], T1_dst, on=['SourceIp', 'SourcePort', 'DestinationIp', 'DestinationPort', 'PayloadSize', 'SequenceNb'], how='inner')
-        endToEnd_dfs[flow]['Delay'] = endToEnd_dfs[flow]['Delay'] - endToEnd_dfs[flow]['Delay_0'] - endToEnd_dfs[flow]['Delay_1'] - endToEnd_dfs[flow]['Delay_2']
-        endToEnd_dfs[flow] = endToEnd_dfs[flow].drop(columns=['Delay_0', 'Delay_1', 'Delay_2'])
-        endToEnd_dfs[flow] = endToEnd_dfs[flow][endToEnd_dfs[flow]['Delay'] > 0]
-
-    for flow in crossTraffic_dfs.keys():
-        src_T0 = intermediateLink_transmission(crossTraffic_dfs[flow].drop(columns=['SentTime', 'ReceiveTime', 'Delay']), crossTraffic_dfs[flow].drop(columns=['Delay']), switches_dfs['T0'], 0)
-        T0_T1  = intermediateLink_transmission(crossTraffic_dfs[flow].drop(columns=['SentTime', 'ReceiveTime', 'Delay']), switches_dfs['T0'], switches_dfs['T1'], 1)
-        T1_dst = intermediateLink_transmission(crossTraffic_dfs[flow].drop(columns=['SentTime', 'ReceiveTime', 'Delay']), switches_dfs['T1'], crossTraffic_dfs[flow].drop(columns=['Delay']), 2)
-        crossTraffic_dfs[flow] = pd.merge(crossTraffic_dfs[flow], src_T0, on=['SourceIp', 'SourcePort', 'DestinationIp', 'DestinationPort', 'PayloadSize', 'SequenceNb'], how='inner')
-        crossTraffic_dfs[flow] = pd.merge(crossTraffic_dfs[flow], T0_T1,  on=['SourceIp', 'SourcePort', 'DestinationIp', 'DestinationPort', 'PayloadSize', 'SequenceNb'], how='inner')
-        crossTraffic_dfs[flow] = pd.merge(crossTraffic_dfs[flow], T1_dst, on=['SourceIp', 'SourcePort', 'DestinationIp', 'DestinationPort', 'PayloadSize', 'SequenceNb'], how='inner')
-        crossTraffic_dfs[flow]['Delay'] = crossTraffic_dfs[flow]['Delay'] - crossTraffic_dfs[flow]['Delay_0'] - crossTraffic_dfs[flow]['Delay_1'] - crossTraffic_dfs[flow]['Delay_2']
-        crossTraffic_dfs[flow] = crossTraffic_dfs[flow].drop(columns=['Delay_0', 'Delay_1', 'Delay_2'])
-        crossTraffic_dfs[flow] = crossTraffic_dfs[flow][crossTraffic_dfs[flow]['Delay'] > 0]
-
-def clear_data_from_outliers_in_time(endToEnd_dfs, crossTraffic_dfs, switches_dfs):
-    for switch in switches_dfs.keys():
-        per_traffic_data = []
-        for flow in endToEnd_dfs.keys():
-            per_traffic_data.append(pd.merge(endToEnd_dfs[flow].drop(columns=['SentTime', 'ReceiveTime', 'Delay']), switches_dfs[switch], on=['SourceIp', 'SourcePort', 'DestinationIp', 'DestinationPort', 'PayloadSize', 'SequenceNb'], how='inner'))
-        for flow in crossTraffic_dfs.keys():
-            per_traffic_data.append(pd.merge(crossTraffic_dfs[flow].drop(columns=['SentTime', 'ReceiveTime', 'Delay']), switches_dfs[switch], on=['SourceIp', 'SourcePort', 'DestinationIp', 'DestinationPort', 'PayloadSize', 'SequenceNb'], how='inner'))
-        switches_dfs[switch] = pd.concat(per_traffic_data)
 
 def analyze_single_experiment(rate, steadyStart, steadyEnd, confidenceValue, rounds_results, experiment=0, ns3_path=__ns3_path):
-    endToEnd_dfs = read_data(__ns3_path, steadyStart, steadyEnd, rate, 'EndToEnd', 'IsReceived', 'SentTime', str(experiment), True)
-    crossTraffic_dfs = read_data(__ns3_path, steadyStart, steadyEnd, rate, 'EndToEnd_crossTraffic', 'IsReceived', 'SentTime', str(experiment), True)
-    switches_dfs = read_data(__ns3_path, steadyStart, steadyEnd, rate, 'Switch', 'IsSent', 'ReceiveTime', str(experiment), True)
-    samples_dfs = read_data(__ns3_path, steadyStart, steadyEnd, rate, 'PoissonSampler', 'IsDeparted', 'SampleTime', str(experiment), False)
+    endToEnd_dfs = read_data(__ns3_path, steadyStart, steadyEnd, rate, 'EndToEnd', 'IsReceived', 'SentTime', str(experiment))
+    switches_dfs = read_data(__ns3_path, steadyStart, steadyEnd, rate, 'Switch', 'IsSent', 'ReceiveTime', str(experiment))
+    samples_dfs = read_data(__ns3_path, steadyStart, steadyEnd, rate, 'PoissonSampler', 'IsDeparted', 'SampleTime', str(experiment))
 
     # Intermediate links groundtruth statistics
-    remove_interlinks_trasmission_delay(endToEnd_dfs, crossTraffic_dfs, switches_dfs)
+    interLinks_statistics = {}
+    for flow in endToEnd_dfs.keys():
+        interLinks_statistics[flow] = {}
+        interLinks_statistics[flow][('source', 'T0')] = get_statistics(intermediateLink_data(endToEnd_dfs[flow].drop(columns=['SentTime', 'ReceiveTime']), endToEnd_dfs[flow], switches_dfs['T0']))
+        interLinks_statistics[flow][('T0', 'T1')] = get_statistics(intermediateLink_data(endToEnd_dfs[flow].drop(columns=['SentTime', 'ReceiveTime']), switches_dfs['T0'], switches_dfs['T1']))
+        interLinks_statistics[flow][('T1', 'dest')] = get_statistics(intermediateLink_data(endToEnd_dfs[flow].drop(columns=['SentTime', 'ReceiveTime']), switches_dfs['T1'], endToEnd_dfs[flow]))
+        print(len(endToEnd_dfs[flow]))
 
-    # integrate the switch data with the endToEnd data
-    # switch_different_traffics_delaymean(switches_dfs['T0'])
-    clear_data_from_outliers_in_time(endToEnd_dfs, crossTraffic_dfs, switches_dfs)
-    # switch_different_traffics_delaymean(switches_dfs['T0'])
 
     # samples switches statistics
     samples_statistics = {}
     samples_statistics['Overall'] = {}
     samples_statistics['PerTrafficStream'] = {}
     common_switch_sample_df = get_switch_samples_delays(switches_dfs['T0'], samples_dfs['T0T1'])
-    nonCommon_switch_sample_df = {}
     for flow in endToEnd_dfs.keys():
         samples_statistics['Overall'][flow] = {}
         samples_statistics['Overall'][flow]['T0'] = get_statistics(common_switch_sample_df)
-        nonCommon_switch_sample_df[flow] = get_switch_samples_delays(switches_dfs['T1'], samples_dfs['T1.R' + flow.split('R')[-1]])
-        samples_statistics['Overall'][flow]['T1'] = get_statistics(nonCommon_switch_sample_df[flow])
+        samples_statistics['Overall'][flow]['T1'] = get_statistics(get_switch_samples_delays(switches_dfs['T1'], samples_dfs['T1.R' + flow.split('R')[-1]]))
 
         samples_statistics['PerTrafficStream'][flow] = {}
-        samples_statistics['PerTrafficStream'][flow]['T0'] = get_statistics(switch_data(endToEnd_dfs[flow].drop(columns=['SentTime', 'ReceiveTime', 'Delay']), switches_dfs['T0'], True))
-        samples_statistics['PerTrafficStream'][flow]['T1'] = get_statistics(switch_data(endToEnd_dfs[flow].drop(columns=['SentTime', 'ReceiveTime', 'Delay']), switches_dfs['T1'], True))
+        samples_statistics['PerTrafficStream'][flow]['T0'] = get_statistics(switch_data(endToEnd_dfs[flow].drop(columns=['SentTime', 'ReceiveTime']), switches_dfs['T0'], True))
+        samples_statistics['PerTrafficStream'][flow]['T1'] = get_statistics(switch_data(endToEnd_dfs[flow].drop(columns=['SentTime', 'ReceiveTime']), switches_dfs['T1'], True))
 
     # groundtruth switches statistics
     groundtruth_statistics = {}
-    # groundtruth_statistics['Overall'] = {}
+    groundtruth_statistics['Overall'] = {}
     groundtruth_statistics['PerTrafficStream'] = {}
 
     flows = []
     flows_sampled = []
-    # switch_different_traffics_delaymean(switches_dfs['T0'])
     for flow in endToEnd_dfs.keys():
-        # groundtruth_statistics['Overall'][flow] = {}
-        # groundtruth_statistics['Overall'][flow]['T0'] = get_statistics(switches_dfs['T0'])
-        # groundtruth_statistics['Overall'][flow]['T1'] = get_statistics(switches_dfs['T1'])
-        # groundtruth_statistics['Overall'][flow]['T0']['sampleSize'] = samples_statistics['Overall'][flow]['T0']['sampleSize']
-        # groundtruth_statistics['Overall'][flow]['T1']['sampleSize'] = samples_statistics['Overall'][flow]['T1']['sampleSize']
+        groundtruth_statistics['Overall'][flow] = {}
+        groundtruth_statistics['Overall'][flow]['T0'] = get_statistics(switches_dfs['T0'])
+        groundtruth_statistics['Overall'][flow]['T1'] = get_statistics(switches_dfs['T1'])
+        groundtruth_statistics['Overall'][flow]['T0']['sampleSize'] = samples_statistics['Overall'][flow]['T0']['sampleSize']
+        groundtruth_statistics['Overall'][flow]['T1']['sampleSize'] = samples_statistics['Overall'][flow]['T1']['sampleSize']
 
 
-        groundtruth_statistics['PerTrafficStream'][flow] = {}
-        flow_on_switch = switch_data(endToEnd_dfs[flow].drop(columns=['SentTime', 'ReceiveTime', 'Delay']), switches_dfs['T0'], False)
-        flows_sampled.append(switch_data(endToEnd_dfs[flow].drop(columns=['SentTime', 'ReceiveTime', 'Delay']), switches_dfs['T0'], True))
+        # groundtruth_statistics['PerTrafficStream'][flow] = {}
+        flow_on_switch = switch_data(endToEnd_dfs[flow].drop(columns=['SentTime', 'ReceiveTime']), switches_dfs['T0'], False)
+        flows_sampled.append(switch_data(endToEnd_dfs[flow].drop(columns=['SentTime', 'ReceiveTime']), switches_dfs['T0'], True))
         flows.append(flow_on_switch)
-        
-        groundtruth_statistics['PerTrafficStream'][flow]['T0'] = get_statistics(flow_on_switch)
-        groundtruth_statistics['PerTrafficStream'][flow]['T1'] = get_statistics(switch_data(endToEnd_dfs[flow].drop(columns=['SentTime', 'ReceiveTime', 'Delay']), switches_dfs['T1'], False))
-
-
-        # print(groundtruth_statistics['PerTrafficStream'][flow]['T0']['DelayMean'], samples_statistics['Overall'][flow]['T0']['DelayMean'], samples_statistics['PerTrafficStream'][flow]['T0']['DelayMean'])
-        # if abs(groundtruth_statistics['PerTrafficStream'][flow]['T0']['DelayMean'] - samples_statistics['Overall'][flow]['T0']['DelayMean']) <= confidenceValue * samples_statistics['Overall'][flow]['T0']['DelayStd'] / np.sqrt(samples_statistics['Overall'][flow]['T0']['sampleSize']):
-        #     rounds_results['T0Ineq'][flow] += 1
-        # if abs(groundtruth_statistics['PerTrafficStream'][flow]['T1']['DelayMean'] - samples_statistics['Overall'][flow]['T1']['DelayMean']) <= confidenceValue * samples_statistics['Overall'][flow]['T1']['DelayStd'] / np.sqrt(samples_statistics['Overall'][flow]['T1']['sampleSize']):
-        #     rounds_results['T1Ineq'][flow] += 1
-
-        segments_delayMeans = [value['DelayMean'] for value in samples_statistics['Overall'][flow].values()]
-        segments_delayStds = [value['DelayStd'] for value in samples_statistics['Overall'][flow].values()]
-        segments_sampleSizes = [value['sampleSize'] for value in samples_statistics['Overall'][flow].values()]
-        epsilons = [confidenceValue * (segments_delayStds[i] / (np.sqrt(segments_sampleSizes[i]) * segments_delayMeans[i])) for i in range(len(segments_delayMeans))]
-        maxEpsilon = max(epsilons)
-        if abs(groundtruth_statistics['PerTrafficStream'][flow]['T0']['DelayMean'] - samples_statistics['Overall'][flow]['T0']['DelayMean']) / samples_statistics['Overall'][flow]['T0']['DelayMean'] <= maxEpsilon:
-            rounds_results['T0Ineq'][flow] += 1
-        if abs(groundtruth_statistics['PerTrafficStream'][flow]['T1']['DelayMean'] - samples_statistics['Overall'][flow]['T1']['DelayMean']) / samples_statistics['Overall'][flow]['T1']['DelayMean'] <= maxEpsilon:
-            rounds_results['T1Ineq'][flow] += 1
-        # print("Overall sample T0: ", abs(groundtruth_statistics['PerTrafficStream'][flow]['T0']['DelayMean'] - samples_statistics['Overall'][flow]['T0']['DelayMean']) <= confidenceValue * samples_statistics['Overall'][flow]['T0']['DelayStd'] / np.sqrt(samples_statistics['Overall'][flow]['T0']['sampleSize']))
-        # print("PerTrafficStream sample T0: ", abs(groundtruth_statistics['PerTrafficStream'][flow]['T0']['DelayMean'] - samples_statistics['PerTrafficStream'][flow]['T0']['DelayMean']) <= confidenceValue * samples_statistics['PerTrafficStream'][flow]['T0']['DelayStd'] / np.sqrt(samples_statistics['PerTrafficStream'][flow]['T0']['sampleSize']))
-        # print("Overall T1: ", abs(groundtruth_statistics['PerTrafficStream'][flow]['T1']['DelayMean'] - samples_statistics['Overall'][flow]['T1']['DelayMean']) <= confidenceValue * samples_statistics['Overall'][flow]['T1']['DelayStd'] / np.sqrt(samples_statistics['Overall'][flow]['T1']['sampleSize']))
-        # print("PerTrafficStream T1: ", abs(groundtruth_statistics['PerTrafficStream'][flow]['T1']['DelayMean'] - samples_statistics['PerTrafficStream'][flow]['T1']['DelayMean']) <= confidenceValue * samples_statistics['PerTrafficStream'][flow]['T1']['DelayStd'] / np.sqrt(samples_statistics['PerTrafficStream'][flow]['T1']['sampleSize']))
+        # groundtruth_statistics['PerTrafficStream'][flow]['T0'] = get_statistics(flow_on_switch)
+        # groundtruth_statistics['PerTrafficStream'][flow]['T1'] = get_statistics(switch_data(endToEnd_dfs[flow].drop(columns=['SentTime', 'ReceiveTime']), switches_dfs['T1'], False))
 
     # endToEnd_statistics
     endToEnd_statistics = {}
-    rounds_results['T0std'].append(samples_statistics['Overall']['R0h0R1h0']['T0']['DelayStd'])
     for flow in endToEnd_dfs.keys():
         endToEnd_statistics[flow] = get_statistics(endToEnd_dfs[flow])
         rounds_results['EndToEndMean'][flow].append(endToEnd_statistics[flow]['DelayMean'])
         rounds_results['EndToEndSkew'][flow].append(endToEnd_statistics[flow]['DelaySkew'])
+        sum_std2 = sum([value['DelayStd'] ** 2 for value in interLinks_statistics[flow].values()] + [value['DelayStd'] ** 2 for value in groundtruth_statistics['Overall'][flow].values()])
         rounds_results['EndToEndStd'][flow].append(endToEnd_statistics[flow]['DelayStd'])
-        rounds_results['T1std'][flow].append(samples_statistics['Overall'][flow]['T1']['DelayStd'])
+        rounds_results['EndToEndStd2_sumstdi2'][flow].append(endToEnd_statistics[flow]['DelayStd'] ** 2 / sum_std2)
+        rounds_results['T0std_T1std'][flow].append(samples_statistics['Overall'][flow]['T0']['DelayStd'] / samples_statistics['Overall'][flow]['T1']['DelayStd'])
 
     rounds_results['experiments'] += 1
     delayProcess_consistency_check(flows, flows_sampled, rounds_results)
@@ -456,10 +430,8 @@ def analyze_single_experiment(rate, steadyStart, steadyEnd, confidenceValue, rou
         plot_overall_delay_distribution(rate, switches_dfs, common_switch_sample_df)
         plot_seperate_delay_distribution(rate, flows)
         plot_endToEnd_delay_distribution(rate, endToEnd_dfs)
-        for flow in endToEnd_dfs.keys():
-            plot_overall_delay_distribution_noncommonSwitch(rate, nonCommon_switch_sample_df[flow], flow)
 
-    compatibility_check(confidenceValue, rounds_results, samples_statistics, endToEnd_statistics, groundtruth_statistics, endToEnd_dfs.keys())
+    compatibility_check(confidenceValue, rounds_results, samples_statistics, interLinks_statistics, endToEnd_statistics, groundtruth_statistics, endToEnd_dfs.keys())
 
 def analyze_all_experiments(rate, steadyStart, steadyEnd, confidenceValue, experiments=3, ns3_path=__ns3_path):
     flows_name = read_data_flowIndicator(ns3_path, rate)
@@ -508,11 +480,8 @@ def __main__():
     print("sampleRate", sampleRate)
     print("experiments: ", experiments)
     print("serviceRateScales: ", serviceRateScales)
-    serviceRateScales = [0.6]
-    experiments = 100
-    # steadyStart = 4
-    # steadyEnd = 9
-
+    # serviceRateScales = [0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1.0, 1.05, 1.1, 1.15, 1.2, 1.25, 1.3, 1.35]
+    serviceRateScales = [2.0]
     for rate in serviceRateScales:
         print("\nAnalyzing experiments for rate: ", rate)
         analyze_all_experiments(rate, steadyStart, steadyEnd, confidenceValue, experiments, __ns3_path)

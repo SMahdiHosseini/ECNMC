@@ -420,12 +420,16 @@ int main(int argc, char* argv[])
     auto *T0SwitchMonitor = new SwitchMonitor(startTime, stopTime + convergenceTime, torSwitches.Get(0), "T0");
     T0SwitchMonitor->AddAppKey(AppKey(ipsRacks[0][0].GetAddress(0), ipsRacks[1][0].GetAddress(0), 0, 0));
     T0SwitchMonitor->AddAppKey(AppKey(ipsRacks[0][1].GetAddress(0), ipsRacks[1][1].GetAddress(0), 0, 0));
+    T0SwitchMonitor->AddAppKey(AppKey(ipsRacks[0][2].GetAddress(0), ipsRacks[1][2].GetAddress(0), 0, 0));
+    T0SwitchMonitor->AddAppKey(AppKey(ipsRacks[0][3].GetAddress(0), ipsRacks[1][3].GetAddress(0), 0, 0));
     switchMonitors.push_back(T0SwitchMonitor);
 
     // T1 Switch Monitor
     auto *T1SwitchMonitor = new SwitchMonitor(startTime, stopTime + convergenceTime, torSwitches.Get(1), "T1");
     T1SwitchMonitor->AddAppKey(AppKey(ipsRacks[0][0].GetAddress(0), ipsRacks[1][0].GetAddress(0), 0, 0));
     T1SwitchMonitor->AddAppKey(AppKey(ipsRacks[0][1].GetAddress(0), ipsRacks[1][1].GetAddress(0), 0, 0));
+    T1SwitchMonitor->AddAppKey(AppKey(ipsRacks[0][2].GetAddress(0), ipsRacks[1][2].GetAddress(0), 0, 0));
+    T1SwitchMonitor->AddAppKey(AppKey(ipsRacks[0][3].GetAddress(0), ipsRacks[1][3].GetAddress(0), 0, 0));
     switchMonitors.push_back(T1SwitchMonitor);
 
     // Poisson Samplers on the ToR switches
