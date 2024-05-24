@@ -237,13 +237,16 @@ def prepare_results(flows):
     rounds_results['EndToEndMean'] = {}
     rounds_results['EndToEndStd'] = {}
     rounds_results['EndToEndSkew'] = {}
+    rounds_results['DropRate'] = []
     rounds_results['T0std'] = []
     rounds_results['T1std'] = {}
     rounds_results['T0Ineq'] = {}
+    rounds_results['T0IneqMaxEpsilon'] = {}
     # rounds_results['T0IeqHighRate'] = {}
     # rounds_results['T0IneqRegular'] = {}
     rounds_results['T0IneqRemovedZeroes'] = {}
     rounds_results['T1Ineq'] = {}
+    rounds_results['T1IneqMaxEpsilon'] = {}
     # rounds_results['T1IeqHighRate'] = {}
     # rounds_results['T1IneqRegular'] = {}
     rounds_results['T1IneqRemovedZeroes'] = {}
@@ -259,10 +262,12 @@ def prepare_results(flows):
         # rounds_results['T0IeqHighRate'][flow] = 0
         # rounds_results['T0IneqRegular'][flow] = 0
         rounds_results['T0IneqRemovedZeroes'][flow] = 0
+        rounds_results['T0IneqMaxEpsilon'][flow] = 0
         rounds_results['T1Ineq'][flow] = 0
         # rounds_results['T1IeqHighRate'][flow] = 0
         # rounds_results['T1IneqRegular'][flow] = 0
         rounds_results['T1IneqRemovedZeroes'][flow] = 0
+        rounds_results['T1IneqMaxEpsilon'][flow] = 0
 
 
     rounds_results['experiments'] = 0
@@ -404,6 +409,10 @@ def analyze_single_experiment(rate, steadyStart, steadyEnd, confidenceValue, rou
     samples_dfs = read_data(__ns3_path, steadyStart, steadyEnd, rate, 'PoissonSampler', 'IsDeparted', 'SampleTime', str(experiment), False)
     # samples_highRate_dfs = read_data(__ns3_path, steadyStart, steadyEnd, rate, 'PoissonSampler_highRate', 'IsDeparted', 'SampleTime', str(experiment), False)
     # samples_regular_dfs = read_data(__ns3_path, steadyStart, steadyEnd, rate, 'RegularSampler', 'IsDeparted', 'SampleTime', str(experiment), False)
+    # read and append the drop rate from the last line of the sample file T0
+    with open('{}/scratch/Results/{}/{}/T0T1_PoissonSampler.csv'.format(__ns3_path, rate, str(experiment))) as f:
+        lines = f.readlines()
+        rounds_results['DropRate'].append(float(lines[-1].split(':')[1]))
 
     # Intermediate links groundtruth statistics
     remove_interlinks_trasmission_delay(endToEnd_dfs, crossTraffic_dfs, switches_dfs)
@@ -519,6 +528,16 @@ def analyze_single_experiment(rate, steadyStart, steadyEnd, confidenceValue, rou
         if abs(groundtruth_statistics['RemovedZeroes'][flow]['T1']['DelayMean'] - samples_statistics['RemovedZeroes'][flow]['T1']['DelayMean']) <= confidenceValue * samples_statistics['RemovedZeroes'][flow]['T1']['DelayStd'] / np.sqrt(samples_statistics['RemovedZeroes'][flow]['T1']['sampleSize']):
             rounds_results['T1IneqRemovedZeroes'][flow] += 1
 
+        segments_delayMeans = [value['DelayMean'] for value in samples_statistics['Overall'][flow].values()]
+        segments_delayStds = [value['DelayStd'] for value in samples_statistics['Overall'][flow].values()]
+        segments_sampleSizes = [value['sampleSize'] for value in samples_statistics['Overall'][flow].values()]
+        epsilons = [confidenceValue * (segments_delayStds[i] / (np.sqrt(segments_sampleSizes[i]) * segments_delayMeans[i])) for i in range(len(segments_delayMeans))]
+        maxEpsilon = max(epsilons)
+        if abs(groundtruth_statistics['Overall'][flow]['T0']['DelayMean'] - samples_statistics['Overall'][flow]['T0']['DelayMean']) / samples_statistics['Overall'][flow]['T0']['DelayMean'] <= maxEpsilon:
+            rounds_results['T0IneqMaxEpsilon'][flow] += 1 
+        if abs(groundtruth_statistics['PerTrafficStream'][flow]['T1']['DelayMean']- samples_statistics['Overall'][flow]['T1']['DelayMean']) / samples_statistics['Overall'][flow]['T1']['DelayMean'] <= maxEpsilon:
+            rounds_results['T1IneqMaxEpsilon'][flow] += 1
+
     # endToEnd_statistics
     endToEnd_statistics = {}
     rounds_results['T0std'].append(samples_statistics['Overall']['R0h0R1h0']['T0']['DelayStd'])
@@ -588,8 +607,8 @@ def __main__():
     print("sampleRate", sampleRate)
     print("experiments: ", experiments)
     print("serviceRateScales: ", serviceRateScales)
-    serviceRateScales = [0.6]
-    # experiments = 15
+    # serviceRateScales = [0.6]
+    # experiments = 1
     # steadyStart = 4
     # steadyEnd = 9
 
