@@ -52,6 +52,7 @@ add_library(
   monitors_module/PacketMonitor.cc
   monitors_module/SwitchMonitor.cc
   monitors_module/PoissonSampler.cc
+  monitors_module/RegularSampler.cc
 )
 
 add_library(

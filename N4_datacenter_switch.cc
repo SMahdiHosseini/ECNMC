@@ -16,6 +16,7 @@
 #include "monitors_module/PacketMonitor.h"
 #include "monitors_module/SwitchMonitor.h"
 #include "monitors_module/PoissonSampler.h"
+#include "monitors_module/RegularSampler.h"
 #include "traffic_generator_module/background_replay/BackgroundReplay.h"
 #include <iomanip>
 #include <iostream>
@@ -233,8 +234,8 @@ int main(int argc, char* argv[])
     // r0h0 -> r1h0
     auto* appTraffic = new BackgroundReplay(racks[0].Get(0), racks[1].Get(0));
     appTraffic->SetPctOfPacedTcps(pctPacedBack);
-    // string tracesPath = "/home/mahdi/Documents/NAL/Data/chicago_2010_traffic_10min_2paths/path0";
-    string tracesPath = "/home/mahdi/Documents/Data/chicago_2010_traffic_10min_2paths/path0";
+    string tracesPath = "/home/mahdi/Documents/NAL/Data/chicago_2010_traffic_10min_2paths/path0";
+    // string tracesPath = "/home/mahdi/Documents/Data/chicago_2010_traffic_10min_2paths/path0";
     if (std::filesystem::exists(tracesPath)) {
         appTraffic->RunAllTCPTraces(tracesPath, 0);
     } else {
@@ -244,8 +245,8 @@ int main(int argc, char* argv[])
     // R0h1 -> R1h1
     auto* appTraffic2 = new BackgroundReplay(racks[0].Get(1), racks[1].Get(1));
     appTraffic2->SetPctOfPacedTcps(pctPacedBack);
-    // string tracesPath2 = "/home/mahdi/Documents/NAL/Data/chicago_2010_traffic_10min_2paths/path1";
-    string tracesPath2 = "/home/mahdi/Documents/Data/chicago_2010_traffic_10min_2paths/path1";
+    string tracesPath2 = "/home/mahdi/Documents/NAL/Data/chicago_2010_traffic_10min_2paths/path1";
+    // string tracesPath2 = "/home/mahdi/Documents/Data/chicago_2010_traffic_10min_2paths/path1";
     if (std::filesystem::exists(tracesPath2)) {
         appTraffic2->RunAllTCPTraces(tracesPath2, 0);
     } else {
@@ -265,8 +266,8 @@ int main(int argc, char* argv[])
     // r0h2 -> r1h2
     auto* appTraffic4 = new BackgroundReplay(racks[0].Get(2), racks[1].Get(2));
     appTraffic4->SetPctOfPacedTcps(pctPacedBack);
-    // string tracesPath4 = "/home/mahdi/Documents/NAL/Data/chicago_2010_traffic_10min_2paths/path1";
-    string tracesPath4 = "/home/mahdi/Documents/Data/chicago_2010_traffic_10min_2paths/path1";
+    string tracesPath4 = "/home/mahdi/Documents/NAL/Data/chicago_2010_traffic_10min_2paths/path1";
+    // string tracesPath4 = "/home/mahdi/Documents/Data/chicago_2010_traffic_10min_2paths/path1";
     if (std::filesystem::exists(tracesPath4)) {
         appTraffic4->RunAllTraces(tracesPath4, 0);
     } else {
@@ -276,8 +277,8 @@ int main(int argc, char* argv[])
     // r0h3 -> r1h3
     auto* appTraffic5 = new BackgroundReplay(racks[0].Get(3), racks[1].Get(3));
     appTraffic5->SetPctOfPacedTcps(pctPacedBack);
-    // string tracesPath5 = "/home/mahdi/Documents/NAL/Data/chicago_2010_traffic_10min_2paths/path0";
-    string tracesPath5 = "/home/mahdi/Documents/Data/chicago_2010_traffic_10min_2paths/path0";
+    string tracesPath5 = "/home/mahdi/Documents/NAL/Data/chicago_2010_traffic_10min_2paths/path0";
+    // string tracesPath5 = "/home/mahdi/Documents/Data/chicago_2010_traffic_10min_2paths/path0";
     if (std::filesystem::exists(tracesPath5)) {
         appTraffic5->RunAllTraces(tracesPath5, 0);
     } else {
@@ -433,18 +434,37 @@ int main(int argc, char* argv[])
     switchMonitors.push_back(T1SwitchMonitor);
 
     // Poisson Samplers on the ToR switches
-    vector<PoissonSampler *> poissonSamplers;
+    vector<PoissonSampler *> poissonSamplers, highRatePoissonSamplers;
     // T0 -> T1 Poisson Sampler
     auto *T0PoissonSampler = new PoissonSampler(startTime, stopTime + convergenceTime, DynamicCast<RedQueueDisc>(torTotorQueueDiscs[0].Get(0)), DynamicCast<PointToPointNetDevice>(torToTorNetDevices[0].Get(0))->GetQueue(), DynamicCast<PointToPointNetDevice>(torToTorNetDevices[0].Get(0)), "T0T1", sampleRate);
     poissonSamplers.push_back(T0PoissonSampler);
-
+    // T0 -> T1 Poisson Sampler higer rate
+    // auto *T0PoissonSampler2 = new PoissonSampler(startTime, stopTime + convergenceTime, DynamicCast<RedQueueDisc>(torTotorQueueDiscs[0].Get(0)), DynamicCast<PointToPointNetDevice>(torToTorNetDevices[0].Get(0))->GetQueue(), DynamicCast<PointToPointNetDevice>(torToTorNetDevices[0].Get(0)), "T0T1_highRate", sampleRate * 5);
+    // highRatePoissonSamplers.push_back(T0PoissonSampler2);    
     // T1 -> R1h0 Poisson Sampler
     auto *T1R1h0PoissonSampler = new PoissonSampler(startTime, stopTime + convergenceTime, DynamicCast<RedQueueDisc>(hostToTorQueueDiscs[1][0].Get(0)), DynamicCast<PointToPointNetDevice>(hostsToTorsNetDevices[1][0].Get(1))->GetQueue(), DynamicCast<PointToPointNetDevice>(hostsToTorsNetDevices[1][0].Get(1)), "T1.R1h0", sampleRate);
     poissonSamplers.push_back(T1R1h0PoissonSampler);
-
+    // T1 -> R1h0 Poisson Sampler higer rate
+    // auto *T1R1h0PoissonSampler2 = new PoissonSampler(startTime, stopTime + convergenceTime, DynamicCast<RedQueueDisc>(hostToTorQueueDiscs[1][0].Get(0)), DynamicCast<PointToPointNetDevice>(hostsToTorsNetDevices[1][0].Get(1))->GetQueue(), DynamicCast<PointToPointNetDevice>(hostsToTorsNetDevices[1][0].Get(1)), "T1.R1h0_highRate", sampleRate * 5);
+    // highRatePoissonSamplers.push_back(T1R1h0PoissonSampler2);
     // T1 -> R1h1 Poisson Sampler
     auto *T1R1h1PoissonSampler = new PoissonSampler(startTime, stopTime + convergenceTime, DynamicCast<RedQueueDisc>(hostToTorQueueDiscs[1][1].Get(0)), DynamicCast<PointToPointNetDevice>(hostsToTorsNetDevices[1][1].Get(1))->GetQueue(), DynamicCast<PointToPointNetDevice>(hostsToTorsNetDevices[1][1].Get(1)), "T1.R1h1", sampleRate);
     poissonSamplers.push_back(T1R1h1PoissonSampler);
+    // T1 -> R1h1 Poisson Sampler higer rate
+    // auto *T1R1h1PoissonSampler2 = new PoissonSampler(startTime, stopTime + convergenceTime, DynamicCast<RedQueueDisc>(hostToTorQueueDiscs[1][1].Get(0)), DynamicCast<PointToPointNetDevice>(hostsToTorsNetDevices[1][1].Get(1))->GetQueue(), DynamicCast<PointToPointNetDevice>(hostsToTorsNetDevices[1][1].Get(1)), "T1.R1h1_highRate", sampleRate * 5);
+    // highRatePoissonSamplers.push_back(T1R1h1PoissonSampler2);
+
+    // Regular Samplers on the ToR switches
+    vector<RegularSampler *> regularSamplers;
+    // T0->T1 Regular Sampler
+    // auto *T0RegularSampler = new RegularSampler(startTime, stopTime + convergenceTime, DynamicCast<RedQueueDisc>(torTotorQueueDiscs[0].Get(0)), DynamicCast<PointToPointNetDevice>(torToTorNetDevices[0].Get(0))->GetQueue(), DynamicCast<PointToPointNetDevice>(torToTorNetDevices[0].Get(0)), "T0T1", MilliSeconds(1));
+    // regularSamplers.push_back(T0RegularSampler);
+    // // T1->R1h0 Regular Sampler
+    // auto *T1R1h0RegularSampler = new RegularSampler(startTime, stopTime + convergenceTime, DynamicCast<RedQueueDisc>(hostToTorQueueDiscs[1][0].Get(0)), DynamicCast<PointToPointNetDevice>(hostsToTorsNetDevices[1][0].Get(1))->GetQueue(), DynamicCast<PointToPointNetDevice>(hostsToTorsNetDevices[1][0].Get(1)), "T1.R1h0", MilliSeconds(1));    
+    // regularSamplers.push_back(T1R1h0RegularSampler);
+    // // T1->R1h1 Regular Sampler
+    // auto *T1R1h1RegularSampler = new RegularSampler(startTime, stopTime + convergenceTime, DynamicCast<RedQueueDisc>(hostToTorQueueDiscs[1][1].Get(0)), DynamicCast<PointToPointNetDevice>(hostsToTorsNetDevices[1][1].Get(1))->GetQueue(), DynamicCast<PointToPointNetDevice>(hostsToTorsNetDevices[1][1].Get(1)), "T1.R1h1", MilliSeconds(1));
+    // regularSamplers.push_back(T1R1h1RegularSampler);
     /* ########## END: Monitoring ########## */
 
 
@@ -498,8 +518,14 @@ int main(int argc, char* argv[])
     for (auto sampler: poissonSamplers) {
         sampler->SaveSamples((string) (getenv("PWD")) + "/results/" + sampler->GetSampleTag() + "_PoissonSampler.csv");
     }
+    for (auto sampler: highRatePoissonSamplers) {
+        sampler->SaveSamples((string) (getenv("PWD")) + "/results/" + sampler->GetSampleTag() + "_PoissonSampler_highRate.csv");
+    }
     for (auto monitor: endToEndCrossMonior){
         monitor->SavePacketRecords((string) (getenv("PWD")) + "/results/" + monitor->GetMonitorTag() + "_EndToEnd_crossTraffic.csv");
+    }
+    for (auto sampler: regularSamplers) {
+        sampler->SaveSamples((string) (getenv("PWD")) + "/results/" + sampler->GetSampleTag() + "_RegularSampler.csv");
     }
     /* ########## END: Scheduling and  Running ########## */
 
