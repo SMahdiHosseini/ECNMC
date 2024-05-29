@@ -36,7 +36,20 @@ __ns3_path = os.popen('locate "ns-3.41" | grep /ns-3.41$').read().splitlines()[0
 sample_rate = 0.01
 confidenceValue = 1.96 # 95% confidence interval
 
-# convert strings like "2Mbps" to float
+def calculate_drop_rate(__ns3_path, steadyStart, steadyEnd, rate, segment, checkColumn, projectColumn, experiment):
+    file_paths = glob.glob('{}/scratch/Results/{}/{}/*_{}.csv'.format(__ns3_path, rate, experiment, segment))
+    swtiches_dropRates = {}
+    for file_path in file_paths:
+        df_name = file_path.split('/')[-1].split('_')[0]
+        df = pd.read_csv(file_path)
+        df = df[df[projectColumn] > steadyStart * 1000000000]
+        df = df[df[projectColumn] < steadyEnd * 1000000000]
+        # calculate the drop rate by dividing the some of the payload of dropped packets by the total payload of the sent packets
+        total_payload = df['PayloadSize'].sum()
+        dropped_payload = df[df[checkColumn] == 0]['PayloadSize'].sum()
+        swtiches_dropRates[df_name] = dropped_payload / total_payload
+    return swtiches_dropRates
+
 def read_data(__ns3_path, steadyStart, steadyEnd, rate, segment, checkColumn, projectColumn, experiment, remove_duplicates):
     file_paths = glob.glob('{}/scratch/Results/{}/{}/*_{}.csv'.format(__ns3_path, rate, experiment, segment))
     dfs = {}
@@ -409,11 +422,12 @@ def analyze_single_experiment(rate, steadyStart, steadyEnd, confidenceValue, rou
     samples_dfs = read_data(__ns3_path, steadyStart, steadyEnd, rate, 'PoissonSampler', 'IsDeparted', 'SampleTime', str(experiment), False)
     # samples_highRate_dfs = read_data(__ns3_path, steadyStart, steadyEnd, rate, 'PoissonSampler_highRate', 'IsDeparted', 'SampleTime', str(experiment), False)
     # samples_regular_dfs = read_data(__ns3_path, steadyStart, steadyEnd, rate, 'RegularSampler', 'IsDeparted', 'SampleTime', str(experiment), False)
-    # read and append the drop rate from the last line of the sample file T0
-    with open('{}/scratch/Results/{}/{}/T0T1_PoissonSampler.csv'.format(__ns3_path, rate, str(experiment))) as f:
-        lines = f.readlines()
-        rounds_results['DropRate'].append(float(lines[-1].split(':')[1]))
+    # # read and append the drop rate from the last line of the sample file T0
+    # with open('{}/scratch/Results/{}/{}/T0T1_PoissonSampler.csv'.format(__ns3_path, rate, str(experiment))) as f:
+    #     lines = f.readlines()
+    #     rounds_results['DropRate'].append(float(lines[-1].split(':')[1]))
 
+    rounds_results['DropRate'].append(calculate_drop_rate(__ns3_path, steadyStart, steadyEnd, rate, 'Switch', 'IsSent', 'ReceiveTime', str(experiment))['T0'])
     # Intermediate links groundtruth statistics
     remove_interlinks_trasmission_delay(endToEnd_dfs, crossTraffic_dfs, switches_dfs)
 
