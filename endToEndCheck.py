@@ -420,6 +420,17 @@ def analyze_single_experiment(rate, steadyStart, steadyEnd, confidenceValue, rou
     crossTraffic_dfs = read_data(__ns3_path, steadyStart, steadyEnd, rate, 'EndToEnd_crossTraffic', 'IsReceived', 'SentTime', str(experiment), True)
     switches_dfs = read_data(__ns3_path, steadyStart, steadyEnd, rate, 'Switch', 'IsSent', 'ReceiveTime', str(experiment), True)
     samples_dfs = read_data(__ns3_path, steadyStart, steadyEnd, rate, 'PoissonSampler', 'IsDeparted', 'SampleTime', str(experiment), False)
+
+    # endToEnd_dataRates = {}
+    # for flow in endToEnd_dfs.keys():
+    #     endToEnd_dataRates[flow] = endToEnd_dfs[flow]['PayloadSize'].sum() * 8 / (10) / 1000000
+    # print(endToEnd_dataRates)
+
+    # endToEnd_dataRates = {}
+    # for flow in crossTraffic_dfs.keys():
+    #     endToEnd_dataRates[flow] = crossTraffic_dfs[flow]['PayloadSize'].sum() * 8 / (10) / 1000000
+    # print(endToEnd_dataRates)
+
     # samples_highRate_dfs = read_data(__ns3_path, steadyStart, steadyEnd, rate, 'PoissonSampler_highRate', 'IsDeparted', 'SampleTime', str(experiment), False)
     # samples_regular_dfs = read_data(__ns3_path, steadyStart, steadyEnd, rate, 'RegularSampler', 'IsDeparted', 'SampleTime', str(experiment), False)
     # # read and append the drop rate from the last line of the sample file T0

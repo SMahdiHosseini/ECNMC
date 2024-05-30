@@ -12,10 +12,10 @@ Rack: 1 Host: 1 Id:5 IP: 10.2.2.1
 Rack: 1 Host: 2 Id:6 IP: 10.2.3.1
 Rack: 1 Host: 3 Id:7 IP: 10.2.4.1
 Config Parameters
-hostToTorLinkRate: 10Mbps
-hostToTorLinkRateCrossTraffic: 40Mbps
+hostToTorLinkRate: 15Mbps
+hostToTorLinkRateCrossTraffic: 60Mbps
 hostToTorLinkDelay: 3ms
-torToAggLinkRate: 6.0Mbps
+torToAggLinkRate: 120.0Mbps
 torToAggLinkDelay: 3ms
 aggToCoreLinkRate: 10Mbps
 aggToCoreLinkDelay: 3ms
@@ -24,6 +24,6 @@ duration: 10
 pctPacedBack: 0.8
 enableSwitchECN: 1
 enableECMP: 0
-sampleRate: 200
+sampleRate: 1000
 Done 
-Total execution time = 39977187 microsecond
+Total execution time = 148607432 microsecond
