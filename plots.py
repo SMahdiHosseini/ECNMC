@@ -193,25 +193,27 @@ plt.clf()
 
 # plot EndToEndStd_sumstdi per flow per service rate scale 
 for flow in flows:
-    plt.errorbar(list(results.keys()), 
+    plt.errorbar(droprates_mean, 
                  [np.mean(np.divide(value['EndToEndStd'][flow], (np.array(value['T0std']) + np.array(value['T1std'][flow])))) for value in results.values()], 
-                 yerr=[np.std(np.divide(value['EndToEndStd'][flow], (np.array(value['T0std']) + np.array(value['T1std'][flow])))) for value in results.values()], fmt='-o')
+                 yerr=[np.std(np.divide(value['EndToEndStd'][flow], (np.array(value['T0std']) + np.array(value['T1std'][flow])))) for value in results.values()], 
+                    xerr=droprates_std, fmt='-o')
 plt.legend(flows)
-plt.xticks(list(results.keys()))
-plt.xlabel('Service Rate Scale')
+plt.xticks(droprates_xticks)
+plt.xlabel('Drop Rate')
 plt.ylabel('EndToEndStd_sumstdi')
-plt.title('EndToEndStd_sumstdi for Different Service Rate Scales')
+plt.title('EndToEndStd_sumstdi for Different Drop Rates')
 plt.savefig('results/EndToEndStd_sumstdi.png')
 plt.clf()
 
 # plot EndToEndStd2_sumstdi2 per flow per service rate scale 
 for flow in flows:
-    plt.errorbar(list(results.keys()), 
+    plt.errorbar(droprates_mean, 
                  [np.mean(np.divide(np.array(value['EndToEndStd'][flow]) ** 2, (np.array(value['T0std']) ** 2 + np.array(value['T1std'][flow]) ** 2))) for value in results.values()], 
-                 yerr=[np.std(np.divide(np.array(value['EndToEndStd'][flow]) ** 2, (np.array(value['T0std']) ** 2 + np.array(value['T1std'][flow]) ** 2))) for value in results.values()], fmt='-o')
+                 yerr=[np.std(np.divide(np.array(value['EndToEndStd'][flow]) ** 2, (np.array(value['T0std']) ** 2 + np.array(value['T1std'][flow]) ** 2))) for value in results.values()], 
+                    xerr=droprates_std, fmt='-o')
 plt.legend(flows)
-plt.xticks(list(results.keys()))
-plt.xlabel('Service Rate Scale')
+plt.xticks(droprates_xticks)
+plt.xlabel('Drop Rate')
 plt.ylabel('EndToEndStd2_sumstdi2')
 plt.title('EndToEndStd2_sumstdi2 for Different Service Rate Scales')
 plt.savefig('results/EndToEndStd2_sumstdi2.png')
@@ -219,13 +221,13 @@ plt.clf()
 
 # plot T0std_T1std per flow per service rate scale 
 for flow in flows:
-    plt.errorbar(list(results.keys()), [np.mean(np.divide(np.array(value['T0std']), np.array(value['T1std'][flow]))) for value in results.values()], 
-                 yerr=[np.std(np.divide(np.array(value['T0std']), np.array(value['T1std'][flow]))) for value in results.values()], fmt='-o')
+    plt.errorbar(droprates_mean, [np.mean(np.divide(np.array(value['T0std']), np.array(value['T1std'][flow]))) for value in results.values()], 
+                 yerr=[np.std(np.divide(np.array(value['T0std']), np.array(value['T1std'][flow]))) for value in results.values()], xerr=droprates_std, fmt='-o')
 plt.legend(flows)
-plt.xticks(list(results.keys()))
-plt.xlabel('Service Rate Scale')
+plt.xticks(droprates_xticks)
+plt.xlabel('Drop Rate')
 plt.ylabel('T0std_T1std')
-plt.title('T0std_T1std for Different Service Rate Scales')
+plt.title('T0std_T1std for Different Drop Rates')
 plt.savefig('results/T0std_T1std.png')
 plt.clf()
 

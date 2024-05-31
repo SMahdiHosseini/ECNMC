@@ -13,7 +13,7 @@ Config Parameters
 hostToTorLinkRate: 10Mbps
 hostToTorLinkRateCrossTraffic: 50Mbps
 hostToTorLinkDelay: 3ms
-torToAggLinkRate: 44.0Mbps
+torToAggLinkRate: 46.0Mbps
 torToAggLinkDelay: 3ms
 aggToCoreLinkRate: 10Mbps
 aggToCoreLinkDelay: 3ms
