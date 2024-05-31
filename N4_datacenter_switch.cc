@@ -234,8 +234,8 @@ int main(int argc, char* argv[])
     // r0h0 -> r1h0
     auto* appTraffic = new BackgroundReplay(racks[0].Get(0), racks[1].Get(0));
     appTraffic->SetPctOfPacedTcps(pctPacedBack);
-    string tracesPath = "/home/mahdi/Documents/NAL/Data/chicago_2010_traffic_10min_2paths/path0";
-    // string tracesPath = "/home/mahdi/Documents/Data/chicago_2010_traffic_10min_2paths/path0";
+    // string tracesPath = "/home/mahdi/Documents/NAL/Data/chicago_2010_traffic_10min_2paths/path0";
+    string tracesPath = "/home/mahdi/Documents/Data/chicago_2010_traffic_10min_2paths/path0";
     if (std::filesystem::exists(tracesPath)) {
         appTraffic->RunAllTCPTraces(tracesPath, 0);
     } else {
@@ -245,8 +245,8 @@ int main(int argc, char* argv[])
     // R0h1 -> R1h1
     auto* appTraffic2 = new BackgroundReplay(racks[0].Get(1), racks[1].Get(1));
     appTraffic2->SetPctOfPacedTcps(pctPacedBack);
-    string tracesPath2 = "/home/mahdi/Documents/NAL/Data/chicago_2010_traffic_10min_2paths/path1";
-    // string tracesPath2 = "/home/mahdi/Documents/Data/chicago_2010_traffic_10min_2paths/path1";
+    // string tracesPath2 = "/home/mahdi/Documents/NAL/Data/chicago_2010_traffic_10min_2paths/path1";
+    string tracesPath2 = "/home/mahdi/Documents/Data/chicago_2010_traffic_10min_2paths/path1";
     if (std::filesystem::exists(tracesPath2)) {
         appTraffic2->RunAllTCPTraces(tracesPath2, 0);
     } else {
@@ -266,10 +266,10 @@ int main(int argc, char* argv[])
     // r0h2 -> r1h2
     auto* appTraffic4 = new BackgroundReplay(racks[0].Get(2), racks[1].Get(2));
     appTraffic4->SetPctOfPacedTcps(pctPacedBack);
-    string tracesPath4 = "/home/mahdi/Documents/NAL/Data/chicago_2010_traffic_10min_2paths/path1";
-    // string tracesPath4 = "/home/mahdi/Documents/Data/chicago_2010_traffic_10min_2paths/path1";
+    // string tracesPath4 = "/home/mahdi/Documents/NAL/Data/chicago_2010_traffic_10min_2paths/path1";
+    string tracesPath4 = "/home/mahdi/Documents/Data/chicago_2010_traffic_10min_2paths/path2";
     if (std::filesystem::exists(tracesPath4)) {
-        appTraffic4->RunAllTraces(tracesPath4, 0);
+        appTraffic4->RunAllTCPTraces(tracesPath4, 0);
     } else {
         cout << "requested Background Directory does not exist" << endl;
     }
@@ -277,10 +277,10 @@ int main(int argc, char* argv[])
     // r0h3 -> r1h3
     auto* appTraffic5 = new BackgroundReplay(racks[0].Get(3), racks[1].Get(3));
     appTraffic5->SetPctOfPacedTcps(pctPacedBack);
-    string tracesPath5 = "/home/mahdi/Documents/NAL/Data/chicago_2010_traffic_10min_2paths/path0";
-    // string tracesPath5 = "/home/mahdi/Documents/Data/chicago_2010_traffic_10min_2paths/path0";
+    // string tracesPath5 = "/home/mahdi/Documents/NAL/Data/chicago_2010_traffic_10min_2paths/path0";
+    string tracesPath5 = "/home/mahdi/Documents/Data/chicago_2010_traffic_10min_2paths/path2";
     if (std::filesystem::exists(tracesPath5)) {
-        appTraffic5->RunAllTraces(tracesPath5, 0);
+        appTraffic5->RunAllTCPTraces(tracesPath5, 0);
     } else {
         cout << "requested Background Directory does not exist" << endl;
     }

@@ -32,7 +32,7 @@ __ns3_path = os.popen('locate "ns-3.41" | grep /ns-3.41$').read().splitlines()[0
 config = configparser.ConfigParser()
 config.read('Parameters.config')
 serviceRateScales = [float(x) for x in config.get('Settings', 'serviceRateScales').split(',')]
-# serviceRateScales = [0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1.0, 1.05, 1.1, 1.15, 1.2, 1.25, 1.3, 1.35, 1.4, 1.45, 1.5, 1.55, 1.6, 1.65, 1.7]
+serviceRateScales = [0.8, 0.85, 0.9, 0.95, 1.0]
 # print("serviceRateScales: ", serviceRateScales)
 
 
@@ -44,9 +44,10 @@ for rate in serviceRateScales:
 
 droprates_mean = [np.mean(value['DropRate']) for value in results.values()]
 droprates_std = [np.std(value['DropRate']) for value in results.values()]
-# 30 poin beween min and max with 2 decimal points
-droprates_xticks = np.linspace(np.min(droprates_mean), np.max(droprates_mean), 35)
-droprates_xticks = np.round(droprates_xticks, 2)
+# # 30 poin beween min and max with 2 decimal points
+# droprates_xticks = np.linspace(np.min(droprates_mean), np.max(droprates_mean), 35)
+# droprates_xticks = np.round(droprates_xticks, 2)
+droprates_xticks = [round(x, 3) for x in droprates_mean]
 
 # plot drop rate over the different service rate scales
 plt.errorbar(list(results.keys()), droprates_mean, yerr=droprates_std)
@@ -56,8 +57,9 @@ plt.title('Drop Rate for Different Service Rate Scales')
 plt.savefig('results/DropRate.png')
 plt.clf()
 
-plt.errorbar(droprates_mean, [value['ANOVA']['groundtruth'] for value in results.values()], xerr=droprates_std, color='b')
-plt.errorbar(droprates_mean, [value['Kruskal']['groundtruth'] for value in results.values()], xerr=droprates_std, color='r')
+# plot the ANOVA and Kruskal success rate per service rate scale
+plt.errorbar(droprates_mean, [value['ANOVA']['groundtruth'] / value['experiments'] * 100 for value in results.values()], xerr=droprates_std, color='b')
+plt.errorbar(droprates_mean, [value['Kruskal']['groundtruth'] / value['experiments'] * 100 for value in results.values()], xerr=droprates_std, color='r')
 plt.legend(['ANOVA', 'Kruskal'])
 plt.xticks(droprates_xticks)
 plt.xlabel('Drop Rate')
@@ -66,8 +68,8 @@ plt.title('ANOVA and Kruska Results for Different Drop Rates')
 plt.savefig('results/ANOVA_Kruskal_groundtruth.png')
 plt.clf()
 
-plt.errorbar(droprates_mean, [value['ANOVA']['samples'] for value in results.values()], xerr=droprates_std, color='b')
-plt.errorbar(droprates_mean, [value['Kruskal']['samples'] for value in results.values()], xerr=droprates_std, color='r')
+plt.errorbar(droprates_mean, [value['ANOVA']['samples'] / value['experiments'] * 100 for value in results.values()], xerr=droprates_std, color='b')
+plt.errorbar(droprates_mean, [value['Kruskal']['samples'] / value['experiments'] * 100 for value in results.values()], xerr=droprates_std, color='r')
 plt.legend(['ANOVA', 'Kruskal'])
 plt.xticks(droprates_xticks)
 plt.xlabel('Drop Rate')
@@ -77,6 +79,17 @@ plt.savefig('results/ANOVA_Kruskal_samples.png')
 plt.clf()
 
 flows = results[list(results.keys())[0]]['EndToEndSkew']
+# plot overall samples general success rate per drop rate
+for flow in flows:
+    plt.errorbar(droprates_mean, [value['Overall']['samples']['General'][flow] for value in results.values()], xerr=droprates_std, fmt='-o')
+plt.legend(flows)
+plt.xticks(droprates_xticks)
+plt.xlabel('Drop Rate')
+plt.ylabel('General Success Rate (%)')
+plt.title('General Success Rate for Different Drop Rates')
+plt.savefig('results/General_perDropRate.png')
+plt.clf()
+
 # claculate Coefficient of Variation for each flow for each service rate scale
 for key in results.keys():
     results[key]['EndToEndCV'] = {}

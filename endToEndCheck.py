@@ -308,12 +308,15 @@ def delayProcess_consistency_check(flows, flows_sampled, rounds_results):
     if kruskal_res.pvalue > 0.05:
         rounds_results['Kruskal']['samples'] += 1 
 
-def plot_overall_delay_distribution_noncommonSwitch(rate, nonCommon_switch_sample_df, flow):
-    # plot the delay distribution of Sample T1
-    fig, ax = plt.subplots(1, 1)
-    sns.histplot(nonCommon_switch_sample_df['SentTime'] - nonCommon_switch_sample_df['ReceiveTime'], bins=100)
-    ax.set_title('Sample T0')
-    ax.set_xlabel('Delay (ns)')
+def plot_overall_delay_distribution_noncommonSwitch(rate, switch_df, nonCommon_switch_sample_df, flow):
+    # plot the delay distribution of Sample T1 and Switch T1
+    fig, ax = plt.subplots(1, 2)
+    sns.histplot(nonCommon_switch_sample_df['SentTime'] - nonCommon_switch_sample_df['ReceiveTime'], bins=100, ax=ax[0])
+    sns.histplot(switch_df['SentTime'] - switch_df['ReceiveTime'], bins=100, ax=ax[1])
+    ax[0].set_title('Sample T1')
+    ax[1].set_title('Switch T1')
+    ax[0].set_xlabel('Delay (ns)')
+    ax[1].set_xlabel('Delay (ns)')
     plt.savefig('results/{}/{}_T1_{}_overall_delayDist.png'.format(rate, rate, flow))
     plt.close()
 
@@ -409,10 +412,10 @@ def check_grountruth_delayConsistency(endToEnd_dfs, switches_dfs):
         l_df['Deviation'] = l_df['Delay'] - l_df['Delay_T0'] - l_df['Delay_T1']
         l_df = l_df[l_df['Deviation'] != 0]
         print(l_df)
-        # remove the rows from the endToEnd data that have the same combination of ('SourceIp', 'SourcePort', 'DestinationIp', 'DestinationPort', 'PayloadSize', 'SequenceNb') with the rows in l_df
-        endToEnd_dfs[flow] = endToEnd_dfs[flow][~endToEnd_dfs[flow].apply(lambda x: (x['SourceIp'], x['SourcePort'], x['DestinationIp'], x['DestinationPort'], x['PayloadSize'], x['SequenceNb']) in l_df[['SourceIp', 'SourcePort', 'DestinationIp', 'DestinationPort', 'PayloadSize', 'SequenceNb']].values, axis=1)]
-        for switch in switches_dfs.keys():
-            switches_dfs[switch] = switches_dfs[switch][~switches_dfs[switch].apply(lambda x: (x['SourceIp'], x['SourcePort'], x['DestinationIp'], x['DestinationPort'], x['PayloadSize'], x['SequenceNb']) in l_df[['SourceIp', 'SourcePort', 'DestinationIp', 'DestinationPort', 'PayloadSize', 'SequenceNb']].values, axis=1)]
+        # # remove the rows from the endToEnd data that have the same combination of ('SourceIp', 'SourcePort', 'DestinationIp', 'DestinationPort', 'PayloadSize', 'SequenceNb') with the rows in l_df
+        # endToEnd_dfs[flow] = endToEnd_dfs[flow][~endToEnd_dfs[flow].apply(lambda x: (x['SourceIp'], x['SourcePort'], x['DestinationIp'], x['DestinationPort'], x['PayloadSize'], x['SequenceNb']) in l_df[['SourceIp', 'SourcePort', 'DestinationIp', 'DestinationPort', 'PayloadSize', 'SequenceNb']].values, axis=1)]
+        # for switch in switches_dfs.keys():
+        #     switches_dfs[switch] = switches_dfs[switch][~switches_dfs[switch].apply(lambda x: (x['SourceIp'], x['SourcePort'], x['DestinationIp'], x['DestinationPort'], x['PayloadSize'], x['SequenceNb']) in l_df[['SourceIp', 'SourcePort', 'DestinationIp', 'DestinationPort', 'PayloadSize', 'SequenceNb']].values, axis=1)]
 
 
 def analyze_single_experiment(rate, steadyStart, steadyEnd, confidenceValue, rounds_results, experiment=0, ns3_path=__ns3_path):
@@ -421,15 +424,15 @@ def analyze_single_experiment(rate, steadyStart, steadyEnd, confidenceValue, rou
     switches_dfs = read_data(__ns3_path, steadyStart, steadyEnd, rate, 'Switch', 'IsSent', 'ReceiveTime', str(experiment), True)
     samples_dfs = read_data(__ns3_path, steadyStart, steadyEnd, rate, 'PoissonSampler', 'IsDeparted', 'SampleTime', str(experiment), False)
 
-    # endToEnd_dataRates = {}
-    # for flow in endToEnd_dfs.keys():
-    #     endToEnd_dataRates[flow] = endToEnd_dfs[flow]['PayloadSize'].sum() * 8 / (10) / 1000000
-    # print(endToEnd_dataRates)
+    endToEnd_dataRates = {}
+    for flow in endToEnd_dfs.keys():
+        endToEnd_dataRates[flow] = endToEnd_dfs[flow]['PayloadSize'].sum() * 8 / (10) / 1000000
+    print(endToEnd_dataRates)
 
-    # endToEnd_dataRates = {}
-    # for flow in crossTraffic_dfs.keys():
-    #     endToEnd_dataRates[flow] = crossTraffic_dfs[flow]['PayloadSize'].sum() * 8 / (10) / 1000000
-    # print(endToEnd_dataRates)
+    endToEnd_dataRates = {}
+    for flow in crossTraffic_dfs.keys():
+        endToEnd_dataRates[flow] = crossTraffic_dfs[flow]['PayloadSize'].sum() * 8 / (10) / 1000000
+    print(endToEnd_dataRates)
 
     # samples_highRate_dfs = read_data(__ns3_path, steadyStart, steadyEnd, rate, 'PoissonSampler_highRate', 'IsDeparted', 'SampleTime', str(experiment), False)
     # samples_regular_dfs = read_data(__ns3_path, steadyStart, steadyEnd, rate, 'RegularSampler', 'IsDeparted', 'SampleTime', str(experiment), False)
@@ -581,7 +584,9 @@ def analyze_single_experiment(rate, steadyStart, steadyEnd, confidenceValue, rou
         plot_seperate_delay_distribution(rate, flows)
         plot_endToEnd_delay_distribution(rate, endToEnd_dfs)
         for flow in endToEnd_dfs.keys():
-            plot_overall_delay_distribution_noncommonSwitch(rate, nonCommon_switch_sample_df[flow], flow)
+            plot_overall_delay_distribution_noncommonSwitch(rate, 
+                                                            pd.merge(switches_dfs['T1'], endToEnd_dfs[flow].drop(columns=['SentTime', 'ReceiveTime', 'Delay']), on=['SourceIp', 'SourcePort', 'DestinationIp', 'DestinationPort', 'PayloadSize', 'SequenceNb'], how='inner'), 
+                                                            nonCommon_switch_sample_df[flow], flow)
 
     compatibility_check(confidenceValue, rounds_results, samples_statistics, endToEnd_statistics, groundtruth_statistics, endToEnd_dfs.keys())
 
@@ -632,8 +637,8 @@ def __main__():
     print("sampleRate", sampleRate)
     print("experiments: ", experiments)
     print("serviceRateScales: ", serviceRateScales)
-    # serviceRateScales = [0.6]
-    # experiments = 1
+    serviceRateScales = [0.8, 0.85, 0.9, 0.95, 1.0]
+    # experiments = 10
     # steadyStart = 4
     # steadyEnd = 9
 

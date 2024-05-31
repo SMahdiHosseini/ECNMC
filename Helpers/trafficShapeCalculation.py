@@ -27,24 +27,18 @@ def compute_traffic_over_time_dask(ddf, path):
     ddf.to_csv('traffic_over_time_{}.csv'.format(path))
 
 def read_data_ready(path):
-    if path == 2:
-        ddf_t = pd.read_csv('traffic_over_time_{}.csv'.format(0))
-    elif path == 3:
-        ddf_t = pd.read_csv('traffic_over_time_{}.csv'.format(1))
-
-    elif path == -1:
+    if path == -1:
         ddf_t_0 = pd.read_csv('traffic_over_time_{}.csv'.format(0)).drop(['seqNb'], axis=1)
         ddf_t_1 = pd.read_csv('traffic_over_time_{}.csv'.format(1)).drop(['seqNb'], axis=1)
         ddf_t_2 = pd.read_csv('traffic_over_time_{}.csv'.format(2)).drop(['seqNb'], axis=1)
-        ddf_t_3 = pd.read_csv('traffic_over_time_{}.csv'.format(3)).drop(['seqNb'], axis=1)
+        ddf_t_3 = pd.read_csv('traffic_over_time_{}.csv'.format(2)).drop(['seqNb'], axis=1)
 
         
     if path != -1:
-        ddf = pd.read_csv('traffic_over_time_{}.csv'.format(path))
-    if path != 0 and path != 1 and path != -1:
-        ddf = pd.merge(ddf_t, ddf, on='timestamp', how='outer')
-        ddf['payload_size'] = ddf[['payload_size_x', 'payload_size_y']].apply(lambda x: x['payload_size_x'] if pd.isna(x['payload_size_y']) else (x['payload_size_y'] if pd.isna(x['payload_size_x']) else x['payload_size_x'] + x['payload_size_y']), axis=1)
-        ddf = ddf.drop(['payload_size_x', 'payload_size_y', 'seqNb_x', 'seqNb_y'], axis=1)
+        if path == 2 or path == 3:
+            ddf = pd.read_csv('traffic_over_time_{}.csv'.format(2))
+        else:
+            ddf = pd.read_csv('traffic_over_time_{}.csv'.format(path))
 
     if path == -1:
         ddf = pd.merge(ddf_t_0, ddf_t_1, on='timestamp', how='outer')
@@ -110,8 +104,9 @@ def main(directories):
     plot_traffic(traffics_over_time)
 
 # Directory containing the CSV files
-paths = [0, 1]
-directories = ['/home/mahdi/Documents/NAL/Data/chicago_2010_traffic_10min_2paths/path{}/TCP'.format(i) for i in paths] + ['/home/mahdi/Documents/NAL/Data/chicago_2010_traffic_10min_2paths/path{}/UDP'.format(i) for i in paths]
+paths = [0, 1, 2]
+# directories = ['/home/mahdi/Documents/NAL/Data/chicago_2010_traffic_10min_2paths/path{}/TCP'.format(i) for i in paths]
+directories = ['/home/mahdi/Documents/Data/chicago_2010_traffic_10min_2paths/path{}/TCP'.format(i) for i in paths]
 
 if __name__ == "__main__":
     main(directories)
