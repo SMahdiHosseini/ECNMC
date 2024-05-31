@@ -17,11 +17,11 @@
     },
     "PerTrafficStream": {},
     "ANOVA": {
-        "samples": 9,
+        "samples": 10,
         "groundtruth": 7
     },
     "Kruskal": {
-        "samples": 9,
+        "samples": 10,
         "groundtruth": 6
     },
     "EndToEndMean": {

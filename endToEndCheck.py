@@ -424,15 +424,15 @@ def analyze_single_experiment(rate, steadyStart, steadyEnd, confidenceValue, rou
     switches_dfs = read_data(__ns3_path, steadyStart, steadyEnd, rate, 'Switch', 'IsSent', 'ReceiveTime', str(experiment), True)
     samples_dfs = read_data(__ns3_path, steadyStart, steadyEnd, rate, 'PoissonSampler', 'IsDeparted', 'SampleTime', str(experiment), False)
 
-    endToEnd_dataRates = {}
-    for flow in endToEnd_dfs.keys():
-        endToEnd_dataRates[flow] = endToEnd_dfs[flow]['PayloadSize'].sum() * 8 / (10) / 1000000
-    print(endToEnd_dataRates)
+    # endToEnd_dataRates = {}
+    # for flow in endToEnd_dfs.keys():
+    #     endToEnd_dataRates[flow] = endToEnd_dfs[flow]['PayloadSize'].sum() * 8 / (10) / 1000000
+    # print(endToEnd_dataRates)
 
-    endToEnd_dataRates = {}
-    for flow in crossTraffic_dfs.keys():
-        endToEnd_dataRates[flow] = crossTraffic_dfs[flow]['PayloadSize'].sum() * 8 / (10) / 1000000
-    print(endToEnd_dataRates)
+    # endToEnd_dataRates = {}
+    # for flow in crossTraffic_dfs.keys():
+    #     endToEnd_dataRates[flow] = crossTraffic_dfs[flow]['PayloadSize'].sum() * 8 / (10) / 1000000
+    # print(endToEnd_dataRates)
 
     # samples_highRate_dfs = read_data(__ns3_path, steadyStart, steadyEnd, rate, 'PoissonSampler_highRate', 'IsDeparted', 'SampleTime', str(experiment), False)
     # samples_regular_dfs = read_data(__ns3_path, steadyStart, steadyEnd, rate, 'RegularSampler', 'IsDeparted', 'SampleTime', str(experiment), False)
@@ -637,7 +637,7 @@ def __main__():
     print("sampleRate", sampleRate)
     print("experiments: ", experiments)
     print("serviceRateScales: ", serviceRateScales)
-    serviceRateScales = [0.8, 0.85, 0.9, 0.95, 1.0]
+    # serviceRateScales = [0.8, 0.85, 0.9, 0.95, 1.0]
     # experiments = 10
     # steadyStart = 4
     # steadyEnd = 9
