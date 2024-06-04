@@ -156,7 +156,17 @@ def addDelay(data):
         data['Delay'] = abs(data['ReceiveTime'] - data['SentTime'])
     return data
 
-def get_statistics(data, removeZeroes=False):
+def get_timeAvg(data):
+    # sort the data based on the receive time
+    data = data.sort_values(by=['ReceiveTime'])
+    # calculate the interarrival time
+    data['InterArrivalTime'] = data['ReceiveTime'].diff().fillna(0)
+    # calculate the time average: sum(InterArrivalTime * Delay) / sum(InterArrivalTime)
+    timeAvg = (data['InterArrivalTime'] * data['Delay']).sum() / data['InterArrivalTime'].sum()
+    return timeAvg
+
+
+def get_statistics(data, removeZeroes=False, timeAvg=False):
     statistics = {}
     data_copy = addDelay(data.copy())
     if removeZeroes:
@@ -166,6 +176,8 @@ def get_statistics(data, removeZeroes=False):
     statistics['sampleSize'] = len(data_copy)
     statistics['DelaySkew'] = data_copy['Delay'].skew()
     statistics['sizeStd'] = data_copy['PayloadSize'].std()
+    if timeAvg:
+        statistics['timeAvg'] = get_timeAvg(data_copy)
     return statistics
 
 def ECNMC(endToEnd_delayMean, sumOfSegments_DelayMeans, endToEnd_delayStd, MinSampleSize, confidenceValue):
@@ -186,13 +198,19 @@ def ECNMC_V3(endToEnd_delayMean, sumOfSegments_DelayMeans, approximate_endToEnd_
     else:  
         return False
 
+def ECNMC_V4(endToEnd_delayMean, sumOfSegments_DelayMeans, sumOfSegemntsEpsilon):
+    if abs(endToEnd_delayMean - sumOfSegments_DelayMeans) <= sumOfSegemntsEpsilon:
+        return True
+    else:  
+        return False
+
 def check_single_delayConsistency(endToEnd_statistics, switches_statistics, confidenceValue):
     switches_delayMeans = [value['DelayMean'] for value in switches_statistics.values()]
     switches_sampleSizes = [value['sampleSize'] for value in switches_statistics.values()]
     MinSampleSize = min(switches_sampleSizes)
     sumOfSegmentsDelayMeans = sum(switches_delayMeans)
     # print(endToEnd_statistics['DelayMean'], sumOfSegmentsDelayMeans, endToEnd_statistics['DelayStd'], MinSampleSize, confidenceValue)
-    return ECNMC(endToEnd_statistics['DelayMean'], sumOfSegmentsDelayMeans, endToEnd_statistics['DelayStd'], MinSampleSize, confidenceValue)
+    return ECNMC(endToEnd_statistics['timeAvg'], sumOfSegmentsDelayMeans, endToEnd_statistics['DelayStd'], MinSampleSize, confidenceValue)
         
 def check_single_delayConsistency_V2(endToEnd_statistics, switches_statistics, confidenceValue):
     # calculate the epsilon = confidenceValue * (switches_delayStd / (sqrt(switches_sampleSize) * switches_delayMean)) for each switch
@@ -208,7 +226,7 @@ def check_single_delayConsistency_V2(endToEnd_statistics, switches_statistics, c
     maxEpsilon = max(epsilons)
     sumOfSegmentsDelayMeans = sum(segments_delayMeans)
 
-    return ECNMC_V2(endToEnd_statistics['DelayMean'], sumOfSegmentsDelayMeans, maxEpsilon)
+    return ECNMC_V2(endToEnd_statistics['timeAvg'], sumOfSegmentsDelayMeans, maxEpsilon)
 
 def check_single_delayConsistency_V3(endToEnd_statistics, switches_statistics, confidenceValue):
     switches_delayMeans = [value['DelayMean'] for value in switches_statistics.values()]
@@ -220,17 +238,33 @@ def check_single_delayConsistency_V3(endToEnd_statistics, switches_statistics, c
     switches_sampleSizes = [value['sampleSize'] for value in switches_statistics.values()]
     MinSampleSize = min(switches_sampleSizes)
     sumOfSegmentsDelayMeans = sum(switches_delayMeans)
-    return ECNMC_V3(endToEnd_statistics['DelayMean'], sumOfSegmentsDelayMeans, approximate_endToEnd_delayStd, MinSampleSize, confidenceValue)
+    return ECNMC_V3(endToEnd_statistics['timeAvg'], sumOfSegmentsDelayMeans, approximate_endToEnd_delayStd, MinSampleSize, confidenceValue)
+
+def check_single_delayConsistency_V4(endToEnd_statistics, switches_statistics, confidenceValue):
+    switches_epsilon = [confidenceValue * (value['DelayStd'] / np.sqrt(value['sampleSize'])) for value in switches_statistics.values()]
+    sumOfSegmentsDelayMeans = sum([value['DelayMean'] for value in switches_statistics.values()])
+    sumOfSegemntsEpsilon = sum(switches_epsilon)
+    return ECNMC_V4(endToEnd_statistics['DelayMean'], sumOfSegmentsDelayMeans, sumOfSegemntsEpsilon)
+
+def check_single_delayConsistency_V5(endToEnd_statistics, switches_statistics, confidenceValue):
+    switches_epsilon = [confidenceValue * (value['DelayStd'] / np.sqrt(value['sampleSize'])) for value in switches_statistics.values()]
+    sumOfSegmentsDelayMeans = sum([value['DelayMean'] for value in switches_statistics.values()])
+    sumOfSegemntsEpsilon = sum(switches_epsilon)
+    return ECNMC_V4(endToEnd_statistics['timeAvg'], sumOfSegmentsDelayMeans, sumOfSegemntsEpsilon)
 
 def check_all_delayConsistency(endToEnd_statistics, switches_statistics, confidenceValue):
     res = {}
     res['DominantAssumption'] = {}
     res['General'] = {}
     res['RelaxedDominantAssumption'] = {}
+    res['Basic'] = {}
+    res['Basic_timeAvg'] = {}
     for flow in endToEnd_statistics.keys():
         res['DominantAssumption'][flow] = check_single_delayConsistency(endToEnd_statistics[flow], switches_statistics[flow], confidenceValue)
         res['General'][flow] = check_single_delayConsistency_V2(endToEnd_statistics[flow], switches_statistics[flow], confidenceValue)
         res['RelaxedDominantAssumption'][flow] = check_single_delayConsistency_V3(endToEnd_statistics[flow], switches_statistics[flow], confidenceValue)
+        res['Basic'][flow] = check_single_delayConsistency_V4(endToEnd_statistics[flow], switches_statistics[flow], confidenceValue)
+        res['Basic_timeAvg'][flow] = check_single_delayConsistency_V5(endToEnd_statistics[flow], switches_statistics[flow], confidenceValue)
     return res
 
 def prepare_results(flows):
@@ -241,6 +275,8 @@ def prepare_results(flows):
     rounds_results['Overall']['samples']['DominantAssumption'] = {}
     rounds_results['Overall']['samples']['General'] = {}
     rounds_results['Overall']['samples']['RelaxedDominantAssumption'] = {}
+    rounds_results['Overall']['samples']['Basic'] = {}
+    rounds_results['Overall']['samples']['Basic_timeAvg'] = {}
     rounds_results['ANOVA'] = {}
     rounds_results['Kruskal'] = {}
     rounds_results['ANOVA']['samples'] = 0
@@ -267,6 +303,8 @@ def prepare_results(flows):
         rounds_results['Overall']['samples']['DominantAssumption'][flow] = 0
         rounds_results['Overall']['samples']['General'][flow] = 0
         rounds_results['Overall']['samples']['RelaxedDominantAssumption'][flow] = 0
+        rounds_results['Overall']['samples']['Basic'][flow] = 0
+        rounds_results['Overall']['samples']['Basic_timeAvg'][flow] = 0
         rounds_results['EndToEndMean'][flow] = []
         rounds_results['EndToEndStd'][flow] = []
         rounds_results['EndToEndSkew'][flow] = []
@@ -366,6 +404,10 @@ def compatibility_check(confidenceValue, rounds_results, samples_statistics, end
             rounds_results['Overall']['samples']['General'][flow] += 1
         if results['Overall']['samples']['RelaxedDominantAssumption'][flow]:
             rounds_results['Overall']['samples']['RelaxedDominantAssumption'][flow] += 1
+        if results['Overall']['samples']['Basic'][flow]:
+            rounds_results['Overall']['samples']['Basic'][flow] += 1
+        if results['Overall']['samples']['Basic_timeAvg'][flow]:
+            rounds_results['Overall']['samples']['Basic_timeAvg'][flow] += 1
 
 def remove_interlinks_trasmission_delay(endToEnd_dfs, crossTraffic_dfs, switches_dfs):
     for flow in endToEnd_dfs.keys():
@@ -480,7 +522,7 @@ def analyze_single_experiment(rate, steadyStart, steadyEnd, confidenceValue, rou
         nonCommon_switch_sample_df[flow] = get_switch_samples_delays(switches_dfs['T1'], samples_dfs['T1.R' + flow.split('R')[-1]])
         # nonCommin_switch_highRate_sample_df[flow] = get_switch_samples_delays(switches_dfs['T1'], samples_highRate_dfs['T1.R' + flow.split('R')[-1]])
         # nonCommon_switch_regular_sample_df[flow] = get_switch_samples_delays(switches_dfs['T1'], samples_regular_dfs['T1.R' + flow.split('R')[-1]])
-        samples_statistics['Overall'][flow]['T1'] = get_statistics(nonCommon_switch_sample_df[flow])
+        samples_statistics['Overall'][flow]['T1'] = get_statistics(nonCommon_switch_sample_df[flow], timeAvg=True)
         samples_statistics['RemovedZeroes'][flow]['T1'] = get_statistics(nonCommon_switch_sample_df[flow], True)
         # highRate_samples_statistics['Overall'][flow]['T1'] = get_statistics(nonCommin_switch_highRate_sample_df[flow])
         # regular_samples_statistics['Overall'][flow]['T1'] = get_statistics(nonCommon_switch_regular_sample_df[flow])
@@ -500,7 +542,7 @@ def analyze_single_experiment(rate, steadyStart, steadyEnd, confidenceValue, rou
     # switch_different_traffics_delaymean(switches_dfs['T0'])
     for flow in endToEnd_dfs.keys():
         groundtruth_statistics['Overall'][flow] = {}
-        groundtruth_statistics['Overall'][flow]['T0'] = get_statistics(switches_dfs['T0'])
+        groundtruth_statistics['Overall'][flow]['T0'] = get_statistics(switches_dfs['T0'], timeAvg=True)
         groundtruth_statistics['Overall'][flow]['T1'] = get_statistics(switches_dfs['T1'])
         # groundtruth_statistics['Overall'][flow]['T0']['sampleSize'] = samples_statistics['Overall'][flow]['T0']['sampleSize']
         # groundtruth_statistics['Overall'][flow]['T1']['sampleSize'] = samples_statistics['Overall'][flow]['T1']['sampleSize']
@@ -512,23 +554,24 @@ def analyze_single_experiment(rate, steadyStart, steadyEnd, confidenceValue, rou
         flows.append(flow_on_switch)
         
         groundtruth_statistics['PerTrafficStream'][flow]['T0'] = get_statistics(flow_on_switch)
-        groundtruth_statistics['PerTrafficStream'][flow]['T1'] = get_statistics(switch_data(endToEnd_dfs[flow].drop(columns=['SentTime', 'ReceiveTime', 'Delay']), switches_dfs['T1'], False))
+        groundtruth_statistics['PerTrafficStream'][flow]['T1'] = get_statistics(switch_data(endToEnd_dfs[flow].drop(columns=['SentTime', 'ReceiveTime', 'Delay']), switches_dfs['T1'], False), timeAvg=True)
         
         groundtruth_statistics['RemovedZeroes'][flow] = {}
         groundtruth_statistics['RemovedZeroes'][flow]['T0'] = get_statistics(switches_dfs['T0'], True)
-        groundtruth_statistics['RemovedZeroes'][flow]['T1'] = get_statistics(switch_data(endToEnd_dfs[flow].drop(columns=['SentTime', 'ReceiveTime', 'Delay']), switches_dfs['T1'], False), True)
+        groundtruth_statistics['RemovedZeroes'][flow]['T1'] = get_statistics(switch_data(endToEnd_dfs[flow].drop(columns=['SentTime', 'ReceiveTime', 'Delay']), switches_dfs['T1'], False), True, True)
 
         # print(groundtruth_statistics['PerTrafficStream'][flow]['T0']['DelayMean'], samples_statistics['Overall'][flow]['T0']['DelayMean'], samples_statistics['PerTrafficStream'][flow]['T0']['DelayMean'])
         # print("T0 groundtruth_statistics['PerTrafficStream']: ", groundtruth_statistics['PerTrafficStream'][flow]['T0']['DelayMean'])
+        # print("groundtruth_statistics['Overall'][flow]['T0']['DelayMean']: ", groundtruth_statistics['Overall'][flow]['T0']['DelayMean'], groundtruth_statistics['Overall'][flow]['T0']['timeAvg'])
         # print("T0 regular_samples_statistics['Overall']: ", regular_samples_statistics['Overall'][flow]['T0']['DelayMean'])
         # print("T0 RemovedZeroes: ", groundtruth_statistics['RemovedZeroes'][flow]['T0']['DelayMean'])
 
-        # print("T0 samples_statistics['Overall']: ", samples_statistics['Overall'][flow]['T0']['DelayMean'])
+        # print("T0 samples_statistics['Overall']: ", samples_statistics['Overall'][flow]['T0']['DelayMean'], samples_statistics['Overall'][flow]['T0']['DelayStd'], samples_statistics['Overall'][flow]['T0']['sampleSize'])
         # print("T0 highRate_samples_statistics['Overall']: ", highRate_samples_statistics['Overall'][flow]['T0']['DelayMean'])
         # print("T0 RemovedZeroes: ", samples_statistics['RemovedZeroes'][flow]['T0']['DelayMean'])
         # print()
         
-        if abs(groundtruth_statistics['Overall'][flow]['T0']['DelayMean'] - samples_statistics['Overall'][flow]['T0']['DelayMean']) <= confidenceValue * samples_statistics['Overall'][flow]['T0']['DelayStd'] / np.sqrt(samples_statistics['Overall'][flow]['T0']['sampleSize']):
+        if abs(groundtruth_statistics['Overall'][flow]['T0']['timeAvg'] - samples_statistics['Overall'][flow]['T0']['DelayMean']) <= confidenceValue * samples_statistics['Overall'][flow]['T0']['DelayStd'] / np.sqrt(samples_statistics['Overall'][flow]['T0']['sampleSize']):
             rounds_results['T0Ineq'][flow] += 1
         # if abs(groundtruth_statistics['Overall'][flow]['T0']['DelayMean'] - highRate_samples_statistics['Overall'][flow]['T0']['DelayMean']) <= confidenceValue * highRate_samples_statistics['Overall'][flow]['T0']['DelayStd'] / np.sqrt(highRate_samples_statistics['Overall'][flow]['T0']['sampleSize']):
         #     rounds_results['T0IeqHighRate'][flow] += 1
@@ -537,16 +580,16 @@ def analyze_single_experiment(rate, steadyStart, steadyEnd, confidenceValue, rou
         if abs(groundtruth_statistics['RemovedZeroes'][flow]['T0']['DelayMean'] - samples_statistics['RemovedZeroes'][flow]['T0']['DelayMean']) <= confidenceValue * samples_statistics['RemovedZeroes'][flow]['T0']['DelayStd'] / np.sqrt(samples_statistics['RemovedZeroes'][flow]['T0']['sampleSize']):  
             rounds_results['T0IneqRemovedZeroes'][flow] += 1
         
-        # print("T1 groundtruth_statistics['PerTrafficStream']: ", groundtruth_statistics['PerTrafficStream'][flow]['T1']['DelayMean'])
+        # print("T1 groundtruth_statistics['PerTrafficStream']: ", groundtruth_statistics['PerTrafficStream'][flow]['T1']['DelayMean'], groundtruth_statistics['PerTrafficStream'][flow]['T1']['timeAvg'])
         # print("T1 regular_samples_statistics['Overall']: ", regular_samples_statistics['Overall'][flow]['T1']['DelayMean'])
-        # print("T1 RemovedZeroes: ", groundtruth_statistics['RemovedZeroes'][flow]['T1']['DelayMean'])
+        # print("T1 groundtruth_statistics RemovedZeroes: ", groundtruth_statistics['RemovedZeroes'][flow]['T1']['DelayMean'], groundtruth_statistics['RemovedZeroes'][flow]['T1']['timeAvg'])
 
-        # print("T1 samples_statistics['Overall']: ", samples_statistics['Overall'][flow]['T1']['DelayMean'])
+        # print("T1 samples_statistics['Overall']: ", samples_statistics['Overall'][flow]['T1']['DelayMean'], samples_statistics['Overall'][flow]['T1']['timeAvg'], samples_statistics['Overall'][flow]['T1']['DelayStd'], samples_statistics['Overall'][flow]['T1']['sampleSize'])
         # print("T1 highRate_samples_statistics['Overall']: ", highRate_samples_statistics['Overall'][flow]['T1']['DelayMean'])
-        # print("T1 RemovedZeroes: ", samples_statistics['RemovedZeroes'][flow]['T1']['DelayMean'])
+        # print("T1 samples_statistics RemovedZeroes: ", samples_statistics['RemovedZeroes'][flow]['T1']['DelayMean'])
         # print("***********************")
 
-        if abs(groundtruth_statistics['PerTrafficStream'][flow]['T1']['DelayMean'] - samples_statistics['Overall'][flow]['T1']['DelayMean']) <= confidenceValue * samples_statistics['Overall'][flow]['T1']['DelayStd'] / np.sqrt(samples_statistics['Overall'][flow]['T1']['sampleSize']):
+        if abs(groundtruth_statistics['PerTrafficStream'][flow]['T1']['timeAvg'] - samples_statistics['Overall'][flow]['T1']['DelayMean']) <= confidenceValue * samples_statistics['Overall'][flow]['T1']['DelayStd'] / np.sqrt(samples_statistics['Overall'][flow]['T1']['sampleSize']):
             # print("T1 Overall: ", True)
             rounds_results['T1Ineq'][flow] += 1
         # if abs(groundtruth_statistics['PerTrafficStream'][flow]['T1']['DelayMean'] - highRate_samples_statistics['Overall'][flow]['T1']['DelayMean']) <= confidenceValue * highRate_samples_statistics['Overall'][flow]['T1']['DelayStd'] / np.sqrt(highRate_samples_statistics['Overall'][flow]['T1']['sampleSize']):
@@ -561,16 +604,16 @@ def analyze_single_experiment(rate, steadyStart, steadyEnd, confidenceValue, rou
         segments_sampleSizes = [value['sampleSize'] for value in samples_statistics['Overall'][flow].values()]
         epsilons = [confidenceValue * (segments_delayStds[i] / (np.sqrt(segments_sampleSizes[i]) * segments_delayMeans[i])) for i in range(len(segments_delayMeans))]
         maxEpsilon = max(epsilons)
-        if abs(groundtruth_statistics['Overall'][flow]['T0']['DelayMean'] - samples_statistics['Overall'][flow]['T0']['DelayMean']) / samples_statistics['Overall'][flow]['T0']['DelayMean'] <= maxEpsilon:
+        if abs(groundtruth_statistics['Overall'][flow]['T0']['timeAvg'] - samples_statistics['Overall'][flow]['T0']['DelayMean']) / samples_statistics['Overall'][flow]['T0']['DelayMean'] <= maxEpsilon:
             rounds_results['T0IneqMaxEpsilon'][flow] += 1 
-        if abs(groundtruth_statistics['PerTrafficStream'][flow]['T1']['DelayMean']- samples_statistics['Overall'][flow]['T1']['DelayMean']) / samples_statistics['Overall'][flow]['T1']['DelayMean'] <= maxEpsilon:
+        if abs(groundtruth_statistics['PerTrafficStream'][flow]['T1']['timeAvg']- samples_statistics['Overall'][flow]['T1']['DelayMean']) / samples_statistics['Overall'][flow]['T1']['DelayMean'] <= maxEpsilon:
             rounds_results['T1IneqMaxEpsilon'][flow] += 1
 
     # endToEnd_statistics
     endToEnd_statistics = {}
     rounds_results['T0std'].append(samples_statistics['Overall']['R0h0R1h0']['T0']['DelayStd'])
     for flow in endToEnd_dfs.keys():
-        endToEnd_statistics[flow] = get_statistics(endToEnd_dfs[flow])
+        endToEnd_statistics[flow] = get_statistics(endToEnd_dfs[flow], timeAvg=True)
         rounds_results['EndToEndMean'][flow].append(endToEnd_statistics[flow]['DelayMean'])
         rounds_results['EndToEndSkew'][flow].append(endToEnd_statistics[flow]['DelaySkew'])
         rounds_results['EndToEndStd'][flow].append(endToEnd_statistics[flow]['DelayStd'])
@@ -590,17 +633,17 @@ def analyze_single_experiment(rate, steadyStart, steadyEnd, confidenceValue, rou
 
     compatibility_check(confidenceValue, rounds_results, samples_statistics, endToEnd_statistics, groundtruth_statistics, endToEnd_dfs.keys())
 
-def analyze_all_experiments(rate, steadyStart, steadyEnd, confidenceValue, experiments=3, ns3_path=__ns3_path):
+def analyze_all_experiments(rate, steadyStart, steadyEnd, confidenceValue, experiments_start=0, experiments_end=3, ns3_path=__ns3_path):
     flows_name = read_data_flowIndicator(ns3_path, rate)
 
     rounds_results = prepare_results(flows_name)
-    for experiment in range(experiments):
+    for experiment in range(experiments_start, experiments_end):
         if len(os.listdir('{}/scratch/Results/{}/{}'.format(__ns3_path, rate, experiment))) == 0:
             print(experiment)
             continue
         analyze_single_experiment(rate, steadyStart, steadyEnd, confidenceValue, rounds_results, experiment, ns3_path)
 
-    with open('results/{}/{}_results.json'.format(rate,rate), 'w') as f:
+    with open('results/{}/{}_{}_results.json'.format(rate,rate, experiments_end), 'w') as f:
         # save the results in a well formatted json file
         js.dump(rounds_results, f, indent=4)
 
@@ -637,14 +680,15 @@ def __main__():
     print("sampleRate", sampleRate)
     print("experiments: ", experiments)
     print("serviceRateScales: ", serviceRateScales)
-    # serviceRateScales = [0.8, 0.85, 0.9, 0.95, 1.0]
+    # serviceRateScales = [0.85]
     # experiments = 10
     # steadyStart = 4
     # steadyEnd = 9
 
     for rate in serviceRateScales:
         print("\nAnalyzing experiments for rate: ", rate)
-        analyze_all_experiments(rate, steadyStart, steadyEnd, confidenceValue, experiments, __ns3_path)
-        print("Rate {} done".format(rate))
+        for exp in range(0, experiments, 50):
+            analyze_all_experiments(rate, steadyStart, steadyEnd, confidenceValue, experiments_start=exp, experiments_end=min(experiments, exp+50), ns3_path=__ns3_path)
+            print("Rate {} {} done".format(rate, exp))
 
 __main__()
