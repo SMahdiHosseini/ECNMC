@@ -80,13 +80,13 @@ void SwitchMonitor::AddAppKey(AppKey appKey) {
 void SwitchMonitor::SavePacketRecords(const string& filename) {
     ofstream outfile;
     outfile.open(filename);
-    outfile << "SourceIp,SourcePort,DestinationIp,DestinationPort,SequenceNb,PayloadSize,ReceiveTime,IsSent,SentTime" << endl;
+    outfile << "SourceIp,SourcePort,DestinationIp,DestinationPort,SequenceNb,Id,PayloadSize,ReceiveTime,IsSent,SentTime" << endl;
     for (auto& packetKeyEventPair: _recordedPackets) {
         PacketKey key = packetKeyEventPair.first;
         SwitchMonitorEvent* event = packetKeyEventPair.second;
 
         outfile << key.GetSrcIp() << "," << key.GetSrcPort() << ",";
-        outfile << key.GetDstIp() << "," << key.GetDstPort() << "," << key.GetSeqNb() << "," << key.GetSize() << ",";
+        outfile << key.GetDstIp() << "," << key.GetDstPort() << "," << key.GetSeqNb() << "," << key.GetId()  << "," << key.GetSize() << ",";
         outfile << GetRelativeTime(event->GetReceivedTime()).GetNanoSeconds() << ",";
         outfile << event->IsSent() << "," << GetRelativeTime(event->GetSentTime()).GetNanoSeconds() << endl;
     }

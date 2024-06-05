@@ -53,7 +53,7 @@ def run_experiment():
         exp_tor_to_agg_link_rate = "{}Mbps".format(round(float(expConfig.tor_to_agg_link_rate.split('M')[0]) * rate, 1))
         for i in range(int(expConfig.experiments)):
             os.system(
-                '{}/ns3 run \'N4_datacenter_switch '.format(get_ns3_path()) +
+                '{}/ns3 run \'DatacenterSimulation '.format(get_ns3_path()) +
                 '--hostToTorLinkRate={} '.format(expConfig.host_to_tor_link_rate) +
                 '--hostToTorLinkRateCrossTraffic={} '.format(expConfig.host_to_tor_cross_traffic_rate) +
                 '--torToAggLinkRate={} '.format(exp_tor_to_agg_link_rate) +

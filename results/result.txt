@@ -1,27 +1,30 @@
+[0/2] Re-checking globbed directories...
+[1/2] Building CXX object scratch/ECNMC/CMakeFiles/scratch_ECNMC_DatacenterSimulation.dir/DatacenterSimulation.cc.o
+[2/2] Linking CXX executable ../build/scratch/ECNMC/ns3.41-DatacenterSimulation-default
 
 Start
 Hosts and Switches IP addresses
 Rack: 0 Host: 0 Id:0 IP: 10.1.1.1
 Rack: 0 Host: 1 Id:1 IP: 10.1.2.1
-Rack: 0 Host: 2 Id:2 IP: 10.1.3.1
-Rack: 0 Host: 3 Id:3 IP: 10.1.4.1
-Rack: 1 Host: 0 Id:4 IP: 10.2.1.1
-Rack: 1 Host: 1 Id:5 IP: 10.2.2.1
-Rack: 1 Host: 2 Id:6 IP: 10.2.3.1
-Rack: 1 Host: 3 Id:7 IP: 10.2.4.1
+Rack: 1 Host: 0 Id:2 IP: 10.2.1.1
+Rack: 1 Host: 1 Id:3 IP: 10.2.2.1
+Rack: 2 Host: 0 Id:4 IP: 10.3.1.1
+Rack: 2 Host: 1 Id:5 IP: 10.3.2.1
+Rack: 3 Host: 0 Id:6 IP: 10.4.1.1
+Rack: 3 Host: 1 Id:7 IP: 10.4.2.1
 Config Parameters
 hostToTorLinkRate: 10Mbps
 hostToTorLinkRateCrossTraffic: 50Mbps
 hostToTorLinkDelay: 3ms
-torToAggLinkRate: 48.0Mbps
+torToAggLinkRate: 8.0Mbps
 torToAggLinkDelay: 3ms
-aggToCoreLinkRate: 10Mbps
+aggToCoreLinkRate: 8Mbps
 aggToCoreLinkDelay: 3ms
-appDataRate: 50Mbps
-duration: 10
+appDataRate: 10Mbps
+duration: 1
 pctPacedBack: 0.8
 enableSwitchECN: 1
-enableECMP: 0
+enableECMP: 1
 sampleRate: 1000
 Done 
-Total execution time = 35203930 microsecond
+Total execution time = 16016059 microsecond

@@ -70,13 +70,13 @@ void PacketMonitor::RecordIpv4PacketReceived(Ptr<const Packet> packet, Ptr<Ipv4>
 void PacketMonitor::SavePacketRecords(const string& filename) {
     ofstream outfile;
     outfile.open(filename);
-    outfile << "SourceIp,SourcePort,DestinationIp,DestinationPort,SequenceNb,PayloadSize,SentTime,IsReceived,ReceiveTime" << endl;
+    outfile << "SourceIp,SourcePort,DestinationIp,DestinationPort,SequenceNb,Id,PayloadSize,SentTime,IsReceived,ReceiveTime" << endl;
     for (auto& packetKeyEventPair: _recordedPackets) {
         PacketKey key = packetKeyEventPair.first;
         PacketMonitorEvent* event = packetKeyEventPair.second;
 
         outfile << key.GetSrcIp() << "," << key.GetSrcPort() << ",";
-        outfile << key.GetDstIp() << "," << key.GetDstPort() << "," << key.GetSeqNb() << "," << key.GetSize() << ",";
+        outfile << key.GetDstIp() << "," << key.GetDstPort() << "," << key.GetSeqNb() << "," << key.GetId()  << "," << key.GetSize() << ",";
         outfile << GetRelativeTime(event->GetSentTime()).GetNanoSeconds() << ",";
         outfile << event->IsReceived() << "," << GetRelativeTime(event->GetReceivedTime()).GetNanoSeconds() << endl;
     }

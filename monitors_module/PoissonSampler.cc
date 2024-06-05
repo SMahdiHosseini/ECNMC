@@ -126,13 +126,13 @@ void PoissonSampler::RecordPacket(Ptr<const Packet> packet) {
 void PoissonSampler::SaveSamples(const string& filename) {
     ofstream outfile;
     outfile.open(filename);
-    outfile << "SourceIp,SourcePort,DestinationIp,DestinationPort,SequenceNb,PayloadSize,SampleTime,IsDeparted,DepartTime" << endl;
+    outfile << "SourceIp,SourcePort,DestinationIp,DestinationPort,SequenceNb,Id,PayloadSize,SampleTime,IsDeparted,DepartTime" << endl;
     for (auto& packetKeyEventPair: _recordedSamples) {
         PacketKey key = packetKeyEventPair.first;
         samplingEvent* event = packetKeyEventPair.second;
 
         outfile << key.GetSrcIp() << "," << key.GetSrcPort() << ",";
-        outfile << key.GetDstIp() << "," << key.GetDstPort() << "," << key.GetSeqNb() << "," << key.GetSize() << ",";
+        outfile << key.GetDstIp() << "," << key.GetDstPort() << "," << key.GetSeqNb() << "," << key.GetId()  << "," << key.GetSize() << ",";
         outfile << GetRelativeTime(event->GetSampleTime()).GetNanoSeconds() << ",";
         outfile << event->IsDeparted() << "," << GetRelativeTime(event->GetDepartureTime()).GetNanoSeconds() << endl;
     }
