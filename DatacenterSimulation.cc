@@ -116,7 +116,7 @@ int main(int argc, char* argv[])
 
 
     /* ########## START: Ceating the topology ########## */
-    int nHosts = 2;
+    int nHosts = 6;
     int nRacks = 4;
     int nAggSwitches = 2;
     int nCoreSwitches = 1;
@@ -302,6 +302,30 @@ int main(int argc, char* argv[])
         }
     }
 
+    // each host in R2 sends a flow to the corresponding host in R1
+    // for (int i = 0; i < nHosts; i++) {
+    //     auto* caidaTrafficGenerator = new BackgroundReplay(racks[2].Get(i), racks[1].Get(i));
+    //     caidaTrafficGenerator->SetPctOfPacedTcps(pctPacedBack);
+    //     string tracesPath = "/home/mahdi/Documents/NAL/Data/chicago_2010_traffic_10min_2paths/path" + to_string(i % 2);
+    //     if (std::filesystem::exists(tracesPath)) {
+    //         caidaTrafficGenerator->RunAllTCPTraces(tracesPath, 0);
+    //     } else {
+    //         cout << "requested Background Directory does not exist" << endl;
+    //     }
+    // }
+
+    // // each host in R3 sends a flow to the corresponding host in R0
+    // for (int i = 0; i < nHosts; i++) {
+    //     auto* caidaTrafficGenerator = new BackgroundReplay(racks[3].Get(i), racks[0].Get(i));
+    //     caidaTrafficGenerator->SetPctOfPacedTcps(pctPacedBack);
+    //     string tracesPath = "/home/mahdi/Documents/NAL/Data/chicago_2010_traffic_10min_2paths/path" + to_string(i % 2);
+    //     if (std::filesystem::exists(tracesPath)) {
+    //         caidaTrafficGenerator->RunAllTCPTraces(tracesPath, 0);
+    //     } else {
+    //         cout << "requested Background Directory does not exist" << endl;
+    //     }
+    // }
+
     // NS3 application
     // // Each host in R0 sends a flow to the corresponding host in R2
     // vector<Ptr<PacketSink>> R2Sinks;
@@ -376,6 +400,20 @@ int main(int argc, char* argv[])
         endToendMonitors.push_back(R1R3Monitor);
     }
 
+    // // Monitor the packets between each pair of hosts in R2 and R1
+    // for (int i = 0; i < nHosts; i++) {
+    //     auto *R2R1Monitor = new PacketMonitor(startTime, stopTime + convergenceTime, racks[2].Get(i), racks[1].Get(i), "R2H" + to_string(i) + "R1H" + to_string(i));
+    //     R2R1Monitor->AddAppKey(AppKey(ipsRacks[2][i].GetAddress(0), ipsRacks[1][i].GetAddress(0), 0, 0));
+    //     endToendMonitors.push_back(R2R1Monitor);
+    // }
+
+    // // Monitor the packets between each pair of hosts in R3 and R0
+    // for (int i = 0; i < nHosts; i++) {
+    //     auto *R3R0Monitor = new PacketMonitor(startTime, stopTime + convergenceTime, racks[3].Get(i), racks[0].Get(i), "R3H" + to_string(i) + "R0H" + to_string(i));
+    //     R3R0Monitor->AddAppKey(AppKey(ipsRacks[3][i].GetAddress(0), ipsRacks[0][i].GetAddress(0), 0, 0));
+    //     endToendMonitors.push_back(R3R0Monitor);
+    // }
+
     // switch monitors on the ToR switches
     vector<SwitchMonitor *> torSwitchMonitors;
     for (int i = 0; i < nRacks; i++) {
@@ -406,9 +444,9 @@ int main(int argc, char* argv[])
     vector<SwitchMonitor *> coreSwitchMonitors;
     for (int i = 0; i < nCoreSwitches; i++) {
         auto *coreSwitchMonitor = new SwitchMonitor(startTime, stopTime + convergenceTime, coreSwitches.Get(i), "C" + to_string(i));
-        for (int j = 0; j < nRacks; j++) {
+        for (int j = 0; j < nRacks / 2; j++) {
             for (int k = 0; k < nHosts; k++) {
-                coreSwitchMonitor->AddAppKey(AppKey(ipsRacks[j][k].GetAddress(0), ipsRacks[j][k].GetAddress(0), 0, 0));
+                coreSwitchMonitor->AddAppKey(AppKey(ipsRacks[j][k].GetAddress(0), ipsRacks[j + 2][k].GetAddress(0), 0, 0));
             }
         }
         coreSwitchMonitors.push_back(coreSwitchMonitor);
