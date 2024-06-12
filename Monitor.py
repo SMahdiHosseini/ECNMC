@@ -50,6 +50,8 @@ def calculate_drop_rate(__ns3_path, steadyStart, steadyEnd, rate, segment, check
         total_payload = df['PayloadSize'].sum()
         dropped_payload = df[df[checkColumn] == 0]['PayloadSize'].sum()
         swtiches_dropRates[df_name] = dropped_payload / total_payload
+    if len([value for value in swtiches_dropRates.values() if value != 0]) == 0:
+        return 0
     return sum([value for value in swtiches_dropRates.values() if value != 0]) / len([value for value in swtiches_dropRates.values() if value != 0])
 
 def read_data(__ns3_path, steadyStart, steadyEnd, rate, segment, checkColumn, projectColumn, experiment, remove_duplicates):
