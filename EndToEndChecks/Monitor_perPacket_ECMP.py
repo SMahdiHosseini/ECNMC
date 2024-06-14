@@ -37,7 +37,7 @@ sample_rate = 0.05
 confidenceValue = 1.96 # 95% confidence interval
 
 def calculate_drop_rate(__ns3_path, steadyStart, steadyEnd, rate, segment, checkColumn, projectColumn, experiment):
-    file_paths = glob.glob('{}/scratch/Results/{}/{}/*_{}.csv'.format(__ns3_path, rate, experiment, segment))
+    file_paths = glob.glob('{}/scratch/Results_1/{}/{}/*_{}.csv'.format(__ns3_path, rate, experiment, segment))
     swtiches_dropRates = {}
     for file_path in file_paths:
         df_name = file_path.split('/')[-1].split('_')[0]
@@ -55,7 +55,7 @@ def calculate_drop_rate(__ns3_path, steadyStart, steadyEnd, rate, segment, check
     return sum([value for value in swtiches_dropRates.values() if value != 0]) / len([value for value in swtiches_dropRates.values() if value != 0])
 
 def read_data(__ns3_path, steadyStart, steadyEnd, rate, segment, checkColumn, projectColumn, experiment, remove_duplicates):
-    file_paths = glob.glob('{}/scratch/Results/{}/{}/*_{}.csv'.format(__ns3_path, rate, experiment, segment))
+    file_paths = glob.glob('{}/scratch/Results_1/{}/{}/*_{}.csv'.format(__ns3_path, rate, experiment, segment))
     dfs = {}
     for file_path in file_paths:
         df_name = file_path.split('/')[-1].split('_')[0]
@@ -75,14 +75,14 @@ def read_data(__ns3_path, steadyStart, steadyEnd, rate, segment, checkColumn, pr
 
 def read_data_flowIndicator(__ns3_path, rate):
     flows_name = []
-    file_paths = glob.glob('{}/scratch/Results/{}/0/*_EndToEnd.csv'.format(__ns3_path, rate))
+    file_paths = glob.glob('{}/scratch/Results_1/{}/0/*_EndToEnd.csv'.format(__ns3_path, rate))
     for file_path in file_paths:
         flows_name.append(file_path.split('/')[-1].split('_')[0])
     return flows_name
 
 def read_queues_indicators(__ns3_path, rate):
     flows_name = []
-    file_paths = glob.glob('{}/scratch/Results/{}/0/*_PoissonSampler.csv'.format(__ns3_path, rate))
+    file_paths = glob.glob('{}/scratch/Results_1/{}/0/*_PoissonSampler.csv'.format(__ns3_path, rate))
     for file_path in file_paths:
         if 'C' not in file_path.split('/')[-1].split('_')[0]:
             flows_name.append(file_path.split('/')[-1].split('_')[0])
@@ -294,7 +294,7 @@ def plot_overall_delay_distribution(rate, common_switch_sample_df, queue):
     sns.histplot(common_switch_sample_df['SentTime'] - common_switch_sample_df['ReceiveTime'], bins=100)
     ax.set_title('Sample T0')
     ax.set_xlabel('Delay (ns)')
-    plt.savefig('results/{}/{}_{}_overall_delayDist.png'.format(rate, rate, queue))
+    plt.savefig('../results_perPacket_ECMP/{}/{}_{}_overall_delayDist.png'.format(rate, rate, queue))
     plt.close()
 
 def plot_seperate_delay_distribution(rate, flows):
@@ -490,20 +490,20 @@ def analyze_all_experiments(rate, steadyStart, steadyEnd, confidenceValue, exper
     rounds_results = prepare_results(flows_name, queues_names)
 
     for experiment in range(experiments_start, experiments_end):
-        if len(os.listdir('{}/scratch/Results/{}/{}'.format(__ns3_path, rate, experiment))) == 0:
+        if len(os.listdir('{}/scratch/Results_1/{}/{}'.format(__ns3_path, rate, experiment))) == 0:
             print(experiment)
             continue
         print("Analyzing experiment: ", experiment)
         analyze_single_experiment(rate, steadyStart, steadyEnd, confidenceValue, rounds_results, queues_names, experiment, ns3_path, )
 
-    with open('results/{}/{}_{}_results.json'.format(rate,rate, experiments_end), 'w') as f:
+    with open('../results_perPacket_ECMP/{}/{}_{}_results.json'.format(rate,rate, experiments_end), 'w') as f:
         # save the results in a well formatted json file
         js.dump(rounds_results, f, indent=4)
 
 # main function
 def __main__():
     config = configparser.ConfigParser()
-    config.read('Parameters.config')
+    config.read('../Parameters.config')
     hostToTorLinkRate = convert_to_float(config.get('Settings', 'hostToTorLinkRate'))
     torToAggLinkRate = config.get('Settings', 'torToAggLinkRate')
     aggToCoreLinkRate = convert_to_float(config.get('Settings', 'aggToCoreLinkRate'))
@@ -534,7 +534,7 @@ def __main__():
     print("experiments: ", experiments)
     print("serviceRateScales: ", serviceRateScales)
     # serviceRateScales = [0.85]
-    # experiments = 10
+    experiments = 1
     # steadyStart = 4
     # steadyEnd = 9
 

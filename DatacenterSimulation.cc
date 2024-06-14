@@ -1,6 +1,8 @@
 //
 // Created by Mahdi Hosseini on 5.06.24.
 //
+// Signiture:
+// ****** Mahdi Change ***** (START) ***** // 
 
 #include "ns3/applications-module.h"
 #include "ns3/core-module.h"
@@ -13,6 +15,7 @@
 #include "monitors_module/SwitchMonitor.h"
 #include "monitors_module/PoissonSampler.h"
 #include "monitors_module/RegularSampler.h"
+#include "monitors_module/NetDeviceMonitor.h"
 #include "traffic_generator_module/background_replay/BackgroundReplay.h"
 #include <iomanip>
 #include <iostream>
@@ -40,7 +43,7 @@ void dequeue(Ptr< const Packet > packet){
 }
 
 void enqueue(Ptr< const Packet > packet){
-    std::cout << "Packet enqueued: ";
+    std::cout << Simulator::Now().GetNanoSeconds() << "Packet enqueued: ";
     packet->Print(std::cout);
     std::cout << endl;
 }
@@ -384,7 +387,7 @@ int main(int argc, char* argv[])
 
     /* ########## START: Monitoring ########## */
     // p2pHostToTor.EnablePcapAll("N4_datacenter_switch_");
-    // ns3::PacketMetadata::Enable(); // Enable packet metadata for debugging
+    ns3::PacketMetadata::Enable(); // Enable packet metadata for debugging
 
     // End to End Monitors
     vector<PacketMonitor *> endToendMonitors;
@@ -415,6 +418,16 @@ int main(int argc, char* argv[])
     //     R3R0Monitor->AddAppKey(AppKey(ipsRacks[3][i].GetAddress(0), ipsRacks[0][i].GetAddress(0), 0, 0));
     //     endToendMonitors.push_back(R3R0Monitor);
     // }
+
+    // NetDevice monitors on the hosts
+    vector<NetDeviceMonitor *> hostNetDeviceMonitors;
+    for (int i = 0; i < nRacks / 2; i++) {
+        for (int j = 0; j < nHosts; j++) {
+            auto *hostNetDeviceMonitor = new NetDeviceMonitor(startTime, stopTime + convergenceTime, DynamicCast<PointToPointNetDevice>(hostsToTorsNetDevices[i][j].Get(0)), "R" + to_string(i) + "H" + to_string(j));
+            hostNetDeviceMonitor->AddAppKey(AppKey(ipsRacks[i][j].GetAddress(0), ipsRacks[i + 2][j].GetAddress(0), 0, 0));
+            hostNetDeviceMonitors.push_back(hostNetDeviceMonitor);
+        }
+    }
 
     // switch monitors on the ToR switches
     vector<SwitchMonitor *> torSwitchMonitors;
@@ -456,6 +469,14 @@ int main(int argc, char* argv[])
 
     // PoissonSampler on the ToR switches, Agg switches and Core switches
     vector<PoissonSampler *> PoissonSamplers;
+    // PoissonSampler on the Hosts
+    for (int i = 0; i < nRacks / 2; i++) {
+        for (int j = 0; j < nHosts; j++) {
+            Ptr<PointToPointNetDevice> hostToTorNetDevice = DynamicCast<PointToPointNetDevice>(hostsToTorsNetDevices[i][j].Get(0));
+            auto *hostToTorSampler = new PoissonSampler(startTime, stopTime, nullptr, hostToTorNetDevice->GetQueue(), hostToTorNetDevice, "R" + to_string(i) + "H" + to_string(j), sampleRate);
+            PoissonSamplers.push_back(hostToTorSampler);
+        }
+    }
     // PoissonSampler on the tor to agg links
     for (int i = 0; i < nRacks; i++) {
         for (int j = 0; j < nAggSwitches; j++) {
@@ -535,6 +556,9 @@ int main(int argc, char* argv[])
     // DynamicCast<PointToPointNetDevice>(hostsToTorsNetDevices[1][0].Get(1))->GetQueue()->TraceConnectWithoutContext("PacketsInQueue", MakeCallback(&queueSize));
     // DynamicCast<PointToPointNetDevice>(hostsToTorsNetDevices[1][2].Get(1))->GetQueue()->TraceConnectWithoutContext("PacketsInQueue", MakeCallback(&queueSize2));
     // DynamicCast<PointToPointNetDevice>(torToTorNetDevices[0].Get(0))->GetQueue()->TraceConnectWithoutContext("Dequeue", MakeCallback(&dequeue));
+    // DynamicCast<PointToPointNetDevice>(hostsToTorsNetDevices[0][0].Get(0))->GetQueue()->TraceConnectWithoutContext("PacketsInQueue", MakeCallback(&queueSize));
+    // DynamicCast<PointToPointNetDevice>(hostsToTorsNetDevices[0][0].Get(0))->GetQueue()->TraceConnectWithoutContext("Enqueue", MakeCallback(&enqueue));
+    // DynamicCast<PointToPointNetDevice>(hostsToTorsNetDevices[0][0].Get(0))->GetQueue()->TraceConnectWithoutContext("Dequeue", MakeCallback(&dequeue));
 
     Simulator::Stop(stopTime + convergenceTime + convergenceTime);
     Simulator::Run();
@@ -542,6 +566,9 @@ int main(int argc, char* argv[])
 
     for (auto monitor: endToendMonitors) {
         monitor->SavePacketRecords((string) (getenv("PWD")) + "/results/" + monitor->GetMonitorTag() + "_EndToEnd.csv");
+    }
+    for (auto monitor: hostNetDeviceMonitors) {
+        monitor->SavePacketRecords((string) (getenv("PWD")) + "/results/" + monitor->GetMonitorTag() + "_start.csv");
     }
     for (auto monitor: torSwitchMonitors) {
         monitor->SavePacketRecords((string) (getenv("PWD")) + "/results/" + monitor->GetMonitorTag() + "_Switch.csv");

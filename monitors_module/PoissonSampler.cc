@@ -50,7 +50,9 @@ void PoissonSampler::EnqueueNetDeviceQueue(Ptr<const Packet> packet) {
 }
 
 void PoissonSampler::Connect(Ptr<PointToPointNetDevice> outgoingNetDevice) {
-    REDQueueDisc->TraceConnectWithoutContext("Enqueue", MakeCallback(&PoissonSampler::EnqueueQueueDisc, this));
+    if (REDQueueDisc != nullptr) {
+        REDQueueDisc->TraceConnectWithoutContext("Enqueue", MakeCallback(&PoissonSampler::EnqueueQueueDisc, this));
+    }
     NetDeviceQueue->TraceConnectWithoutContext("Enqueue", MakeCallback(&PoissonSampler::EnqueueNetDeviceQueue, this));
     outgoingNetDevice->TraceConnectWithoutContext("PromiscSniffer", MakeCallback(&PoissonSampler::RecordPacket, this));
     // generate the first event
@@ -60,28 +62,32 @@ void PoissonSampler::Connect(Ptr<PointToPointNetDevice> outgoingNetDevice) {
 
 void PoissonSampler::Disconnect(Ptr<PointToPointNetDevice> outgoingNetDevice) {
     outgoingNetDevice->TraceDisconnectWithoutContext("PromiscSniffer", MakeCallback(&PoissonSampler::RecordPacket, this));
-    REDQueueDisc->TraceDisconnectWithoutContext("Enqueue", MakeCallback(&PoissonSampler::EnqueueQueueDisc, this));
+    if (REDQueueDisc != nullptr) {
+        REDQueueDisc->TraceDisconnectWithoutContext("Enqueue", MakeCallback(&PoissonSampler::EnqueueQueueDisc, this));
+    }
     NetDeviceQueue->TraceDisconnectWithoutContext("Enqueue", MakeCallback(&PoissonSampler::EnqueueNetDeviceQueue, this));
 }
 
 void PoissonSampler::EventHandler() {
-    QueueDisc::Stats st = REDQueueDisc->GetStats();
-    droppedPackets = st.GetNDroppedPackets(RedQueueDisc::UNFORCED_DROP) + st.GetNDroppedPackets(RedQueueDisc::FORCED_DROP) + st.GetNDroppedPackets(QueueDisc::INTERNAL_QUEUE_DROP);
     PacketKey* packetKey;
     bool zeroDelay = false;
-    // check the quque disc size
-    if (REDQueueDisc->GetNPackets() > 0) {
-        // extract transport layer info
-        Ipv4Header ipHeader = DynamicCast<const Ipv4QueueDiscItem>(lastItem)->GetHeader();
-        if (ipHeader.GetProtocol() == 6){
-            packetKey = PacketKey::Packet2PacketKey(lastItem->GetPacket(), FIRST_HEADER_TCP);
+    if (REDQueueDisc != nullptr && REDQueueDisc->GetNPackets() > 0) {
+        QueueDisc::Stats st = REDQueueDisc->GetStats();
+        droppedPackets = st.GetNDroppedPackets(RedQueueDisc::UNFORCED_DROP) + st.GetNDroppedPackets(RedQueueDisc::FORCED_DROP) + st.GetNDroppedPackets(QueueDisc::INTERNAL_QUEUE_DROP);
+        // check the quque disc size
+        if (REDQueueDisc->GetNPackets() > 0) {
+            // extract transport layer info
+            Ipv4Header ipHeader = DynamicCast<const Ipv4QueueDiscItem>(lastItem)->GetHeader();
+            if (ipHeader.GetProtocol() == 6){
+                packetKey = PacketKey::Packet2PacketKey(lastItem->GetPacket(), FIRST_HEADER_TCP);
+            }
+            else {
+                packetKey = PacketKey::Packet2PacketKey(lastItem->GetPacket(), FIRST_HEADER_UDP);
+            }
+            packetKey->SetId(ipHeader.GetIdentification());
+            packetKey->SetSrcIp(ipHeader.GetSource());
+            packetKey->SetDstIp(ipHeader.GetDestination());
         }
-        else {
-            packetKey = PacketKey::Packet2PacketKey(lastItem->GetPacket(), FIRST_HEADER_UDP);
-        }
-        packetKey->SetId(ipHeader.GetIdentification());
-        packetKey->SetSrcIp(ipHeader.GetSource());
-        packetKey->SetDstIp(ipHeader.GetDestination());
     }
     else if (NetDeviceQueue->GetNPackets() > 0) {
         packetKey = PacketKey::Packet2PacketKey(lastPacket, FIRST_HEADER_PPP);
