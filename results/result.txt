@@ -29,9 +29,9 @@ Config Parameters
 hostToTorLinkRate: 10Mbps
 hostToTorLinkRateCrossTraffic: 50Mbps
 hostToTorLinkDelay: 3ms
-torToAggLinkRate: 20.0Mbps
+torToAggLinkRate: 30.0Mbps
 torToAggLinkDelay: 3ms
-aggToCoreLinkRate: 20Mbps
+aggToCoreLinkRate: 30Mbps
 aggToCoreLinkDelay: 3ms
 appDataRate: 10Mbps
 duration: 20
@@ -39,3 +39,4 @@ pctPacedBack: 0.8
 enableSwitchECN: 1
 enableECMP: 1
 sampleRate: 300
+T0 id 24

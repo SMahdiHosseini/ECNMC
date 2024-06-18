@@ -32,10 +32,10 @@ plt.rcParams.update({
     "legend.fontsize": 10,
     })
 
-def calculate_drop_rate(__ns3_path, steadyStart, steadyEnd, rate, segments, checkColumn, projectColumn, experiment):
+def calculate_drop_rate(__ns3_path, steadyStart, steadyEnd, rate, segments, checkColumn, projectColumn, experiment, results_folder):
     swtiches_dropRates = {}
     for segment in segments:
-        file_paths = glob.glob('{}/scratch/Results/{}/{}/*_{}.csv'.format(__ns3_path, rate, experiment, segment))
+        file_paths = glob.glob('{}/scratch/{}/{}/{}/*_{}.csv'.format(__ns3_path, results_folder, rate, experiment, segment))
         for file_path in file_paths:
             df_name = file_path.split('/')[-1].split('_')[0]
             if 'C' in df_name:
@@ -54,8 +54,8 @@ def calculate_drop_rate(__ns3_path, steadyStart, steadyEnd, rate, segments, chec
         return 0
     return sum([value for value in swtiches_dropRates.values() if value != 0]) / len([value for value in swtiches_dropRates.values() if value != 0])
 
-def read_data(__ns3_path, steadyStart, steadyEnd, rate, segment, checkColumn, projectColumn, experiment, remove_duplicates):
-    file_paths = glob.glob('{}/scratch/Results/{}/{}/*_{}.csv'.format(__ns3_path, rate, experiment, segment))
+def read_data(__ns3_path, steadyStart, steadyEnd, rate, segment, checkColumn, projectColumn, experiment, remove_duplicates, results_folder):
+    file_paths = glob.glob('{}/scratch/{}/{}/{}/*_{}.csv'.format(__ns3_path, results_folder, rate, experiment, segment))
     dfs = {}
     for file_path in file_paths:
         df_name = file_path.split('/')[-1].split('_')[0]
@@ -73,16 +73,16 @@ def read_data(__ns3_path, steadyStart, steadyEnd, rate, segment, checkColumn, pr
         dfs[df_name] = df
     return dfs
 
-def read_data_flowIndicator(__ns3_path, rate):
+def read_data_flowIndicator(__ns3_path, rate, results_folder):
     flows_name = []
-    file_paths = glob.glob('{}/scratch/Results/{}/0/*_EndToEnd.csv'.format(__ns3_path, rate))
+    file_paths = glob.glob('{}/scratch/{}/{}/0/*_EndToEnd.csv'.format(__ns3_path, results_folder, rate))
     for file_path in file_paths:
         flows_name.append(file_path.split('/')[-1].split('_')[0])
     return flows_name
 
-def read_queues_indicators(__ns3_path, rate):
+def read_queues_indicators(__ns3_path, rate, results_folder):
     flows_name = []
-    file_paths = glob.glob('{}/scratch/Results/{}/0/*_PoissonSampler.csv'.format(__ns3_path, rate))
+    file_paths = glob.glob('{}/scratch/{}/{}/0/*_PoissonSampler.csv'.format(__ns3_path, results_folder, rate))
     for file_path in file_paths:
         if 'C' not in file_path.split('/')[-1].split('_')[0]:
             flows_name.append(file_path.split('/')[-1].split('_')[0])
@@ -226,13 +226,15 @@ def clear_data_from_outliers_in_time(endToEnd_dfs, switches_dfs, start_dfs):
         start_dfs[queue] = pd.concat(per_traffic_data)
     
 
-def read_paths_flows(switches_dfs):
+def read_paths_flows(switches_dfs, test):
     # ecah path flows are a dataframe of unique sourceIp, sourcePort, destinationIp, destinationPort 
     paths = {}
     for switch in switches_dfs:
         # get the unique sourceIp, sourcePort, destinationIp, destinationPort
-        # paths[switch] = switches_dfs[switch].drop_duplicates(subset=['SourceIp', 'SourcePort', 'DestinationIp', 'DestinationPort'], keep='first', ignore_index=True).drop(columns=['SentTime', 'ReceiveTime', 'Id', 'SequenceNb', 'PayloadSize'])
-        paths[switch] = switches_dfs[switch].drop_duplicates(subset=['SourceIp', 'SourcePort', 'DestinationIp', 'DestinationPort', 'SequenceNb', 'Id'], keep='first', ignore_index=True).drop(columns=['SentTime', 'ReceiveTime', 'PayloadSize'])
+        if not test:
+            paths[switch] = switches_dfs[switch].drop_duplicates(subset=['SourceIp', 'SourcePort', 'DestinationIp', 'DestinationPort'], keep='first', ignore_index=True).drop(columns=['SentTime', 'ReceiveTime', 'Id', 'SequenceNb', 'PayloadSize'])
+        else:
+            paths[switch] = switches_dfs[switch].drop_duplicates(subset=['SourceIp', 'SourcePort', 'DestinationIp', 'DestinationPort', 'SequenceNb', 'Id'], keep='first', ignore_index=True).drop(columns=['SentTime', 'ReceiveTime', 'PayloadSize'])
     # print(paths)
     return paths
 
@@ -246,7 +248,16 @@ def delayProcess_consistency_check(flows_sampled, rounds_results):
         if anova_res.pvalue > 0.05:
             rounds_results['ANOVA'][q] += 1
         if kruskal_res.pvalue > 0.05:
-            rounds_results['Kruskal'][q] += 1 
+            rounds_results['Kruskal'][q] += 1
+        # # plot the delay distribution of each flow on each switch
+        # for i in range(len(flows_sampled[q])):
+        #     plt.hist(flows_sampled[q][i]['Delay'], bins=100)
+        #     plt.title('Switch {}'.format(i))
+        #     plt.xlabel('Delay (ns)')
+
+        # plt.legend(['Flow {}'.format(i) for i in range(len(flows_sampled[q]))])    
+        # plt.savefig('../results/{}_delayDist.png'.format(q))
+        # plt.close()
 
 def plot_overall_delay_distribution(rate, common_switch_sample_df, queue):
     # plot the delay distribution of SWitch T0 and Sample T0

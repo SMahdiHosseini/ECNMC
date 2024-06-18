@@ -52,7 +52,7 @@ def run_experiment():
     for rate in expConfig.serviceRateScales:
         exp_tor_to_agg_link_rate = "{}Mbps".format(round(float(expConfig.tor_to_agg_link_rate.split('M')[0]) * rate, 1))
         for i in range(int(expConfig.experiments)):
-        # for i in [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]:
+        # for i in [0]:
             os.system(
                 '{}/ns3 run \'DatacenterSimulation '.format(get_ns3_path()) +
                 '--hostToTorLinkRate={} '.format(expConfig.host_to_tor_link_rate) +

@@ -154,39 +154,53 @@ def check_manual_delay_consistency(endToEnd_dfs, switches_dfs, start_dfs, aggSwi
         path_1 = pd.merge(path_1, src_Tor_swich, on=['SourceIp', 'SourcePort', 'DestinationIp', 'DestinationPort', 'PayloadSize', 'SequenceNb', 'Id'], how='inner')
         path_1 = pd.merge(path_1, Agg[1], on=['SourceIp', 'SourcePort', 'DestinationIp', 'DestinationPort', 'PayloadSize', 'SequenceNb', 'Id'], how='inner')
         path_1 = pd.merge(path_1, Tor_dest, on=['SourceIp', 'SourcePort', 'DestinationIp', 'DestinationPort', 'PayloadSize', 'SequenceNb', 'Id'], how='inner')
-        if flow == 'R1H5R3H5':
+        if flow == 'R1H0R3H0':
+            path_0 = path_0.sort_values(by=['SentTime'])
+            path_1 = path_1.sort_values(by=['SentTime'])
             # plot the dealy per sent time for each path on the same figure
             plt.plot(path_0['SentTime'], path_0['Delay'], label='Path 0')
             plt.plot(path_1['SentTime'], path_1['Delay'], label='Path 1')
-            # horizontal line for the mean of the delay and timeAvg
-            plt.axhline(y=path_0['Delay'].mean(), color='r', linestyle='--', label='Path 0 Mean')
-            plt.axhline(y=path_1['Delay'].mean(), color='g', linestyle='--', label='Path 1 Mean')
-            plt.axhline(y=get_timeAvg(path_0), color='b', linestyle='--', label='Path 0 timeAvg')
-            plt.axhline(y=get_timeAvg(path_1), color='y', linestyle='--', label='Path 1 timeAvg')
-            # set the color of the plot be boler
+            # # horizontal line for the mean of the delay and timeAvg
+            # plt.axhline(y=path_0['Delay'].mean(), color='r', linestyle='--', label='Path 0 Mean')
+            # plt.axhline(y=path_1['Delay'].mean(), color='g', linestyle='--', label='Path 1 Mean')
+            # plt.axhline(y=get_timeAvg(path_0), color='b', linestyle='--', label='Path 0 timeAvg')
+            # plt.axhline(y=get_timeAvg(path_1), color='y', linestyle='--', label='Path 1 timeAvg')
+            # # set the color of the plot be boler
         
             plt.legend()
             plt.xlabel('Sent Time')
             plt.ylabel('Delay')
             plt.legend(prop={'size': 25})
             plt.savefig('../results/Path0_vs_Path1.png')
-            # print(path_0)
-            # print(path_0['Delay'].mean(), path_0['Delay'].std())
+            print(path_0)
+            # print the timweAvg for each path and for eac delay
+            # print(get_timeAvg(path_0.drop(columns=['Delay']).rename(columns={'Delay_0': 'Delay'})),
+            #         get_timeAvg(path_0.drop(columns=['Delay']).rename(columns={'Delay_1': 'Delay'})),
+            #         get_timeAvg(path_0.drop(columns=['Delay']).rename(columns={'Delay_2': 'Delay'})),
+            #         get_timeAvg(path_0.drop(columns=['Delay']).rename(columns={'Delay_3': 'Delay'}))
+            #         )
             # print("************************************************************************")
-            # print(path_1)
-            # print(path_1['Delay'].mean(), path_1['Delay'].std())
+            print(path_1)
+            # print(get_timeAvg(path_1.drop(columns=['Delay']).rename(columns={'Delay_0': 'Delay'})),
+            #         get_timeAvg(path_1.drop(columns=['Delay']).rename(columns={'Delay_1': 'Delay'})),
+            #         get_timeAvg(path_1.drop(columns=['Delay']).rename(columns={'Delay_2': 'Delay'})),
+            #         get_timeAvg(path_1.drop(columns=['Delay']).rename(columns={'Delay_3': 'Delay'}))
+            #         )
+            
         
 
 
-def analyze_single_experiment(rate, steadyStart, steadyEnd, confidenceValue, rounds_results, queues_names, experiment=0, ns3_path=__ns3_path):
+def analyze_single_experiment(rate, steadyStart, steadyEnd, confidenceValue, rounds_results, queues_names, results_folder, experiment=0, ns3_path=__ns3_path):
     num_of_agg_switches = 2
-    endToEnd_dfs = read_data(__ns3_path, steadyStart, steadyEnd, rate, 'EndToEnd', 'IsReceived', 'SentTime', str(experiment), True)
-    switches_dfs = read_data(__ns3_path, steadyStart, steadyEnd, rate, 'Switch', 'IsSent', 'ReceiveTime', str(experiment), True)
-    samples_dfs = read_data(__ns3_path, steadyStart, steadyEnd, rate, 'PoissonSampler', 'IsDeparted', 'SampleTime', str(experiment), False)
-    start_dfs = read_data(__ns3_path, steadyStart, steadyEnd, rate, 'start', 'IsSent', 'ReceiveTime', str(experiment), True)
+    endToEnd_dfs = read_data(__ns3_path, steadyStart, steadyEnd, rate, 'EndToEnd', 'IsReceived', 'SentTime', str(experiment), True, results_folder)
+    switches_dfs = read_data(__ns3_path, steadyStart, steadyEnd, rate, 'Switch', 'IsSent', 'ReceiveTime', str(experiment), True, results_folder)
+    samples_dfs = read_data(__ns3_path, steadyStart, steadyEnd, rate, 'PoissonSampler', 'IsDeparted', 'SampleTime', str(experiment), False, results_folder)
+    start_dfs = read_data(__ns3_path, steadyStart, steadyEnd, rate, 'start', 'IsSent', 'ReceiveTime', str(experiment), True, results_folder)
+    uncorruped_switches_dfs = read_data(__ns3_path, steadyStart, steadyEnd, rate, 'Switch', 'IsSent', 'ReceiveTime', str(experiment), True, 'Results_delay_normal')
+    uncorruped_endToEnd_dfs = read_data(__ns3_path, steadyStart, steadyEnd, rate, 'EndToEnd', 'IsReceived', 'SentTime', str(experiment), True, 'Results_delay_normal')
 
     # print_traffic_rate(endToEnd_dfs)
-    rounds_results['DropRate'].append(calculate_drop_rate(__ns3_path, steadyStart, steadyEnd, rate, ['Switch', 'start'], 'IsSent', 'ReceiveTime', str(experiment)))
+    rounds_results['DropRate'].append(calculate_drop_rate(__ns3_path, steadyStart, steadyEnd, rate, ['Switch', 'start'], 'IsSent', 'ReceiveTime', str(experiment), results_folder))
 
     # integrate the switch data with the endToEnd data
     clear_data_from_outliers_in_time(endToEnd_dfs, switches_dfs, start_dfs)
@@ -199,7 +213,11 @@ def analyze_single_experiment(rate, steadyStart, steadyEnd, confidenceValue, rou
 
     paths_flows = {}
     for flow in endToEnd_dfs.keys():
-        paths_flows[flow] = read_paths_flows({'A' + str(i): switch_data(endToEnd_dfs[flow].drop(columns=['SentTime', 'ReceiveTime', 'Delay']), switches_dfs['A' + str(i)], False) for i in range(num_of_agg_switches)})
+        paths_flows[flow] = read_paths_flows({'A' + str(i): switch_data(uncorruped_endToEnd_dfs[flow].drop(columns=['SentTime', 'ReceiveTime', 'Delay']), uncorruped_switches_dfs['A' + str(i)], False) for i in range(num_of_agg_switches)}, False)
+
+    test_paths_flows = {}
+    for flow in endToEnd_dfs.keys():
+        test_paths_flows[flow] = read_paths_flows({'A' + str(i): switch_data(endToEnd_dfs[flow].drop(columns=['SentTime', 'ReceiveTime', 'Delay']), switches_dfs['A' + str(i)], False) for i in range(num_of_agg_switches)}, True)
 
     # samples switches statistics
     samples_switches_statistics = {}
@@ -245,16 +263,28 @@ def analyze_single_experiment(rate, steadyStart, steadyEnd, confidenceValue, rou
     for flow in endToEnd_dfs.keys():
         endToEnd_statistics[flow] = {}
         for path in paths_flows[flow].keys():
-            temp = pd.merge(endToEnd_dfs[flow], paths_flows[flow][path], on=['SourceIp', 'SourcePort', 'DestinationIp', 'DestinationPort', 'SequenceNb', 'Id'], how='inner')
+            temp = pd.merge(endToEnd_dfs[flow], paths_flows[flow][path], on=['SourceIp', 'SourcePort', 'DestinationIp', 'DestinationPort'], how='inner')
+            test_temp = pd.merge(endToEnd_dfs[flow], test_paths_flows[flow][path], on=['SourceIp', 'SourcePort', 'DestinationIp', 'DestinationPort', 'SequenceNb', 'Id'], how='inner')
             endToEnd_statistics[flow][path] = get_statistics(temp, timeAvg=True)
             rounds_results['EndToEndMean'][flow][path].append(endToEnd_statistics[flow][path]['timeAvg'])
             rounds_results['EndToEndStd'][flow][path].append(endToEnd_statistics[flow][path]['DelayStd'])
-            # if flow == 'R0H0R2H0':
-            #     print(path)
-            #     print(endToEnd_statistics[flow][path])
-            #     print(samples_paths_aggregated_statistics[flow][path])
-            
-    check_manual_delay_consistency(endToEnd_dfs, switches_dfs, start_dfs, num_of_agg_switches)
+            if flow == 'R0H1R2H1':
+            #     temp = temp.sort_values(by=['SentTime'])
+            #     test_temp = test_temp.sort_values(by=['SentTime'])
+            #     print(path, len(temp), len(test_temp))
+            #     plt.plot(temp['SentTime'], temp['Delay'], label='Path {}'.format(path))
+            #     plt.axhline(y=temp['Delay'].mean(), color='r', linestyle='--', label='Path {} Mean'.format(path))
+            #     plt.axhline(y=test_temp['Delay'].mean(), color='g', linestyle='--', label='Path {} Test Mean'.format(path))
+            #     print(path, temp['Delay'].mean(), test_temp['Delay'].mean())
+                print(endToEnd_statistics[flow][path])
+                print(samples_paths_aggregated_statistics[flow][path])
+    # plt.legend()
+    # plt.xlabel('Sent Time')
+    # plt.ylabel('Delay')
+    # plt.legend(prop={'size': 25})
+    # plt.savefig('../results/{}.png'.format(results_folder))
+
+    # check_manual_delay_consistency(endToEnd_dfs, switches_dfs, start_dfs, num_of_agg_switches)
     rounds_results['experiments'] += 1
 
     # sampling for ANOVA and Kruskal-Wallis test
@@ -296,23 +326,25 @@ def analyze_single_experiment(rate, steadyStart, steadyEnd, confidenceValue, rou
     compatibility_check(confidenceValue, rounds_results, samples_paths_aggregated_statistics, endToEnd_statistics, endToEnd_dfs.keys(), ['A' + str(i) for i in range(num_of_agg_switches)])
 
 def analyze_all_experiments(rate, steadyStart, steadyEnd, confidenceValue, experiments_start=0, experiments_end=3, ns3_path=__ns3_path):
+    # results_folder = 'Results_delay_normal'
+    results_folder = 'Results_delay_reverse'
     num_of_agg_switches = 2
-    flows_name = read_data_flowIndicator(ns3_path, rate)
+    flows_name = read_data_flowIndicator(ns3_path, rate, results_folder)
     flows_name.sort()
 
-    queues_names = read_queues_indicators(ns3_path, rate)
+    queues_names = read_queues_indicators(ns3_path, rate, results_folder)
     queues_names.sort()
 
     rounds_results = prepare_results(flows_name, queues_names, num_of_agg_switches)
 
     for experiment in range(experiments_start, experiments_end):
-        if len(os.listdir('{}/scratch/Results/{}/{}'.format(__ns3_path, rate, experiment))) == 0:
+        if len(os.listdir('{}/scratch/{}/{}/{}'.format(__ns3_path, results_folder, rate, experiment))) == 0:
             print(experiment)
             continue
         print("Analyzing experiment: ", experiment)
-        analyze_single_experiment(rate, steadyStart, steadyEnd, confidenceValue, rounds_results, queues_names, experiment, ns3_path, )
+        analyze_single_experiment(rate, steadyStart, steadyEnd, confidenceValue, rounds_results, queues_names, results_folder, experiment, ns3_path)
 
-    with open('../results/{}/{}_{}_{}_to_{}_results.json'.format(rate,rate, experiments_end, steadyStart, steadyEnd), 'w') as f:
+    with open('../results/{}/{}_{}_{}_{}_to_{}_results.json'.format(rate, results_folder, rate, experiments_end, steadyStart, steadyEnd), 'w') as f:
         # save the results in a well formatted json file
         js.dump(rounds_results, f, indent=4)
 
@@ -335,20 +367,20 @@ def __main__():
     experiments = int(config.get('Settings', 'experiments'))
     serviceRateScales = [float(x) for x in config.get('Settings', 'serviceRateScales').split(',')]
 
-    print("hostToTorLinkRate: ", hostToTorLinkRate, " Mbps")
-    print("torToAggLinkRate: ", torToAggLinkRate)
-    print("aggToCoreLinkRate: ", aggToCoreLinkRate, " Mbps")
-    print("hostToTorLinkDelay: ", hostToTorLinkDelay, " ms")
-    print("torToAggLinkDelay: ", torToAggLinkDelay, " ms")
-    print("aggToCoreLinkDelay: ", aggToCoreLinkDelay, " ms")
-    print("pctPacedBack: ", pctPacedBack, " %")
-    print("appDataRate: ", appDataRate, " Mbps")
-    print("duration: ", duration, " s")
-    print("steadyStart: ", steadyStart, " s")
-    print("steadyEnd: ", steadyEnd, " s")
-    print("sampleRate", sampleRate)
-    print("experiments: ", experiments)
-    print("serviceRateScales: ", serviceRateScales)
+    # print("hostToTorLinkRate: ", hostToTorLinkRate, " Mbps")
+    # print("torToAggLinkRate: ", torToAggLinkRate)
+    # print("aggToCoreLinkRate: ", aggToCoreLinkRate, " Mbps")
+    # print("hostToTorLinkDelay: ", hostToTorLinkDelay, " ms")
+    # print("torToAggLinkDelay: ", torToAggLinkDelay, " ms")
+    # print("aggToCoreLinkDelay: ", aggToCoreLinkDelay, " ms")
+    # print("pctPacedBack: ", pctPacedBack, " %")
+    # print("appDataRate: ", appDataRate, " Mbps")
+    # print("duration: ", duration, " s")
+    # print("steadyStart: ", steadyStart, " s")
+    # print("steadyEnd: ", steadyEnd, " s")
+    # print("sampleRate", sampleRate)
+    # print("experiments: ", experiments)
+    # print("serviceRateScales: ", serviceRateScales)
     # serviceRateScales = [0.85]
     experiments = 1
     # steadyStart = 4

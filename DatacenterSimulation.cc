@@ -108,9 +108,7 @@ int main(int argc, char* argv[])
     GlobalValue::Bind("ChecksumEnabled", BooleanValue(false));
     Config::SetDefault("ns3::RedQueueDisc::UseHardDrop", BooleanValue(false));
     Config::SetDefault("ns3::RedQueueDisc::MeanPktSize", UintegerValue(1500));
-    // Triumph and Scorpion switches used in DCTCP Paper have 4 MB of buffer
-    // If every packet is 1500 bytes, 2666 packets can be stored in 4 MB
-    Config::SetDefault("ns3::RedQueueDisc::MaxSize", QueueSizeValue(QueueSize("2666p")));
+    Config::SetDefault("ns3::RedQueueDisc::MaxSize", QueueSizeValue(QueueSize("200p")));
     Config::SetDefault("ns3::RedQueueDisc::QW", DoubleValue(1));
     Config::SetDefault("ns3::RedQueueDisc::MinTh", DoubleValue(minTh));
     Config::SetDefault("ns3::RedQueueDisc::MaxTh", DoubleValue(maxTh));
@@ -544,13 +542,13 @@ int main(int argc, char* argv[])
     cout << "enableSwitchECN: " << enableSwitchECN << endl;
     cout << "enableECMP: " << enableECMP << endl;
     cout << "sampleRate: " << sampleRate << endl;
-
+    cout << "T0 id " << torSwitches.Get(0)->GetId() << endl;
     /* ########## END: Check Config ########## */
 
 
     /* ########## START: Scheduling and  Running ########## */
-    // DynamicCast<RedQueueDisc>(torTotorQueueDiscs[0].Get(0))->TraceConnectWithoutContext("PacketsInQueue", MakeCallback(&queueDiscSize));
-    // DynamicCast<PointToPointNetDevice>(torToTorNetDevices[0].Get(0))->GetQueue()->TraceConnectWithoutContext("PacketsInQueue", MakeCallback(&queueSize));
+    // DynamicCast<RedQueueDisc>(torToAggQueueDiscs[0][1].Get(0))->TraceConnectWithoutContext("PacketsInQueue", MakeCallback(&queueDiscSize));
+    // DynamicCast<PointToPointNetDevice>(torToAggNetDevices[0][1].Get(0))->GetQueue()->TraceConnectWithoutContext("PacketsInQueue", MakeCallback(&queueSize));
 
     // DynamicCast<RedQueueDisc>(hostToTorQueueDiscs[1][0].Get(0))->TraceConnectWithoutContext("Enqueue", MakeCallback(&enqueueDisc));
     // DynamicCast<PointToPointNetDevice>(hostsToTorsNetDevices[1][0].Get(1))->GetQueue()->TraceConnectWithoutContext("PacketsInQueue", MakeCallback(&queueSize));
