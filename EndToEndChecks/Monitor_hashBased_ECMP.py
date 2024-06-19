@@ -16,7 +16,8 @@ confidenceValue = 1.96 # 95% confidence interval
 
 def check_dominant_bottleneck_consistency(endToEnd_statistics, samples_paths_aggregated_statistics, confidenceValue):
     # print(abs(endToEnd_statistics['timeAvg'] - samples_paths_aggregated_statistics['DelayMean']), confidenceValue * (endToEnd_statistics['DelayStd'] * np.sqrt(1 / samples_paths_aggregated_statistics['MinSampleSize'])))
-    if abs(endToEnd_statistics['timeAvg'] - samples_paths_aggregated_statistics['DelayMean']) <= confidenceValue * (endToEnd_statistics['DelayStd'] * np.sqrt(1 / samples_paths_aggregated_statistics['MinSampleSize'])):
+    sampling_error = confidenceValue * (endToEnd_statistics['DelayStd'] * np.sqrt(1 / endToEnd_statistics['sampleSize']))
+    if abs(endToEnd_statistics['DelayMean'] - samples_paths_aggregated_statistics['DelayMean']) <= sampling_error + (confidenceValue * (endToEnd_statistics['DelayStd'] * np.sqrt(1 / samples_paths_aggregated_statistics['MinSampleSize']))):
         return True
     else:
         return False
@@ -30,7 +31,8 @@ def check_MaxEpsilon_ineq(endToEnd_statistics, samples_paths_aggregated_statisti
 
 def check_basic_delayConsistency(endToEnd_statistics, samples_paths_aggregated_statistics, confidenceValue):
     # print(abs(endToEnd_statistics['timeAvg'] - samples_paths_aggregated_statistics['DelayMean']), samples_paths_aggregated_statistics['SumOfErrors'])
-    if abs(endToEnd_statistics['timeAvg'] - samples_paths_aggregated_statistics['DelayMean']) <= samples_paths_aggregated_statistics['SumOfErrors']:
+    sampling_error = confidenceValue * (endToEnd_statistics['DelayStd'] * np.sqrt(1 / endToEnd_statistics['sampleSize']))
+    if abs(endToEnd_statistics['DelayMean'] - samples_paths_aggregated_statistics['DelayMean']) <= sampling_error + samples_paths_aggregated_statistics['SumOfErrors']:
         return True
     else:
         return False
@@ -196,8 +198,8 @@ def analyze_single_experiment(rate, steadyStart, steadyEnd, confidenceValue, rou
     switches_dfs = read_data(__ns3_path, steadyStart, steadyEnd, rate, 'Switch', 'IsSent', 'ReceiveTime', str(experiment), True, results_folder)
     samples_dfs = read_data(__ns3_path, steadyStart, steadyEnd, rate, 'PoissonSampler', 'IsDeparted', 'SampleTime', str(experiment), False, results_folder)
     start_dfs = read_data(__ns3_path, steadyStart, steadyEnd, rate, 'start', 'IsSent', 'ReceiveTime', str(experiment), True, results_folder)
-    uncorruped_switches_dfs = read_data(__ns3_path, steadyStart, steadyEnd, rate, 'Switch', 'IsSent', 'ReceiveTime', str(experiment), True, 'Results_delay_normal')
-    uncorruped_endToEnd_dfs = read_data(__ns3_path, steadyStart, steadyEnd, rate, 'EndToEnd', 'IsReceived', 'SentTime', str(experiment), True, 'Results_delay_normal')
+    uncorruped_switches_dfs = read_data(__ns3_path, steadyStart, steadyEnd, rate, 'Switch', 'IsSent', 'ReceiveTime', str(experiment), True, 'Results')
+    uncorruped_endToEnd_dfs = read_data(__ns3_path, steadyStart, steadyEnd, rate, 'EndToEnd', 'IsReceived', 'SentTime', str(experiment), True, 'Results')
 
     # print_traffic_rate(endToEnd_dfs)
     rounds_results['DropRate'].append(calculate_drop_rate(__ns3_path, steadyStart, steadyEnd, rate, ['Switch', 'start'], 'IsSent', 'ReceiveTime', str(experiment), results_folder))
@@ -269,13 +271,13 @@ def analyze_single_experiment(rate, steadyStart, steadyEnd, confidenceValue, rou
             rounds_results['EndToEndMean'][flow][path].append(endToEnd_statistics[flow][path]['timeAvg'])
             rounds_results['EndToEndStd'][flow][path].append(endToEnd_statistics[flow][path]['DelayStd'])
             if flow == 'R0H1R2H1':
-            #     temp = temp.sort_values(by=['SentTime'])
-            #     test_temp = test_temp.sort_values(by=['SentTime'])
+                # temp = temp.sort_values(by=['SentTime'])
+                # test_temp = test_temp.sort_values(by=['SentTime'])
             #     print(path, len(temp), len(test_temp))
-            #     plt.plot(temp['SentTime'], temp['Delay'], label='Path {}'.format(path))
-            #     plt.axhline(y=temp['Delay'].mean(), color='r', linestyle='--', label='Path {} Mean'.format(path))
-            #     plt.axhline(y=test_temp['Delay'].mean(), color='g', linestyle='--', label='Path {} Test Mean'.format(path))
-            #     print(path, temp['Delay'].mean(), test_temp['Delay'].mean())
+                # plt.plot(temp['SentTime'], temp['Delay'], label='Path {}'.format(path))
+                # plt.axhline(y=temp['Delay'].mean(), color='r', linestyle='--', label='Path {} Mean'.format(path))
+                # plt.axhline(y=test_temp['Delay'].mean(), color='g', linestyle='--', label='Path {} Test Mean'.format(path))
+                # print(path, temp['Delay'].mean(), test_temp['Delay'].mean())
                 print(endToEnd_statistics[flow][path])
                 print(samples_paths_aggregated_statistics[flow][path])
     # plt.legend()
@@ -283,6 +285,7 @@ def analyze_single_experiment(rate, steadyStart, steadyEnd, confidenceValue, rou
     # plt.ylabel('Delay')
     # plt.legend(prop={'size': 25})
     # plt.savefig('../results/{}.png'.format(results_folder))
+    # plt.clf()
 
     # check_manual_delay_consistency(endToEnd_dfs, switches_dfs, start_dfs, num_of_agg_switches)
     rounds_results['experiments'] += 1
@@ -326,8 +329,9 @@ def analyze_single_experiment(rate, steadyStart, steadyEnd, confidenceValue, rou
     compatibility_check(confidenceValue, rounds_results, samples_paths_aggregated_statistics, endToEnd_statistics, endToEnd_dfs.keys(), ['A' + str(i) for i in range(num_of_agg_switches)])
 
 def analyze_all_experiments(rate, steadyStart, steadyEnd, confidenceValue, experiments_start=0, experiments_end=3, ns3_path=__ns3_path):
+    results_folder = 'Results'
     # results_folder = 'Results_delay_normal'
-    results_folder = 'Results_delay_reverse'
+    # results_folder = 'Results_delay_reverse'
     num_of_agg_switches = 2
     flows_name = read_data_flowIndicator(ns3_path, rate, results_folder)
     flows_name.sort()

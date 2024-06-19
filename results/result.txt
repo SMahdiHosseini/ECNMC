@@ -1,3 +1,4 @@
+Consolidate compiler generated dependencies of target scratch_ECNMC_DatacenterSimulation
 
 Start
 Hosts and Switches IP addresses
@@ -34,9 +35,10 @@ torToAggLinkDelay: 3ms
 aggToCoreLinkRate: 30Mbps
 aggToCoreLinkDelay: 3ms
 appDataRate: 10Mbps
-duration: 20
+duration: 80
 pctPacedBack: 0.8
 enableSwitchECN: 1
 enableECMP: 1
 sampleRate: 300
 T0 id 24
+Process was interrupted by the user

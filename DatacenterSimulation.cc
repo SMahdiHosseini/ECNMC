@@ -547,8 +547,8 @@ int main(int argc, char* argv[])
 
 
     /* ########## START: Scheduling and  Running ########## */
-    // DynamicCast<RedQueueDisc>(torToAggQueueDiscs[0][1].Get(0))->TraceConnectWithoutContext("PacketsInQueue", MakeCallback(&queueDiscSize));
-    // DynamicCast<PointToPointNetDevice>(torToAggNetDevices[0][1].Get(0))->GetQueue()->TraceConnectWithoutContext("PacketsInQueue", MakeCallback(&queueSize));
+    DynamicCast<RedQueueDisc>(torToAggQueueDiscs[0][0].Get(0))->TraceConnectWithoutContext("PacketsInQueue", MakeCallback(&queueDiscSize));
+    DynamicCast<PointToPointNetDevice>(torToAggNetDevices[0][0].Get(0))->GetQueue()->TraceConnectWithoutContext("PacketsInQueue", MakeCallback(&queueSize));
 
     // DynamicCast<RedQueueDisc>(hostToTorQueueDiscs[1][0].Get(0))->TraceConnectWithoutContext("Enqueue", MakeCallback(&enqueueDisc));
     // DynamicCast<PointToPointNetDevice>(hostsToTorsNetDevices[1][0].Get(1))->GetQueue()->TraceConnectWithoutContext("PacketsInQueue", MakeCallback(&queueSize));
