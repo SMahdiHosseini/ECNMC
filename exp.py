@@ -66,6 +66,7 @@ def run_experiment():
                 '--appDataRate={} '.format(expConfig.app_data_rate) +
                 '--duration={} '.format(expConfig.duration) +
                 '--sampleRate={} '.format(expConfig.sampleRate) +
+                '--experiment={} '.format(i + 1) +
                 '\' > {}/scratch/ECNMC/results/result.txt'.format(get_ns3_path())
             )
     

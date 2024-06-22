@@ -25,6 +25,7 @@ private:
     PacketKey* _key;
     ns3::Time _sampleTime = Time(-1);
     ns3::Time _departureTime = Time(-1);
+    double _markingProb = 0;
 
 public:
     explicit samplingEvent(PacketKey *key);
@@ -32,10 +33,12 @@ public:
     [[nodiscard]] PacketKey* GetPacketKey() const;
     [[nodiscard]] Time GetSampleTime() const;
     [[nodiscard]] Time GetDepartureTime() const;
+    [[nodiscard]] double GetMarkingProb() const;
     [[nodiscard]] bool IsDeparted() const;
 
     void SetSampleTime();
     void SetDepartureTime();
+    void SetMarkingProb(double markingProb);
 
     friend ostream &operator<<(ostream &os, const samplingEvent &event);
 };
@@ -54,7 +57,6 @@ private:
     double _sampleRate;
     std::unordered_map<PacketKey, samplingEvent*, PacketKeyHash> _recordedSamples;
     int zeroDelayPort;
-    uint32_t droppedPackets;
 
     Ptr<const QueueDiscItem> lastItem;
     Ptr<const Packet> lastPacket;

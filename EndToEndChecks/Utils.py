@@ -33,7 +33,8 @@ plt.rcParams.update({
     })
 
 def calculate_drop_rate(__ns3_path, steadyStart, steadyEnd, rate, segments, checkColumn, projectColumn, experiment, results_folder):
-    swtiches_dropRates = {}
+    loss_sum = 0
+    counts = 0
     for segment in segments:
         file_paths = glob.glob('{}/scratch/{}/{}/{}/*_{}.csv'.format(__ns3_path, results_folder, rate, experiment, segment))
         for file_path in file_paths:
@@ -44,28 +45,33 @@ def calculate_drop_rate(__ns3_path, steadyStart, steadyEnd, rate, segments, chec
             df = df[df[projectColumn] > steadyStart * 1000000000]
             df = df[df[projectColumn] < steadyEnd * 1000000000]
             # calculate the drop rate by dividing the some of the payload of dropped packets by the total payload of the sent packets
-            total_payload = df['PayloadSize'].sum()
-            dropped_payload = df[df[checkColumn] == 0]['PayloadSize'].sum()
-            if total_payload == 0:
-                swtiches_dropRates[df_name] = 0
-            else:
-                swtiches_dropRates[df_name] = dropped_payload / total_payload
-    if len([value for value in swtiches_dropRates.values() if value != 0]) == 0:
-        return 0
-    return sum([value for value in swtiches_dropRates.values() if value != 0]) / len([value for value in swtiches_dropRates.values() if value != 0])
+            # total_payload = df['PayloadSize'].sum()
+            # dropped_payload = df[df[checkColumn] == 0]['PayloadSize'].sum()
+            # if total_payload == 0:
+            #     swtiches_dropRates[df_name] = 0
+            # else:
+            #     swtiches_dropRates[df_name] = dropped_payload / total_payload
+            loss_sum += len(df[df[checkColumn] == 0]) / len(df)
+            counts += 1
+    return loss_sum / counts
+    # if len([value for value in swtiches_dropRates.values() if value != 0]) == 0:
+    #     return 0
+    # return sum([value for value in swtiches_dropRates.values() if value != 0]) / len([value for value in swtiches_dropRates.values() if value != 0])
 
-def read_data(__ns3_path, steadyStart, steadyEnd, rate, segment, checkColumn, projectColumn, experiment, remove_duplicates, results_folder):
+def read_data(__ns3_path, steadyStart, steadyEnd, rate, segment, checkColumn, projectColumn, experiment, remove_duplicates, results_folder, removeDrops=True):
     file_paths = glob.glob('{}/scratch/{}/{}/{}/*_{}.csv'.format(__ns3_path, results_folder, rate, experiment, segment))
     dfs = {}
     for file_path in file_paths:
         df_name = file_path.split('/')[-1].split('_')[0]
         df = pd.read_csv(file_path)
-        df = df[df[checkColumn] == 1]
+        if removeDrops:
+            df = df[df[checkColumn] == 1]
         df = df.reset_index(drop=True)
         df = df[df[projectColumn] > steadyStart * 1000000000]
         df = df[df[projectColumn] < steadyEnd * 1000000000]
         df = df.sort_values(by=[projectColumn], ignore_index=True)
-        df = df.drop(columns=[checkColumn])
+        if removeDrops:
+            df = df.drop(columns=[checkColumn])
         if segment == 'EndToEnd' or segment == 'EndToEnd_crossTraffic':
             df['Delay'] = abs(df['ReceiveTime'] - df['SentTime'])
         if remove_duplicates:
@@ -104,6 +110,9 @@ def convert_to_float(x):
 
 def calc_epsilon(confidenceValue, segement_statistics):
     return (confidenceValue * segement_statistics['DelayStd']) / (np.sqrt(segement_statistics['sampleSize']) * segement_statistics['DelayMean'])
+
+def calc_epsilon_loss(confidenceValue, segement_statistics):
+    return (confidenceValue * segement_statistics['successProbStd']) / (np.sqrt(segement_statistics['sampleSize']) * segement_statistics['successProbMean'])
 
 def calc_error(confidenceValue, segement_statistics):
     return (confidenceValue * segement_statistics['DelayStd']) / np.sqrt(segement_statistics['sampleSize'])
@@ -191,6 +200,20 @@ def get_timeAvg(data):
     timeAvg = (data['InterArrivalTime'] * data['Delay']).sum() / data['InterArrivalTime'].sum()
     return timeAvg
 
+def get_endToEd_loss_statistics(data):
+    statistics = {}
+    data_copy = data.copy()
+    statistics['successProbMeanPackets'] = 1 - (len(data_copy[(data_copy['ECN'] == 1) | (data_copy['IsReceived'] == 0)]) / len(data_copy))
+    statistics['successProbMeanBytes'] = 1 - (data_copy[(data_copy['ECN'] == 1) | (data_copy['IsReceived'] == 0)]['PayloadSize'].sum() / data_copy['PayloadSize'].sum())
+    return statistics
+
+def get_loss_statistics(data):
+    statistics = {}
+    data_copy = data.copy()
+    statistics['successProbMean'] = 1 - data_copy['MarkingProb'].mean()
+    statistics['successProbStd'] = data_copy['MarkingProb'].std()
+    statistics['sampleSize'] = len(data_copy)
+    return statistics
 
 def get_statistics(data, removeZeroes=False, timeAvg=False):
     statistics = {}
@@ -216,13 +239,13 @@ def clear_data_from_outliers_in_time(endToEnd_dfs, switches_dfs, start_dfs):
     for switch in switches_dfs.keys():
         per_traffic_data = []
         for flow in endToEnd_dfs.keys():
-            per_traffic_data.append(pd.merge(endToEnd_dfs[flow].drop(columns=['SentTime', 'ReceiveTime', 'Delay']), switches_dfs[switch], on=['SourceIp', 'SourcePort', 'DestinationIp', 'DestinationPort', 'PayloadSize', 'SequenceNb', 'Id'], how='inner'))
+            per_traffic_data.append(pd.merge(endToEnd_dfs[flow].drop(columns=['SentTime', 'ReceiveTime', 'Delay', 'Path', 'ECN']), switches_dfs[switch], on=['SourceIp', 'SourcePort', 'DestinationIp', 'DestinationPort', 'PayloadSize', 'SequenceNb', 'Id'], how='inner'))
         switches_dfs[switch] = pd.concat(per_traffic_data)
 
     for queue in start_dfs.keys():
         per_traffic_data = []
         for flow in endToEnd_dfs.keys():
-            per_traffic_data.append(pd.merge(endToEnd_dfs[flow].drop(columns=['SentTime', 'ReceiveTime', 'Delay']), start_dfs[queue], on=['SourceIp', 'SourcePort', 'DestinationIp', 'DestinationPort', 'PayloadSize', 'SequenceNb', 'Id'], how='inner'))
+            per_traffic_data.append(pd.merge(endToEnd_dfs[flow].drop(columns=['SentTime', 'ReceiveTime', 'Delay', 'Path', 'ECN']), start_dfs[queue], on=['SourceIp', 'SourcePort', 'DestinationIp', 'DestinationPort', 'PayloadSize', 'SequenceNb', 'Id'], how='inner'))
         start_dfs[queue] = pd.concat(per_traffic_data)
     
 
@@ -267,3 +290,18 @@ def plot_overall_delay_distribution(rate, common_switch_sample_df, queue):
     ax.set_xlabel('Delay (ns)')
     plt.savefig('../results/{}/{}_{}_overall_delayDist.png'.format(rate, rate, queue))
     plt.close()
+
+def plot_delay_over_time(endToEnd_dfs, paths, rate, results_folder):
+    for flow in endToEnd_dfs.keys():
+        if flow == "R0H0R2H0" or flow == "R0H1R2H1":
+            for path in paths:
+                path_flow = endToEnd_dfs[flow][endToEnd_dfs[flow]['Path'] == int(path[1])]
+                path_flow = path_flow.sort_values(by=['ReceiveTime'])
+                plt.plot(path_flow['ReceiveTime'], path_flow['Delay'], label='path {}'.format(path))
+            plt.legend()
+            plt.xlabel('Time (ns)')
+            plt.ylabel('Delay (ns)')
+            plt.title('Flow {}'.format(flow))
+            plt.savefig('../results/{}/{}_delayOverTime_{}.png'.format(rate, flow, results_folder))
+            plt.close()
+            plt.clf()

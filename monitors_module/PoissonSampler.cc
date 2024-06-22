@@ -2,14 +2,17 @@
 // Created by Mahdi Hosseini on 24.04.24.
 //
 #include "PoissonSampler.h"
+#include <iomanip>
 
 samplingEvent::samplingEvent(PacketKey *key) : _key(key) {}
 
 void samplingEvent::SetSampleTime() { _sampleTime = ns3::Simulator::Now(); }
 void samplingEvent::SetDepartureTime() { _departureTime = ns3::Simulator::Now(); }
+void samplingEvent::SetMarkingProb(double markingProb) { _markingProb = markingProb; }
 PacketKey *samplingEvent::GetPacketKey() const { return _key; }
 Time samplingEvent::GetSampleTime() const { return _sampleTime; }
 Time samplingEvent::GetDepartureTime() const { return _departureTime; }
+double samplingEvent::GetMarkingProb() const { return _markingProb; }
 bool samplingEvent::IsDeparted() const { return _departureTime != Time(-1); }
 
 ostream &operator<<(ostream &os, const samplingEvent &event) {
@@ -29,7 +32,6 @@ PoissonSampler::PoissonSampler(const Time &startTime, const Time &duration, Ptr<
     m_var->SetAttribute("Mean", DoubleValue(1/sampleRate));
     _sampleRate = sampleRate;
     zeroDelayPort = 0;
-    droppedPackets = 0;
 
     Simulator::Schedule(_startTime, &PoissonSampler::Connect, this, outgoingNetDevice);
     Simulator::Schedule(_startTime + _duration, &PoissonSampler::Disconnect, this, outgoingNetDevice);
@@ -72,8 +74,6 @@ void PoissonSampler::EventHandler() {
     PacketKey* packetKey;
     bool zeroDelay = false;
     if (REDQueueDisc != nullptr && REDQueueDisc->GetNPackets() > 0) {
-        QueueDisc::Stats st = REDQueueDisc->GetStats();
-        droppedPackets = st.GetNDroppedPackets(RedQueueDisc::UNFORCED_DROP) + st.GetNDroppedPackets(RedQueueDisc::FORCED_DROP) + st.GetNDroppedPackets(QueueDisc::INTERNAL_QUEUE_DROP);
         // check the quque disc size
         if (REDQueueDisc->GetNPackets() > 0) {
             // extract transport layer info
@@ -109,6 +109,10 @@ void PoissonSampler::EventHandler() {
     if (zeroDelay) {
         event->SetDepartureTime();
     }
+    // set the drop information
+    if (REDQueueDisc != nullptr) {
+        event->SetMarkingProb(REDQueueDisc->GetMarkingProbability());
+    }
     // Generate a new event
     double nextEvent = m_var->GetValue();
     Simulator::Schedule(Seconds(nextEvent), &PoissonSampler::EventHandler, this);
@@ -118,11 +122,27 @@ void PoissonSampler::RecordPacket(Ptr<const Packet> packet) {
     PacketKey* packetKey = PacketKey::Packet2PacketKey(packet, FIRST_HEADER_PPP);
     if (_recordedSamples.find(*packetKey) != _recordedSamples.end()) {
         _recordedSamples[*packetKey]->SetDepartureTime();
+        bool ECNFlag = false;
+        if (REDQueueDisc == nullptr) {
+            const Ptr<Packet> &pktCopy = packet->Copy();
+            PppHeader pppHeader;
+            Ipv4Header header;
+            pktCopy->RemoveHeader(pppHeader);
+            pktCopy->RemoveHeader(header);
+            if (header.EcnTypeToString(header.GetEcn()) == "CE") {
+                _recordedSamples[*packetKey]->SetMarkingProb(1.0);
+                ECNFlag = true;
+            }
+        }
+
         // check if there exists a packet with the same key but different record field
         packetKey->SetRecords(packetKey->GetRecords() + 1);
         while (_recordedSamples.find(*packetKey) != _recordedSamples.end())
         {
             _recordedSamples[*packetKey]->SetDepartureTime();
+            if (ECNFlag) {
+                _recordedSamples[*packetKey]->SetMarkingProb(1.0);
+            }
             packetKey->SetRecords(packetKey->GetRecords() + 1);
         }
     }
@@ -132,7 +152,7 @@ void PoissonSampler::RecordPacket(Ptr<const Packet> packet) {
 void PoissonSampler::SaveSamples(const string& filename) {
     ofstream outfile;
     outfile.open(filename);
-    outfile << "SourceIp,SourcePort,DestinationIp,DestinationPort,SequenceNb,Id,PayloadSize,SampleTime,IsDeparted,DepartTime" << endl;
+    outfile << "SourceIp,SourcePort,DestinationIp,DestinationPort,SequenceNb,Id,PayloadSize,SampleTime,IsDeparted,DepartTime,MarkingProb" << endl;
     for (auto& packetKeyEventPair: _recordedSamples) {
         PacketKey key = packetKeyEventPair.first;
         samplingEvent* event = packetKeyEventPair.second;
@@ -140,9 +160,10 @@ void PoissonSampler::SaveSamples(const string& filename) {
         outfile << key.GetSrcIp() << "," << key.GetSrcPort() << ",";
         outfile << key.GetDstIp() << "," << key.GetDstPort() << "," << key.GetSeqNb() << "," << key.GetId()  << "," << key.GetSize() << ",";
         outfile << GetRelativeTime(event->GetSampleTime()).GetNanoSeconds() << ",";
-        outfile << event->IsDeparted() << "," << GetRelativeTime(event->GetDepartureTime()).GetNanoSeconds() << endl;
+        outfile << event->IsDeparted() << "," << GetRelativeTime(event->GetDepartureTime()).GetNanoSeconds() << ",";
+        outfile << std::fixed << std::setprecision(10);
+        outfile << event->GetMarkingProb() << endl;
     }
-    outfile << "DroppedPackets: " << droppedPackets << endl;
     outfile.close();
 }
 

@@ -73,8 +73,9 @@ int main(int argc, char* argv[])
     bool enableSwitchECN = true;                       // Enable ECN on the switches
     bool enableECMP = true;                            // Enable ECMP on the switches
     double sampleRate = 10;                            // Sample rate for the PoissonSampler
-    int minTh = 50;                                    // RED Queue Disc MinTh
-    int maxTh = 150;                                   // RED Queue Disc MaxTh
+    int minTh = 9000;                                  // RED Queue Disc MinTh
+    int maxTh = 28000;                                 // RED Queue Disc MaxTh
+    int experiment = 1;                                // Experiment number
 
     /*command line input*/
     CommandLine cmd;
@@ -93,12 +94,16 @@ int main(int argc, char* argv[])
     cmd.AddValue("hostToTorLinkRateCrossTraffic", "Links bandwith between hosts and ToR switches for the cross traffic", hostToTorLinkRateCrossTraffic);
     cmd.AddValue("minTh", "RED Queue Disc MinTh", minTh);
     cmd.AddValue("maxTh", "RED Queue Disc MaxTh", maxTh);
+    cmd.AddValue("experiment", "Experiment number", experiment);
     cmd.Parse(argc, argv);
 
     /*set default values*/
+    ns3::RngSeedManager::SetSeed(experiment);
     Time startTime = Seconds(0);
     Time stopTime = Seconds(stof(duration));
-    Time convergenceTime = Seconds(0.005);
+    Time stopTime_1 = Seconds(stof(duration));  
+    Time convergenceTime = Seconds(0.5);
+    stopTime = stopTime + convergenceTime;
 
     Config::SetDefault("ns3::TcpL4Protocol::SocketType", StringValue("ns3::TcpDctcp"));
     Config::SetDefault("ns3::Ipv4GlobalRouting::RandomEcmpRouting", BooleanValue(enableECMP));
@@ -108,7 +113,7 @@ int main(int argc, char* argv[])
     GlobalValue::Bind("ChecksumEnabled", BooleanValue(false));
     Config::SetDefault("ns3::RedQueueDisc::UseHardDrop", BooleanValue(false));
     Config::SetDefault("ns3::RedQueueDisc::MeanPktSize", UintegerValue(1500));
-    Config::SetDefault("ns3::RedQueueDisc::MaxSize", QueueSizeValue(QueueSize("200p")));
+    Config::SetDefault("ns3::RedQueueDisc::MaxSize", QueueSizeValue(QueueSize("37.5KB")));
     Config::SetDefault("ns3::RedQueueDisc::QW", DoubleValue(1));
     Config::SetDefault("ns3::RedQueueDisc::MinTh", DoubleValue(minTh));
     Config::SetDefault("ns3::RedQueueDisc::MaxTh", DoubleValue(maxTh));
@@ -273,6 +278,15 @@ int main(int argc, char* argv[])
     }
 
     Ipv4GlobalRoutingHelper::PopulateRoutingTables();
+
+    /* Erro Model Setup for Silent packet drops*/
+    // Ptr<RateErrorModel> em_R0H0T0 = CreateObject<RateErrorModel>();
+    // em_R0H0T0->SetAttribute("ErrorRate", DoubleValue(0.005));
+    // hostsToTorsNetDevices[0][0].Get(1)->SetAttribute("ReceiveErrorModel", PointerValue(em_R0H0T0));
+
+    // Ptr<RateErrorModel> em_R0H1T0 = CreateObject<RateErrorModel>();
+    // em_R0H1T0->SetAttribute("ErrorRate", DoubleValue(0.005));
+    // hostsToTorsNetDevices[0][1].Get(1)->SetAttribute("ReceiveErrorModel", PointerValue(em_R0H1T0));
     /* ########## END: Ceating the topology ########## */
 
 
@@ -547,8 +561,8 @@ int main(int argc, char* argv[])
 
 
     /* ########## START: Scheduling and  Running ########## */
-    DynamicCast<RedQueueDisc>(torToAggQueueDiscs[0][0].Get(0))->TraceConnectWithoutContext("PacketsInQueue", MakeCallback(&queueDiscSize));
-    DynamicCast<PointToPointNetDevice>(torToAggNetDevices[0][0].Get(0))->GetQueue()->TraceConnectWithoutContext("PacketsInQueue", MakeCallback(&queueSize));
+    // DynamicCast<RedQueueDisc>(torToAggQueueDiscs[0][0].Get(0))->TraceConnectWithoutContext("BytesInQueue", MakeCallback(&queueDiscSize));
+    // DynamicCast<PointToPointNetDevice>(torToAggNetDevices[0][0].Get(0))->GetQueue()->TraceConnectWithoutContext("PacketsInQueue", MakeCallback(&queueSize));
 
     // DynamicCast<RedQueueDisc>(hostToTorQueueDiscs[1][0].Get(0))->TraceConnectWithoutContext("Enqueue", MakeCallback(&enqueueDisc));
     // DynamicCast<PointToPointNetDevice>(hostsToTorsNetDevices[1][0].Get(1))->GetQueue()->TraceConnectWithoutContext("PacketsInQueue", MakeCallback(&queueSize));
@@ -558,7 +572,7 @@ int main(int argc, char* argv[])
     // DynamicCast<PointToPointNetDevice>(hostsToTorsNetDevices[0][0].Get(0))->GetQueue()->TraceConnectWithoutContext("Enqueue", MakeCallback(&enqueue));
     // DynamicCast<PointToPointNetDevice>(hostsToTorsNetDevices[0][0].Get(0))->GetQueue()->TraceConnectWithoutContext("Dequeue", MakeCallback(&dequeue));
 
-    Simulator::Stop(stopTime + convergenceTime + convergenceTime);
+    Simulator::Stop(stopTime_1);
     Simulator::Run();
     Simulator::Destroy();
 

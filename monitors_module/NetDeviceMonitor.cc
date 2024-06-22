@@ -8,10 +8,11 @@ NetDeviceMonitorEvent::NetDeviceMonitorEvent(PacketKey *key) : _key(key) {}
 
 void NetDeviceMonitorEvent::SetSent() { _sentTime = ns3::Simulator::Now(); }
 void NetDeviceMonitorEvent::SetReceived() { _receivedTime = ns3::Simulator::Now(); }
-
+void NetDeviceMonitorEvent::SetEcn(bool ecn) { _key->SetEcn(ecn); }
 PacketKey *NetDeviceMonitorEvent::GetPacketKey() const { return _key; }
 Time NetDeviceMonitorEvent::GetSentTime() const { return _sentTime; }
 Time NetDeviceMonitorEvent::GetReceivedTime() const {  return _receivedTime; }
+bool NetDeviceMonitorEvent::GetEcn() const { return _key->GetEcn(); }
 bool NetDeviceMonitorEvent::IsSent() const { return _sentTime != Time(-1); }
 
 ostream &operator<<(ostream &os, const NetDeviceMonitorEvent &event) {
@@ -60,6 +61,14 @@ void NetDeviceMonitor::Dequeue(Ptr<const Packet> packet) {
         auto packetKeyEventPair = _recordedPackets.find(*packetKey);
         if (packetKeyEventPair != _recordedPackets.end()) {
             packetKeyEventPair->second->SetSent();
+            const Ptr<Packet> &pktCopy = packet->Copy();
+            PppHeader pppHeader;
+            Ipv4Header header;
+            pktCopy->RemoveHeader(pppHeader);
+            pktCopy->RemoveHeader(header);
+            if (header.EcnTypeToString(header.GetEcn()) == "CE") {
+                packetKeyEventPair->second->SetEcn(true);
+            }
         }
     }
 }
@@ -67,7 +76,7 @@ void NetDeviceMonitor::Dequeue(Ptr<const Packet> packet) {
 void NetDeviceMonitor::SavePacketRecords(const string &filename) {
     ofstream outfile;
     outfile.open(filename);
-    outfile << "SourceIp,SourcePort,DestinationIp,DestinationPort,SequenceNb,Id,PayloadSize,ReceiveTime,IsSent,SentTime" << endl;
+    outfile << "SourceIp,SourcePort,DestinationIp,DestinationPort,SequenceNb,Id,PayloadSize,ReceiveTime,IsSent,SentTime,ECN" << endl;
     for (auto& packetKeyEventPair: _recordedPackets) {
         PacketKey key = packetKeyEventPair.first;
         NetDeviceMonitorEvent* event = packetKeyEventPair.second;
@@ -75,7 +84,8 @@ void NetDeviceMonitor::SavePacketRecords(const string &filename) {
         outfile << key.GetSrcIp() << "," << key.GetSrcPort() << ",";
         outfile << key.GetDstIp() << "," << key.GetDstPort() << "," << key.GetSeqNb() << "," << key.GetId()  << "," << key.GetSize() << ",";
         outfile << GetRelativeTime(event->GetReceivedTime()).GetNanoSeconds() << ",";
-        outfile << event->IsSent() << "," << GetRelativeTime(event->GetSentTime()).GetNanoSeconds() << endl;
+        outfile << event->IsSent() << "," << GetRelativeTime(event->GetSentTime()).GetNanoSeconds() << ",";
+        outfile << event->GetEcn() << endl;
     }
     outfile.close();
 }

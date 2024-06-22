@@ -22,7 +22,7 @@ struct NetDeviceMonitorEvent {
 
 private:
     PacketKey* _key;
-    ns3::Time _sentTime;
+    ns3::Time _sentTime = Time(-1);
     ns3::Time _receivedTime = Time(-1);
 
 public:
@@ -31,10 +31,12 @@ public:
     [[nodiscard]] PacketKey* GetPacketKey() const;
     [[nodiscard]] Time GetSentTime() const;
     [[nodiscard]] Time GetReceivedTime() const;
+    [[nodiscard]] bool GetEcn() const;
     [[nodiscard]] bool IsSent() const;
 
     void SetSent();
     void SetReceived();
+    void SetEcn(bool ecn);
 
     friend ostream &operator<<(ostream &os, const NetDeviceMonitorEvent &event);
 };

@@ -31,9 +31,11 @@ public:
     [[nodiscard]] Time GetSentTime() const;
     [[nodiscard]] Time GetReceivedTime() const;
     [[nodiscard]] bool IsReceived() const;
+    [[nodiscard]] bool GetEcn() const;
 
     void SetSent();
     void SetReceived();
+    void SetEcn(bool ecn);
 
     friend ostream &operator<<(ostream &os, const PacketMonitorEvent &event);
 };

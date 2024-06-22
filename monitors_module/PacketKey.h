@@ -26,6 +26,8 @@ private:
     uint32_t _size;
     size_t _payloadHash;
     int records;
+    int path;
+    bool ecn;
 
 public:
     PacketKey(const Ipv4Address &srcIp, const Ipv4Address &dstIp, uint16_t id, uint16_t srcPort, uint16_t dstPort,
@@ -41,6 +43,8 @@ public:
     [[nodiscard]] uint32_t GetSize() const;
     [[nodiscard]] size_t GetPayloadHash() const;
     [[nodiscard]] int GetRecords() const;
+    [[nodiscard]] int GetPath() const;
+    [[nodiscard]] bool GetEcn() const;
 
     bool operator<(const PacketKey &rhs) const;
     bool operator>(const PacketKey &rhs) const;
@@ -62,6 +66,8 @@ public:
     void SetDstIp(const Ipv4Address &dstIp);
     void SetId(uint16_t id);
     void SetRecords(int records);
+    void SetPath(int path);
+    void SetEcn(bool ecn);
 };
 
 struct PacketKeyHash {
