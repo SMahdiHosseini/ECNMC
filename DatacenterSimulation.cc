@@ -16,6 +16,7 @@
 #include "monitors_module/PoissonSampler.h"
 #include "monitors_module/RegularSampler.h"
 #include "monitors_module/NetDeviceMonitor.h"
+#include "ns3/mpi-interface.h"
 #include "traffic_generator_module/background_replay/BackgroundReplay.h"
 #include <iomanip>
 #include <iostream>
@@ -117,6 +118,11 @@ int main(int argc, char* argv[])
     Config::SetDefault("ns3::RedQueueDisc::QW", DoubleValue(1));
     Config::SetDefault("ns3::RedQueueDisc::MinTh", DoubleValue(minTh));
     Config::SetDefault("ns3::RedQueueDisc::MaxTh", DoubleValue(maxTh));
+
+    // GlobalValue::Bind("SimulatorImplementationType", StringValue("ns3::DistributedSimulatorImpl"));
+    // MPI_Init(&argc, &argv);
+    // MPI_Comm splitComm = MPI_COMM_WORLD;
+    // MpiInterface::Enable(splitComm);
     /* ########## END: Config ########## */
 
 
@@ -298,7 +304,8 @@ int main(int argc, char* argv[])
         auto* caidaTrafficGenerator = new BackgroundReplay(racks[0].Get(i), racks[2].Get(i));
         caidaTrafficGenerator->SetPctOfPacedTcps(pctPacedBack);
         // string tracesPath = "/home/mahdi/Documents/NAL/Data/chicago_2010_traffic_10min_2paths/path" + to_string(i % 2);
-        string tracesPath = "/home/mahdi/Documents/Data/chicago_2010_traffic_10min_2paths/path" + to_string(i % 2);
+        // string tracesPath = "/home/mahdi/Documents/Data/chicago_2010_traffic_10min_2paths/path" + to_string(i % 2);
+        string tracesPath = "/home/shossein/myfiles/chicago_2010_traffic_10min_2paths/path" + to_string(i % 2);
         if (std::filesystem::exists(tracesPath)) {
             caidaTrafficGenerator->RunAllTCPTraces(tracesPath, 0);
         } else {
@@ -311,7 +318,8 @@ int main(int argc, char* argv[])
         auto* caidaTrafficGenerator = new BackgroundReplay(racks[1].Get(i), racks[3].Get(i));
         caidaTrafficGenerator->SetPctOfPacedTcps(pctPacedBack);
         // string tracesPath = "/home/mahdi/Documents/NAL/Data/chicago_2010_traffic_10min_2paths/path" + to_string(i % 2);
-        string tracesPath = "/home/mahdi/Documents/Data/chicago_2010_traffic_10min_2paths/path" + to_string(i % 2);
+        // string tracesPath = "/home/mahdi/Documents/Data/chicago_2010_traffic_10min_2paths/path" + to_string(i % 2);
+        string tracesPath = "/home/shossein/myfiles/chicago_2010_traffic_10min_2paths/path" + to_string(i % 2);
         if (std::filesystem::exists(tracesPath)) {
             caidaTrafficGenerator->RunAllTCPTraces(tracesPath, 0);
         } else {
@@ -561,8 +569,8 @@ int main(int argc, char* argv[])
 
 
     /* ########## START: Scheduling and  Running ########## */
-    // DynamicCast<RedQueueDisc>(torToAggQueueDiscs[0][0].Get(0))->TraceConnectWithoutContext("BytesInQueue", MakeCallback(&queueDiscSize));
-    // DynamicCast<PointToPointNetDevice>(torToAggNetDevices[0][0].Get(0))->GetQueue()->TraceConnectWithoutContext("PacketsInQueue", MakeCallback(&queueSize));
+    DynamicCast<RedQueueDisc>(torToAggQueueDiscs[0][0].Get(0))->TraceConnectWithoutContext("BytesInQueue", MakeCallback(&queueDiscSize));
+    DynamicCast<PointToPointNetDevice>(torToAggNetDevices[0][0].Get(0))->GetQueue()->TraceConnectWithoutContext("PacketsInQueue", MakeCallback(&queueSize));
 
     // DynamicCast<RedQueueDisc>(hostToTorQueueDiscs[1][0].Get(0))->TraceConnectWithoutContext("Enqueue", MakeCallback(&enqueueDisc));
     // DynamicCast<PointToPointNetDevice>(hostsToTorsNetDevices[1][0].Get(1))->GetQueue()->TraceConnectWithoutContext("PacketsInQueue", MakeCallback(&queueSize));
@@ -577,22 +585,22 @@ int main(int argc, char* argv[])
     Simulator::Destroy();
 
     for (auto monitor: endToendMonitors) {
-        monitor->SavePacketRecords((string) (getenv("PWD")) + "/results/" + monitor->GetMonitorTag() + "_EndToEnd.csv");
+        monitor->SavePacketRecords((string) (getenv("PWD")) + "/results/" + to_string(experiment)  + "/" + monitor->GetMonitorTag() + "_EndToEnd.csv");
     }
     for (auto monitor: hostNetDeviceMonitors) {
-        monitor->SavePacketRecords((string) (getenv("PWD")) + "/results/" + monitor->GetMonitorTag() + "_start.csv");
+        monitor->SavePacketRecords((string) (getenv("PWD")) + "/results/" + to_string(experiment)  + "/" + monitor->GetMonitorTag() + "_start.csv");
     }
     for (auto monitor: torSwitchMonitors) {
-        monitor->SavePacketRecords((string) (getenv("PWD")) + "/results/" + monitor->GetMonitorTag() + "_Switch.csv");
+        monitor->SavePacketRecords((string) (getenv("PWD")) + "/results/" + to_string(experiment)  + "/" + monitor->GetMonitorTag() + "_Switch.csv");
     }
     for (auto monitor: aggSwitchMonitors) {
-        monitor->SavePacketRecords((string) (getenv("PWD")) + "/results/" + monitor->GetMonitorTag() + "_Switch.csv");
+        monitor->SavePacketRecords((string) (getenv("PWD")) + "/results/" + to_string(experiment)  + "/" + monitor->GetMonitorTag() + "_Switch.csv");
     }
     for (auto monitor: coreSwitchMonitors) {
-        monitor->SavePacketRecords((string) (getenv("PWD")) + "/results/" + monitor->GetMonitorTag() + "_Switch.csv");
+        monitor->SavePacketRecords((string) (getenv("PWD")) + "/results/" + to_string(experiment)  + "/" + monitor->GetMonitorTag() + "_Switch.csv");
     }
     for (auto monitor: PoissonSamplers) {
-        monitor->SaveSamples((string) (getenv("PWD")) + "/results/" + monitor->GetSampleTag() + "_PoissonSampler.csv");
+        monitor->SaveSamples((string) (getenv("PWD")) + "/results/" + to_string(experiment)  + "/" + monitor->GetSampleTag() + "_PoissonSampler.csv");
     }
     /* ########## END: Scheduling and  Running ########## */
 

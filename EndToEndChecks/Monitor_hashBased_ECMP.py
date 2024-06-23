@@ -10,7 +10,9 @@ from scipy.stats import anderson
 from scipy.stats import f_oneway, kruskal
 import json as js
 
-__ns3_path = os.popen('locate "ns-3.41" | grep /ns-3.41$').read().splitlines()[0]
+# __ns3_path = os.popen('locate "ns-3.41" | grep /ns-3.41$').read().splitlines()[0]
+__ns3_path = "/home/shossein/myfiles/ns-allinone-3.41/ns-3.41"
+
 sample_rate = 0.05
 confidenceValue = 1.96 # 95% confidence interval
 
@@ -61,6 +63,7 @@ def prepare_results(flows, queues, num_of_agg_switches):
     rounds_results['EndToEndMean'] = {}
     rounds_results['EndToEndStd'] = {}
     rounds_results['DropRate'] = []
+    rounds_results['maxEpsilon'] = {}
 
     for q in queues:
         if q[0] == 'T' and q[2] == 'H' and (q[1] == '2' or q[1] == '3'):
@@ -76,6 +79,7 @@ def prepare_results(flows, queues, num_of_agg_switches):
         rounds_results['Basic'][flow] = {}
         rounds_results['EndToEndMean'][flow] = {}
         rounds_results['EndToEndStd'][flow] = {}
+        rounds_results['maxEpsilon'][flow] = {}
 
         for i in range(num_of_agg_switches):
             rounds_results['DominantAssumption'][flow]['A' + str(i)] = 0
@@ -83,6 +87,7 @@ def prepare_results(flows, queues, num_of_agg_switches):
             rounds_results['Basic'][flow]['A' + str(i)] = 0
             rounds_results['EndToEndMean'][flow]['A' + str(i)] = []
             rounds_results['EndToEndStd'][flow]['A' + str(i)] = []
+            rounds_results['maxEpsilon'][flow]['A' + str(i)] = []
 
     rounds_results['experiments'] = 0
     return rounds_results
@@ -191,6 +196,7 @@ def analyze_single_experiment(rate, steadyStart, steadyEnd, confidenceValue, rou
             endToEnd_statistics[flow][path] = get_statistics(temp, timeAvg=True)
             rounds_results['EndToEndMean'][flow][path].append(endToEnd_statistics[flow][path]['timeAvg'])
             rounds_results['EndToEndStd'][flow][path].append(endToEnd_statistics[flow][path]['DelayStd'])
+            rounds_results['maxEpsilon'][flow][path].append(samples_paths_aggregated_statistics[flow][path]['MaxEpsilon'])
 
     rounds_results['experiments'] += 1
 

@@ -1,8 +1,9 @@
 import os
 import time
 import configparser
-
-__ns3_path = os.popen('locate "ns-3.41" | grep /ns-3.41$').read().splitlines()[0]
+import threading
+# __ns3_path = os.popen('locate "ns-3.41" | grep /ns-3.41$').read().splitlines()[0]
+__ns3_path = "/home/shossein/myfiles/ns-allinone-3.41/ns-3.41"
 
 class ExperimentConfig:
     def __init__(self):
@@ -45,14 +46,15 @@ def get_ns3_path(): return __ns3_path
 def rebuild_project():
     os.system('{}/ns3 build'.format(get_ns3_path()))
 
-def run_experiment():
+def run_experiment(exp):
     expConfig = ExperimentConfig()
     expConfig.read_config_file('Parameters.config')
     os.system('mkdir -p {}/scratch/ECNMC/results/'.format(get_ns3_path()))
     for rate in expConfig.serviceRateScales:
         exp_tor_to_agg_link_rate = "{}Mbps".format(round(float(expConfig.tor_to_agg_link_rate.split('M')[0]) * rate, 1))
         # for i in range(int(expConfig.experiments)):
-        for i in [0]:
+        for i in exp:
+            os.system('mkdir -p {}/scratch/ECNMC/results/{}'.format(get_ns3_path(), i + 1))
             os.system(
                 '{}/ns3 run \'DatacenterSimulation '.format(get_ns3_path()) +
                 '--hostToTorLinkRate={} '.format(expConfig.host_to_tor_link_rate) +
@@ -71,11 +73,27 @@ def run_experiment():
             )
     
             os.system('mkdir -p {}/scratch/Results/{}/{}'.format(get_ns3_path(), rate, i))
-            os.system('mv {}/scratch/ECNMC/results/*.csv {}/scratch/Results/{}/{}'.format(get_ns3_path(), get_ns3_path(), rate, i))
-            os.system('mkdir -p {}/scratch/ECNMC/results/{}'.format(get_ns3_path(), rate))
+            os.system('mv {}/scratch/ECNMC/results/{}/*.csv {}/scratch/Results/{}/{}'.format(get_ns3_path(), i + 1, get_ns3_path(), rate, i))
+            os.system('mkdir -p {}/scratch/ECNMC/results_postProcessing/{}'.format(get_ns3_path(), rate))
             print('\tExperiment {} done'.format(i))
         print('Rate {} done'.format(rate))
 
 # main
 # rebuild_project()
-run_experiment()
+# expConfig = ExperimentConfig()
+# expConfig.read_config_file('Parameters.config')
+# expConfig.experiments = int(expConfig.experiments)
+# exps = [14, 19, 24, 34, 4, 49, 9]
+# ths = []
+# # numOfThs = 10
+# numOfThs = 7
+# for th in range(numOfThs):
+#     # ths.append(threading.Thread(target=run_experiment, args=([i for i in range(int(th * expConfig.experiments / numOfThs), int((th + 1) * expConfig.experiments / numOfThs))], )))
+#     ths.append(threading.Thread(target=run_experiment, args=([exps[th]], )))
+
+# for th in ths:
+#     th.start()
+
+# for th in ths:
+#     th.join()
+run_experiment([4])

@@ -10,7 +10,8 @@ from scipy.stats import anderson
 from scipy.stats import f_oneway, kruskal
 import json as js
 
-__ns3_path = os.popen('locate "ns-3.41" | grep /ns-3.41$').read().splitlines()[0]
+# __ns3_path = os.popen('locate "ns-3.41" | grep /ns-3.41$').read().splitlines()[0]
+__ns3_path = "/home/shossein/myfiles/ns-allinone-3.41/ns-3.41"
 sample_rate = 0.05
 confidenceValue = 1.96 # 95% confidence interval
         
@@ -23,36 +24,30 @@ def check_MaxEpsilon_ineq(endToEnd_statistics, samples_paths_aggregated_statisti
 def check_all_delayConsistency(endToEnd_statistics, samples_paths_aggregated_statistics, paths, number_of_segments):
     res = {}
     res['MaxEpsilonIneqPackets'] = {}
-    res['MaxEpsilonIneqBytes'] = {}
     for flow in endToEnd_statistics.keys():
         res['MaxEpsilonIneqPackets'][flow] = {}
-        res['MaxEpsilonIneqBytes'][flow] = {}
         for path in paths:
             res['MaxEpsilonIneqPackets'][flow][path] = check_MaxEpsilon_ineq(np.log(endToEnd_statistics[flow][path]['successProbMeanPackets']), samples_paths_aggregated_statistics[flow][path], number_of_segments)
-            res['MaxEpsilonIneqBytes'][flow][path] = check_MaxEpsilon_ineq(np.log(endToEnd_statistics[flow][path]['successProbMeanBytes']), samples_paths_aggregated_statistics[flow][path], number_of_segments)
     return res
 
 def prepare_results(flows, queues, num_of_agg_switches):
     rounds_results = {}
 
     rounds_results['MaxEpsilonIneqPackets'] = {}
-    rounds_results['MaxEpsilonIneqBytes'] = {}
     rounds_results['DropRate'] = []
     rounds_results['EndToEndSuccessProbPackets'] = {}
-    rounds_results['EndToEndSuccessProbBytes'] = {}
+    rounds_results['maxEpsilon'] = {}
 
 
     for flow in flows:
         rounds_results['MaxEpsilonIneqPackets'][flow] = {}
-        rounds_results['MaxEpsilonIneqBytes'][flow] = {}
         rounds_results['EndToEndSuccessProbPackets'][flow] = {}
-        rounds_results['EndToEndSuccessProbBytes'][flow] = {}
+        rounds_results['maxEpsilon'][flow] = {}
 
         for i in range(num_of_agg_switches):
             rounds_results['MaxEpsilonIneqPackets'][flow]['A' + str(i)] = 0
-            rounds_results['MaxEpsilonIneqBytes'][flow]['A' + str(i)] = 0
             rounds_results['EndToEndSuccessProbPackets'][flow]['A' + str(i)] = []
-            rounds_results['EndToEndSuccessProbBytes'][flow]['A' + str(i)] = []
+            rounds_results['maxEpsilon'][flow]['A' + str(i)] = []
 
     rounds_results['experiments'] = 0
     return rounds_results
@@ -64,8 +59,6 @@ def compatibility_check(rounds_results, samples_paths_aggregated_statistics, end
         for path in paths:
             if results['MaxEpsilonIneqPackets'][flow][path]:
                 rounds_results['MaxEpsilonIneqPackets'][flow][path] += 1
-            if results['MaxEpsilonIneqBytes'][flow][path]:
-                rounds_results['MaxEpsilonIneqBytes'][flow][path] += 1
             
 
 def analyze_single_experiment(rate, steadyStart, steadyEnd, confidenceValue, rounds_results, queues_names, results_folder, experiment=0, ns3_path=__ns3_path):
@@ -116,8 +109,8 @@ def analyze_single_experiment(rate, steadyStart, steadyEnd, confidenceValue, rou
             # remove A from the path
             temp = endToEnd_dfs[flow][endToEnd_dfs[flow]['Path'] == int(path[1])]
             endToEnd_statistics[flow][path] = get_endToEd_loss_statistics(temp)
-            rounds_results['EndToEndSuccessProbPackets'][flow][path].append(np.log(endToEnd_statistics[flow][path]['successProbMeanPackets']))
-            rounds_results['EndToEndSuccessProbBytes'][flow][path].append(np.log(endToEnd_statistics[flow][path]['successProbMeanBytes']))
+            rounds_results['EndToEndSuccessProbPackets'][flow][path].append(endToEnd_statistics[flow][path]['successProbMeanPackets'])
+            rounds_results['maxEpsilon'][flow][path].append(samples_paths_aggregated_statistics[flow][path]['MaxEpsilon'])
 
     rounds_results['experiments'] += 1
     number_of_segments = 4
@@ -181,7 +174,7 @@ def __main__():
     # print("experiments: ", experiments)
     # print("serviceRateScales: ", serviceRateScales)
     # serviceRateScales = [0.85]
-    experiments = 3
+    experiments = 1
 
     for rate in serviceRateScales:
         print("\nAnalyzing experiments for rate: ", rate)
