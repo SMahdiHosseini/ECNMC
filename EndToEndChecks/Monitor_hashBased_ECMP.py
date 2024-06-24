@@ -11,7 +11,7 @@ from scipy.stats import f_oneway, kruskal
 import json as js
 
 # __ns3_path = os.popen('locate "ns-3.41" | grep /ns-3.41$').read().splitlines()[0]
-__ns3_path = "/home/shossein/myfiles/ns-allinone-3.41/ns-3.41"
+__ns3_path = "/home/shossein/ns-allinone-3.41/ns-3.41"
 
 sample_rate = 0.05
 confidenceValue = 1.96 # 95% confidence interval
@@ -214,9 +214,8 @@ def analyze_single_experiment(rate, steadyStart, steadyEnd, confidenceValue, rou
         plot_delay_over_time(endToEnd_dfs, paths, rate, results_folder)
 
 def analyze_all_experiments(rate, steadyStart, steadyEnd, confidenceValue, experiments_start=0, experiments_end=3, ns3_path=__ns3_path):
-    results_folder = 'Results'
-    # results_folder = 'Results_delay_normal'
-    # results_folder = 'Results_delay_reverse'
+    # results_folder = 'Normal_results'
+    results_folder = 'Reverse_delay_results'
     num_of_agg_switches = 2
     flows_name = read_data_flowIndicator(ns3_path, rate, results_folder)
     flows_name.sort()
@@ -233,7 +232,9 @@ def analyze_all_experiments(rate, steadyStart, steadyEnd, confidenceValue, exper
         print("Analyzing experiment: ", experiment)
         analyze_single_experiment(rate, steadyStart, steadyEnd, confidenceValue, rounds_results, queues_names, results_folder, experiment, ns3_path)
 
-    with open('../results/{}/{}_{}_{}_{}_to_{}_results.json'.format(rate, results_folder, rate, experiments_end, steadyStart, steadyEnd), 'w') as f:
+    # with open('../results_postProcessing/{}/{}_{}_{}_{}_to_{}.json'.format(rate, results_folder, rate, experiments_end, steadyStart, steadyEnd), 'w') as f:
+    with open('../results_postProcessing/{}/{}_{}_{}_{}_to_{}.json'.format(1.0, rate, results_folder, experiments_end, steadyStart, steadyEnd), 'w') as f:
+        rounds_results['Corruption'] = rate
         # save the results in a well formatted json file
         js.dump(rounds_results, f, indent=4)
 
@@ -270,8 +271,8 @@ def __main__():
     # print("sampleRate", sampleRate)
     # print("experiments: ", experiments)
     # print("serviceRateScales: ", serviceRateScales)
-    # serviceRateScales = [0.85]
-    experiments = 1
+    serviceRateScales = [0.05, 0.1, 0.2, 0.25, 0.5]
+    experiments = 20
     # steadyStart = 4
     # steadyEnd = 9
 

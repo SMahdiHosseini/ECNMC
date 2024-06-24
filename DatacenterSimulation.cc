@@ -16,7 +16,6 @@
 #include "monitors_module/PoissonSampler.h"
 #include "monitors_module/RegularSampler.h"
 #include "monitors_module/NetDeviceMonitor.h"
-#include "ns3/mpi-interface.h"
 #include "traffic_generator_module/background_replay/BackgroundReplay.h"
 #include <iomanip>
 #include <iostream>
@@ -77,6 +76,7 @@ int main(int argc, char* argv[])
     int minTh = 9000;                                  // RED Queue Disc MinTh
     int maxTh = 28000;                                 // RED Queue Disc MaxTh
     int experiment = 1;                                // Experiment number
+    double errorRate = 0.005;                          // Silent Packet Drop Error rate
 
     /*command line input*/
     CommandLine cmd;
@@ -96,6 +96,7 @@ int main(int argc, char* argv[])
     cmd.AddValue("minTh", "RED Queue Disc MinTh", minTh);
     cmd.AddValue("maxTh", "RED Queue Disc MaxTh", maxTh);
     cmd.AddValue("experiment", "Experiment number", experiment);
+    cmd.AddValue("errorRate", "Silent Packet Drop Error rate", errorRate);
     cmd.Parse(argc, argv);
 
     /*set default values*/
@@ -286,13 +287,15 @@ int main(int argc, char* argv[])
     Ipv4GlobalRoutingHelper::PopulateRoutingTables();
 
     /* Erro Model Setup for Silent packet drops*/
-    // Ptr<RateErrorModel> em_R0H0T0 = CreateObject<RateErrorModel>();
-    // em_R0H0T0->SetAttribute("ErrorRate", DoubleValue(0.005));
-    // hostsToTorsNetDevices[0][0].Get(1)->SetAttribute("ReceiveErrorModel", PointerValue(em_R0H0T0));
+    Ptr<RateErrorModel> em_R0H0T0 = CreateObject<RateErrorModel>();
+    em_R0H0T0->SetAttribute("ErrorRate", DoubleValue(errorRate));
+    em_R0H0T0->SetUnit(RateErrorModel::ErrorUnit::ERROR_UNIT_PACKET);
+    hostsToTorsNetDevices[0][0].Get(1)->SetAttribute("ReceiveErrorModel", PointerValue(em_R0H0T0));
 
-    // Ptr<RateErrorModel> em_R0H1T0 = CreateObject<RateErrorModel>();
-    // em_R0H1T0->SetAttribute("ErrorRate", DoubleValue(0.005));
-    // hostsToTorsNetDevices[0][1].Get(1)->SetAttribute("ReceiveErrorModel", PointerValue(em_R0H1T0));
+    Ptr<RateErrorModel> em_R0H1T0 = CreateObject<RateErrorModel>();
+    em_R0H1T0->SetAttribute("ErrorRate", DoubleValue(errorRate));
+    em_R0H1T0->SetUnit(RateErrorModel::ErrorUnit::ERROR_UNIT_PACKET);
+    hostsToTorsNetDevices[0][1].Get(1)->SetAttribute("ReceiveErrorModel", PointerValue(em_R0H1T0));
     /* ########## END: Ceating the topology ########## */
 
 
@@ -305,7 +308,7 @@ int main(int argc, char* argv[])
         caidaTrafficGenerator->SetPctOfPacedTcps(pctPacedBack);
         // string tracesPath = "/home/mahdi/Documents/NAL/Data/chicago_2010_traffic_10min_2paths/path" + to_string(i % 2);
         // string tracesPath = "/home/mahdi/Documents/Data/chicago_2010_traffic_10min_2paths/path" + to_string(i % 2);
-        string tracesPath = "/home/shossein/myfiles/chicago_2010_traffic_10min_2paths/path" + to_string(i % 2);
+        string tracesPath = "/home/shossein/chicago_2010_traffic_10min_2paths/path" + to_string(i % 2);
         if (std::filesystem::exists(tracesPath)) {
             caidaTrafficGenerator->RunAllTCPTraces(tracesPath, 0);
         } else {
@@ -319,7 +322,7 @@ int main(int argc, char* argv[])
         caidaTrafficGenerator->SetPctOfPacedTcps(pctPacedBack);
         // string tracesPath = "/home/mahdi/Documents/NAL/Data/chicago_2010_traffic_10min_2paths/path" + to_string(i % 2);
         // string tracesPath = "/home/mahdi/Documents/Data/chicago_2010_traffic_10min_2paths/path" + to_string(i % 2);
-        string tracesPath = "/home/shossein/myfiles/chicago_2010_traffic_10min_2paths/path" + to_string(i % 2);
+        string tracesPath = "/home/shossein/chicago_2010_traffic_10min_2paths/path" + to_string(i % 2);
         if (std::filesystem::exists(tracesPath)) {
             caidaTrafficGenerator->RunAllTCPTraces(tracesPath, 0);
         } else {
@@ -564,13 +567,14 @@ int main(int argc, char* argv[])
     cout << "enableSwitchECN: " << enableSwitchECN << endl;
     cout << "enableECMP: " << enableECMP << endl;
     cout << "sampleRate: " << sampleRate << endl;
+    cout << "errorRate: " << errorRate << endl;
     cout << "T0 id " << torSwitches.Get(0)->GetId() << endl;
     /* ########## END: Check Config ########## */
 
 
     /* ########## START: Scheduling and  Running ########## */
-    DynamicCast<RedQueueDisc>(torToAggQueueDiscs[0][0].Get(0))->TraceConnectWithoutContext("BytesInQueue", MakeCallback(&queueDiscSize));
-    DynamicCast<PointToPointNetDevice>(torToAggNetDevices[0][0].Get(0))->GetQueue()->TraceConnectWithoutContext("PacketsInQueue", MakeCallback(&queueSize));
+    // DynamicCast<RedQueueDisc>(torToAggQueueDiscs[0][0].Get(0))->TraceConnectWithoutContext("BytesInQueue", MakeCallback(&queueDiscSize));
+    // DynamicCast<PointToPointNetDevice>(torToAggNetDevices[0][0].Get(0))->GetQueue()->TraceConnectWithoutContext("PacketsInQueue", MakeCallback(&queueSize));
 
     // DynamicCast<RedQueueDisc>(hostToTorQueueDiscs[1][0].Get(0))->TraceConnectWithoutContext("Enqueue", MakeCallback(&enqueueDisc));
     // DynamicCast<PointToPointNetDevice>(hostsToTorsNetDevices[1][0].Get(1))->GetQueue()->TraceConnectWithoutContext("PacketsInQueue", MakeCallback(&queueSize));

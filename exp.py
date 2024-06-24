@@ -3,7 +3,7 @@ import time
 import configparser
 import threading
 # __ns3_path = os.popen('locate "ns-3.41" | grep /ns-3.41$').read().splitlines()[0]
-__ns3_path = "/home/shossein/myfiles/ns-allinone-3.41/ns-3.41"
+__ns3_path = "/home/shossein/ns-allinone-3.41/ns-3.41"
 
 class ExperimentConfig:
     def __init__(self):
@@ -19,6 +19,7 @@ class ExperimentConfig:
         self.duration = "10s"
         self.sampleRate="10.0"
         self.experiments="100"
+        self.errorRate="0.002"
         self.serviceRateScales=[]
 
     def read_config_file(self, config_file):
@@ -36,6 +37,7 @@ class ExperimentConfig:
         self.duration = config.get('Settings', 'duration')
         self.sampleRate = config.get('Settings', 'sampleRate')
         self.experiments = config.get('Settings', 'experiments')
+        self.errorRate = config.get('Settings', 'errorRate')
         self.serviceRateScales = [float(x) for x in config.get('Settings', 'serviceRateScales').split(',')]
 
 
@@ -49,10 +51,11 @@ def rebuild_project():
 def run_experiment(exp):
     expConfig = ExperimentConfig()
     expConfig.read_config_file('Parameters.config')
-    os.system('mkdir -p {}/scratch/ECNMC/results/'.format(get_ns3_path()))
+    # os.system('mkdir -p {}/scratch/ECNMC/results/'.format(get_ns3_path()))
     for rate in expConfig.serviceRateScales:
-        exp_tor_to_agg_link_rate = "{}Mbps".format(round(float(expConfig.tor_to_agg_link_rate.split('M')[0]) * rate, 1))
-        # for i in range(int(expConfig.experiments)):
+        # exp_tor_to_agg_link_rate = "{}Mbps".format(round(float(expConfig.tor_to_agg_link_rate.split('M')[0]) * rate, 1))
+        exp_tor_to_agg_link_rate = "{}Mbps".format(round(float(expConfig.tor_to_agg_link_rate.split('M')[0]), 1))
+        exp_errorRate = "{}".format(float(expConfig.errorRate) * rate)
         for i in exp:
             os.system('mkdir -p {}/scratch/ECNMC/results/{}'.format(get_ns3_path(), i + 1))
             os.system(
@@ -69,6 +72,7 @@ def run_experiment(exp):
                 '--duration={} '.format(expConfig.duration) +
                 '--sampleRate={} '.format(expConfig.sampleRate) +
                 '--experiment={} '.format(i + 1) +
+                '--errorRate={}'.format(exp_errorRate) +
                 '\' > {}/scratch/ECNMC/results/result.txt'.format(get_ns3_path())
             )
     
@@ -80,20 +84,17 @@ def run_experiment(exp):
 
 # main
 # rebuild_project()
-# expConfig = ExperimentConfig()
-# expConfig.read_config_file('Parameters.config')
-# expConfig.experiments = int(expConfig.experiments)
-# exps = [14, 19, 24, 34, 4, 49, 9]
-# ths = []
-# # numOfThs = 10
-# numOfThs = 7
-# for th in range(numOfThs):
-#     # ths.append(threading.Thread(target=run_experiment, args=([i for i in range(int(th * expConfig.experiments / numOfThs), int((th + 1) * expConfig.experiments / numOfThs))], )))
-#     ths.append(threading.Thread(target=run_experiment, args=([exps[th]], )))
+# run_experiment([0])
+expConfig = ExperimentConfig()
+expConfig.read_config_file('Parameters.config')
+expConfig.experiments = int(expConfig.experiments)
+ths = []
+numOfThs = 10
+for th in range(numOfThs):
+    ths.append(threading.Thread(target=run_experiment, args=([i for i in range(int(th * expConfig.experiments / numOfThs), int((th + 1) * expConfig.experiments / numOfThs))], )))
 
-# for th in ths:
-#     th.start()
+for th in ths:
+    th.start()
 
-# for th in ths:
-#     th.join()
-run_experiment([4])
+for th in ths:
+    th.join()
