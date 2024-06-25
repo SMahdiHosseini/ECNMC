@@ -35,6 +35,7 @@ public:
 
     void SetSent();
     void SetReceived();
+    void SetReceived(Time t);
     void SetEcn(bool ecn);
 
     friend ostream &operator<<(ostream &os, const PacketMonitorEvent &event);
@@ -45,7 +46,7 @@ class PacketMonitor {
 private:
     ns3::Time _startTime = Seconds(0);
     ns3::Time _duration = Seconds(0);
-
+    double _errorRate = 0.0;
     std::string _monitorTag;
     set<AppKey> _appsKey;
 
@@ -60,7 +61,7 @@ private:
     ns3::Time GetRelativeTime(const Time &time);
 
 public:
-    PacketMonitor(const Time &startTime, const Time &duration, const Ptr<Node> &txNode, const Ptr<Node> &rxNode, const string &monitorTag);
+    PacketMonitor(const Time &startTime, const Time &duration, const Ptr<Node> &txNode, const Ptr<Node> &rxNode, const string &monitorTag, const double errorRate);
     void AddAppKey(AppKey appKey);
     std::string GetMonitorTag() const;
     void SavePacketRecords(const string &filename);

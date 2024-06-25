@@ -73,6 +73,7 @@ void PoissonSampler::Disconnect(Ptr<PointToPointNetDevice> outgoingNetDevice) {
 void PoissonSampler::EventHandler() {
     PacketKey* packetKey;
     bool zeroDelay = false;
+    bool drop = false;
     if (REDQueueDisc != nullptr && REDQueueDisc->GetNPackets() > 0) {
         // check the quque disc size
         if (REDQueueDisc->GetNPackets() > 0) {
@@ -87,10 +88,18 @@ void PoissonSampler::EventHandler() {
             packetKey->SetId(ipHeader.GetIdentification());
             packetKey->SetSrcIp(ipHeader.GetSource());
             packetKey->SetDstIp(ipHeader.GetDestination());
+
+            if ((QueueSize("37.5KB").GetValue() - REDQueueDisc->GetCurrentSize().GetValue()) < QueueSize("1448B").GetValue()) {
+                drop = true;
+            }
+
         }
     }
     else if (NetDeviceQueue->GetNPackets() > 0) {
         packetKey = PacketKey::Packet2PacketKey(lastPacket, FIRST_HEADER_PPP);
+        if ((REDQueueDisc == nullptr) && (NetDeviceQueue->GetCurrentSize() >= QueueSize("100p"))) {
+            drop = true;
+        }
     }
     else {
         packetKey = new PacketKey(ns3::Ipv4Address("0.0.0.0"), ns3::Ipv4Address("0.0.0.1"), 0, zeroDelayPort++, zeroDelayPort++, ns3::SequenceNumber32(0), ns3::SequenceNumber32(0), 0, 0);
@@ -110,8 +119,11 @@ void PoissonSampler::EventHandler() {
         event->SetDepartureTime();
     }
     // set the drop information
-    if (REDQueueDisc != nullptr) {
-        event->SetMarkingProb(REDQueueDisc->GetMarkingProbability());
+    // if (REDQueueDisc != nullptr) {
+    //     event->SetMarkingProb(REDQueueDisc->GetMarkingProbability());
+    // }
+    if (drop) {
+        event->SetMarkingProb(1.0);
     }
     // Generate a new event
     double nextEvent = m_var->GetValue();
@@ -122,27 +134,27 @@ void PoissonSampler::RecordPacket(Ptr<const Packet> packet) {
     PacketKey* packetKey = PacketKey::Packet2PacketKey(packet, FIRST_HEADER_PPP);
     if (_recordedSamples.find(*packetKey) != _recordedSamples.end()) {
         _recordedSamples[*packetKey]->SetDepartureTime();
-        bool ECNFlag = false;
-        if (REDQueueDisc == nullptr) {
-            const Ptr<Packet> &pktCopy = packet->Copy();
-            PppHeader pppHeader;
-            Ipv4Header header;
-            pktCopy->RemoveHeader(pppHeader);
-            pktCopy->RemoveHeader(header);
-            if (header.EcnTypeToString(header.GetEcn()) == "CE") {
-                _recordedSamples[*packetKey]->SetMarkingProb(1.0);
-                ECNFlag = true;
-            }
-        }
+        // bool ECNFlag = false;
+        // if (REDQueueDisc == nullptr) {
+        //     const Ptr<Packet> &pktCopy = packet->Copy();
+        //     PppHeader pppHeader;
+        //     Ipv4Header header;
+        //     pktCopy->RemoveHeader(pppHeader);
+        //     pktCopy->RemoveHeader(header);
+        //     if (header.EcnTypeToString(header.GetEcn()) == "CE") {
+        //         _recordedSamples[*packetKey]->SetMarkingProb(1.0);
+        //         ECNFlag = true;
+        //     }
+        // }
 
         // check if there exists a packet with the same key but different record field
         packetKey->SetRecords(packetKey->GetRecords() + 1);
         while (_recordedSamples.find(*packetKey) != _recordedSamples.end())
         {
             _recordedSamples[*packetKey]->SetDepartureTime();
-            if (ECNFlag) {
-                _recordedSamples[*packetKey]->SetMarkingProb(1.0);
-            }
+            // if (ECNFlag) {
+            //     _recordedSamples[*packetKey]->SetMarkingProb(1.0);
+            // }
             packetKey->SetRecords(packetKey->GetRecords() + 1);
         }
     }

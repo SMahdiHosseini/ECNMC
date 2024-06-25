@@ -416,14 +416,14 @@ int main(int argc, char* argv[])
     vector<PacketMonitor *> endToendMonitors;
     // Monitor the packets between each pair of hosts in R0 and R2
     for (int i = 0; i < nHosts; i++) {
-        auto *R0R2Monitor = new PacketMonitor(startTime, stopTime + convergenceTime, racks[0].Get(i), racks[2].Get(i), "R0H" + to_string(i) + "R2H" + to_string(i));
+        auto *R0R2Monitor = new PacketMonitor(startTime, stopTime + convergenceTime, racks[0].Get(i), racks[2].Get(i), "R0H" + to_string(i) + "R2H" + to_string(i), errorRate);
         R0R2Monitor->AddAppKey(AppKey(ipsRacks[0][i].GetAddress(0), ipsRacks[2][i].GetAddress(0), 0, 0));
         endToendMonitors.push_back(R0R2Monitor);
     }
 
     // Monitor the packets between each pair of hosts in R1 and R3
     for (int i = 0; i < nHosts; i++) {
-        auto *R1R3Monitor = new PacketMonitor(startTime, stopTime + convergenceTime, racks[1].Get(i), racks[3].Get(i), "R1H" + to_string(i) + "R3H" + to_string(i));
+        auto *R1R3Monitor = new PacketMonitor(startTime, stopTime + convergenceTime, racks[1].Get(i), racks[3].Get(i), "R1H" + to_string(i) + "R3H" + to_string(i), errorRate);
         R1R3Monitor->AddAppKey(AppKey(ipsRacks[1][i].GetAddress(0), ipsRacks[3][i].GetAddress(0), 0, 0));
         endToendMonitors.push_back(R1R3Monitor);
     }

@@ -77,6 +77,9 @@ def analyze_single_experiment(rate, steadyStart, steadyEnd, confidenceValue, rou
 
     clear_data_from_outliers_in_time(endToEnd_dfs, {}, start_dfs)
 
+    # for flow in endToEnd_dfs.keys():
+    #     endToEnd_dfs[flow] = pd.merge(endToEnd_dfs[flow], start_dfs[flow[0:4]].drop(columns=['ReceiveTime', 'SentTime', 'IsReceived']), on=['SourceIp', 'SourcePort', 'DestinationIp', 'DestinationPort', 'PayloadSize', 'SequenceNb', 'Id'], how='inner')
+
     # samples switches statistics
     samples_switches_statistics = {}
     for sample_df in samples_dfs.keys():
@@ -91,13 +94,11 @@ def analyze_single_experiment(rate, steadyStart, steadyEnd, confidenceValue, rou
         for path in paths:
             samples_paths_aggregated_statistics[flow][path] = {}
             # get the sum of the logaritm of means 
-            samples_paths_aggregated_statistics[flow][path]['successProbMean'] = sum([np.log(samples_switches_statistics['R' + flow[1] + 'H' + flow[3]]['successProbMean']),
-                                                                                   np.log(samples_switches_statistics['T' + flow[1] + path]['successProbMean']),
+            samples_paths_aggregated_statistics[flow][path]['successProbMean'] = sum([np.log(samples_switches_statistics['T' + flow[1] + path]['successProbMean']),
                                                                                    np.log(samples_switches_statistics[path + 'T' + flow[5]]['successProbMean']),
                                                                                    np.log(samples_switches_statistics['T' + flow[5] + 'H' + flow[7]]['successProbMean'])])
             
-            samples_paths_aggregated_statistics[flow][path]['MaxEpsilon'] = max([calc_epsilon_loss(confidenceValue, samples_switches_statistics['R' + flow[1] + 'H' + flow[3]]),
-                                                                                 calc_epsilon_loss(confidenceValue, samples_switches_statistics['T' + flow[1] + path]),
+            samples_paths_aggregated_statistics[flow][path]['MaxEpsilon'] = max([calc_epsilon_loss(confidenceValue, samples_switches_statistics['T' + flow[1] + path]),
                                                                                  calc_epsilon_loss(confidenceValue, samples_switches_statistics[path + 'T' + flow[5]]),
                                                                                  calc_epsilon_loss(confidenceValue, samples_switches_statistics['T' + flow[5] + 'H' + flow[7]])])
 
@@ -113,12 +114,13 @@ def analyze_single_experiment(rate, steadyStart, steadyEnd, confidenceValue, rou
             rounds_results['maxEpsilon'][flow][path].append(samples_paths_aggregated_statistics[flow][path]['MaxEpsilon'])
 
     rounds_results['experiments'] += 1
-    number_of_segments = 4
+    number_of_segments = 3
     compatibility_check(rounds_results, samples_paths_aggregated_statistics, endToEnd_statistics, endToEnd_dfs.keys(), ['A' + str(i) for i in range(num_of_agg_switches)], number_of_segments)
 
 def analyze_all_experiments(rate, steadyStart, steadyEnd, confidenceValue, experiments_start=0, experiments_end=3, ns3_path=__ns3_path):
-    # results_folder = 'Normal_results'
-    results_folder = 'Reverse_loss_results'
+    # results_folder = 'Results_forward'
+    results_folder = 'Results_reverse_loss_2'
+    # results_folder = 'Reverse_loss_results'
     # results_folder = 'Results_delay_reverse'
     num_of_agg_switches = 2
     flows_name = read_data_flowIndicator(ns3_path, rate, results_folder)
@@ -136,12 +138,12 @@ def analyze_all_experiments(rate, steadyStart, steadyEnd, confidenceValue, exper
         print("Analyzing experiment: ", experiment)
         analyze_single_experiment(rate, steadyStart, steadyEnd, confidenceValue, rounds_results, queues_names, results_folder, experiment, ns3_path)
 
-    # with open('../results_postProcessing/{}/loss_{}_{}_{}_to_{}.json'.format(rate, results_folder, experiments_end, steadyStart, steadyEnd), 'w') as f:
-    with open('../results_postProcessing/{}/loss_{}_{}_{}_{}_to_{}.json'.format(1.0, rate, results_folder, experiments_end, steadyStart, steadyEnd), 'w') as f:
-        config = configparser.ConfigParser()
-        config.read('../Parameters.config')
-        errorRate = convert_to_float(config.get('Settings', 'errorRate')) * rate
-        rounds_results['ErrorRate'] = errorRate
+    with open('../results_postProcessing_reverse_loss_2/{}/loss_{}_{}_{}_to_{}.json'.format(rate, results_folder, experiments_end, steadyStart, steadyEnd), 'w') as f:
+    # with open('../results_postProcessing/{}/loss_{}_{}_{}_{}_to_{}.json'.format(1.0, rate, results_folder, experiments_end, steadyStart, steadyEnd), 'w') as f:
+        # config = configparser.ConfigParser()
+        # config.read('../Parameters.config')
+        # errorRate = convert_to_float(config.get('Settings', 'errorRate')) * rate
+        # rounds_results['ErrorRate'] = errorRate
         # save the results in a well formatted json file
         js.dump(rounds_results, f, indent=4)
 
@@ -178,9 +180,8 @@ def __main__():
     # print("sampleRate", sampleRate)
     # print("experiments: ", experiments)
     # print("serviceRateScales: ", serviceRateScales)
-    # serviceRateScales = [0.5, 0.7, 0.9, 1.0, 1.2, 1.4, 1.6, 1.8, 2.0]
-    serviceRateScales = [1.6]
-    experiments = 20
+    serviceRateScales = [0.85, 0.87, 0.89, 0.91, 0.93, 0.95, 0.97, 0.99, 1.01, 1.03, 1.05, 1.07, 1.09, 1.11, 1.13, 1.15]
+    # experiments = 10
 
     for rate in serviceRateScales:
         print("\nAnalyzing experiments for rate: ", rate)

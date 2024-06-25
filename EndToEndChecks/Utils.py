@@ -203,7 +203,8 @@ def get_timeAvg(data):
 def get_endToEd_loss_statistics(data):
     statistics = {}
     data_copy = data.copy()
-    statistics['successProbMeanPackets'] = 1 - (len(data_copy[(data_copy['ECN'] == 1) | (data_copy['IsReceived'] == 0)]) / len(data_copy))
+    # statistics['successProbMeanPackets'] = 1 - (len(data_copy[(data_copy['ECN'] == 1) | (data_copy['IsReceived'] == 0)]) / len(data_copy))
+    statistics['successProbMeanPackets'] = 1 - (len(data_copy[data_copy['IsReceived'] == 0]) / len(data_copy))
     statistics['successProbMeanBytes'] = 1 - (data_copy[(data_copy['ECN'] == 1) | (data_copy['IsReceived'] == 0)]['PayloadSize'].sum() / data_copy['PayloadSize'].sum())
     return statistics
 
@@ -302,7 +303,7 @@ def plot_delay_over_time(endToEnd_dfs, paths, rate, results_folder):
             plt.xlabel('Time (ns)')
             plt.ylabel('Delay (ns)')
             plt.title('Flow {}'.format(flow))
-            # plt.savefig('../results_postProcessing/{}/{}_delayOverTime_{}.png'.format(rate, flow, results_folder))
-            plt.savefig('../results_postProcessing/{}/{}_{}_delayOverTime_{}.png'.format(1.0, rate, flow, results_folder))
+            plt.savefig('../results_postProcessing_reverse_loss_1/{}/{}_delayOverTime_{}.png'.format(rate, flow, results_folder))
+            # plt.savefig('../results_postProcessing/{}/{}_{}_delayOverTime_{}.png'.format(1.0, rate, flow, results_folder))
             plt.close()
             plt.clf()

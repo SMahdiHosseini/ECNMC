@@ -8,6 +8,7 @@ PacketMonitorEvent::PacketMonitorEvent(PacketKey *key) : _key(key) {}
 
 void PacketMonitorEvent::SetSent() { _sentTime = ns3::Simulator::Now(); }
 void PacketMonitorEvent::SetReceived() { _receivedTime = ns3::Simulator::Now(); }
+void PacketMonitorEvent::SetReceived(Time t) { _receivedTime = t; }
 void PacketMonitorEvent::SetEcn(bool ecn) { _key->SetEcn(ecn); }
 PacketKey *PacketMonitorEvent::GetPacketKey() const { return _key; }
 Time PacketMonitorEvent::GetSentTime() const { return _sentTime; }
@@ -23,10 +24,11 @@ ostream &operator<<(ostream &os, const PacketMonitorEvent &event) {
 }
 
 
-PacketMonitor::PacketMonitor(const Time &startTime, const Time &duration, const Ptr<Node> &txNode, const Ptr<Node> &rxNode, const string &monitorTag) {
+PacketMonitor::PacketMonitor(const Time &startTime, const Time &duration, const Ptr<Node> &txNode, const Ptr<Node> &rxNode, const string &monitorTag, double errorRate) {
     _startTime = startTime;
     _duration = duration;
     _monitorTag = monitorTag;
+    _errorRate = errorRate;
 
     Simulator::Schedule(_startTime, &PacketMonitor::Connect, this, txNode->GetId(), rxNode->GetId());
     Simulator::Schedule(_startTime + _duration, &PacketMonitor::Disconnect, this, txNode->GetId(), rxNode->GetId());
@@ -72,7 +74,21 @@ void PacketMonitor::RecordIpv4PacketReceived(Ptr<const Packet> packet, Ptr<Ipv4>
             if (header.EcnTypeToString(header.GetEcn()) == "CE") {
                 packetKeyEventPair->second->SetEcn(true);
             }
-            packetKeyEventPair->second->SetReceived();
+            // if (_monitorTag == "R0H0R2H0" || _monitorTag == "R0H1R2H1") {
+            //     Ptr<UniformRandomVariable> m_rand = CreateObject<UniformRandomVariable>();
+            //     uint32_t t = m_rand->GetInteger(0, 1);
+            //     if (t < _errorRate){
+            //         // Time time = packetKeyEventPair->second->GetSentTime() + Time((ns3::Simulator::Now() - packetKeyEventPair->second->GetSentTime()).GetNanoSeconds() * 1.25);
+            //         // packetKeyEventPair->second->SetReceived(time);
+            //         packetKeyEventPair->second->SetReceived();
+            //     }
+            //     else{
+            //         packetKeyEventPair->second->SetReceived();
+            //     }
+            // }
+            // else{
+                packetKeyEventPair->second->SetReceived();
+            // }
         }
     }
 }
