@@ -100,7 +100,7 @@ droprates_xticks = [round(x, 3) for x in droprates_mean]
 
 # plot for forward experiment:
 fig = plt.figure()
-fig.set_size_inches(7, 5)
+fig.set_size_inches(10, 5)
 ax1 = fig.add_subplot(111)
 ax2 = ax1.twiny()
 for flow in flows:
@@ -112,9 +112,9 @@ ax1.set_ylabel('Success Rate (%)')
 ax2.set_xlim(ax1.get_xlim())
 ax2.set_xticks(utilizationFactors)
 ax2.set_xticklabels(droprates_xticks, fontsize=6)
-ax2.set_xlabel('Drop Rate')
+ax2.set_xlabel('Loss Rate')
 # plt.grid(True)
-plt.title('success rate of detecting the consistency for different utilization factors')
+# plt.title('success rate of detecting the consistency for different utilization factors')
 plt.savefig('../results_postProcessing_{}/{}_success_perDropRate.pdf'.format(results_dir, check))
 plt.clf()
 

@@ -74,22 +74,22 @@ void PacketMonitor::RecordIpv4PacketReceived(Ptr<const Packet> packet, Ptr<Ipv4>
             if (header.EcnTypeToString(header.GetEcn()) == "CE") {
                 packetKeyEventPair->second->SetEcn(true);
             }
-            if (_monitorTag == "R0H0R2H0" || _monitorTag == "R0H1R2H1") {
-                Ptr<UniformRandomVariable> m_rand = CreateObject<UniformRandomVariable>();
-                uint32_t t = m_rand->GetInteger(0, 1);
-                if (t < _errorRate){
-                    Time time = packetKeyEventPair->second->GetSentTime() + Time((ns3::Simulator::Now() - packetKeyEventPair->second->GetSentTime()).GetNanoSeconds() * 1.25);
-                    packetKeyEventPair->second->SetReceived(time);
-                    std::cout << ns3::Simulator::Now().GetNanoSeconds() << "," << packetKey->GetSrcIp() << "," << packetKey->GetSrcPort() << "," << packetKey->GetDstIp() << "," << 
-                    packetKey->GetDstPort() << "," << packetKey->GetSeqNb() << "," << packetKey->GetId() << std::endl;
-                }
-                else{
-                    packetKeyEventPair->second->SetReceived();
-                }
-            }
-            else{
+            // if (_monitorTag == "R0H0R2H0" || _monitorTag == "R0H1R2H1") {
+            //     Ptr<UniformRandomVariable> m_rand = CreateObject<UniformRandomVariable>();
+            //     uint32_t t = m_rand->GetInteger(1, 100);
+            //     if (t < _errorRate * 100){
+            //         Time time = packetKeyEventPair->second->GetSentTime() + Time((ns3::Simulator::Now() - packetKeyEventPair->second->GetSentTime()).GetNanoSeconds() * 1.25);
+            //         packetKeyEventPair->second->SetReceived(time);
+            //         // std::cout << ns3::Simulator::Now().GetNanoSeconds() << "," << packetKey->GetSrcIp() << "," << packetKey->GetSrcPort() << "," << packetKey->GetDstIp() << "," << 
+            //         // packetKey->GetDstPort() << "," << packetKey->GetSeqNb() << "," << packetKey->GetId() << std::endl;
+            //     }
+            //     else{
+            //         packetKeyEventPair->second->SetReceived();
+            //     }
+            // }
+            // else{
                 packetKeyEventPair->second->SetReceived();
-            }
+            // }
         }
     }
 }
