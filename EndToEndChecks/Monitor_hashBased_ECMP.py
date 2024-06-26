@@ -197,6 +197,10 @@ def analyze_single_experiment(rate, steadyStart, steadyEnd, confidenceValue, rou
             rounds_results['EndToEndMean'][flow][path].append(endToEnd_statistics[flow][path]['timeAvg'])
             rounds_results['EndToEndStd'][flow][path].append(endToEnd_statistics[flow][path]['DelayStd'])
             rounds_results['maxEpsilon'][flow][path].append(samples_paths_aggregated_statistics[flow][path]['MaxEpsilon'])
+            if flow == 'R0H0R2H0':
+                print(endToEnd_statistics[flow][path])
+                print(samples_paths_aggregated_statistics[flow][path]['DelayMean'], samples_paths_aggregated_statistics[flow][path]['MaxEpsilon'])
+
 
     rounds_results['experiments'] += 1
 
@@ -210,13 +214,14 @@ def analyze_single_experiment(rate, steadyStart, steadyEnd, confidenceValue, rou
     
     compatibility_check(confidenceValue, rounds_results, samples_paths_aggregated_statistics, endToEnd_statistics, endToEnd_dfs.keys(), ['A' + str(i) for i in range(num_of_agg_switches)])
 
-    if experiment == 0:
-        plot_delay_over_time(endToEnd_dfs, paths, rate, results_folder)
+    # if experiment == 0:
+    #     plot_delay_over_time(endToEnd_dfs, paths, rate, results_folder)
 
 def analyze_all_experiments(rate, steadyStart, steadyEnd, confidenceValue, experiments_start=0, experiments_end=3, ns3_path=__ns3_path):
     # results_folder = 'Results_forward'
-    results_folder = 'Results_reverse_loss_1'
-    # results_folder = 'Reverse_delay_results'
+    # results_folder = 'Results_reverse_loss_2'
+    # results_folder = 'Results_reverse_delay_1'
+    results_folder = 'Results'
     num_of_agg_switches = 2
     flows_name = read_data_flowIndicator(ns3_path, rate, results_folder)
     flows_name.sort()
@@ -233,7 +238,7 @@ def analyze_all_experiments(rate, steadyStart, steadyEnd, confidenceValue, exper
         print("Analyzing experiment: ", experiment)
         analyze_single_experiment(rate, steadyStart, steadyEnd, confidenceValue, rounds_results, queues_names, results_folder, experiment, ns3_path)
 
-    with open('../results_postProcessing_reverse_loss_1/{}/delay_{}_{}_{}_to_{}.json'.format(rate, results_folder, experiments_end, steadyStart, steadyEnd), 'w') as f:
+    with open('../results_postProcessing/{}/delay_{}_{}_{}_to_{}.json'.format(rate, results_folder, experiments_end, steadyStart, steadyEnd), 'w') as f:
     # with open('../results_postProcessing/{}/{}_{}_{}_{}_to_{}.json'.format(1.0, rate, results_folder, experiments_end, steadyStart, steadyEnd), 'w') as f:
         # rounds_results['Corruption'] = rate
         # save the results in a well formatted json file
@@ -272,8 +277,8 @@ def __main__():
     # print("sampleRate", sampleRate)
     # print("experiments: ", experiments)
     # print("serviceRateScales: ", serviceRateScales)
-    serviceRateScales = [1.0, 2.0, 4.0, 5.0, 7.0, 9.0, 10.0, 12.0, 14.0, 15.0]
-    # experiments = 
+    serviceRateScales = [5.0]
+    experiments = 1
     # steadyStart = 4
     # steadyEnd = 9
 
