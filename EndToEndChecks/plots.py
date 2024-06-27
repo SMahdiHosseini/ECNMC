@@ -169,6 +169,7 @@ ax1.set_ylabel('Success Rate (%)', fontsize=20)
 ax1.set_xticks(utilizationFactors[1::2])
 ax1.set_xticklabels(utilizationFactors[1::2], fontsize=15)
 ax1.tick_params(axis='y', labelsize=15)
+ax1.set_ylim(-10, 110)
 
 ax2.set_xlim(ax1.get_xlim())
 ax2.set_xticks(utilizationFactors)
