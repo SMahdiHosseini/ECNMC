@@ -9,6 +9,8 @@ import numpy as np
 from scipy.stats import anderson
 from scipy.stats import f_oneway, kruskal
 import json as js
+import threading
+import multiprocessing
 
 # __ns3_path = os.popen('locate "ns-3.41" | grep /ns-3.41$').read().splitlines()[0]
 __ns3_path = "/home/shossein/ns-allinone-3.41/ns-3.41"
@@ -131,7 +133,7 @@ def remove_interlinks_trasmission_delay(endToEnd_dfs, switches_dfs, start_dfs, a
         endToEnd_dfs[flow] = endToEnd_dfs[flow].drop(columns=['Delay_0', 'Delay_1', 'Delay_2', 'Delay_3'])
         endToEnd_dfs[flow] = endToEnd_dfs[flow][endToEnd_dfs[flow]['Delay'] > 0]
 
-def analyze_single_experiment(rate, steadyStart, steadyEnd, confidenceValue, rounds_results, queues_names, results_folder, experiment=0, ns3_path=__ns3_path):
+def analyze_single_experiment(return_dict, rate, steadyStart, steadyEnd, confidenceValue, rounds_results, queues_names, results_folder, experiment=0, ns3_path=__ns3_path):
     np.random.seed(seed=experiment)
     num_of_agg_switches = 2
     paths = ['A' + str(i) for i in range(num_of_agg_switches)]
@@ -198,7 +200,7 @@ def analyze_single_experiment(rate, steadyStart, steadyEnd, confidenceValue, rou
             temp = endToEnd_dfs[flow][endToEnd_dfs[flow]['Path'] == int(path[1])]
             if flow == 'R0H0R2H0' or flow == 'R0H1R2H1':
             # add the error packets
-                rows_to_change = np.random.choice(temp.index, int(len(temp) * rate * errorRate), replace=False)
+                rows_to_change = np.random.choice(temp.index, int(len(temp) * 6 * errorRate), replace=False)
                 temp.loc[rows_to_change, 'Delay'] = (temp.loc[rows_to_change, 'Delay'] * difference).astype(int)
 
             endToEnd_statistics[flow][path] = get_statistics(temp, timeAvg=True)
@@ -223,11 +225,37 @@ def analyze_single_experiment(rate, steadyStart, steadyEnd, confidenceValue, rou
     if experiment == 0:
         plot_delay_over_time(endToEnd_dfs, paths, rate, results_folder)
 
+    return_dict[experiment] = rounds_results
+
+def merge_results(return_dict, merged_results, flows, queues):
+    num_of_agg_switches = 2
+    for exp in return_dict.keys():
+        for q in queues:
+            if q[0] == 'T' and q[2] == 'H' and (q[1] == '2' or q[1] == '3'):
+                merged_results[q+'std'] += return_dict[exp][q+'std']
+            if q[0] == 'T' and q[2] == 'A' and (q[1] == '0' or q[1] == '1'):
+                merged_results[q+'std'] += return_dict[exp][q+'std']
+            if q[0] == 'A' and q[2] == 'T' and (q[3] == '2' or q[3] == '3'):
+                merged_results[q+'std'] += return_dict[exp][q+'std']
+
+    for flow in flows:
+        for i in range(num_of_agg_switches):
+            for exp in return_dict.keys():
+                merged_results['DominantAssumption'][flow]['A' + str(i)] += return_dict[exp]['DominantAssumption'][flow]['A' + str(i)]
+                merged_results['MaxEpsilonIneq'][flow]['A' + str(i)] += return_dict[exp]['MaxEpsilonIneq'][flow]['A' + str(i)]
+                merged_results['Basic'][flow]['A' + str(i)] += return_dict[exp]['Basic'][flow]['A' + str(i)]
+                merged_results['EndToEndMean'][flow]['A' + str(i)] += return_dict[exp]['EndToEndMean'][flow]['A' + str(i)]
+                merged_results['EndToEndStd'][flow]['A' + str(i)] += return_dict[exp]['EndToEndStd'][flow]['A' + str(i)]
+                merged_results['maxEpsilon'][flow]['A' + str(i)] += return_dict[exp]['maxEpsilon'][flow]['A' + str(i)]
+    for exp in return_dict.keys():
+        merged_results['experiments'] += return_dict[exp]['experiments']
+        merged_results['DropRate'] += return_dict[exp]['DropRate']
+    
 def analyze_all_experiments(rate, steadyStart, steadyEnd, confidenceValue, experiments_start=0, experiments_end=3, ns3_path=__ns3_path):
     # results_folder = 'Results_forward'
     # results_folder = 'Results_reverse_loss_2'
-    results_folder = 'Results_reverse_delay_1'
-    # results_folder = 'Results'
+    # results_folder = 'Results_reverse_delay_1'
+    results_folder = 'Results_reverse_delay_2'
     num_of_agg_switches = 2
     flows_name = read_data_flowIndicator(ns3_path, rate, results_folder)
     flows_name.sort()
@@ -236,19 +264,30 @@ def analyze_all_experiments(rate, steadyStart, steadyEnd, confidenceValue, exper
     queues_names.sort()
 
     rounds_results = prepare_results(flows_name, queues_names, num_of_agg_switches)
-
-    for experiment in range(experiments_start, experiments_end):
-        if len(os.listdir('{}/scratch/{}/{}/{}'.format(__ns3_path, results_folder, rate, experiment))) == 0:
-            print(experiment)
-            continue
-        print("Analyzing experiment: ", experiment)
-        analyze_single_experiment(rate, steadyStart, steadyEnd, confidenceValue, rounds_results, queues_names, results_folder, experiment, ns3_path)
-
-    with open('../results_postProcessing_reverse_delay_1/{}/delay_{}_{}_{}_to_{}.json'.format(rate, results_folder, experiments_end, steadyStart, steadyEnd), 'w') as f:
+    merged_results = prepare_results(flows_name, queues_names, num_of_agg_switches)
+    for i in range(3):
+        ths = []
+        return_dict = multiprocessing.Manager().dict()
+        for experiment in range(10 * i, 10 * (i + 1)):
+            if len(os.listdir('{}/scratch/{}/{}/{}'.format(__ns3_path, results_folder, rate, experiment))) == 0:
+                print(experiment)
+                continue
+            print("Analyzing experiment: ", experiment)
+            ths.append(multiprocessing.Process(target=analyze_single_experiment, args=(return_dict, rate, steadyStart, steadyEnd, confidenceValue, rounds_results, queues_names, results_folder, experiment, ns3_path)))
+            # analyze_single_experiment(rate, steadyStart, steadyEnd, confidenceValue, rounds_results, queues_names, results_folder, experiment, ns3_path)
+        
+        for th in ths:
+            th.start()
+        for th in ths:
+            th.join()
+        merge_results(return_dict, merged_results, flows_name, queues_names)
+        print("{} joind".format(i))
+    
+    with open('../results_postProcessing_reverse_delay_2/{}/delay_{}_{}_{}_to_{}.json'.format(rate, results_folder, experiments_end, steadyStart, steadyEnd), 'w') as f:
     # with open('../results_postProcessing/{}/{}_{}_{}_{}_to_{}.json'.format(1.0, rate, results_folder, experiments_end, steadyStart, steadyEnd), 'w') as f:
         # rounds_results['Corruption'] = rate
         # save the results in a well formatted json file
-        js.dump(rounds_results, f, indent=4)
+        js.dump(merged_results, f, indent=4)
 
 # main function
 def __main__():
@@ -283,8 +322,8 @@ def __main__():
     # print("sampleRate", sampleRate)
     # print("experiments: ", experiments)
     # print("serviceRateScales: ", serviceRateScales)
-    serviceRateScales = [8.0, 9.0, 10.0]
-    # serviceRateScales = [5.0]
+    serviceRateScales = [0.85, 0.87, 0.89, 0.91, 0.93, 0.95, 0.97, 0.99, 1.01, 1.03, 1.05, 1.07, 1.09, 1.11, 1.13, 1.15]
+    # serviceRateScales = [0.85]
     # experiments = 1
     # steadyStart = 4
     # steadyEnd = 9

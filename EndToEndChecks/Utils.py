@@ -303,7 +303,7 @@ def plot_delay_over_time(endToEnd_dfs, paths, rate, results_folder):
             plt.xlabel('Time (ns)')
             plt.ylabel('Delay (ns)')
             plt.title('Flow {}'.format(flow))
-            plt.savefig('../results_postProcessing_reverse_delay_1/{}/{}_delayOverTime_{}.png'.format(rate, flow, results_folder))
+            plt.savefig('../results_postProcessing_reverse_delay_2/{}/{}_delayOverTime_{}.png'.format(rate, flow, results_folder))
             # plt.savefig('../results_postProcessing/{}/{}_{}_delayOverTime_{}.png'.format(1.0, rate, flow, results_folder))
             plt.close()
             plt.clf()
