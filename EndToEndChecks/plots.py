@@ -9,8 +9,8 @@ import sys
 # results_dir = 'reverse_loss_2'
 # results_dir = 'reverse_loss_1'
 # results_dir = 'reverse_delay_1'
-results_dir = 'reverse_delay_2'
-# results_dir = 'forward'
+# results_dir = 'reverse_delay_2'
+results_dir = 'forward'
 def read_data_flowIndicator(results_dict):
     return list(results_dict['maxEpsilon'].keys())
 
@@ -74,9 +74,9 @@ droprates_xticks = [round(x, 3) for x in droprates_mean]
 # ax1 = fig.add_subplot(111)
 # ax2 = ax1.twiny()
 # for flow in flows:
-#     if flow == 'R0H0R2H0' or flow == 'R0H1R2H1':
-#         ax1.plot(utilizationFactors, [max(value['MaxEpsilonIneq'][flow]['A0'], value['MaxEpsilonIneq'][flow]['A1']) for value in results.values()], 'o-')
-# ax1.legend(['ToR0H0 -> ToR2H0', 'ToR0H1 -> ToR2H1'])
+#     # if flow == 'R0H0R2H0' or flow == 'R0H1R2H1':
+#     ax1.plot(utilizationFactors, [max(value['MaxEpsilonIneq'][flow]['A0'], value['MaxEpsilonIneq'][flow]['A1']) for value in results.values()], 'o-')
+# # ax1.legend(['ToR0H0 -> ToR2H0', 'ToR0H1 -> ToR2H1'])
 # ax1.set_ylim(-10, 110)
 # ax1.set_xlabel('Utilization Factor', fontsize=20)
 # ax1.set_ylabel('Success Rate (%)', fontsize=20)
@@ -85,13 +85,42 @@ droprates_xticks = [round(x, 3) for x in droprates_mean]
 # ax1.set_xticklabels(utilizationFactors[1::2], fontsize=15)
 
 # ax2.set_xlim(ax1.get_xlim())
-# ax2.set_xticks(utilizationFactors)
-# ax2.set_xticklabels(droprates_xticks, fontsize=10)
+# ax2.set_xticks(utilizationFactors[1::2])
+# ax2.set_xticklabels(droprates_xticks[1::2], fontsize=15)
 # ax2.set_xlabel('Loss Rate', fontsize=20, labelpad=10)
 # # plt.grid(True)
 # # plt.title('success rate of detecting the consistency for different utilization factors')
 # plt.savefig('../results_postProcessing_{}/{}_success_perDropRate.pdf'.format(results_dir, check))
 # plt.clf()
+
+# plot for forward experiment -- BoxPLots:
+fig = plt.figure()
+fig.set_size_inches(10, 6)
+ax1 = fig.add_subplot(111)
+ax2 = ax1.twiny()
+data = [[] for i in range(len(utilizationFactors))]
+for flow in flows:
+    for i in range(len(utilizationFactors))[::-1]:
+        data[len(utilizationFactors) - i - 1].append(max(results[serviceRateScales[i]]['MaxEpsilonIneq'][flow]['A0'], results[serviceRateScales[i]]['MaxEpsilonIneq'][flow]['A1']))
+ax1.boxplot(data)
+ax1.set_ylim(-10, 110)
+ax1.set_xlabel('Utilization Factor', fontsize=20)
+ax1.set_ylabel('Success Rate (%)', fontsize=20)
+ax1.tick_params(axis='y', labelsize=15)
+x = utilizationFactors[1::2]
+x.reverse()
+y = [i + 1 for i in range(len(utilizationFactors))][1::2]
+ax1.set_xticks(y, x)
+ax1.set_xticklabels(x, fontsize=15)
+
+ax2.set_xlim(ax1.get_xlim())
+ax2.set_xticks(y)
+x = droprates_xticks[1::2]
+x.reverse()
+ax2.set_xticklabels(x, fontsize=15)
+ax2.set_xlabel('Loss Rate', fontsize=20, labelpad=10)
+plt.savefig('../results_postProcessing_{}/{}_boxPLot.pdf'.format(results_dir, check))
+plt.clf()
 
 # # plot for reverse experiment loss_1:
 # fig = plt.figure()
@@ -155,30 +184,30 @@ droprates_xticks = [round(x, 3) for x in droprates_mean]
 # plt.savefig('../results_postProcessing_{}/{}_success_perDropRate.pdf'.format(results_dir, check))
 # plt.clf()
 
-# plot for reverse experiment delay_2:
-fig = plt.figure()
-fig.set_size_inches(10, 6)
-ax1 = fig.add_subplot(111)
-ax2 = ax1.twiny()
-for flow in flows:
-    if flow == 'R0H0R2H0' or flow == 'R0H1R2H1':
-        ax1.plot(utilizationFactors, [100 - value['MaxEpsilonIneq'][flow]['A0'] for value in results.values()], 'o-')
-ax1.legend(['ToR0H0 -> ToR2H0', 'ToR0H1 -> ToR2H1'])
-ax1.set_xlabel('Utilization Factor', fontsize=20)
-ax1.set_ylabel('Success Rate (%)', fontsize=20)
-ax1.set_xticks(utilizationFactors[1::2])
-ax1.set_xticklabels(utilizationFactors[1::2], fontsize=15)
-ax1.tick_params(axis='y', labelsize=15)
-ax1.set_ylim(-10, 110)
+# # plot for reverse experiment delay_2:
+# fig = plt.figure()
+# fig.set_size_inches(10, 6)
+# ax1 = fig.add_subplot(111)
+# ax2 = ax1.twiny()
+# for flow in flows:
+#     if flow == 'R0H0R2H0' or flow == 'R0H1R2H1':
+#         ax1.plot(utilizationFactors, [100 - value['MaxEpsilonIneq'][flow]['A0'] for value in results.values()], 'o-')
+# ax1.legend(['ToR0H0 -> ToR2H0', 'ToR0H1 -> ToR2H1'])
+# ax1.set_xlabel('Utilization Factor', fontsize=20)
+# ax1.set_ylabel('Success Rate (%)', fontsize=20)
+# ax1.set_xticks(utilizationFactors[1::2])
+# ax1.set_xticklabels(utilizationFactors[1::2], fontsize=15)
+# ax1.tick_params(axis='y', labelsize=15)
+# ax1.set_ylim(-10, 110)
 
-ax2.set_xlim(ax1.get_xlim())
-ax2.set_xticks(utilizationFactors)
-ax2.set_xticklabels(droprates_xticks, fontsize=10)
-ax2.set_xlabel('Average Netwrok Loss Rate', fontsize=20, labelpad=10)
-# plt.grid(True)
-# plt.title('success rate of detecting the silent packet drop for different utulization factors')
-plt.savefig('../results_postProcessing_{}/{}_success_perDropRate.pdf'.format(results_dir, check))
-plt.clf()
+# ax2.set_xlim(ax1.get_xlim())
+# ax2.set_xticks(utilizationFactors)
+# ax2.set_xticklabels(droprates_xticks, fontsize=10)
+# ax2.set_xlabel('Average Netwrok Loss Rate', fontsize=20, labelpad=10)
+# # plt.grid(True)
+# # plt.title('success rate of detecting the silent packet drop for different utulization factors')
+# plt.savefig('../results_postProcessing_{}/{}_success_perDropRate.pdf'.format(results_dir, check))
+# plt.clf()
 
 # # claculate Coefficient of Variation for each flow for each service rate scale
 # for key in results.keys():
