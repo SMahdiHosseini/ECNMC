@@ -29,7 +29,7 @@ Config Parameters
 hostToTorLinkRate: 20Mbps
 hostToTorLinkRateCrossTraffic: 50Mbps
 hostToTorLinkDelay: 50us
-torToAggLinkRate: 72.4Mbps
+torToAggLinkRate: 63.0Mbps
 torToAggLinkDelay: 50us
 aggToCoreLinkRate: 63Mbps
 aggToCoreLinkDelay: 50us
@@ -39,63 +39,65 @@ pctPacedBack: 0.8
 enableSwitchECN: 1
 enableECMP: 1
 sampleRate: 300
-errorRate: 0.05
+errorRate: 0.0012
 T0 id 24
 Done 
-Total execution time = 589403386 microsecond
+Total execution time = 581000985 microsecond
 Done 
-Total execution time = 555707378 microsecond
+Total execution time = 570019574 microsecond
 Done 
-Total execution time = 615709152 microsecond
+Total execution time = 568838702 microsecond
 Done 
-Total execution time = 818362452 microsecond
+Total execution time = 570962440 microsecond
 Done 
-Total execution time = 671710646 microsecond
+Total execution time = 610566882 microsecond
 Done 
-Total execution time = 698501822 microsecond
+Total execution time = 627458416 microsecond
 Done 
-Total execution time = 733109677 microsecond
+Total execution time = 591251741 microsecond
 Done 
-Total execution time = 702231965 microsecond
+Total execution time = 652521900 microsecond
 Done 
-Total execution time = 695524321 microsecond
+Total execution time = 590405005 microsecond
 Done 
-Total execution time = 603286182 microsecond
+Total execution time = 683884275 microsecond
 Done 
-Total execution time = 584185749 microsecond
+Total execution time = 572203535 microsecond
 Done 
-Total execution time = 640048700 microsecond
+Total execution time = 611936001 microsecond
 Done 
-Total execution time = 672548529 microsecond
+Total execution time = 629966133 microsecond
 Done 
-Total execution time = 663192629 microsecond
+Total execution time = 592046576 microsecond
 Done 
-Total execution time = 584456860 microsecond
+Total execution time = 618141433 microsecond
 Done 
-Total execution time = 642479835 microsecond
+Total execution time = 604969710 microsecond
 Done 
-Total execution time = 709986908 microsecond
+Total execution time = 631591295 microsecond
 Done 
-Total execution time = 588671252 microsecond
+Total execution time = 642142959 microsecond
 Done 
-Total execution time = 587062323 microsecond
+Total execution time = 601743097 microsecond
 Done 
-Total execution time = 595127184 microsecond
+Total execution time = 697670080 microsecond
 Done 
-Total execution time = 639961287 microsecond
+Total execution time = 562426063 microsecond
 Done 
-Total execution time = 645617637 microsecond
+Total execution time = 694383459 microsecond
 Done 
-Total execution time = 663821914 microsecond
+Total execution time = 717611885 microsecond
 Done 
-Total execution time = 563173361 microsecond
+Total execution time = 614702824 microsecond
 Done 
-Total execution time = 629182387 microsecond
+Total execution time = 688158167 microsecond
 Done 
-Total execution time = 582739443 microsecond
+Total execution time = 706096589 microsecond
 Done 
-Total execution time = 598298894 microsecond
+Total execution time = 604343872 microsecond
 Done 
-Total execution time = 510734141 microsecond
+Total execution time = 595180693 microsecond
 Done 
-Total execution time = 571458640 microsecond
+Total execution time = 591106461 microsecond
+Done 
+Total execution time = 649493066 microsecond

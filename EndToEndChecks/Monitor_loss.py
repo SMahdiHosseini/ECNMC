@@ -21,33 +21,48 @@ def check_MaxEpsilon_ineq(endToEnd_statistics, samples_paths_aggregated_statisti
     else:
         return False
     
+def check_MaxEpsilon_ineq_2(endToEnd_statistics, samples_paths_aggregated_statistics, number_of_segments):
+    if (endToEnd_statistics - samples_paths_aggregated_statistics['successProbMean_2'] <= (number_of_segments * np.log(1 + samples_paths_aggregated_statistics['MaxEpsilon_2']))) and (endToEnd_statistics - samples_paths_aggregated_statistics['successProbMean_2'] >= (number_of_segments * np.log(1 - samples_paths_aggregated_statistics['MaxEpsilon_2']))):
+        return True
+    else:
+        return False
+    
 def check_all_delayConsistency(endToEnd_statistics, samples_paths_aggregated_statistics, paths, number_of_segments):
     res = {}
     res['MaxEpsilonIneqPackets'] = {}
+    res['MaxEpsilonIneqPackets_2'] = {}
     for flow in endToEnd_statistics.keys():
         res['MaxEpsilonIneqPackets'][flow] = {}
+        res['MaxEpsilonIneqPackets_2'][flow] = {}
         for path in paths:
             res['MaxEpsilonIneqPackets'][flow][path] = check_MaxEpsilon_ineq(np.log(endToEnd_statistics[flow][path]['successProbMeanPackets']), samples_paths_aggregated_statistics[flow][path], number_of_segments)
+            res['MaxEpsilonIneqPackets_2'][flow][path] = check_MaxEpsilon_ineq(np.log(endToEnd_statistics[flow][path]['successProbMeanPackets']), samples_paths_aggregated_statistics[flow][path], number_of_segments)
     return res
 
 def prepare_results(flows, queues, num_of_agg_switches):
     rounds_results = {}
 
     rounds_results['MaxEpsilonIneqPackets'] = {}
+    rounds_results['MaxEpsilonIneqPackets_2'] = {}
     rounds_results['DropRate'] = []
     rounds_results['EndToEndSuccessProbPackets'] = {}
     rounds_results['maxEpsilon'] = {}
+    rounds_results['maxEpsilon_2'] = {}
 
 
     for flow in flows:
         rounds_results['MaxEpsilonIneqPackets'][flow] = {}
+        rounds_results['MaxEpsilonIneqPackets_2'][flow] = {}
         rounds_results['EndToEndSuccessProbPackets'][flow] = {}
         rounds_results['maxEpsilon'][flow] = {}
+        rounds_results['maxEpsilon_2'][flow] = {}
 
         for i in range(num_of_agg_switches):
             rounds_results['MaxEpsilonIneqPackets'][flow]['A' + str(i)] = 0
+            rounds_results['MaxEpsilonIneqPackets_2'][flow]['A' + str(i)] = 0
             rounds_results['EndToEndSuccessProbPackets'][flow]['A' + str(i)] = []
             rounds_results['maxEpsilon'][flow]['A' + str(i)] = []
+            rounds_results['maxEpsilon_2'][flow]['A' + str(i)] = []
 
     rounds_results['experiments'] = 0
     return rounds_results
@@ -59,6 +74,8 @@ def compatibility_check(rounds_results, samples_paths_aggregated_statistics, end
         for path in paths:
             if results['MaxEpsilonIneqPackets'][flow][path]:
                 rounds_results['MaxEpsilonIneqPackets'][flow][path] += 1
+            if results['MaxEpsilonIneqPackets_2'][flow][path]:
+                rounds_results['MaxEpsilonIneqPackets_2'][flow][path] += 1
             
 
 def analyze_single_experiment(rate, steadyStart, steadyEnd, confidenceValue, rounds_results, queues_names, results_folder, experiment=0, ns3_path=__ns3_path):
@@ -102,6 +119,13 @@ def analyze_single_experiment(rate, steadyStart, steadyEnd, confidenceValue, rou
                                                                                  calc_epsilon_loss(confidenceValue, samples_switches_statistics[path + 'T' + flow[5]]),
                                                                                  calc_epsilon_loss(confidenceValue, samples_switches_statistics['T' + flow[5] + 'H' + flow[7]])])
 
+            samples_paths_aggregated_statistics[flow][path]['successProbMean_2'] = sum([np.log(samples_switches_statistics['T' + flow[1] + path]['successProbMean_2']),
+                                                                                   np.log(samples_switches_statistics[path + 'T' + flow[5]]['successProbMean_2']),
+                                                                                   np.log(samples_switches_statistics['T' + flow[5] + 'H' + flow[7]]['successProbMean_2'])])
+            
+            samples_paths_aggregated_statistics[flow][path]['MaxEpsilon_2'] = max([calc_epsilon_loss_2(confidenceValue, samples_switches_statistics['T' + flow[1] + path]),
+                                                                                 calc_epsilon_loss_2(confidenceValue, samples_switches_statistics[path + 'T' + flow[5]]),
+                                                                                 calc_epsilon_loss_2(confidenceValue, samples_switches_statistics['T' + flow[5] + 'H' + flow[7]])])
     # endToEnd_statistics
     endToEnd_statistics = {}
     for flow in endToEnd_dfs.keys():
@@ -112,15 +136,16 @@ def analyze_single_experiment(rate, steadyStart, steadyEnd, confidenceValue, rou
             endToEnd_statistics[flow][path] = get_endToEd_loss_statistics(temp)
             rounds_results['EndToEndSuccessProbPackets'][flow][path].append(endToEnd_statistics[flow][path]['successProbMeanPackets'])
             rounds_results['maxEpsilon'][flow][path].append(samples_paths_aggregated_statistics[flow][path]['MaxEpsilon'])
+            rounds_results['maxEpsilon_2'][flow][path].append(samples_paths_aggregated_statistics[flow][path]['MaxEpsilon_2'])
 
     rounds_results['experiments'] += 1
     number_of_segments = 3
     compatibility_check(rounds_results, samples_paths_aggregated_statistics, endToEnd_statistics, endToEnd_dfs.keys(), ['A' + str(i) for i in range(num_of_agg_switches)], number_of_segments)
 
 def analyze_all_experiments(rate, steadyStart, steadyEnd, confidenceValue, experiments_start=0, experiments_end=3, ns3_path=__ns3_path):
-    # results_folder = 'Results_forward'
+    results_folder = 'Results'
     # results_folder = 'Results_reverse_loss_2'
-    results_folder = 'Results_reverse_delay_1'
+    # results_folder = 'Results_reverse_delay_1'
     # results_folder = 'Results_delay_reverse'
     num_of_agg_switches = 2
     flows_name = read_data_flowIndicator(ns3_path, rate, results_folder)
@@ -138,7 +163,7 @@ def analyze_all_experiments(rate, steadyStart, steadyEnd, confidenceValue, exper
         print("Analyzing experiment: ", experiment)
         analyze_single_experiment(rate, steadyStart, steadyEnd, confidenceValue, rounds_results, queues_names, results_folder, experiment, ns3_path)
 
-    with open('../results_postProcessing_reverse_delay_1/{}/loss_{}_{}_{}_to_{}.json'.format(rate, results_folder, experiments_end, steadyStart, steadyEnd), 'w') as f:
+    with open('../results_postProcessing/{}/loss_{}_{}_{}_to_{}.json'.format(rate, results_folder, experiments_end, steadyStart, steadyEnd), 'w') as f:
     # with open('../results_postProcessing/{}/loss_{}_{}_{}_{}_to_{}.json'.format(1.0, rate, results_folder, experiments_end, steadyStart, steadyEnd), 'w') as f:
         # config = configparser.ConfigParser()
         # config.read('../Parameters.config')
@@ -180,7 +205,7 @@ def __main__():
     # print("sampleRate", sampleRate)
     # print("experiments: ", experiments)
     # print("serviceRateScales: ", serviceRateScales)
-    serviceRateScales = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
+    serviceRateScales = [0.6]
     # experiments = 10
 
     for rate in serviceRateScales:

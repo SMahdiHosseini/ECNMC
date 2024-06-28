@@ -114,6 +114,9 @@ def calc_epsilon(confidenceValue, segement_statistics):
 def calc_epsilon_loss(confidenceValue, segement_statistics):
     return (confidenceValue * segement_statistics['successProbStd']) / (np.sqrt(segement_statistics['sampleSize']) * segement_statistics['successProbMean'])
 
+def calc_epsilon_loss_2(confidenceValue, segement_statistics):
+    return (confidenceValue * segement_statistics['successProbStd_2']) / (np.sqrt(segement_statistics['sampleSize']) * segement_statistics['successProbMean_2'])
+
 def calc_error(confidenceValue, segement_statistics):
     return (confidenceValue * segement_statistics['DelayStd']) / np.sqrt(segement_statistics['sampleSize'])
 
@@ -213,6 +216,8 @@ def get_loss_statistics(data):
     data_copy = data.copy()
     statistics['successProbMean'] = 1 - data_copy['MarkingProb'].mean()
     statistics['successProbStd'] = data_copy['MarkingProb'].std()
+    statistics['successProbMean_2'] = 1 - data_copy['MarkingProb_2'].mean()
+    statistics['successProbStd_2'] = data_copy['MarkingProb_2'].std()
     statistics['sampleSize'] = len(data_copy)
     return statistics
 
