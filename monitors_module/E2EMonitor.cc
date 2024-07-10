@@ -4,32 +4,16 @@
 
 #include "E2EMonitor.h"
 
-E2EMonitorEvent::E2EMonitorEvent(PacketKey *key) : _key(key) {}
+E2EMonitorEvent::E2EMonitorEvent(PacketKey *key) { SetPacketKey(key); }
 
-void E2EMonitorEvent::SetSent() { _sentTime = ns3::Simulator::Now(); }
-void E2EMonitorEvent::SetReceived() { _receivedTime = ns3::Simulator::Now(); }
-void E2EMonitorEvent::SetReceived(Time t) { _receivedTime = t; }
 void E2EMonitorEvent::SetEcn(bool ecn) { _key->SetEcn(ecn); }
 void E2EMonitorEvent::SetPath(int path) { _key->SetPath(path);  }
-PacketKey *E2EMonitorEvent::GetPacketKey() const { return _key; }
-Time E2EMonitorEvent::GetSentTime() const { return _sentTime; }
-Time E2EMonitorEvent::GetReceivedTime() const {  return _receivedTime; }
-bool E2EMonitorEvent::GetEcn() const { return _key->GetEcn(); }
+bool E2EMonitorEvent::GetEcn() const { return _key->GetEcn(); } 
 int E2EMonitorEvent::GetPath() const { return _key->GetPath(); }
-bool E2EMonitorEvent::IsReceived() const { return _receivedTime != Time(-1); }
-
-ostream &operator<<(ostream &os, const E2EMonitorEvent &event) {
-    os << "E2EMonitorEvent: [ ";
-    os << "Key = " << *(event._key) << ", SentTime = " << event._sentTime << ", ReceiveTime = " << event._receivedTime;
-    os << "]";
-    return os;
-}
 
 
-E2EMonitor::E2EMonitor(const Time &startTime, const Time &duration, const Ptr<PointToPointNetDevice> netDevice, const Ptr<Node> &rxNode, const string &monitorTag, double errorRate) {
-    _startTime = startTime;
-    _duration = duration;
-    _monitorTag = monitorTag;
+E2EMonitor::E2EMonitor(const Time &startTime, const Time &duration, const Ptr<PointToPointNetDevice> netDevice, const Ptr<Node> &rxNode, const string &monitorTag, double errorRate) 
+: Monitor(startTime, duration, Seconds(0), Seconds(0), monitorTag) {
     _errorRate = errorRate;
 
     Simulator::Schedule(_startTime, &E2EMonitor::Connect, this, netDevice, rxNode->GetId());
@@ -44,10 +28,6 @@ void E2EMonitor::Connect(const Ptr<PointToPointNetDevice> netDevice, uint32_t rx
 
 void E2EMonitor::Disconnect(const Ptr<PointToPointNetDevice> netDevice, uint32_t rxNodeId) {
     netDevice->GetQueue()->TraceDisconnectWithoutContext("Enqueue", MakeCallback(&E2EMonitor::Enqueue, this));
-}
-
-void E2EMonitor::AddAppKey(AppKey appKey) {
-    _appsKey.insert(appKey);
 }
 
 void E2EMonitor::Enqueue(Ptr<const Packet> packet) {
@@ -93,7 +73,7 @@ void E2EMonitor::RecordIpv4PacketReceived(Ptr<const Packet> packet, Ptr<Ipv4> ip
     }
 }
 
-void E2EMonitor::SavePacketRecords(const string& filename) {
+void E2EMonitor::SaveMonitorRecords(const string& filename) {
     ofstream outfile;
     outfile.open(filename);
     outfile << "SourceIp,SourcePort,DestinationIp,DestinationPort,SequenceNb,Id,PayloadSize,PacketSize,Path,SentTime,IsReceived,ReceiveTime,ECN" << endl;
@@ -109,7 +89,3 @@ void E2EMonitor::SavePacketRecords(const string& filename) {
     }
     outfile.close();
 }
-
-string E2EMonitor::GetMonitorTag() const { return _monitorTag; }
-ns3::Time E2EMonitor::GetRelativeTime(const Time &time){ return time - _startTime; }
-

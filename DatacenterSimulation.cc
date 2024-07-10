@@ -452,16 +452,6 @@ int main(int argc, char* argv[])
     //     endToendMonitors.push_back(R3R0Monitor);
     // }
 
-    // NetDevice monitors on the hosts
-    vector<NetDeviceMonitor *> hostNetDeviceMonitors;
-    for (int i = 0; i < nRacks / 2; i++) {
-        for (int j = 0; j < nHosts; j++) {
-            auto *hostNetDeviceMonitor = new NetDeviceMonitor(startTime, stopTime + convergenceTime, DynamicCast<PointToPointNetDevice>(hostsToTorsNetDevices[i][j].Get(0)), "R" + to_string(i) + "H" + to_string(j));
-            hostNetDeviceMonitor->AddAppKey(AppKey(ipsRacks[i][j].GetAddress(0), ipsRacks[i + 2][j].GetAddress(0), 0, 0));
-            hostNetDeviceMonitors.push_back(hostNetDeviceMonitor);
-        }
-    }
-
     // switch monitors on the ToR switches
     vector<SwitchMonitor *> torSwitchMonitors;
     for (int i = 0; i < nRacks; i++) {
@@ -605,10 +595,7 @@ int main(int argc, char* argv[])
     Simulator::Destroy();
 
     for (auto monitor: endToendMonitors) {
-        monitor->SavePacketRecords((string) (getenv("PWD")) + "/results_" + dirName + "/" + to_string(experiment)  + "/" + monitor->GetMonitorTag() + "_EndToEnd.csv");
-    }
-    for (auto monitor: hostNetDeviceMonitors) {
-        monitor->SavePacketRecords((string) (getenv("PWD")) + "/results_" + dirName + "/" + to_string(experiment)  + "/" + monitor->GetMonitorTag() + "_start.csv");
+        monitor->SaveMonitorRecords((string) (getenv("PWD")) + "/results_" + dirName + "/" + to_string(experiment)  + "/" + monitor->GetMonitorTag() + "_EndToEnd.csv");
     }
     for (auto monitor: torSwitchMonitors) {
         monitor->SavePacketRecords((string) (getenv("PWD")) + "/results_" + dirName + "/" +  to_string(experiment)  + "/" + monitor->GetMonitorTag() + "_Switch.csv");
@@ -620,7 +607,7 @@ int main(int argc, char* argv[])
         monitor->SavePacketRecords((string) (getenv("PWD")) + "/results_" + dirName + "/" + to_string(experiment)  + "/" + monitor->GetMonitorTag() + "_Switch.csv");
     }
     for (auto monitor: PoissonSamplers) {
-        monitor->SaveSamples((string) (getenv("PWD")) + "/results_" + dirName + "/" + to_string(experiment)  + "/" + monitor->GetSampleTag() + "_PoissonSampler.csv");
+        monitor->SaveMonitorRecords((string) (getenv("PWD")) + "/results_" + dirName + "/" + to_string(experiment)  + "/" + monitor->GetMonitorTag() + "_PoissonSampler.csv");
     }
     /* ########## END: Scheduling and  Running ########## */
 

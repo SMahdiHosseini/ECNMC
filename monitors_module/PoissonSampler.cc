@@ -4,28 +4,19 @@
 #include "PoissonSampler.h"
 #include <iomanip>
 
-samplingEvent::samplingEvent(PacketKey *key) : _key(key) {}
+samplingEvent::samplingEvent(PacketKey *key) { SetPacketKey(key); }
 
-void samplingEvent::SetSampleTime() { _sampleTime = ns3::Simulator::Now(); }
-void samplingEvent::SetDepartureTime() { _departureTime = ns3::Simulator::Now(); }
+void samplingEvent::SetSampleTime() { SetSent(ns3::Simulator::Now()); }
+void samplingEvent::SetDepartureTime() { SetReceived(ns3::Simulator::Now()); }
 void samplingEvent::SetMarkingProb(double markingProb) { _markingProb = markingProb; }
 PacketKey *samplingEvent::GetPacketKey() const { return _key; }
-Time samplingEvent::GetSampleTime() const { return _sampleTime; }
-Time samplingEvent::GetDepartureTime() const { return _departureTime; }
+Time samplingEvent::GetSampleTime() const { return GetSentTime(); }
+Time samplingEvent::GetDepartureTime() const { return GetReceivedTime(); }
 double samplingEvent::GetMarkingProb() const { return _markingProb; }
-bool samplingEvent::IsDeparted() const { return _departureTime != Time(-1); }
+bool samplingEvent::IsDeparted() const { return GetReceivedTime() != Time(-1); }
 
-ostream &operator<<(ostream &os, const samplingEvent &event) {
-    os << "SamplingEvent: [ ";
-    os << "Key = " << *(event._key) << ", SampleTime = " << event._sampleTime << ", DepartureTime = " << event._departureTime;
-    os << "]";
-    return os;
-}
-
-PoissonSampler::PoissonSampler(const Time &startTime, const Time &duration, Ptr<RedQueueDisc> queueDisc, Ptr<Queue<Packet>> queue, Ptr<PointToPointNetDevice>  outgoingNetDevice, const string &sampleTag, double sampleRate) {
-    _startTime = startTime;
-    _duration = duration;
-    _sampleTag = sampleTag;
+PoissonSampler::PoissonSampler(const Time &startTime, const Time &duration, Ptr<RedQueueDisc> queueDisc, Ptr<Queue<Packet>> queue, Ptr<PointToPointNetDevice>  outgoingNetDevice, const string &sampleTag, double sampleRate) 
+: Monitor(startTime, duration, Seconds(0), Seconds(0), sampleTag) {
     REDQueueDisc = queueDisc;
     NetDeviceQueue = queue;
     m_var = CreateObject<ExponentialRandomVariable>();
@@ -161,7 +152,7 @@ void PoissonSampler::RecordPacket(Ptr<const Packet> packet) {
 }
 
 
-void PoissonSampler::SaveSamples(const string& filename) {
+void PoissonSampler::SaveMonitorRecords(const string& filename) {
     ofstream outfile;
     outfile.open(filename);
     outfile << "SourceIp,SourcePort,DestinationIp,DestinationPort,SequenceNb,Id,PayloadSize,SampleTime,IsDeparted,DepartTime,MarkingProb" << endl;
@@ -178,6 +169,3 @@ void PoissonSampler::SaveSamples(const string& filename) {
     }
     outfile.close();
 }
-
-string PoissonSampler::GetSampleTag() const { return _sampleTag; }
-ns3::Time PoissonSampler::GetRelativeTime(const Time &time){ return time - _startTime; }

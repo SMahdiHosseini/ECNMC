@@ -21,12 +21,14 @@ using namespace std;
 struct MonitorEvent {
 
 private:
-    PacketKey* _key;
     ns3::Time _sentTime = Time(-1);
     ns3::Time _receivedTime = Time(-1);
 
+protected:
+    PacketKey* _key;
+
 public:
-    explicit MonitorEvent(PacketKey *key);
+    explicit MonitorEvent();
 
     [[nodiscard]] PacketKey* GetPacketKey() const;
     [[nodiscard]] Time GetSentTime() const;
@@ -34,30 +36,31 @@ public:
     [[nodiscard]] bool IsReceived() const;
     [[nodiscard]] bool IsSent() const;
 
+    void SetPacketKey(PacketKey *key);
     void SetSent();
     void SetSent(Time t);
     void SetReceived();
     void SetReceived(Time t);
 };
 
-class E2EMonitor {
+class Monitor {
 
-private:
+protected:
     ns3::Time _startTime = Seconds(0);
     ns3::Time _duration = Seconds(0);
-    // ns3::Time _startTime = Seconds(0); steady
-    // ns3::Time _duration = Seconds(0);
-    double _errorRate = 0.0;
+    ns3::Time _steadyStartTime = Seconds(0);
+    ns3::Time _steadyStopTime = Seconds(0);
+
     std::string _monitorTag;
     set<AppKey> _appsKey;
 
     ns3::Time GetRelativeTime(const Time &time);
 
 public:
-    E2EMonitor(const Time &startTime, const Time &duration, const Ptr<PointToPointNetDevice> netDevice, const Ptr<Node> &rxNode, const string &monitorTag, const double errorRate);
+    Monitor(const Time &startTime, const Time &duration, const Time &steadyStartTime, const Time &steadyStopTime, const string &monitorTag);
     void AddAppKey(AppKey appKey);
     std::string GetMonitorTag() const;
-    void SavePacketRecords(const string &filename);
+    virtual void SaveMonitorRecords(const string &filename) = 0;
 };
 
-#endif //E2EMONITOR_H
+#endif //MONITOR_H
