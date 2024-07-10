@@ -28,21 +28,19 @@ private:
     void StartApplication() override;
     void PrepareSocket();
     void StopApplication() override;
-
     void Send(const TraceReplayItem& item);
     void ScheduleNextSend();
 
     Ptr<Socket> _socket;
     Address _receiverAddress;
     string _protocol;
-
     string _traceFilename;
     vector<TraceReplayItem> _traceItems;
     uint32_t _traceItemIdx;
-
     bool _enablePacing;
-
     EventId _sendEvent, _startEvent;
+    Time _trafficStartTime;
+    Time _trafficEndTime;
 
 protected:
     void DoDispose() override;

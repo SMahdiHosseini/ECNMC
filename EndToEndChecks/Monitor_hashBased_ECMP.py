@@ -9,8 +9,8 @@ import numpy as np
 from scipy.stats import anderson
 from scipy.stats import f_oneway, kruskal
 import json as js
-import threading
 import multiprocessing
+import argparse
 
 # __ns3_path = os.popen('locate "ns-3.41" | grep /ns-3.41$').read().splitlines()[0]
 __ns3_path = "/home/shossein/ns-allinone-3.41/ns-3.41"
@@ -116,19 +116,20 @@ def remove_interlinks_trasmission_delay(endToEnd_dfs, switches_dfs, start_dfs, a
         Tor_dest_switch = 'T' + flow[5]
         endToEnd_dfs[flow] = pd.merge(endToEnd_dfs[flow].drop(columns=['SentTime']), start_dfs[host_switch].drop(columns=['SentTime', 'ECN']).rename(columns={'ReceiveTime': 'SentTime'}), on=['SourceIp', 'SourcePort', 'DestinationIp', 'DestinationPort', 'PayloadSize', 'SequenceNb', 'Id'], how='inner')
         endToEnd_dfs[flow]['Delay'] = endToEnd_dfs[flow]['ReceiveTime'] - endToEnd_dfs[flow]['SentTime']
-        src_Tor = intermediateLink_transmission(endToEnd_dfs[flow].drop(columns=['SentTime', 'ReceiveTime', 'Delay', 'Path', 'ECN'], ), start_dfs[host_switch], switches_dfs[src_Tor_swich], 0)
+        src_Tor = intermediateLink_transmission(endToEnd_dfs[flow].drop(columns=['SentTime', 'ReceiveTime', 'Delay', 'Path', 'ECN', 'PacketSize'], ), start_dfs[host_switch], switches_dfs[src_Tor_swich], 0)
         Tor_Agg = []
         Agg_Tor = []
         for i in range(aggSwitchesNum):
-            Tor_Agg.append(intermediateLink_transmission(endToEnd_dfs[flow].drop(columns=['SentTime', 'ReceiveTime', 'Delay', 'Path', 'ECN']), switches_dfs[src_Tor_swich], switches_dfs[Agg_switch[i]], 1))
-            Agg_Tor.append(intermediateLink_transmission(endToEnd_dfs[flow].drop(columns=['SentTime', 'ReceiveTime', 'Delay', 'Path', 'ECN']), switches_dfs[Agg_switch[i]], switches_dfs[Tor_dest_switch], 2))
+            Tor_Agg.append(intermediateLink_transmission(endToEnd_dfs[flow].drop(columns=['SentTime', 'ReceiveTime', 'Delay', 'Path', 'ECN', 'PacketSize']), switches_dfs[src_Tor_swich], switches_dfs[Agg_switch[i]], 1))
+            Agg_Tor.append(intermediateLink_transmission(endToEnd_dfs[flow].drop(columns=['SentTime', 'ReceiveTime', 'Delay', 'Path', 'ECN', 'PacketSize']), switches_dfs[Agg_switch[i]], switches_dfs[Tor_dest_switch], 2))
         Tor_Agg = pd.concat(Tor_Agg)
         Agg_Tor = pd.concat(Agg_Tor)
-        Tor_dst = intermediateLink_transmission(endToEnd_dfs[flow].drop(columns=['SentTime', 'ReceiveTime', 'Delay', 'Path', 'ECN']), switches_dfs[Tor_dest_switch], endToEnd_dfs[flow].drop(columns=['Delay', 'Path', 'ECN']), 3)
+        Tor_dst = intermediateLink_transmission(endToEnd_dfs[flow].drop(columns=['SentTime', 'ReceiveTime', 'Delay', 'Path', 'ECN', 'PacketSize']), switches_dfs[Tor_dest_switch], endToEnd_dfs[flow].drop(columns=['Delay', 'Path', 'ECN', 'PacketSize']), 3)
         endToEnd_dfs[flow] = pd.merge(endToEnd_dfs[flow], src_Tor, on=['SourceIp', 'SourcePort', 'DestinationIp', 'DestinationPort', 'PayloadSize', 'SequenceNb', 'Id'], how='inner')
         endToEnd_dfs[flow] = pd.merge(endToEnd_dfs[flow], Tor_Agg, on=['SourceIp', 'SourcePort', 'DestinationIp', 'DestinationPort', 'PayloadSize', 'SequenceNb', 'Id'], how='inner')
         endToEnd_dfs[flow] = pd.merge(endToEnd_dfs[flow], Agg_Tor, on=['SourceIp', 'SourcePort', 'DestinationIp', 'DestinationPort', 'PayloadSize', 'SequenceNb', 'Id'], how='inner')
         endToEnd_dfs[flow] = pd.merge(endToEnd_dfs[flow], Tor_dst, on=['SourceIp', 'SourcePort', 'DestinationIp', 'DestinationPort', 'PayloadSize', 'SequenceNb', 'Id'], how='inner')
+        print(endToEnd_dfs[flow])
         endToEnd_dfs[flow]['Delay'] = endToEnd_dfs[flow]['Delay'] - sum([endToEnd_dfs[flow]['Delay_' + str(i)] for i in range(4)])
         endToEnd_dfs[flow] = endToEnd_dfs[flow].drop(columns=['Delay_0', 'Delay_1', 'Delay_2', 'Delay_3'])
         endToEnd_dfs[flow] = endToEnd_dfs[flow][endToEnd_dfs[flow]['Delay'] > 0]
@@ -152,80 +153,80 @@ def analyze_single_experiment(return_dict, rate, steadyStart, steadyEnd, confide
     # Intermediate links groundtruth statistics
     remove_interlinks_trasmission_delay(endToEnd_dfs, switches_dfs, start_dfs, num_of_agg_switches)
 
-    # samples switches statistics
-    samples_switches_statistics = {}
-    samples_queues_dfs = {}
-    for sample_df in samples_dfs.keys():
-        # print(sample_df, sample_df[0:2])
-        if 'R' in sample_df:
-            samples_queues_dfs[sample_df] = get_switch_samples_delays(start_dfs[sample_df], samples_dfs[sample_df])
-        else:    
-            samples_queues_dfs[sample_df] = get_switch_samples_delays(switches_dfs[sample_df[0:2]], samples_dfs[sample_df])
+    # # samples switches statistics
+    # samples_switches_statistics = {}
+    # samples_queues_dfs = {}
+    # for sample_df in samples_dfs.keys():
+    #     # print(sample_df, sample_df[0:2])
+    #     if 'R' in sample_df:
+    #         samples_queues_dfs[sample_df] = get_switch_samples_delays(start_dfs[sample_df], samples_dfs[sample_df])
+    #     else:    
+    #         samples_queues_dfs[sample_df] = get_switch_samples_delays(switches_dfs[sample_df[0:2]], samples_dfs[sample_df])
 
-        samples_switches_statistics[sample_df] = get_statistics(samples_queues_dfs[sample_df])
-        # print(sample_df, samples_switches_statistics[sample_df]['DelayMean'])
+    #     samples_switches_statistics[sample_df] = get_statistics(samples_queues_dfs[sample_df])
+    #     # print(sample_df, samples_switches_statistics[sample_df]['DelayMean'])
 
-    # samples_paths_statistics
-    samples_paths_aggregated_statistics = {}
-    for flow in endToEnd_dfs.keys():
-        samples_paths_aggregated_statistics[flow] = {}
-        for path in paths:
-            samples_paths_aggregated_statistics[flow][path] = {}
-            samples_paths_aggregated_statistics[flow][path]['DelayMean'] = sum([samples_switches_statistics['R' + flow[1] + 'H' + flow[3]]['DelayMean'],
-                                                                                samples_switches_statistics['T' + flow[1] + path]['DelayMean'], 
-                                                                                samples_switches_statistics[path + 'T' + flow[5]]['DelayMean'],
-                                                                                samples_switches_statistics['T' + flow[5] + 'H' + flow[7]]['DelayMean']])
+    # # samples_paths_statistics
+    # samples_paths_aggregated_statistics = {}
+    # for flow in endToEnd_dfs.keys():
+    #     samples_paths_aggregated_statistics[flow] = {}
+    #     for path in paths:
+    #         samples_paths_aggregated_statistics[flow][path] = {}
+    #         samples_paths_aggregated_statistics[flow][path]['DelayMean'] = sum([samples_switches_statistics['R' + flow[1] + 'H' + flow[3]]['DelayMean'],
+    #                                                                             samples_switches_statistics['T' + flow[1] + path]['DelayMean'], 
+    #                                                                             samples_switches_statistics[path + 'T' + flow[5]]['DelayMean'],
+    #                                                                             samples_switches_statistics['T' + flow[5] + 'H' + flow[7]]['DelayMean']])
         
-            samples_paths_aggregated_statistics[flow][path]['MinSampleSize'] = min([samples_switches_statistics['R' + flow[1] + 'H' + flow[3]]['sampleSize'],
-                                                                                    samples_switches_statistics['T' + flow[1] + path]['sampleSize'],
-                                                                                    samples_switches_statistics[path + 'T' + flow[5]]['sampleSize'],
-                                                                                    samples_switches_statistics['T' + flow[5] + 'H' + flow[7]]['sampleSize']])
+    #         samples_paths_aggregated_statistics[flow][path]['MinSampleSize'] = min([samples_switches_statistics['R' + flow[1] + 'H' + flow[3]]['sampleSize'],
+    #                                                                                 samples_switches_statistics['T' + flow[1] + path]['sampleSize'],
+    #                                                                                 samples_switches_statistics[path + 'T' + flow[5]]['sampleSize'],
+    #                                                                                 samples_switches_statistics['T' + flow[5] + 'H' + flow[7]]['sampleSize']])
             
-            samples_paths_aggregated_statistics[flow][path]['MaxEpsilon'] = max([calc_epsilon(confidenceValue, samples_switches_statistics['R' + flow[1] + 'H' + flow[3]]),
-                                                                                 calc_epsilon(confidenceValue, samples_switches_statistics['T' + flow[1] + path]),
-                                                                                 calc_epsilon(confidenceValue, samples_switches_statistics[path + 'T' + flow[5]]),
-                                                                                 calc_epsilon(confidenceValue, samples_switches_statistics['T' + flow[5] + 'H' + flow[7]])])
+    #         samples_paths_aggregated_statistics[flow][path]['MaxEpsilon'] = max([calc_epsilon(confidenceValue, samples_switches_statistics['R' + flow[1] + 'H' + flow[3]]),
+    #                                                                              calc_epsilon(confidenceValue, samples_switches_statistics['T' + flow[1] + path]),
+    #                                                                              calc_epsilon(confidenceValue, samples_switches_statistics[path + 'T' + flow[5]]),
+    #                                                                              calc_epsilon(confidenceValue, samples_switches_statistics['T' + flow[5] + 'H' + flow[7]])])
             
-            samples_paths_aggregated_statistics[flow][path]['SumOfErrors'] = sum([calc_error(confidenceValue, samples_switches_statistics['R' + flow[1] + 'H' + flow[3]]),
-                                                                                  calc_error(confidenceValue, samples_switches_statistics['T' + flow[1] + path]),
-                                                                                  calc_error(confidenceValue, samples_switches_statistics[path + 'T' + flow[5]]),
-                                                                                  calc_error(confidenceValue, samples_switches_statistics['T' + flow[5] + 'H' + flow[7]])])
-    # endToEnd_statistics
-    endToEnd_statistics = {}
-    for flow in endToEnd_dfs.keys():
-        endToEnd_statistics[flow] = {}
-        new_endToEnd = []
-        for path in paths:
-            # remove A from the path
-            temp = endToEnd_dfs[flow][endToEnd_dfs[flow]['Path'] == int(path[1])]
-            if flow == 'R0H0R2H0' or flow == 'R0H1R2H1':
-            # add the error packets
-                rows_to_change = np.random.choice(temp.index, int(len(temp) * 6 * errorRate), replace=False)
-                temp.loc[rows_to_change, 'Delay'] = (temp.loc[rows_to_change, 'Delay'] * difference).astype(int)
+    #         samples_paths_aggregated_statistics[flow][path]['SumOfErrors'] = sum([calc_error(confidenceValue, samples_switches_statistics['R' + flow[1] + 'H' + flow[3]]),
+    #                                                                               calc_error(confidenceValue, samples_switches_statistics['T' + flow[1] + path]),
+    #                                                                               calc_error(confidenceValue, samples_switches_statistics[path + 'T' + flow[5]]),
+    #                                                                               calc_error(confidenceValue, samples_switches_statistics['T' + flow[5] + 'H' + flow[7]])])
+    # # endToEnd_statistics
+    # endToEnd_statistics = {}
+    # for flow in endToEnd_dfs.keys():
+    #     endToEnd_statistics[flow] = {}
+    #     new_endToEnd = []
+    #     for path in paths:
+    #         # remove A from the path
+    #         temp = endToEnd_dfs[flow][endToEnd_dfs[flow]['Path'] == int(path[1])]
+    #         if flow == 'R0H0R2H0' or flow == 'R0H1R2H1':
+    #         # add the error packets
+    #             rows_to_change = np.random.choice(temp.index, int(len(temp) * 6 * errorRate), replace=False)
+    #             temp.loc[rows_to_change, 'Delay'] = (temp.loc[rows_to_change, 'Delay'] * difference).astype(int)
 
-            endToEnd_statistics[flow][path] = get_statistics(temp, timeAvg=True)
-            rounds_results['EndToEndMean'][flow][path].append(endToEnd_statistics[flow][path]['timeAvg'])
-            rounds_results['EndToEndStd'][flow][path].append(endToEnd_statistics[flow][path]['DelayStd'])
-            rounds_results['maxEpsilon'][flow][path].append(samples_paths_aggregated_statistics[flow][path]['MaxEpsilon'])
-            new_endToEnd.append(temp)
-        endToEnd_dfs[flow] = pd.concat(new_endToEnd)
+    #         endToEnd_statistics[flow][path] = get_statistics(temp, timeAvg=True)
+    #         rounds_results['EndToEndMean'][flow][path].append(endToEnd_statistics[flow][path]['timeAvg'])
+    #         rounds_results['EndToEndStd'][flow][path].append(endToEnd_statistics[flow][path]['DelayStd'])
+    #         rounds_results['maxEpsilon'][flow][path].append(samples_paths_aggregated_statistics[flow][path]['MaxEpsilon'])
+    #         new_endToEnd.append(temp)
+    #     endToEnd_dfs[flow] = pd.concat(new_endToEnd)
 
-    rounds_results['experiments'] += 1
+    # rounds_results['experiments'] += 1
 
-    for q in queues_names:
-        if q[0] == 'T' and q[2] == 'H' and (q[1] == '2' or q[1] == '3'):
-            rounds_results[q+'std'].append(samples_switches_statistics[q]['DelayStd'])
-        if q[0] == 'T' and q[2] == 'A' and (q[1] == '0' or q[1] == '1'):
-            rounds_results[q+'std'].append(samples_switches_statistics[q]['DelayStd'])
-        if q[0] == 'A' and q[2] == 'T' and (q[3] == '2' or q[3] == '3'):
-            rounds_results[q+'std'].append(samples_switches_statistics[q]['DelayStd'])
+    # for q in queues_names:
+    #     if q[0] == 'T' and q[2] == 'H' and (q[1] == '2' or q[1] == '3'):
+    #         rounds_results[q+'std'].append(samples_switches_statistics[q]['DelayStd'])
+    #     if q[0] == 'T' and q[2] == 'A' and (q[1] == '0' or q[1] == '1'):
+    #         rounds_results[q+'std'].append(samples_switches_statistics[q]['DelayStd'])
+    #     if q[0] == 'A' and q[2] == 'T' and (q[3] == '2' or q[3] == '3'):
+    #         rounds_results[q+'std'].append(samples_switches_statistics[q]['DelayStd'])
     
-    compatibility_check(confidenceValue, rounds_results, samples_paths_aggregated_statistics, endToEnd_statistics, endToEnd_dfs.keys(), ['A' + str(i) for i in range(num_of_agg_switches)])
+    # compatibility_check(confidenceValue, rounds_results, samples_paths_aggregated_statistics, endToEnd_statistics, endToEnd_dfs.keys(), ['A' + str(i) for i in range(num_of_agg_switches)])
 
-    if experiment == 0:
-        plot_delay_over_time(endToEnd_dfs, paths, rate, results_folder)
+    # if experiment == 0:
+    #     plot_delay_over_time(endToEnd_dfs, paths, rate, results_folder)
 
-    return_dict[experiment] = rounds_results
+    # return_dict[experiment] = rounds_results
 
 def merge_results(return_dict, merged_results, flows, queues):
     num_of_agg_switches = 2
@@ -251,11 +252,8 @@ def merge_results(return_dict, merged_results, flows, queues):
         merged_results['experiments'] += return_dict[exp]['experiments']
         merged_results['DropRate'] += return_dict[exp]['DropRate']
     
-def analyze_all_experiments(rate, steadyStart, steadyEnd, confidenceValue, experiments_start=0, experiments_end=3, ns3_path=__ns3_path):
-    # results_folder = 'Results_forward'
-    # results_folder = 'Results_reverse_loss_2'
-    # results_folder = 'Results_reverse_delay_1'
-    results_folder = 'Results_reverse_delay_2'
+def analyze_all_experiments(rate, steadyStart, steadyEnd, confidenceValue, dir, experiments_end=3, ns3_path=__ns3_path):
+    results_folder = 'Results_' + dir
     num_of_agg_switches = 2
     flows_name = read_data_flowIndicator(ns3_path, rate, results_folder)
     flows_name.sort()
@@ -265,16 +263,15 @@ def analyze_all_experiments(rate, steadyStart, steadyEnd, confidenceValue, exper
 
     rounds_results = prepare_results(flows_name, queues_names, num_of_agg_switches)
     merged_results = prepare_results(flows_name, queues_names, num_of_agg_switches)
-    for i in range(3):
+    for i in range(int(experiments_end / 10) + 1):
         ths = []
         return_dict = multiprocessing.Manager().dict()
-        for experiment in range(10 * i, 10 * (i + 1)):
+        for experiment in range(10 * i, min(experiments_end, 10 * (i + 1))):
             if len(os.listdir('{}/scratch/{}/{}/{}'.format(__ns3_path, results_folder, rate, experiment))) == 0:
                 print(experiment)
                 continue
             print("Analyzing experiment: ", experiment)
             ths.append(multiprocessing.Process(target=analyze_single_experiment, args=(return_dict, rate, steadyStart, steadyEnd, confidenceValue, rounds_results, queues_names, results_folder, experiment, ns3_path)))
-            # analyze_single_experiment(rate, steadyStart, steadyEnd, confidenceValue, rounds_results, queues_names, results_folder, experiment, ns3_path)
         
         for th in ths:
             th.start()
@@ -283,54 +280,32 @@ def analyze_all_experiments(rate, steadyStart, steadyEnd, confidenceValue, exper
         merge_results(return_dict, merged_results, flows_name, queues_names)
         print("{} joind".format(i))
     
-    with open('../results_postProcessing_reverse_delay_2/{}/delay_{}_{}_{}_to_{}.json'.format(rate, results_folder, experiments_end, steadyStart, steadyEnd), 'w') as f:
-    # with open('../results_postProcessing/{}/{}_{}_{}_{}_to_{}.json'.format(1.0, rate, results_folder, experiments_end, steadyStart, steadyEnd), 'w') as f:
-        # rounds_results['Corruption'] = rate
-        # save the results in a well formatted json file
+    with open('../results_{}/{}/delay_{}_{}_{}_to_{}.json'.format(dir, rate, results_folder, experiments_end, steadyStart, steadyEnd), 'w') as f:
         js.dump(merged_results, f, indent=4)
 
 # main function
 def __main__():
+    parser=argparse.ArgumentParser()
+    parser.add_argument("--dir",
+                    required=True,
+                    dest="dir",
+                    help="The directory of the results",
+                    default="")
+
+    args = parser.parse_args()
     config = configparser.ConfigParser()
     config.read('../Parameters.config')
-    hostToTorLinkRate = convert_to_float(config.get('Settings', 'hostToTorLinkRate'))
-    torToAggLinkRate = config.get('Settings', 'torToAggLinkRate')
-    aggToCoreLinkRate = convert_to_float(config.get('Settings', 'aggToCoreLinkRate'))
-    hostToTorLinkDelay = convert_to_float(config.get('Settings', 'hostToTorLinkDelay'))
-    torToAggLinkDelay = convert_to_float(config.get('Settings', 'torToAggLinkDelay'))
-    aggToCoreLinkDelay = convert_to_float(config.get('Settings', 'aggToCoreLinkDelay'))
-    pctPacedBack = convert_to_float(config.get('Settings', 'pctPacedBack'))
-    appDataRate = convert_to_float(config.get('Settings', 'appDataRate'))
-    duration = convert_to_float(config.get('Settings', 'duration'))
     steadyStart = convert_to_float(config.get('Settings', 'steadyStart'))
     steadyEnd = convert_to_float(config.get('Settings', 'steadyEnd'))
-    sampleRate = convert_to_float(config.get('Settings', 'sampleRate'))
     experiments = int(config.get('Settings', 'experiments'))
     serviceRateScales = [float(x) for x in config.get('Settings', 'serviceRateScales').split(',')]
 
-    # print("hostToTorLinkRate: ", hostToTorLinkRate, " Mbps")
-    # print("torToAggLinkRate: ", torToAggLinkRate)
-    # print("aggToCoreLinkRate: ", aggToCoreLinkRate, " Mbps")
-    # print("hostToTorLinkDelay: ", hostToTorLinkDelay, " ms")
-    # print("torToAggLinkDelay: ", torToAggLinkDelay, " ms")
-    # print("aggToCoreLinkDelay: ", aggToCoreLinkDelay, " ms")
-    # print("pctPacedBack: ", pctPacedBack, " %")
-    # print("appDataRate: ", appDataRate, " Mbps")
-    # print("duration: ", duration, " s")
-    # print("steadyStart: ", steadyStart, " s")
-    # print("steadyEnd: ", steadyEnd, " s")
-    # print("sampleRate", sampleRate)
-    # print("experiments: ", experiments)
-    # print("serviceRateScales: ", serviceRateScales)
-    serviceRateScales = [0.85, 0.87, 0.89, 0.91, 0.93, 0.95, 0.97, 0.99, 1.01, 1.03, 1.05, 1.07, 1.09, 1.11, 1.13, 1.15]
-    # serviceRateScales = [0.85]
-    # experiments = 1
-    # steadyStart = 4
-    # steadyEnd = 9
+    serviceRateScales = [1.0]
+    experiments = 1
 
     for rate in serviceRateScales:
         print("\nAnalyzing experiments for rate: ", rate)
-        analyze_all_experiments(rate, steadyStart, steadyEnd, confidenceValue, experiments_start=0, experiments_end=experiments, ns3_path=__ns3_path)
+        analyze_all_experiments(rate, steadyStart, steadyEnd, confidenceValue, args.dir, experiments_end=experiments, ns3_path=__ns3_path)
         print("Rate {} {} done".format(rate, experiments))
 
 __main__()

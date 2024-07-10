@@ -3,7 +3,7 @@ add_library(
   monitors_module
   monitors_module/AppKey.cc
   monitors_module/PacketKey.cc
-  monitors_module/PacketMonitor.cc
+  monitors_module/E2EMonitor.cc
   monitors_module/SwitchMonitor.cc
   monitors_module/PoissonSampler.cc
   monitors_module/RegularSampler.cc

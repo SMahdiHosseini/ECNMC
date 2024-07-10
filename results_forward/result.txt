@@ -1,0 +1,203 @@
+-- Using default output directory /home/shossein/ns-allinone-3.41/ns-3.41/build
+-- [33mProceeding without cmake-format[0m
+-- Could NOT find PkgConfig (missing: PKG_CONFIG_EXECUTABLE) 
+-- [33mdocs: doxygen documentation not enabled due to missing dependencies: doxygen dot dia[0m
+-- Failed to locate sphinx-build executable (missing: SPHINX_EXECUTABLE) 
+-- [33mdocs: sphinx documentation not enabled due to missing dependencies: Sphinx epstopdf pdflatex latexmk convert dvipng[0m
+-- Precompiled headers were enabled
+-- Processing src/antenna
+-- Processing src/aodv
+-- Processing src/applications
+-- Processing src/bridge
+-- Processing src/brite
+-- [33mSkipping src/brite[0m
+-- Processing src/buildings
+-- Processing src/click
+-- [33mSkipping src/click[0m
+-- Processing src/config-store
+-- Processing src/core
+-- Boost Units have been found.
+-- Processing src/csma
+-- Processing src/csma-layout
+-- Processing src/dsdv
+-- Processing src/dsr
+-- Processing src/energy
+-- Processing src/fd-net-device
+-- Could NOT find PkgConfig (missing: PKG_CONFIG_EXECUTABLE) 
+-- Processing src/flow-monitor
+-- Processing src/internet
+-- Processing src/internet-apps
+-- Processing src/lr-wpan
+-- Processing src/lte
+-- Processing src/mesh
+-- Processing src/mobility
+-- Processing src/netanim
+-- Processing src/network
+-- Processing src/nix-vector-routing
+-- Processing src/olsr
+-- Processing src/openflow
+-- [33mSkipping src/openflow[0m
+-- Processing src/point-to-point
+-- Processing src/point-to-point-layout
+-- Processing src/propagation
+-- Processing src/sixlowpan
+-- Processing src/spectrum
+-- Processing src/stats
+-- Processing src/tap-bridge
+-- Processing src/test
+-- Processing src/topology-read
+-- Processing src/traffic-control
+-- Processing src/uan
+-- Processing src/virtual-net-device
+-- Processing src/wifi
+-- Processing src/wimax
+-- ---- Summary of ns-3 settings:
+Build profile                 : default
+Build directory               : /home/shossein/ns-allinone-3.41/ns-3.41/build
+Build with runtime asserts    : [32mON[0m
+Build with runtime logging    : [32mON[0m
+Build version embedding       : OFF (not requested)
+BRITE Integration             : [31mOFF (Missing headers: "Brite.h" and missing libraries: "brite")[0m
+DES Metrics event collection  : OFF (not requested)
+DPDK NetDevice                : OFF (not requested)
+Emulation FdNetDevice         : [32mON[0m
+Examples                      : [32mON[0m
+File descriptor NetDevice     : [32mON[0m
+GNU Scientific Library (GSL)  : [31mOFF (GSL was not found)[0m
+GtkConfigStore                : [31mOFF (Harfbuzz is required by GTK3 and was not found)[0m
+LibXml2 support               : [32mON[0m
+MPI Support                   : OFF (not requested)
+ns-3 Click Integration        : [31mOFF (Missing headers: "simclick.h" and missing libraries: "nsclick click")[0m
+ns-3 OpenFlow Integration     : [31mOFF (Missing headers: "openflow.h" and missing libraries: "openflow")[0m
+Netmap emulation FdNetDevice  : [31mOFF (missing dependency)[0m
+PyViz visualizer              : [31mOFF (Python Bindings are disabled)[0m
+Python Bindings               : OFF (not requested)
+SQLite support                : [31mOFF (Missing headers: "sqlite3.h" and missing libraries: "sqlite3")[0m
+Eigen3 support                : [31mOFF (Eigen was not found)[0m
+Tap Bridge                    : [32mON[0m
+Tap FdNetDevice               : [32mON[0m
+Tests                         : [32mON[0m
+
+
+Modules configured to be built:
+antenna                   aodv                      applications              
+bridge                    buildings                 config-store              
+core                      csma                      csma-layout               
+dsdv                      dsr                       energy                    
+fd-net-device             flow-monitor              internet                  
+internet-apps             lr-wpan                   lte                       
+mesh                      mobility                  netanim                   
+network                   nix-vector-routing        olsr                      
+point-to-point            point-to-point-layout     propagation               
+sixlowpan                 spectrum                  stats                     
+tap-bridge                test                      topology-read             
+traffic-control           uan                       virtual-net-device        
+wifi                      wimax                     
+
+Modules that cannot be built:
+brite                     click                     mpi                       
+openflow                  visualizer                
+
+
+-- Configuring done
+-- Generating done
+-- Build files have been written to: /home/shossein/ns-allinone-3.41/ns-3.41/cmake-cache
+Consolidate compiler generated dependencies of target stdlib_pch_exec
+Consolidate compiler generated dependencies of target stdlib_pch-default
+Consolidate compiler generated dependencies of target helper_classes
+Consolidate compiler generated dependencies of target raw-sock-creator
+Consolidate compiler generated dependencies of target traffic_generator_module
+Consolidate compiler generated dependencies of target monitors_module
+[  0%] Building CXX object scratch/ECNMC/CMakeFiles/monitors_module.dir/monitors_module/E2EMonitor.cc.o
+Consolidate compiler generated dependencies of target libcore-obj
+Consolidate compiler generated dependencies of target libantenna-obj
+Consolidate compiler generated dependencies of target libconfig-store-obj
+Consolidate compiler generated dependencies of target libstats-obj
+Consolidate compiler generated dependencies of target libnetwork-obj
+Consolidate compiler generated dependencies of target tap-device-creator
+Consolidate compiler generated dependencies of target libvirtual-net-device-obj
+Consolidate compiler generated dependencies of target libbridge-obj
+Consolidate compiler generated dependencies of target libcsma-obj
+Consolidate compiler generated dependencies of target libtopology-read-obj
+Consolidate compiler generated dependencies of target libpoint-to-point-obj
+Consolidate compiler generated dependencies of target libfd-net-device-obj
+Consolidate compiler generated dependencies of target libenergy-obj
+Consolidate compiler generated dependencies of target libmobility-obj
+Consolidate compiler generated dependencies of target libtraffic-control-obj
+Consolidate compiler generated dependencies of target libpropagation-obj
+Consolidate compiler generated dependencies of target libuan-obj
+Consolidate compiler generated dependencies of target libbuildings-obj
+Consolidate compiler generated dependencies of target libspectrum-obj
+Consolidate compiler generated dependencies of target liblr-wpan-obj
+Consolidate compiler generated dependencies of target libinternet-obj
+Consolidate compiler generated dependencies of target libcsma-layout-obj
+Consolidate compiler generated dependencies of target libolsr-obj
+Consolidate compiler generated dependencies of target libpoint-to-point-layout-obj
+Consolidate compiler generated dependencies of target libsixlowpan-obj
+Consolidate compiler generated dependencies of target libtap-bridge-obj
+Consolidate compiler generated dependencies of target libnix-vector-routing-obj
+Consolidate compiler generated dependencies of target libflow-monitor-obj
+Consolidate compiler generated dependencies of target libinternet-apps-obj
+Consolidate compiler generated dependencies of target libapplications-obj
+Consolidate compiler generated dependencies of target libwimax-obj
+Consolidate compiler generated dependencies of target libwifi-obj
+Consolidate compiler generated dependencies of target libaodv-obj
+Consolidate compiler generated dependencies of target liblte-obj
+Consolidate compiler generated dependencies of target libmesh-obj
+Consolidate compiler generated dependencies of target libnetanim-obj
+Consolidate compiler generated dependencies of target libdsdv-obj
+Consolidate compiler generated dependencies of target libdsr-obj
+[  2%] Linking CXX static library ../../../build/lib/libmonitors_module.a
+Consolidate compiler generated dependencies of target scratch_ECNMC_DatacenterSimulation
+[  2%] Building CXX object scratch/ECNMC/CMakeFiles/scratch_ECNMC_DatacenterSimulation.dir/DatacenterSimulation.cc.o
+[  2%] Linking CXX executable ../../../build/scratch/ECNMC/ns3.41-DatacenterSimulation-default
+
+Start
+Hosts and Switches IP addresses
+Rack: 0 Host: 0 Id:0 IP: 10.1.1.1
+Rack: 0 Host: 1 Id:1 IP: 10.1.2.1
+Rack: 0 Host: 2 Id:2 IP: 10.1.3.1
+Rack: 0 Host: 3 Id:3 IP: 10.1.4.1
+Rack: 0 Host: 4 Id:4 IP: 10.1.5.1
+Rack: 0 Host: 5 Id:5 IP: 10.1.6.1
+Rack: 1 Host: 0 Id:6 IP: 10.2.1.1
+Rack: 1 Host: 1 Id:7 IP: 10.2.2.1
+Rack: 1 Host: 2 Id:8 IP: 10.2.3.1
+Rack: 1 Host: 3 Id:9 IP: 10.2.4.1
+Rack: 1 Host: 4 Id:10 IP: 10.2.5.1
+Rack: 1 Host: 5 Id:11 IP: 10.2.6.1
+Rack: 2 Host: 0 Id:12 IP: 10.3.1.1
+Rack: 2 Host: 1 Id:13 IP: 10.3.2.1
+Rack: 2 Host: 2 Id:14 IP: 10.3.3.1
+Rack: 2 Host: 3 Id:15 IP: 10.3.4.1
+Rack: 2 Host: 4 Id:16 IP: 10.3.5.1
+Rack: 2 Host: 5 Id:17 IP: 10.3.6.1
+Rack: 3 Host: 0 Id:18 IP: 10.4.1.1
+Rack: 3 Host: 1 Id:19 IP: 10.4.2.1
+Rack: 3 Host: 2 Id:20 IP: 10.4.3.1
+Rack: 3 Host: 3 Id:21 IP: 10.4.4.1
+Rack: 3 Host: 4 Id:22 IP: 10.4.5.1
+Rack: 3 Host: 5 Id:23 IP: 10.4.6.1
+Config Parameters
+hostToTorLinkRate: 20Mbps
+hostToTorLinkRateCrossTraffic: 50Mbps
+hostToTorLinkDelay: 50us
+torToAggLinkRate: 63.0Mbps
+torToAggLinkDelay: 50us
+aggToCoreLinkRate: 63Mbps
+aggToCoreLinkDelay: 50us
+appDataRate: 10Mbps
+duration: 5
+pctPacedBack: 0.8
+enableSwitchECN: 1
+enableECMP: 1
+sampleRate: 300
+errorRate: 0
+dirName: forward
+experiment: 1
+trafficStartTime: 0.0
+trafficStopTime: 5.0
+steadyStartTime: 2
+steadyEndTime: 4
+Done 
+Total execution time = 105310554 microsecond

@@ -22,10 +22,13 @@ private:
     Ptr<Node> _sender;
     Ptr<Node> _receiver;
     double _pctOfPacedTcp;
+    Time _trafficStartTime;
+    Time _trafficEndTime;
 
     void RunSingleTrace(const string& tracePath, const string& protocol, uint8_t dscp);
 
 public:
+    BackgroundReplay(const Ptr<Node>& sender, const Ptr<Node>& receiver, Time trafficStartTime, Time trafficEndTime);
     BackgroundReplay(const Ptr<Node>& sender, const Ptr<Node>& receiver);
     void SetPctOfPacedTcps(double pct);
 

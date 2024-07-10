@@ -26,7 +26,6 @@ private:
     ns3::Time _sampleTime = Time(-1);
     ns3::Time _departureTime = Time(-1);
     double _markingProb = 0;
-    double _markingProb_2 = 0;
 
 public:
     explicit samplingEvent(PacketKey *key);
@@ -35,13 +34,11 @@ public:
     [[nodiscard]] Time GetSampleTime() const;
     [[nodiscard]] Time GetDepartureTime() const;
     [[nodiscard]] double GetMarkingProb() const;
-    [[nodiscard]] double GetMarkingProb_2() const;
     [[nodiscard]] bool IsDeparted() const;
 
     void SetSampleTime();
     void SetDepartureTime();
     void SetMarkingProb(double markingProb);
-    void SetMarkingProb_2(double markingProb);
 
     friend ostream &operator<<(ostream &os, const samplingEvent &event);
 };

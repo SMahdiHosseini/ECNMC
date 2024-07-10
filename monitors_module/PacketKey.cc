@@ -68,6 +68,7 @@ const SequenceNumber32 &PacketKey::GetSeqNb() const { return _seqNb; }
 const SequenceNumber32 &PacketKey::GetAckNb() const { return _ackNb; }
 uint32_t PacketKey::GetSize() const { return _size; }
 size_t PacketKey::GetPayloadHash() const { return _payloadHash; }
+size_t PacketKey::GetPacketSize() const { return _packetSize; }
 int PacketKey::GetRecords() const { return records; }
 int PacketKey::GetPath() const { return path; }
 bool PacketKey::GetEcn() const { return ecn; }
@@ -147,6 +148,7 @@ std::size_t PacketKeyHash::operator()(PacketKey const &packetKey) const noexcept
 }
 
 void PacketKey::SetPayloadHash(size_t payloadHash) { _payloadHash = payloadHash; }
+void PacketKey::SetPacketSize(size_t packetSize) { _packetSize = packetSize; }
 void PacketKey::SetSize(uint32_t size) { _size = size; }
 void PacketKey::SetAckNb(const SequenceNumber32 &ackNb) { _ackNb = ackNb; }
 void PacketKey::SetSeqNb(const SequenceNumber32 &seqNb) { _seqNb = seqNb; }

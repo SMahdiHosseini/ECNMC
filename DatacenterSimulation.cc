@@ -11,7 +11,7 @@
 #include "ns3/point-to-point-module.h"
 #include "ns3/traffic-control-module.h"
 #include "ns3/flow-monitor-module.h"
-#include "monitors_module/PacketMonitor.h"
+#include "monitors_module/E2EMonitor.h"
 #include "monitors_module/SwitchMonitor.h"
 #include "monitors_module/PoissonSampler.h"
 #include "monitors_module/RegularSampler.h"
@@ -68,7 +68,12 @@ int main(int argc, char* argv[])
     string aggToCoreLinkRate = "10Mbps";               // Links bandwith between Agg and Core switches
     string aggToCoreLinkDelay = "10us";                // Links delay between Agg and Core switches
     string appDataRate = "10Mbps";                     // Application data rate
-    string duration = "10";                            // Duration of the simulation
+    string duration = "20";                            // Duration of the simulation
+    string trafficStartTime = "0";                     // Start time of the traffic
+    string trafficStopTime = "20";                     // Stop time of the traffic
+    string steadyStartTime = "3";                      // Start time of the steady state
+    string steadyStopTime = "10";                      // Stop time of the steady state
+    string dirName = "";                               // Directory name for the output files
     double pctPacedBack = 0.8;                         // the percentage of tcp flows of the CAIDA trace to be paced
     bool enableSwitchECN = true;                       // Enable ECN on the switches
     bool enableECMP = true;                            // Enable ECMP on the switches
@@ -90,6 +95,10 @@ int main(int argc, char* argv[])
     cmd.AddValue("enableSwichECN", "Enable ECN on the switches", enableSwitchECN);
     cmd.AddValue("enableECMP", "Enable ECMP on the switches", enableECMP);
     cmd.AddValue("duration", "Duration of the simulation", duration);
+    cmd.AddValue("trafficStartTime", "Start time of the traffic", trafficStartTime);
+    cmd.AddValue("trafficStopTime", "Stop time of the traffic", trafficStopTime);
+    cmd.AddValue("steadyStartTime", "Start time of the steady state for measuring", steadyStartTime);
+    cmd.AddValue("steadyStopTime", "Stop time of the steady state for measuring", steadyStopTime);
     cmd.AddValue("pctPacedBack", "the percentage of tcp flows of the CAIDA trace to be paced", pctPacedBack);
     cmd.AddValue("sampleRate", "Sample rate for the PoissonSampler", sampleRate);
     cmd.AddValue("hostToTorLinkRateCrossTraffic", "Links bandwith between hosts and ToR switches for the cross traffic", hostToTorLinkRateCrossTraffic);
@@ -97,6 +106,7 @@ int main(int argc, char* argv[])
     cmd.AddValue("maxTh", "RED Queue Disc MaxTh", maxTh);
     cmd.AddValue("experiment", "Experiment number", experiment);
     cmd.AddValue("errorRate", "Silent Packet Drop Error rate", errorRate);
+    cmd.AddValue("dirName", "Directory name for the output files", dirName);
     cmd.Parse(argc, argv);
 
     /*set default values*/
@@ -286,16 +296,16 @@ int main(int argc, char* argv[])
 
     Ipv4GlobalRoutingHelper::PopulateRoutingTables();
 
-    /* Erro Model Setup for Silent packet drops*/
-    Ptr<RateErrorModel> em_R0H0T0 = CreateObject<RateErrorModel>();
-    em_R0H0T0->SetAttribute("ErrorRate", DoubleValue(errorRate));
-    em_R0H0T0->SetUnit(RateErrorModel::ErrorUnit::ERROR_UNIT_PACKET);
-    hostsToTorsNetDevices[0][0].Get(1)->SetAttribute("ReceiveErrorModel", PointerValue(em_R0H0T0));
+    // /* Erro Model Setup for Silent packet drops*/
+    // Ptr<RateErrorModel> em_R0H0T0 = CreateObject<RateErrorModel>();
+    // em_R0H0T0->SetAttribute("ErrorRate", DoubleValue(errorRate));
+    // em_R0H0T0->SetUnit(RateErrorModel::ErrorUnit::ERROR_UNIT_PACKET);
+    // hostsToTorsNetDevices[0][0].Get(1)->SetAttribute("ReceiveErrorModel", PointerValue(em_R0H0T0));
 
-    Ptr<RateErrorModel> em_R0H1T0 = CreateObject<RateErrorModel>();
-    em_R0H1T0->SetAttribute("ErrorRate", DoubleValue(errorRate));
-    em_R0H1T0->SetUnit(RateErrorModel::ErrorUnit::ERROR_UNIT_PACKET);
-    hostsToTorsNetDevices[0][1].Get(1)->SetAttribute("ReceiveErrorModel", PointerValue(em_R0H1T0));
+    // Ptr<RateErrorModel> em_R0H1T0 = CreateObject<RateErrorModel>();
+    // em_R0H1T0->SetAttribute("ErrorRate", DoubleValue(errorRate));
+    // em_R0H1T0->SetUnit(RateErrorModel::ErrorUnit::ERROR_UNIT_PACKET);
+    // hostsToTorsNetDevices[0][1].Get(1)->SetAttribute("ReceiveErrorModel", PointerValue(em_R0H1T0));
     /* ########## END: Ceating the topology ########## */
 
 
@@ -304,7 +314,7 @@ int main(int argc, char* argv[])
     // CAIDA trace replay
     // Each host in R0 sends a flow to the corresponding host in R2
     for (int i = 0; i < nHosts; i++) {
-        auto* caidaTrafficGenerator = new BackgroundReplay(racks[0].Get(i), racks[2].Get(i));
+        auto* caidaTrafficGenerator = new BackgroundReplay(racks[0].Get(i), racks[2].Get(i), Seconds(stof(trafficStartTime)), Seconds(stof(trafficStopTime)));
         caidaTrafficGenerator->SetPctOfPacedTcps(pctPacedBack);
         // string tracesPath = "/home/mahdi/Documents/NAL/Data/chicago_2010_traffic_10min_2paths/path" + to_string(i % 2);
         // string tracesPath = "/home/mahdi/Documents/Data/chicago_2010_traffic_10min_2paths/path" + to_string(i % 2);
@@ -318,7 +328,7 @@ int main(int argc, char* argv[])
 
     // each host in R1 sends a flow to the corresponding host in R3
     for (int i = 0; i < nHosts; i++) {
-        auto* caidaTrafficGenerator = new BackgroundReplay(racks[1].Get(i), racks[3].Get(i));
+        auto* caidaTrafficGenerator = new BackgroundReplay(racks[1].Get(i), racks[3].Get(i), Seconds(stof(trafficStartTime)), Seconds(stof(trafficStopTime)));
         caidaTrafficGenerator->SetPctOfPacedTcps(pctPacedBack);
         // string tracesPath = "/home/mahdi/Documents/NAL/Data/chicago_2010_traffic_10min_2paths/path" + to_string(i % 2);
         // string tracesPath = "/home/mahdi/Documents/Data/chicago_2010_traffic_10min_2paths/path" + to_string(i % 2);
@@ -413,17 +423,17 @@ int main(int argc, char* argv[])
     ns3::PacketMetadata::Enable(); // Enable packet metadata for debugging
 
     // End to End Monitors
-    vector<PacketMonitor *> endToendMonitors;
+    vector<E2EMonitor *> endToendMonitors;
     // Monitor the packets between each pair of hosts in R0 and R2
     for (int i = 0; i < nHosts; i++) {
-        auto *R0R2Monitor = new PacketMonitor(startTime, stopTime + convergenceTime, racks[0].Get(i), racks[2].Get(i), "R0H" + to_string(i) + "R2H" + to_string(i), errorRate);
+        auto *R0R2Monitor = new E2EMonitor(startTime, stopTime + convergenceTime, DynamicCast<PointToPointNetDevice>(hostsToTorsNetDevices[0][i].Get(0)), racks[2].Get(i), "R0H" + to_string(i) + "R2H" + to_string(i), errorRate);
         R0R2Monitor->AddAppKey(AppKey(ipsRacks[0][i].GetAddress(0), ipsRacks[2][i].GetAddress(0), 0, 0));
         endToendMonitors.push_back(R0R2Monitor);
     }
 
     // Monitor the packets between each pair of hosts in R1 and R3
     for (int i = 0; i < nHosts; i++) {
-        auto *R1R3Monitor = new PacketMonitor(startTime, stopTime + convergenceTime, racks[1].Get(i), racks[3].Get(i), "R1H" + to_string(i) + "R3H" + to_string(i), errorRate);
+        auto *R1R3Monitor = new E2EMonitor(startTime, stopTime + convergenceTime, DynamicCast<PointToPointNetDevice>(hostsToTorsNetDevices[1][i].Get(0)), racks[3].Get(i), "R1H" + to_string(i) + "R3H" + to_string(i), errorRate);
         R1R3Monitor->AddAppKey(AppKey(ipsRacks[1][i].GetAddress(0), ipsRacks[3][i].GetAddress(0), 0, 0));
         endToendMonitors.push_back(R1R3Monitor);
     }
@@ -568,7 +578,13 @@ int main(int argc, char* argv[])
     cout << "enableECMP: " << enableECMP << endl;
     cout << "sampleRate: " << sampleRate << endl;
     cout << "errorRate: " << errorRate << endl;
-    cout << "T0 id " << torSwitches.Get(0)->GetId() << endl;
+    cout << "dirName: " << dirName << endl;
+    cout << "experiment: " << experiment << endl;
+    cout << "trafficStartTime: " << trafficStartTime << endl;
+    cout << "trafficStopTime: " << trafficStopTime << endl;
+    cout << "steadyStartTime: " << steadyStartTime << endl;
+    cout << "steadyEndTime: " << steadyStopTime << endl;
+
     /* ########## END: Check Config ########## */
 
 
@@ -589,22 +605,22 @@ int main(int argc, char* argv[])
     Simulator::Destroy();
 
     for (auto monitor: endToendMonitors) {
-        monitor->SavePacketRecords((string) (getenv("PWD")) + "/results/" + to_string(experiment)  + "/" + monitor->GetMonitorTag() + "_EndToEnd.csv");
+        monitor->SavePacketRecords((string) (getenv("PWD")) + "/results_" + dirName + "/" + to_string(experiment)  + "/" + monitor->GetMonitorTag() + "_EndToEnd.csv");
     }
     for (auto monitor: hostNetDeviceMonitors) {
-        monitor->SavePacketRecords((string) (getenv("PWD")) + "/results/" + to_string(experiment)  + "/" + monitor->GetMonitorTag() + "_start.csv");
+        monitor->SavePacketRecords((string) (getenv("PWD")) + "/results_" + dirName + "/" + to_string(experiment)  + "/" + monitor->GetMonitorTag() + "_start.csv");
     }
     for (auto monitor: torSwitchMonitors) {
-        monitor->SavePacketRecords((string) (getenv("PWD")) + "/results/" + to_string(experiment)  + "/" + monitor->GetMonitorTag() + "_Switch.csv");
+        monitor->SavePacketRecords((string) (getenv("PWD")) + "/results_" + dirName + "/" +  to_string(experiment)  + "/" + monitor->GetMonitorTag() + "_Switch.csv");
     }
     for (auto monitor: aggSwitchMonitors) {
-        monitor->SavePacketRecords((string) (getenv("PWD")) + "/results/" + to_string(experiment)  + "/" + monitor->GetMonitorTag() + "_Switch.csv");
+        monitor->SavePacketRecords((string) (getenv("PWD")) + "/results_" + dirName + "/" + to_string(experiment)  + "/" + monitor->GetMonitorTag() + "_Switch.csv");
     }
     for (auto monitor: coreSwitchMonitors) {
-        monitor->SavePacketRecords((string) (getenv("PWD")) + "/results/" + to_string(experiment)  + "/" + monitor->GetMonitorTag() + "_Switch.csv");
+        monitor->SavePacketRecords((string) (getenv("PWD")) + "/results_" + dirName + "/" + to_string(experiment)  + "/" + monitor->GetMonitorTag() + "_Switch.csv");
     }
     for (auto monitor: PoissonSamplers) {
-        monitor->SaveSamples((string) (getenv("PWD")) + "/results/" + to_string(experiment)  + "/" + monitor->GetSampleTag() + "_PoissonSampler.csv");
+        monitor->SaveSamples((string) (getenv("PWD")) + "/results_" + dirName + "/" + to_string(experiment)  + "/" + monitor->GetSampleTag() + "_PoissonSampler.csv");
     }
     /* ########## END: Scheduling and  Running ########## */
 

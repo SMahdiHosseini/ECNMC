@@ -9,12 +9,10 @@ samplingEvent::samplingEvent(PacketKey *key) : _key(key) {}
 void samplingEvent::SetSampleTime() { _sampleTime = ns3::Simulator::Now(); }
 void samplingEvent::SetDepartureTime() { _departureTime = ns3::Simulator::Now(); }
 void samplingEvent::SetMarkingProb(double markingProb) { _markingProb = markingProb; }
-void samplingEvent::SetMarkingProb_2(double markingProb) { _markingProb_2 = markingProb; }
 PacketKey *samplingEvent::GetPacketKey() const { return _key; }
 Time samplingEvent::GetSampleTime() const { return _sampleTime; }
 Time samplingEvent::GetDepartureTime() const { return _departureTime; }
 double samplingEvent::GetMarkingProb() const { return _markingProb; }
-double samplingEvent::GetMarkingProb_2() const { return _markingProb_2; }
 bool samplingEvent::IsDeparted() const { return _departureTime != Time(-1); }
 
 ostream &operator<<(ostream &os, const samplingEvent &event) {
@@ -76,7 +74,6 @@ void PoissonSampler::EventHandler() {
     PacketKey* packetKey;
     bool zeroDelay = false;
     bool drop = false;
-    bool drop_2 = false;
     if (REDQueueDisc != nullptr && REDQueueDisc->GetNPackets() > 0) {
         // check the quque disc size
         if (REDQueueDisc->GetNPackets() > 0) {
@@ -95,9 +92,6 @@ void PoissonSampler::EventHandler() {
             if ((QueueSize("37.5KB").GetValue() - REDQueueDisc->GetCurrentSize().GetValue()) < QueueSize("700B").GetValue()) {
                 drop = true;
             }
-            if ((QueueSize("37.5KB").GetValue() - REDQueueDisc->GetCurrentSize().GetValue()) < QueueSize("64B").GetValue()) {
-                drop_2 = true;
-            }
 
         }
     }
@@ -105,7 +99,6 @@ void PoissonSampler::EventHandler() {
         packetKey = PacketKey::Packet2PacketKey(lastPacket, FIRST_HEADER_PPP);
         if ((REDQueueDisc == nullptr) && (NetDeviceQueue->GetCurrentSize() >= QueueSize("100p"))) {
             drop = true;
-            drop_2 = true;
         }
     }
     else {
@@ -131,9 +124,6 @@ void PoissonSampler::EventHandler() {
     // }
     if (drop) {
         event->SetMarkingProb(1.0);
-    }
-    if (drop_2) {
-        event->SetMarkingProb_2(1.0);
     }
     // Generate a new event
     double nextEvent = m_var->GetValue();
@@ -174,7 +164,7 @@ void PoissonSampler::RecordPacket(Ptr<const Packet> packet) {
 void PoissonSampler::SaveSamples(const string& filename) {
     ofstream outfile;
     outfile.open(filename);
-    outfile << "SourceIp,SourcePort,DestinationIp,DestinationPort,SequenceNb,Id,PayloadSize,SampleTime,IsDeparted,DepartTime,MarkingProb,MarkingProb_2" << endl;
+    outfile << "SourceIp,SourcePort,DestinationIp,DestinationPort,SequenceNb,Id,PayloadSize,SampleTime,IsDeparted,DepartTime,MarkingProb" << endl;
     for (auto& packetKeyEventPair: _recordedSamples) {
         PacketKey key = packetKeyEventPair.first;
         samplingEvent* event = packetKeyEventPair.second;
@@ -184,7 +174,7 @@ void PoissonSampler::SaveSamples(const string& filename) {
         outfile << GetRelativeTime(event->GetSampleTime()).GetNanoSeconds() << ",";
         outfile << event->IsDeparted() << "," << GetRelativeTime(event->GetDepartureTime()).GetNanoSeconds() << ",";
         outfile << std::fixed << std::setprecision(10);
-        outfile << event->GetMarkingProb() << "," << event->GetMarkingProb_2() << endl;
+        outfile << event->GetMarkingProb() << "," << endl;
     }
     outfile.close();
 }

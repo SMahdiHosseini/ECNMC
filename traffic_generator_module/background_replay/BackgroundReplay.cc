@@ -12,7 +12,8 @@
 
 uint32_t BackgroundReplay::SOCKET_COUNT = 0;
 
-BackgroundReplay::BackgroundReplay(const Ptr<Node>& sender, const Ptr<Node>& receiver) : _sender(sender), _receiver(receiver) {}
+BackgroundReplay::BackgroundReplay(const Ptr<Node>& sender, const Ptr<Node>& receiver, Time trafficStartTime, Time trafficEndTime) : _sender(sender), _receiver(receiver), _trafficStartTime(trafficStartTime), _trafficEndTime(trafficEndTime) {}
+BackgroundReplay::BackgroundReplay(const Ptr<Node>& sender, const Ptr<Node>& receiver) : _sender(sender), _receiver(receiver), _trafficStartTime(Seconds(0.0)), _trafficEndTime(Seconds(0.0)) {}
 
 void BackgroundReplay::SetPctOfPacedTcps(double pct) {
     _pctOfPacedTcp = pct;
@@ -136,6 +137,8 @@ void BackgroundReplay::RunSingleTrace(const string& tracePath, const string& pro
     replayHelperClient.SetAttribute("Protocol", StringValue(protocol));
     replayHelperClient.SetAttribute("TraceFile", StringValue(tracePath));
     replayHelperClient.SetAttribute("EnablePacing", BooleanValue(enablePacing));
+    replayHelperClient.SetAttribute("TrafficStartTime", TimeValue(_trafficStartTime));
+    replayHelperClient.SetAttribute("TrafficEndTime", TimeValue(_trafficEndTime));
     ApplicationContainer replayAppClient = replayHelperClient.Install(_sender);
     replayAppClient.Start(Simulator::Now());
 }

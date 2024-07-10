@@ -30,6 +30,14 @@ TypeId TraceReplaySender::GetTypeId() {
                            BooleanValue (true),
                            MakeBooleanAccessor(&TraceReplaySender::_enablePacing),
                            MakeBooleanChecker())
+            .AddAttribute ("TrafficStartTime", "the time at which the traffic starts",
+                           TimeValue (Seconds(0)),
+                           MakeTimeAccessor (&TraceReplaySender::_trafficStartTime),
+                           MakeTimeChecker())
+            .AddAttribute ("TrafficEndTime", "the time at which the traffic ends",
+                            TimeValue (Seconds(0)),
+                            MakeTimeAccessor (&TraceReplaySender::_trafficEndTime),
+                            MakeTimeChecker())
     ;
     return tid;
 }
@@ -63,13 +71,15 @@ void TraceReplaySender::LoadTrace(const string& traceFile) {
         uint32_t frameNb = stoi(pkt_attributes[0]);
         Time timestamp = Seconds(stod(pkt_attributes[1]));
         uint32_t payload_size = stoi(pkt_attributes[2]);
-
+        if (timestamp < _trafficStartTime || (timestamp > _trafficEndTime && _trafficEndTime != Seconds(0))) { continue; }
+        timestamp = timestamp - _trafficStartTime;
         _traceItems.push_back({frameNb, timestamp, payload_size});
     }
     traceInput.close();
-
-    _startEvent = Simulator::Schedule(_traceItems.front().timestamp, &TraceReplaySender::PrepareSocket, this);
-    Simulator::Schedule(_traceItems.back().timestamp + Seconds(1), &TraceReplaySender::StopApplication, this);
+    if (!_traceItems.empty()) {
+        _startEvent = Simulator::Schedule(_traceItems.front().timestamp, &TraceReplaySender::PrepareSocket, this);
+        Simulator::Schedule(_traceItems.back().timestamp + Seconds(1), &TraceReplaySender::StopApplication, this);
+    }
 }
 
 void TraceReplaySender::DoDispose() {
