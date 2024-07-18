@@ -33,8 +33,10 @@ class E2EMonitor : public Monitor {
 
 private:
     double _errorRate;
-    ns3::Time averageDelay;
-    uint32_t _receivedPackets;
+    ns3::Time sumOfDelays;
+    uint32_t receivedPackets;
+    uint32_t sentPackets;
+    uint32_t markedPackets;
 
     std::unordered_map<PacketKey, E2EMonitorEvent*, PacketKeyHash> _recordedPackets;
 
@@ -45,7 +47,7 @@ private:
     void RecordIpv4PacketReceived(Ptr<const Packet> packet, Ptr<Ipv4> ipv4, uint32_t interface);
 
 public:
-    E2EMonitor(const Time &startTime, const Time &duration, const Ptr<PointToPointNetDevice> netDevice, const Ptr<Node> &rxNode, const string &monitorTag, const double errorRate);
+    E2EMonitor(const Time &startTime, const Time &duration, const Time &steadyStartTime, const Time &steadyStopTime, const Ptr<PointToPointNetDevice> netDevice, const Ptr<Node> &rxNode, const string &monitorTag, const double errorRate);
     void SaveMonitorRecords(const string &filename);
 };
 

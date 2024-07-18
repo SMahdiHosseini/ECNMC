@@ -12,9 +12,13 @@ bool E2EMonitorEvent::GetEcn() const { return _key->GetEcn(); }
 int E2EMonitorEvent::GetPath() const { return _key->GetPath(); }
 
 
-E2EMonitor::E2EMonitor(const Time &startTime, const Time &duration, const Ptr<PointToPointNetDevice> netDevice, const Ptr<Node> &rxNode, const string &monitorTag, double errorRate) 
-: Monitor(startTime, duration, Seconds(0), Seconds(0), monitorTag) {
+E2EMonitor::E2EMonitor(const Time &startTime, const Time &duration, const Time &steadyStartTime, const Time &steadyStopTime, const Ptr<PointToPointNetDevice> netDevice, const Ptr<Node> &rxNode, const string &monitorTag, double errorRate) 
+: Monitor(startTime, duration, steadyStartTime, steadyStopTime, monitorTag) {
     _errorRate = errorRate;
+    sumOfDelays = Seconds(0);
+    receivedPackets = 0;
+    sentPackets = 0;
+    markedPackets = 0;
 
     Simulator::Schedule(_startTime, &E2EMonitor::Connect, this, netDevice, rxNode->GetId());
     Simulator::Schedule(_startTime + _duration, &E2EMonitor::Disconnect, this, netDevice, rxNode->GetId());
@@ -31,12 +35,16 @@ void E2EMonitor::Disconnect(const Ptr<PointToPointNetDevice> netDevice, uint32_t
 }
 
 void E2EMonitor::Enqueue(Ptr<const Packet> packet) {
+    if (Simulator::Now() < _steadyStartTime || Simulator::Now() > _steadyStopTime) {
+        return;
+    }
     PacketKey* packetKey = PacketKey::Packet2PacketKey(packet, FIRST_HEADER_PPP);
     if(_appsKey.count(AppKey::PacketKey2AppKey(*packetKey))) {
         packetKey->SetPacketSize(packet->GetSize());
         auto *packetEvent = new E2EMonitorEvent(packetKey);
         packetEvent->SetSent();
         _recordedPackets[*packetKey] = packetEvent;
+        sentPackets++;
     }
 }
 
@@ -49,26 +57,15 @@ void E2EMonitor::RecordIpv4PacketReceived(Ptr<const Packet> packet, Ptr<Ipv4> ip
             packet->PeekHeader(header);
             if (header.EcnTypeToString(header.GetEcn()) == "CE") {
                 packetKeyEventPair->second->SetEcn(true);
+                markedPackets++;
             }
             uint64_t hash = DynamicCast<Ipv4L3Protocol>(ipv4)->GetHashValue_out(packetKey->GetSrcIp(), packetKey->GetDstIp(), packetKey->GetSrcPort(), packetKey->GetDstPort(), header.GetProtocol());
             packetKeyEventPair->second->SetPath(hash % 2);
-            
-            // if (_monitorTag == "R0H0R2H0" || _monitorTag == "R0H1R2H1") {
-            //     Ptr<UniformRandomVariable> m_rand = CreateObject<UniformRandomVariable>();
-            //     uint32_t t = m_rand->GetInteger(1, 100);
-            //     if (t < _errorRate * 100){
-            //         Time time = packetKeyEventPair->second->GetSentTime() + Time((ns3::Simulator::Now() - packetKeyEventPair->second->GetSentTime()).GetNanoSeconds() * 1.25);
-            //         packetKeyEventPair->second->SetReceived(time);
-            //         // std::cout << ns3::Simulator::Now().GetNanoSeconds() << "," << packetKey->GetSrcIp() << "," << packetKey->GetSrcPort() << "," << packetKey->GetDstIp() << "," << 
-            //         // packetKey->GetDstPort() << "," << packetKey->GetSeqNb() << "," << packetKey->GetId() << std::endl;
-            //     }
-            //     else{
-            //         packetKeyEventPair->second->SetReceived();
-            //     }
-            // }
-            // else{
-                packetKeyEventPair->second->SetReceived();
-            // }
+            packetKeyEventPair->second->SetReceived();
+            sumOfDelays += packetKeyEventPair->second->GetReceivedTime() - packetKeyEventPair->second->GetSentTime();
+            receivedPackets++;
+            // remove the packet from the map
+            _recordedPackets.erase(packetKeyEventPair);
         }
     }
 }
@@ -76,16 +73,18 @@ void E2EMonitor::RecordIpv4PacketReceived(Ptr<const Packet> packet, Ptr<Ipv4> ip
 void E2EMonitor::SaveMonitorRecords(const string& filename) {
     ofstream outfile;
     outfile.open(filename);
-    outfile << "SourceIp,SourcePort,DestinationIp,DestinationPort,SequenceNb,Id,PayloadSize,PacketSize,Path,SentTime,IsReceived,ReceiveTime,ECN" << endl;
-    for (auto& packetKeyEventPair: _recordedPackets) {
-        PacketKey key = packetKeyEventPair.first;
-        E2EMonitorEvent* event = packetKeyEventPair.second;
+    outfile << "averageDelay,receivedPackets,sentPackets,markedPackets" << endl;
+    outfile << sumOfDelays.GetNanoSeconds() / receivedPackets << "," << receivedPackets << "," << sentPackets << "," << markedPackets << endl;
+    // outfile << "SourceIp,SourcePort,DestinationIp,DestinationPort,SequenceNb,Id,PayloadSize,PacketSize,Path,SentTime,IsReceived,ReceiveTime,ECN" << endl;
+    // for (auto& packetKeyEventPair: _recordedPackets) {
+    //     PacketKey key = packetKeyEventPair.first;
+    //     E2EMonitorEvent* event = packetKeyEventPair.second;
 
-        outfile << key.GetSrcIp() << "," << key.GetSrcPort() << ",";
-        outfile << key.GetDstIp() << "," << key.GetDstPort() << "," << key.GetSeqNb() << "," << key.GetId()  << "," << key.GetSize() << "," << key.GetPacketSize() << ",";
-        outfile << event->GetPath() << ",";
-        outfile << GetRelativeTime(event->GetSentTime()).GetNanoSeconds() << ",";
-        outfile << event->IsReceived() << "," << GetRelativeTime(event->GetReceivedTime()).GetNanoSeconds() << "," << event->GetEcn() << endl;
-    }
+    //     outfile << key.GetSrcIp() << "," << key.GetSrcPort() << ",";
+    //     outfile << key.GetDstIp() << "," << key.GetDstPort() << "," << key.GetSeqNb() << "," << key.GetId()  << "," << key.GetSize() << "," << key.GetPacketSize() << ",";
+    //     outfile << event->GetPath() << ",";
+    //     outfile << GetRelativeTime(event->GetSentTime()).GetNanoSeconds() << ",";
+    //     outfile << event->IsReceived() << "," << GetRelativeTime(event->GetReceivedTime()).GetNanoSeconds() << "," << event->GetEcn() << endl;
+    // }
     outfile.close();
 }
