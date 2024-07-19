@@ -34,6 +34,7 @@ class E2EMonitor : public Monitor {
 private:
     double _errorRate;
     ns3::Time sumOfDelays;
+    uint32_t sumOfPacketSizes;
     uint32_t receivedPackets;
     uint32_t sentPackets;
     uint32_t markedPackets;

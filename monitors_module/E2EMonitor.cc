@@ -16,6 +16,7 @@ E2EMonitor::E2EMonitor(const Time &startTime, const Time &duration, const Time &
 : Monitor(startTime, duration, steadyStartTime, steadyStopTime, monitorTag) {
     _errorRate = errorRate;
     sumOfDelays = Seconds(0);
+    sumOfPacketSizes = 0;
     receivedPackets = 0;
     sentPackets = 0;
     markedPackets = 0;
@@ -62,7 +63,8 @@ void E2EMonitor::RecordIpv4PacketReceived(Ptr<const Packet> packet, Ptr<Ipv4> ip
             uint64_t hash = DynamicCast<Ipv4L3Protocol>(ipv4)->GetHashValue_out(packetKey->GetSrcIp(), packetKey->GetDstIp(), packetKey->GetSrcPort(), packetKey->GetDstPort(), header.GetProtocol());
             packetKeyEventPair->second->SetPath(hash % 2);
             packetKeyEventPair->second->SetReceived();
-            sumOfDelays += packetKeyEventPair->second->GetReceivedTime() - packetKeyEventPair->second->GetSentTime();
+            sumOfPacketSizes += packetKeyEventPair->first.GetPacketSize();
+            sumOfDelays = sumOfDelays + (packetKeyEventPair->second->GetReceivedTime() - packetKeyEventPair->second->GetSentTime());
             receivedPackets++;
             // remove the packet from the map
             _recordedPackets.erase(packetKeyEventPair);
@@ -73,8 +75,8 @@ void E2EMonitor::RecordIpv4PacketReceived(Ptr<const Packet> packet, Ptr<Ipv4> ip
 void E2EMonitor::SaveMonitorRecords(const string& filename) {
     ofstream outfile;
     outfile.open(filename);
-    outfile << "averageDelay,receivedPackets,sentPackets,markedPackets" << endl;
-    outfile << sumOfDelays.GetNanoSeconds() / receivedPackets << "," << receivedPackets << "," << sentPackets << "," << markedPackets << endl;
+    outfile << "averageDelay,averagePacketSize,receivedPackets,sentPackets,markedPackets" << endl;
+    outfile << sumOfDelays.GetNanoSeconds() / receivedPackets << "," << sumOfPacketSizes / receivedPackets << "," << receivedPackets << "," << sentPackets << "," << markedPackets << endl;
     // outfile << "SourceIp,SourcePort,DestinationIp,DestinationPort,SequenceNb,Id,PayloadSize,PacketSize,Path,SentTime,IsReceived,ReceiveTime,ECN" << endl;
     // for (auto& packetKeyEventPair: _recordedPackets) {
     //     PacketKey key = packetKeyEventPair.first;

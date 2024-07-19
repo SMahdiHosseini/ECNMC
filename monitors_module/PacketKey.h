@@ -25,7 +25,7 @@ private:
     SequenceNumber32 _seqNb, _ackNb;
     uint32_t _size;
     size_t _payloadHash;
-    size_t _packetSize;
+    uint32_t _packetSize;
     int records;
     int path;
     bool ecn;
@@ -43,7 +43,7 @@ public:
     [[nodiscard]] const SequenceNumber32 &GetAckNb() const;
     [[nodiscard]] uint32_t GetSize() const;
     [[nodiscard]] size_t GetPayloadHash() const;
-    [[nodiscard]] size_t GetPacketSize() const;
+    [[nodiscard]] uint32_t GetPacketSize() const;
     [[nodiscard]] int GetRecords() const;
     [[nodiscard]] int GetPath() const;
     [[nodiscard]] bool GetEcn() const;
@@ -59,7 +59,7 @@ public:
     static PacketKey* Packet2PacketKey(Ptr<const Packet> packet, uint8_t firstHeaderType);
 
     void SetPayloadHash(size_t payloadHash);
-    void SetPacketSize(size_t packetSize);
+    void SetPacketSize(uint32_t packetSize);
     void SetSize(uint32_t size);
     void SetAckNb(const SequenceNumber32 &ackNb);
     void SetSeqNb(const SequenceNumber32 &seqNb);

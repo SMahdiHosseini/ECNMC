@@ -14,7 +14,7 @@ PacketKey::PacketKey(const Ipv4Address &srcIp, const Ipv4Address &dstIp, uint16_
                      uint16_t srcPort, uint16_t dstPort, const SequenceNumber32& seqNb, const SequenceNumber32& ackNb,
                      uint32_t size, size_t payloadHash) : _srcIp(srcIp), _dstIp(dstIp), _id(id),
                         _srcPort(srcPort), _dstPort(dstPort), _seqNb(seqNb), _ackNb(ackNb),
-                        _size(size), _payloadHash(payloadHash), records(0), path(0), ecn(false) {}
+                        _size(size), _payloadHash(payloadHash), _packetSize(0), records(0), path(0), ecn(false) {}
 
 bool PacketKey::operator<(const PacketKey &rhs) const {
     if (_srcIp < rhs._srcIp) return true;
@@ -68,7 +68,7 @@ const SequenceNumber32 &PacketKey::GetSeqNb() const { return _seqNb; }
 const SequenceNumber32 &PacketKey::GetAckNb() const { return _ackNb; }
 uint32_t PacketKey::GetSize() const { return _size; }
 size_t PacketKey::GetPayloadHash() const { return _payloadHash; }
-size_t PacketKey::GetPacketSize() const { return _packetSize; }
+uint32_t PacketKey::GetPacketSize() const { return _packetSize; }
 int PacketKey::GetRecords() const { return records; }
 int PacketKey::GetPath() const { return path; }
 bool PacketKey::GetEcn() const { return ecn; }
@@ -148,7 +148,7 @@ std::size_t PacketKeyHash::operator()(PacketKey const &packetKey) const noexcept
 }
 
 void PacketKey::SetPayloadHash(size_t payloadHash) { _payloadHash = payloadHash; }
-void PacketKey::SetPacketSize(size_t packetSize) { _packetSize = packetSize; }
+void PacketKey::SetPacketSize(uint32_t packetSize) { _packetSize = packetSize; }
 void PacketKey::SetSize(uint32_t size) { _size = size; }
 void PacketKey::SetAckNb(const SequenceNumber32 &ackNb) { _ackNb = ackNb; }
 void PacketKey::SetSeqNb(const SequenceNumber32 &seqNb) { _seqNb = seqNb; }
