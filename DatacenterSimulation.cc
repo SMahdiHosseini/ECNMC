@@ -316,9 +316,9 @@ int main(int argc, char* argv[])
     for (int i = 0; i < nHosts; i++) {
         auto* caidaTrafficGenerator = new BackgroundReplay(racks[0].Get(i), racks[2].Get(i), Seconds(stof(trafficStartTime)), Seconds(stof(trafficStopTime)));
         caidaTrafficGenerator->SetPctOfPacedTcps(pctPacedBack);
-        // string tracesPath = "/home/mahdi/Documents/NAL/Data/chicago_2010_traffic_10min_2paths/path" + to_string(i % 2);
+        string tracesPath = "/home/mahdi/Documents/Data/chicago_2010_traffic_10min_2paths/path" + to_string(i % 2);
         // string tracesPath = "/home/mahdi/Documents/Data/chicago_2010_traffic_10min_2paths/path" + to_string(i % 2);
-        string tracesPath = "/home/shossein/chicago_2010_traffic_10min_2paths/path" + to_string(i % 2);
+        // string tracesPath = "/home/shossein/chicago_2010_traffic_10min_2paths/path" + to_string(i % 2);
         if (std::filesystem::exists(tracesPath)) {
             caidaTrafficGenerator->RunAllTCPTraces(tracesPath, 0);
         } else {
@@ -330,9 +330,9 @@ int main(int argc, char* argv[])
     for (int i = 0; i < nHosts; i++) {
         auto* caidaTrafficGenerator = new BackgroundReplay(racks[1].Get(i), racks[3].Get(i), Seconds(stof(trafficStartTime)), Seconds(stof(trafficStopTime)));
         caidaTrafficGenerator->SetPctOfPacedTcps(pctPacedBack);
-        // string tracesPath = "/home/mahdi/Documents/NAL/Data/chicago_2010_traffic_10min_2paths/path" + to_string(i % 2);
+        string tracesPath = "/home/mahdi/Documents/Data/chicago_2010_traffic_10min_2paths/path" + to_string(i % 2);
         // string tracesPath = "/home/mahdi/Documents/Data/chicago_2010_traffic_10min_2paths/path" + to_string(i % 2);
-        string tracesPath = "/home/shossein/chicago_2010_traffic_10min_2paths/path" + to_string(i % 2);
+        // string tracesPath = "/home/shossein/chicago_2010_traffic_10min_2paths/path" + to_string(i % 2);
         if (std::filesystem::exists(tracesPath)) {
             caidaTrafficGenerator->RunAllTCPTraces(tracesPath, 0);
         } else {

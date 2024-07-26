@@ -1,7 +1,7 @@
 Consolidate compiler generated dependencies of target monitors_module
 [  0%] Building CXX object scratch/ECNMC/CMakeFiles/monitors_module.dir/monitors_module/E2EMonitor.cc.o
-[  0%] Linking CXX static library ../../../build/lib/libmonitors_module.a
-[  0%] Linking CXX executable ../../../build/scratch/ECNMC/ns3.41-DatacenterSimulation-default
+[  0%] Linking CXX static library ../../lib/libmonitors_module.a
+[  0%] Linking CXX executable ns3.41-DatacenterSimulation-debug
 
 Start
 Hosts and Switches IP addresses
@@ -51,4 +51,4 @@ trafficStopTime: 5.0
 steadyStartTime: 2
 steadyEndTime: 4
 Done 
-Total execution time = 99698220 microsecond
+Total execution time = 374532842 microsecond

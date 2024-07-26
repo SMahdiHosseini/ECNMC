@@ -3,8 +3,8 @@ import time
 import configparser
 import threading
 import argparse
-# __ns3_path = os.popen('locate "ns-3.41" | grep /ns-3.41$').read().splitlines()[0]
-__ns3_path = "/home/shossein/ns-allinone-3.41/ns-3.41"
+__ns3_path = os.popen('locate "ns-3.41" | grep /ns-3.41$').read().splitlines()[0]
+# __ns3_path = "/home/shossein/ns-allinone-3.41/ns-3.41"
 
 class ExperimentConfig:
     def __init__(self):

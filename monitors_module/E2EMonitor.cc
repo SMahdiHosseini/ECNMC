@@ -15,7 +15,8 @@ int E2EMonitorEvent::GetPath() const { return _key->GetPath(); }
 E2EMonitor::E2EMonitor(const Time &startTime, const Time &duration, const Time &steadyStartTime, const Time &steadyStopTime, const Ptr<PointToPointNetDevice> netDevice, const Ptr<Node> &rxNode, const string &monitorTag, double errorRate) 
 : Monitor(startTime, duration, steadyStartTime, steadyStopTime, monitorTag) {
     _errorRate = errorRate;
-    sumOfDelays = Seconds(0);
+    sampleMean = Seconds(0);
+    unbiasedSmapleVariance = Seconds(0);
     sumOfPacketSizes = 0;
     receivedPackets = 0;
     sentPackets = 0;
@@ -64,8 +65,15 @@ void E2EMonitor::RecordIpv4PacketReceived(Ptr<const Packet> packet, Ptr<Ipv4> ip
             packetKeyEventPair->second->SetPath(hash % 2);
             packetKeyEventPair->second->SetReceived();
             sumOfPacketSizes += packetKeyEventPair->first.GetPacketSize();
-            sumOfDelays = sumOfDelays + (packetKeyEventPair->second->GetReceivedTime() - packetKeyEventPair->second->GetSentTime());
             receivedPackets++;
+            Time delta = (packetKeyEventPair->second->GetReceivedTime() - packetKeyEventPair->second->GetSentTime() - sampleMean);
+            sampleMean = sampleMean + Time(delta.GetNanoSeconds() / receivedPackets);
+            if (receivedPackets <= 1) {
+                unbiasedSmapleVariance = Time(0);
+            }
+            else {
+                unbiasedSmapleVariance = unbiasedSmapleVariance + Time((delta.GetNanoSeconds() * delta.GetNanoSeconds()) / receivedPackets) - Time(unbiasedSmapleVariance.GetNanoSeconds() / (receivedPackets - 1));
+            }
             // remove the packet from the map
             _recordedPackets.erase(packetKeyEventPair);
         }
@@ -75,8 +83,8 @@ void E2EMonitor::RecordIpv4PacketReceived(Ptr<const Packet> packet, Ptr<Ipv4> ip
 void E2EMonitor::SaveMonitorRecords(const string& filename) {
     ofstream outfile;
     outfile.open(filename);
-    outfile << "averageDelay,averagePacketSize,receivedPackets,sentPackets,markedPackets" << endl;
-    outfile << sumOfDelays.GetNanoSeconds() / receivedPackets << "," << sumOfPacketSizes / receivedPackets << "," << receivedPackets << "," << sentPackets << "," << markedPackets << endl;
+    outfile << "sampleDelayMean,unbiasedSmapleDelayVariance,averagePacketSize,receivedPackets,sentPackets,markedPackets" << endl;
+    outfile << sampleMean.GetNanoSeconds() << "," << unbiasedSmapleVariance.GetNanoSeconds() << "," << sumOfPacketSizes / receivedPackets << "," << receivedPackets << "," << sentPackets << "," << markedPackets << endl;
     // outfile << "SourceIp,SourcePort,DestinationIp,DestinationPort,SequenceNb,Id,PayloadSize,PacketSize,Path,SentTime,IsReceived,ReceiveTime,ECN" << endl;
     // for (auto& packetKeyEventPair: _recordedPackets) {
     //     PacketKey key = packetKeyEventPair.first;
