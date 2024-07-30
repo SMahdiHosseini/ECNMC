@@ -34,6 +34,7 @@ public:
     [[nodiscard]] bool IsDeparted() const;
 
     void SetSampleTime();
+    void SetSampleTime(Time t);
     void SetDepartureTime();
     void SetMarkingProb(double markingProb);
 };
@@ -49,9 +50,11 @@ private:
     double _sampleRate;
     std::unordered_map<PacketKey, samplingEvent*, PacketKeyHash> _recordedSamples;
     int zeroDelayPort;
-
+    uint32_t numberOfSamples;
     Ptr<const QueueDiscItem> lastItem;
+    Time lastItemTime;
     Ptr<const Packet> lastPacket;
+    Time lastPacketTime;
 
     void Connect(Ptr<PointToPointNetDevice> outgoingNetDevice);
     void Disconnect(Ptr<PointToPointNetDevice> outgoingNetDevice);
@@ -61,7 +64,7 @@ private:
     void RecordPacket(Ptr<const Packet> packet);
 
 public:
-    PoissonSampler(const Time &startTime, const Time &duration, Ptr<RedQueueDisc> queueDisc, Ptr<Queue<Packet>> queue, Ptr<PointToPointNetDevice> outgoingNetDevice, const string &sampleTag, double sampleRate);
+    PoissonSampler(const Time &steadyStartTime, const Time &steadyStopTime, Ptr<RedQueueDisc> queueDisc, Ptr<Queue<Packet>> queue, Ptr<PointToPointNetDevice> outgoingNetDevice, const string &sampleTag, double sampleRate);
     void SaveMonitorRecords(const string &filename);
 };
 

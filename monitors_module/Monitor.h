@@ -50,7 +50,8 @@ protected:
     ns3::Time _duration = Seconds(0);
     ns3::Time _steadyStartTime = Seconds(0);
     ns3::Time _steadyStopTime = Seconds(0);
-
+    ns3::Time sampleMean = Seconds(0);
+    ns3::Time unbiasedSmapleVariance = Seconds(0);
     std::string _monitorTag;
     set<AppKey> _appsKey;
 

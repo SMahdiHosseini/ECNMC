@@ -520,7 +520,7 @@ int main(int argc, char* argv[])
     for (int i = 0; i < nRacks; i++) {
         for (int j = 0; j < nAggSwitches; j++) {
             Ptr<PointToPointNetDevice> aggToTorNetDevice = DynamicCast<PointToPointNetDevice>(torToAggNetDevices[i][j].Get(1));
-            auto *aggToTorSampler = new PoissonSampler(startTime, stopTime, DynamicCast<RedQueueDisc>(torToAggQueueDiscs[i][j].Get(1)), aggToTorNetDevice->GetQueue(), aggToTorNetDevice, "A" + to_string(j) + "T" + to_string(i), sampleRate);
+            auto *aggToTorSampler = new PoissonSampler(Seconds(stof(steadyStartTime)), Seconds(stof(steadyStopTime)), DynamicCast<RedQueueDisc>(torToAggQueueDiscs[i][j].Get(1)), aggToTorNetDevice->GetQueue(), aggToTorNetDevice, "A" + to_string(j) + "T" + to_string(i), sampleRate);
             PoissonSamplers.push_back(aggToTorSampler);
         }
     }

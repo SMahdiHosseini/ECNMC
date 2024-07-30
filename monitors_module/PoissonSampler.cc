@@ -7,6 +7,7 @@
 samplingEvent::samplingEvent(PacketKey *key) { SetPacketKey(key); }
 
 void samplingEvent::SetSampleTime() { SetSent(ns3::Simulator::Now()); }
+void samplingEvent::SetSampleTime(Time t) { SetSent(t); }
 void samplingEvent::SetDepartureTime() { SetReceived(ns3::Simulator::Now()); }
 void samplingEvent::SetMarkingProb(double markingProb) { _markingProb = markingProb; }
 PacketKey *samplingEvent::GetPacketKey() const { return _key; }
@@ -15,34 +16,32 @@ Time samplingEvent::GetDepartureTime() const { return GetReceivedTime(); }
 double samplingEvent::GetMarkingProb() const { return _markingProb; }
 bool samplingEvent::IsDeparted() const { return GetReceivedTime() != Time(-1); }
 
-PoissonSampler::PoissonSampler(const Time &startTime, const Time &duration, Ptr<RedQueueDisc> queueDisc, Ptr<Queue<Packet>> queue, Ptr<PointToPointNetDevice>  outgoingNetDevice, const string &sampleTag, double sampleRate) 
-: Monitor(startTime, duration, Seconds(0), Seconds(0), sampleTag) {
+PoissonSampler::PoissonSampler(const Time &steadyStartTime, const Time &steadyStopTime, Ptr<RedQueueDisc> queueDisc, Ptr<Queue<Packet>> queue, Ptr<PointToPointNetDevice>  outgoingNetDevice, const string &sampleTag, double sampleRate) 
+: Monitor(Seconds(0), steadyStopTime, steadyStartTime, steadyStopTime, sampleTag) {
     REDQueueDisc = queueDisc;
     NetDeviceQueue = queue;
     m_var = CreateObject<ExponentialRandomVariable>();
     m_var->SetAttribute("Mean", DoubleValue(1/sampleRate));
     _sampleRate = sampleRate;
     zeroDelayPort = 0;
+    numberOfSamples = 0;
 
-    Simulator::Schedule(_startTime, &PoissonSampler::Connect, this, outgoingNetDevice);
-    Simulator::Schedule(_startTime + _duration, &PoissonSampler::Disconnect, this, outgoingNetDevice);
+    Simulator::Schedule(Seconds(0), &PoissonSampler::Connect, this, outgoingNetDevice);
+    Simulator::Schedule(steadyStopTime, &PoissonSampler::Disconnect, this, outgoingNetDevice);
 }
 
 void PoissonSampler::EnqueueQueueDisc(Ptr<const QueueDiscItem> item) {
     lastItem = item;
-    // PacketKey* packetKey = PacketKey::Packet2PacketKey(lastItem->GetPacket(), FIRST_HEADER_TCP);
-    // Ipv4Header ipHeader = DynamicCast<const Ipv4QueueDiscItem>(lastItem)->GetHeader();
-    // packetKey->SetId(ipHeader.GetIdentification());
-    // packetKey->SetSrcIp(ipHeader.GetSource());
-    // packetKey->SetDstIp(ipHeader.GetDestination());
-    // std::cout << Simulator::Now().GetNanoSeconds() << " : " << packetKey->GetSrcIp() << "," << packetKey->GetSrcPort() << "," << packetKey->GetDstIp() << "," << packetKey->GetDstPort() << "," << packetKey->GetSeqNb() << std::endl;
+    lastItemTime = Simulator::Now();
 }
 
 void PoissonSampler::EnqueueNetDeviceQueue(Ptr<const Packet> packet) {
     lastPacket = packet;
+    lastPacketTime = Simulator::Now();
 }
 
 void PoissonSampler::Connect(Ptr<PointToPointNetDevice> outgoingNetDevice) {
+    std::cout << Simulator::Now() << " PoissonSampler::Connect " << _monitorTag << " steady start time: " << _steadyStartTime << " steady stop time: " << _steadyStopTime << std::endl;
     if (REDQueueDisc != nullptr) {
         REDQueueDisc->TraceConnectWithoutContext("Enqueue", MakeCallback(&PoissonSampler::EnqueueQueueDisc, this));
     }
@@ -62,9 +61,16 @@ void PoissonSampler::Disconnect(Ptr<PointToPointNetDevice> outgoingNetDevice) {
 }
 
 void PoissonSampler::EventHandler() {
+    // Generate a new event
+    double nextEvent = m_var->GetValue();
+    Simulator::Schedule(Seconds(nextEvent), &PoissonSampler::EventHandler, this);
+    if (Simulator::Now() < _steadyStartTime || Simulator::Now() > _steadyStopTime) {
+        return;
+    }
     PacketKey* packetKey;
     bool zeroDelay = false;
     bool drop = false;
+    Time sampleTime = Simulator::Now();
     if (REDQueueDisc != nullptr && REDQueueDisc->GetNPackets() > 0) {
         // check the quque disc size
         if (REDQueueDisc->GetNPackets() > 0) {
@@ -79,7 +85,7 @@ void PoissonSampler::EventHandler() {
             packetKey->SetId(ipHeader.GetIdentification());
             packetKey->SetSrcIp(ipHeader.GetSource());
             packetKey->SetDstIp(ipHeader.GetDestination());
-
+            sampleTime = lastItemTime;
             if ((QueueSize("37.5KB").GetValue() - REDQueueDisc->GetCurrentSize().GetValue()) < QueueSize("700B").GetValue()) {
                 drop = true;
             }
@@ -88,6 +94,7 @@ void PoissonSampler::EventHandler() {
     }
     else if (NetDeviceQueue->GetNPackets() > 0) {
         packetKey = PacketKey::Packet2PacketKey(lastPacket, FIRST_HEADER_PPP);
+        sampleTime = lastPacketTime;
         if ((REDQueueDisc == nullptr) && (NetDeviceQueue->GetCurrentSize() >= QueueSize("100p"))) {
             drop = true;
         }
@@ -95,6 +102,7 @@ void PoissonSampler::EventHandler() {
     else {
         packetKey = new PacketKey(ns3::Ipv4Address("0.0.0.0"), ns3::Ipv4Address("0.0.0.1"), 0, zeroDelayPort++, zeroDelayPort++, ns3::SequenceNumber32(0), ns3::SequenceNumber32(0), 0, 0);
         zeroDelay = true;
+        sampleTime = Simulator::Now();
     }
     
     // add the event to the recorded samples
@@ -103,7 +111,7 @@ void PoissonSampler::EventHandler() {
     while (_recordedSamples.find(*packetKey) != _recordedSamples.end()) {
         packetKey->SetRecords(packetKey->GetRecords() + 1);
     }
-    event->SetSampleTime();
+    event->SetSampleTime(sampleTime);
     _recordedSamples[*packetKey] = event;
     // if there is no packet in the queue, then add the event pair with zero delay
     if (zeroDelay) {
@@ -116,9 +124,6 @@ void PoissonSampler::EventHandler() {
     if (drop) {
         event->SetMarkingProb(1.0);
     }
-    // Generate a new event
-    double nextEvent = m_var->GetValue();
-    Simulator::Schedule(Seconds(nextEvent), &PoissonSampler::EventHandler, this);
 }
 
 void PoissonSampler::RecordPacket(Ptr<const Packet> packet) {
