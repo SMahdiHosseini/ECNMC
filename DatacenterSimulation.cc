@@ -316,9 +316,8 @@ int main(int argc, char* argv[])
     for (int i = 0; i < nHosts; i++) {
         auto* caidaTrafficGenerator = new BackgroundReplay(racks[0].Get(i), racks[2].Get(i), Seconds(stof(trafficStartTime)), Seconds(stof(trafficStopTime)));
         caidaTrafficGenerator->SetPctOfPacedTcps(pctPacedBack);
-        string tracesPath = "/home/mahdi/Documents/Data/chicago_2010_traffic_10min_2paths/path" + to_string(i % 2);
         // string tracesPath = "/home/mahdi/Documents/Data/chicago_2010_traffic_10min_2paths/path" + to_string(i % 2);
-        // string tracesPath = "/home/shossein/chicago_2010_traffic_10min_2paths/path" + to_string(i % 2);
+        string tracesPath = "/media/experiments/chicago_2010_traffic_10min_2paths/path" + to_string(i % 2);
         if (std::filesystem::exists(tracesPath)) {
             caidaTrafficGenerator->RunAllTCPTraces(tracesPath, 0);
         } else {
@@ -330,9 +329,8 @@ int main(int argc, char* argv[])
     for (int i = 0; i < nHosts; i++) {
         auto* caidaTrafficGenerator = new BackgroundReplay(racks[1].Get(i), racks[3].Get(i), Seconds(stof(trafficStartTime)), Seconds(stof(trafficStopTime)));
         caidaTrafficGenerator->SetPctOfPacedTcps(pctPacedBack);
-        string tracesPath = "/home/mahdi/Documents/Data/chicago_2010_traffic_10min_2paths/path" + to_string(i % 2);
         // string tracesPath = "/home/mahdi/Documents/Data/chicago_2010_traffic_10min_2paths/path" + to_string(i % 2);
-        // string tracesPath = "/home/shossein/chicago_2010_traffic_10min_2paths/path" + to_string(i % 2);
+        string tracesPath = "/media/experiments/chicago_2010_traffic_10min_2paths/path" + to_string(i % 2);
         if (std::filesystem::exists(tracesPath)) {
             caidaTrafficGenerator->RunAllTCPTraces(tracesPath, 0);
         } else {
@@ -426,14 +424,16 @@ int main(int argc, char* argv[])
     vector<E2EMonitor *> endToendMonitors;
     // Monitor the packets between each pair of hosts in R0 and R2
     for (int i = 0; i < nHosts; i++) {
-        auto *R0R2Monitor = new E2EMonitor(startTime, stopTime + convergenceTime, Seconds(stof(steadyStartTime)), Seconds(stof(steadyStopTime)), DynamicCast<PointToPointNetDevice>(hostsToTorsNetDevices[0][i].Get(0)), racks[2].Get(i), "R0H" + to_string(i) + "R2H" + to_string(i), errorRate);
+        auto *R0R2Monitor = new E2EMonitor(startTime, stopTime + convergenceTime, Seconds(stof(steadyStartTime)), Seconds(stof(steadyStopTime)), DynamicCast<PointToPointNetDevice>(hostsToTorsNetDevices[0][i].Get(0)), racks[2].Get(i), "R0H" + to_string(i) + "R2H" + to_string(i), errorRate, 
+        DataRate(hostToTorLinkRate), DataRate(torToAggLinkRate), Time(hostToTorLinkDelay));
         R0R2Monitor->AddAppKey(AppKey(ipsRacks[0][i].GetAddress(0), ipsRacks[2][i].GetAddress(0), 0, 0));
         endToendMonitors.push_back(R0R2Monitor);
     }
 
     // Monitor the packets between each pair of hosts in R1 and R3
     for (int i = 0; i < nHosts; i++) {
-        auto *R1R3Monitor = new E2EMonitor(startTime, stopTime + convergenceTime, Seconds(stof(steadyStartTime)), Seconds(stof(steadyStopTime)), DynamicCast<PointToPointNetDevice>(hostsToTorsNetDevices[1][i].Get(0)), racks[3].Get(i), "R1H" + to_string(i) + "R3H" + to_string(i), errorRate);
+        auto *R1R3Monitor = new E2EMonitor(startTime, stopTime + convergenceTime, Seconds(stof(steadyStartTime)), Seconds(stof(steadyStopTime)), DynamicCast<PointToPointNetDevice>(hostsToTorsNetDevices[1][i].Get(0)), racks[3].Get(i), "R1H" + to_string(i) + "R3H" + to_string(i), errorRate,
+        DataRate(hostToTorLinkRate), DataRate(torToAggLinkRate), Time(hostToTorLinkDelay));
         R1R3Monitor->AddAppKey(AppKey(ipsRacks[1][i].GetAddress(0), ipsRacks[3][i].GetAddress(0), 0, 0));
         endToendMonitors.push_back(R1R3Monitor);
     }
@@ -453,42 +453,42 @@ int main(int argc, char* argv[])
     // }
 
     // switch monitors on the ToR switches
-    vector<SwitchMonitor *> torSwitchMonitors;
-    for (int i = 0; i < nRacks; i++) {
-        auto *torSwitchMonitor = new SwitchMonitor(startTime, stopTime + convergenceTime, torSwitches.Get(i), "T" + to_string(i));
-        for (int j = 0; j < nHosts; j++) {
-            if (i < nRacks / 2) {
-                torSwitchMonitor->AddAppKey(AppKey(ipsRacks[i][j].GetAddress(0), ipsRacks[i + 2][j].GetAddress(0), 0, 0));
-            } else {
-                torSwitchMonitor->AddAppKey(AppKey(ipsRacks[i - 2][j].GetAddress(0), ipsRacks[i][j].GetAddress(0), 0, 0));
-            }
-        }
-        torSwitchMonitors.push_back(torSwitchMonitor);
-    }
+    // vector<SwitchMonitor *> torSwitchMonitors;
+    // for (int i = 0; i < nRacks; i++) {
+    //     auto *torSwitchMonitor = new SwitchMonitor(startTime, stopTime + convergenceTime, torSwitches.Get(i), "T" + to_string(i));
+    //     for (int j = 0; j < nHosts; j++) {
+    //         if (i < nRacks / 2) {
+    //             torSwitchMonitor->AddAppKey(AppKey(ipsRacks[i][j].GetAddress(0), ipsRacks[i + 2][j].GetAddress(0), 0, 0));
+    //         } else {
+    //             torSwitchMonitor->AddAppKey(AppKey(ipsRacks[i - 2][j].GetAddress(0), ipsRacks[i][j].GetAddress(0), 0, 0));
+    //         }
+    //     }
+    //     torSwitchMonitors.push_back(torSwitchMonitor);
+    // }
 
-    // switch monitors on the Agg switches
-    vector<SwitchMonitor *> aggSwitchMonitors;
-    for (int i = 0; i < nAggSwitches; i++) {
-        auto *aggSwitchMonitor = new SwitchMonitor(startTime, stopTime + convergenceTime, aggSwitches.Get(i), "A" + to_string(i));
-        for (int j = 0; j < nRacks / 2; j++) {
-            for (int k = 0; k < nHosts; k++) {
-                aggSwitchMonitor->AddAppKey(AppKey(ipsRacks[j][k].GetAddress(0), ipsRacks[j + 2][k].GetAddress(0), 0, 0));
-            }
-        }
-        aggSwitchMonitors.push_back(aggSwitchMonitor);
-    }
+    // // switch monitors on the Agg switches
+    // vector<SwitchMonitor *> aggSwitchMonitors;
+    // for (int i = 0; i < nAggSwitches; i++) {
+    //     auto *aggSwitchMonitor = new SwitchMonitor(startTime, stopTime + convergenceTime, aggSwitches.Get(i), "A" + to_string(i));
+    //     for (int j = 0; j < nRacks / 2; j++) {
+    //         for (int k = 0; k < nHosts; k++) {
+    //             aggSwitchMonitor->AddAppKey(AppKey(ipsRacks[j][k].GetAddress(0), ipsRacks[j + 2][k].GetAddress(0), 0, 0));
+    //         }
+    //     }
+    //     aggSwitchMonitors.push_back(aggSwitchMonitor);
+    // }
 
-    // switch monitors on the Core switches
-    vector<SwitchMonitor *> coreSwitchMonitors;
-    for (int i = 0; i < nCoreSwitches; i++) {
-        auto *coreSwitchMonitor = new SwitchMonitor(startTime, stopTime + convergenceTime, coreSwitches.Get(i), "C" + to_string(i));
-        for (int j = 0; j < nRacks / 2; j++) {
-            for (int k = 0; k < nHosts; k++) {
-                coreSwitchMonitor->AddAppKey(AppKey(ipsRacks[j][k].GetAddress(0), ipsRacks[j + 2][k].GetAddress(0), 0, 0));
-            }
-        }
-        coreSwitchMonitors.push_back(coreSwitchMonitor);
-    }
+    // // switch monitors on the Core switches
+    // vector<SwitchMonitor *> coreSwitchMonitors;
+    // for (int i = 0; i < nCoreSwitches; i++) {
+    //     auto *coreSwitchMonitor = new SwitchMonitor(startTime, stopTime + convergenceTime, coreSwitches.Get(i), "C" + to_string(i));
+    //     for (int j = 0; j < nRacks / 2; j++) {
+    //         for (int k = 0; k < nHosts; k++) {
+    //             coreSwitchMonitor->AddAppKey(AppKey(ipsRacks[j][k].GetAddress(0), ipsRacks[j + 2][k].GetAddress(0), 0, 0));
+    //         }
+    //     }
+    //     coreSwitchMonitors.push_back(coreSwitchMonitor);
+    // }
 
     // PoissonSampler on the ToR switches, Agg switches and Core switches
     vector<PoissonSampler *> PoissonSamplers;
@@ -496,7 +496,7 @@ int main(int argc, char* argv[])
     for (int i = 0; i < nRacks / 2; i++) {
         for (int j = 0; j < nHosts; j++) {
             Ptr<PointToPointNetDevice> hostToTorNetDevice = DynamicCast<PointToPointNetDevice>(hostsToTorsNetDevices[i][j].Get(0));
-            auto *hostToTorSampler = new PoissonSampler(startTime, stopTime, nullptr, hostToTorNetDevice->GetQueue(), hostToTorNetDevice, "R" + to_string(i) + "H" + to_string(j), sampleRate);
+            auto *hostToTorSampler = new PoissonSampler(Seconds(stof(steadyStartTime)), Seconds(stof(steadyStopTime)), nullptr, hostToTorNetDevice->GetQueue(), hostToTorNetDevice, "R" + to_string(i) + "H" + to_string(j), sampleRate);
             PoissonSamplers.push_back(hostToTorSampler);
         }
     }
@@ -504,7 +504,7 @@ int main(int argc, char* argv[])
     for (int i = 0; i < nRacks; i++) {
         for (int j = 0; j < nAggSwitches; j++) {
             Ptr<PointToPointNetDevice> torToAggNetDevice = DynamicCast<PointToPointNetDevice>(torToAggNetDevices[i][j].Get(0));            
-            auto *torToAggSampler = new PoissonSampler(startTime, stopTime, DynamicCast<RedQueueDisc>(torToAggQueueDiscs[i][j].Get(0)), torToAggNetDevice->GetQueue(), torToAggNetDevice, "T" + to_string(i) + "A" + to_string(j), sampleRate);
+            auto *torToAggSampler = new PoissonSampler(Seconds(stof(steadyStartTime)), Seconds(stof(steadyStopTime)), DynamicCast<RedQueueDisc>(torToAggQueueDiscs[i][j].Get(0)), torToAggNetDevice->GetQueue(), torToAggNetDevice, "T" + to_string(i) + "A" + to_string(j), sampleRate);
             PoissonSamplers.push_back(torToAggSampler);
         }
     }
@@ -512,7 +512,7 @@ int main(int argc, char* argv[])
     for (int i = 0; i < nRacks; i++) {
         for (int j = 0; j < nHosts; j++) {
             Ptr<PointToPointNetDevice> hostToTorNetDevice = DynamicCast<PointToPointNetDevice>(hostsToTorsNetDevices[i][j].Get(1));
-            auto *hostToTorSampler = new PoissonSampler(startTime, stopTime, DynamicCast<RedQueueDisc>(torToHostQueueDiscs[i][j].Get(0)), hostToTorNetDevice->GetQueue(), hostToTorNetDevice, "T" + to_string(i) + "H" + to_string(j), sampleRate);
+            auto *hostToTorSampler = new PoissonSampler(Seconds(stof(steadyStartTime)), Seconds(stof(steadyStopTime)), DynamicCast<RedQueueDisc>(torToHostQueueDiscs[i][j].Get(0)), hostToTorNetDevice->GetQueue(), hostToTorNetDevice, "T" + to_string(i) + "H" + to_string(j), sampleRate);
             PoissonSamplers.push_back(hostToTorSampler);
         }
     }
@@ -528,7 +528,7 @@ int main(int argc, char* argv[])
     for (int i = 0; i < nAggSwitches; i++) {
         for (int j = 0; j < nCoreSwitches; j++) {
             Ptr<PointToPointNetDevice> aggToCoreNetDevice = DynamicCast<PointToPointNetDevice>(aggToCoreNetDevices[i][j].Get(0));
-            auto *aggToCoreSampler = new PoissonSampler(startTime, stopTime, DynamicCast<RedQueueDisc>(aggToCoreQueueDiscs[i][j].Get(0)), aggToCoreNetDevice->GetQueue(), aggToCoreNetDevice, "A" + to_string(i) + "C" + to_string(j), sampleRate);
+            auto *aggToCoreSampler = new PoissonSampler(Seconds(stof(steadyStartTime)), Seconds(stof(steadyStopTime)), DynamicCast<RedQueueDisc>(aggToCoreQueueDiscs[i][j].Get(0)), aggToCoreNetDevice->GetQueue(), aggToCoreNetDevice, "A" + to_string(i) + "C" + to_string(j), sampleRate);
             PoissonSamplers.push_back(aggToCoreSampler);
         }
     }
@@ -536,7 +536,7 @@ int main(int argc, char* argv[])
     for (int i = 0; i < nCoreSwitches; i++) {
         for (int j = 0; j < nAggSwitches; j++) {
             Ptr<PointToPointNetDevice> coreToAggNetDevice = DynamicCast<PointToPointNetDevice>(aggToCoreNetDevices[j][i].Get(1));
-            auto *coreToAggSampler = new PoissonSampler(startTime, stopTime, DynamicCast<RedQueueDisc>(aggToCoreQueueDiscs[j][i].Get(1)), coreToAggNetDevice->GetQueue(), coreToAggNetDevice, "C" + to_string(i) + "A" + to_string(j), sampleRate);
+            auto *coreToAggSampler = new PoissonSampler(Seconds(stof(steadyStartTime)), Seconds(stof(steadyStopTime)), DynamicCast<RedQueueDisc>(aggToCoreQueueDiscs[j][i].Get(1)), coreToAggNetDevice->GetQueue(), coreToAggNetDevice, "C" + to_string(i) + "A" + to_string(j), sampleRate);
             PoissonSamplers.push_back(coreToAggSampler);
         }
     }
@@ -597,15 +597,15 @@ int main(int argc, char* argv[])
     for (auto monitor: endToendMonitors) {
         monitor->SaveMonitorRecords((string) (getenv("PWD")) + "/results_" + dirName + "/" + to_string(experiment)  + "/" + monitor->GetMonitorTag() + "_EndToEnd.csv");
     }
-    for (auto monitor: torSwitchMonitors) {
-        monitor->SavePacketRecords((string) (getenv("PWD")) + "/results_" + dirName + "/" +  to_string(experiment)  + "/" + monitor->GetMonitorTag() + "_Switch.csv");
-    }
-    for (auto monitor: aggSwitchMonitors) {
-        monitor->SavePacketRecords((string) (getenv("PWD")) + "/results_" + dirName + "/" + to_string(experiment)  + "/" + monitor->GetMonitorTag() + "_Switch.csv");
-    }
-    for (auto monitor: coreSwitchMonitors) {
-        monitor->SavePacketRecords((string) (getenv("PWD")) + "/results_" + dirName + "/" + to_string(experiment)  + "/" + monitor->GetMonitorTag() + "_Switch.csv");
-    }
+    // for (auto monitor: torSwitchMonitors) {
+    //     monitor->SavePacketRecords((string) (getenv("PWD")) + "/results_" + dirName + "/" +  to_string(experiment)  + "/" + monitor->GetMonitorTag() + "_Switch.csv");
+    // }
+    // for (auto monitor: aggSwitchMonitors) {
+    //     monitor->SavePacketRecords((string) (getenv("PWD")) + "/results_" + dirName + "/" + to_string(experiment)  + "/" + monitor->GetMonitorTag() + "_Switch.csv");
+    // }
+    // for (auto monitor: coreSwitchMonitors) {
+    //     monitor->SavePacketRecords((string) (getenv("PWD")) + "/results_" + dirName + "/" + to_string(experiment)  + "/" + monitor->GetMonitorTag() + "_Switch.csv");
+    // }
     for (auto monitor: PoissonSamplers) {
         monitor->SaveMonitorRecords((string) (getenv("PWD")) + "/results_" + dirName + "/" + to_string(experiment)  + "/" + monitor->GetMonitorTag() + "_PoissonSampler.csv");
     }

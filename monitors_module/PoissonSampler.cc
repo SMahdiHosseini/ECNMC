@@ -24,7 +24,10 @@ PoissonSampler::PoissonSampler(const Time &steadyStartTime, const Time &steadySt
     m_var->SetAttribute("Mean", DoubleValue(1/sampleRate));
     _sampleRate = sampleRate;
     zeroDelayPort = 0;
-    numberOfSamples = 0;
+    droppedSamples = 0;
+    sampleMean.push_back(Seconds(0));
+    unbiasedSmapleVariance.push_back(Seconds(0));
+    sampleSize.push_back(0);
 
     Simulator::Schedule(Seconds(0), &PoissonSampler::Connect, this, outgoingNetDevice);
     Simulator::Schedule(steadyStopTime, &PoissonSampler::Disconnect, this, outgoingNetDevice);
@@ -41,7 +44,6 @@ void PoissonSampler::EnqueueNetDeviceQueue(Ptr<const Packet> packet) {
 }
 
 void PoissonSampler::Connect(Ptr<PointToPointNetDevice> outgoingNetDevice) {
-    std::cout << Simulator::Now() << " PoissonSampler::Connect " << _monitorTag << " steady start time: " << _steadyStartTime << " steady stop time: " << _steadyStopTime << std::endl;
     if (REDQueueDisc != nullptr) {
         REDQueueDisc->TraceConnectWithoutContext("Enqueue", MakeCallback(&PoissonSampler::EnqueueQueueDisc, this));
     }
@@ -116,6 +118,7 @@ void PoissonSampler::EventHandler() {
     // if there is no packet in the queue, then add the event pair with zero delay
     if (zeroDelay) {
         event->SetDepartureTime();
+        updateCounters(event);
     }
     // set the drop information
     // if (REDQueueDisc != nullptr) {
@@ -126,10 +129,19 @@ void PoissonSampler::EventHandler() {
     }
 }
 
+void PoissonSampler::updateCounters(samplingEvent* event) {
+    if (event->GetMarkingProb() == 1.0) {
+        droppedSamples++;
+    }
+    updateBasicCounters(event->GetSampleTime(), event->GetDepartureTime(), 0);
+}
 void PoissonSampler::RecordPacket(Ptr<const Packet> packet) {
     PacketKey* packetKey = PacketKey::Packet2PacketKey(packet, FIRST_HEADER_PPP);
     if (_recordedSamples.find(*packetKey) != _recordedSamples.end()) {
         _recordedSamples[*packetKey]->SetDepartureTime();
+        updateCounters(_recordedSamples[*packetKey]);
+        // remove the packet from the map to reduce the memory usage of the simulation
+        _recordedSamples.erase(*packetKey);
         // bool ECNFlag = false;
         // if (REDQueueDisc == nullptr) {
         //     const Ptr<Packet> &pktCopy = packet->Copy();
@@ -148,6 +160,9 @@ void PoissonSampler::RecordPacket(Ptr<const Packet> packet) {
         while (_recordedSamples.find(*packetKey) != _recordedSamples.end())
         {
             _recordedSamples[*packetKey]->SetDepartureTime();
+            updateCounters(_recordedSamples[*packetKey]);
+            // remove the packet from the map to reduce the memory usage of the simulation
+            _recordedSamples.erase(*packetKey);
             // if (ECNFlag) {
             //     _recordedSamples[*packetKey]->SetMarkingProb(1.0);
             // }
@@ -160,17 +175,7 @@ void PoissonSampler::RecordPacket(Ptr<const Packet> packet) {
 void PoissonSampler::SaveMonitorRecords(const string& filename) {
     ofstream outfile;
     outfile.open(filename);
-    outfile << "SourceIp,SourcePort,DestinationIp,DestinationPort,SequenceNb,Id,PayloadSize,SampleTime,IsDeparted,DepartTime,MarkingProb" << endl;
-    for (auto& packetKeyEventPair: _recordedSamples) {
-        PacketKey key = packetKeyEventPair.first;
-        samplingEvent* event = packetKeyEventPair.second;
-
-        outfile << key.GetSrcIp() << "," << key.GetSrcPort() << ",";
-        outfile << key.GetDstIp() << "," << key.GetDstPort() << "," << key.GetSeqNb() << "," << key.GetId()  << "," << key.GetSize() << ",";
-        outfile << GetRelativeTime(event->GetSampleTime()).GetNanoSeconds() << ",";
-        outfile << event->IsDeparted() << "," << GetRelativeTime(event->GetDepartureTime()).GetNanoSeconds() << ",";
-        outfile << std::fixed << std::setprecision(10);
-        outfile << event->GetMarkingProb() << "," << endl;
-    }
+    outfile << "sampleDelayMean,unbiasedSmapleDelayVariance,sampleSize,droppedSamples" << endl;
+    outfile << sampleMean[0].GetNanoSeconds() << "," << unbiasedSmapleVariance[0].GetNanoSeconds() << "," << sampleSize[0] << "," << droppedSamples << endl;
     outfile.close();
 }

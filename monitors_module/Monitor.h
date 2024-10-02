@@ -50,8 +50,9 @@ protected:
     ns3::Time _duration = Seconds(0);
     ns3::Time _steadyStartTime = Seconds(0);
     ns3::Time _steadyStopTime = Seconds(0);
-    ns3::Time sampleMean = Seconds(0);
-    ns3::Time unbiasedSmapleVariance = Seconds(0);
+    std::vector<ns3::Time> sampleMean;
+    std::vector<ns3::Time> unbiasedSmapleVariance;
+    std::vector<uint32_t> sampleSize;
     std::string _monitorTag;
     set<AppKey> _appsKey;
 
@@ -62,6 +63,7 @@ public:
     void AddAppKey(AppKey appKey);
     std::string GetMonitorTag() const;
     virtual void SaveMonitorRecords(const string &filename) = 0;
+    void updateBasicCounters(ns3::Time _sentTime, ns3::Time _receivedTime, int path);
 };
 
 #endif //MONITOR_H

@@ -29,6 +29,17 @@ void Monitor::AddAppKey(AppKey appKey) {
     _appsKey.insert(appKey);
 }
 
+void Monitor::updateBasicCounters(Time _sentTime, Time _receivedTime, int path) {
+    sampleSize[path] += 1;
+    Time delta = (_receivedTime - _sentTime - sampleMean[path]);
+    sampleMean[path] = sampleMean[path] + Time(delta.GetNanoSeconds() / sampleSize[path]);
+    if (sampleSize[path] <= 1) {
+        unbiasedSmapleVariance[path] = Time(0);
+    }
+    else {
+        unbiasedSmapleVariance[path] = unbiasedSmapleVariance[path] + Time((delta.GetNanoSeconds() * delta.GetNanoSeconds()) / sampleSize[path]) - Time(unbiasedSmapleVariance[path].GetNanoSeconds() / (sampleSize[path] - 1));
+    }  
+}
 string Monitor::GetMonitorTag() const { return _monitorTag; }
 Time Monitor::GetRelativeTime(const Time &time){ return time - _startTime; }
 

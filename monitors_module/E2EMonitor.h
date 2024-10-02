@@ -33,10 +33,13 @@ class E2EMonitor : public Monitor {
 
 private:
     double _errorRate;
-    uint32_t sumOfPacketSizes;
-    uint32_t receivedPackets;
-    uint32_t sentPackets;
-    uint32_t markedPackets;
+    std::vector<uint32_t> sumOfPacketSizes;
+    std::vector<uint32_t> sentPackets;
+    std::vector<uint32_t> markedPackets;
+    DataRate hostToTorLinkRate;
+    DataRate torToAggLinkRate;
+    Time hostToTorLinkDelay;
+    Hasher hasher;
 
     std::unordered_map<PacketKey, E2EMonitorEvent*, PacketKeyHash> _recordedPackets;
 
@@ -45,9 +48,10 @@ private:
 
     void Enqueue(Ptr< const Packet > packet);
     void RecordIpv4PacketReceived(Ptr<const Packet> packet, Ptr<Ipv4> ipv4, uint32_t interface);
-
+    uint64_t GetHashValue(const Ipv4Address src, const Ipv4Address dst, const uint16_t srcPort, const uint16_t dstPort, const uint8_t protocol);
 public:
-    E2EMonitor(const Time &startTime, const Time &duration, const Time &steadyStartTime, const Time &steadyStopTime, const Ptr<PointToPointNetDevice> netDevice, const Ptr<Node> &rxNode, const string &monitorTag, const double errorRate);
+    E2EMonitor(const Time &startTime, const Time &duration, const Time &steadyStartTime, const Time &steadyStopTime, const Ptr<PointToPointNetDevice> netDevice, const Ptr<Node> &rxNode, const string &monitorTag, const double errorRate, 
+    const DataRate &hostToTorLinkRate, const DataRate &torToAggLinkRate, const Time &hostToTorLinkDelay);
     void SaveMonitorRecords(const string &filename);
 };
 

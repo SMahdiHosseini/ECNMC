@@ -71,8 +71,8 @@ void TraceReplaySender::LoadTrace(const string& traceFile) {
         uint32_t frameNb = stoi(pkt_attributes[0]);
         Time timestamp = Seconds(stod(pkt_attributes[1]));
         uint32_t payload_size = stoi(pkt_attributes[2]);
-        if (timestamp < _trafficStartTime || (timestamp > _trafficEndTime && _trafficEndTime != Seconds(0))) { continue; }
-        timestamp = timestamp - _trafficStartTime;
+        // if (timestamp < _trafficStartTime || (timestamp > _trafficEndTime && _trafficEndTime != Seconds(0))) { continue; }
+        // timestamp = timestamp - _trafficStartTime;
         _traceItems.push_back({frameNb, timestamp, payload_size});
     }
     traceInput.close();

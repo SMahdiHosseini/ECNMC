@@ -50,7 +50,7 @@ private:
     double _sampleRate;
     std::unordered_map<PacketKey, samplingEvent*, PacketKeyHash> _recordedSamples;
     int zeroDelayPort;
-    uint32_t numberOfSamples;
+    uint32_t droppedSamples;
     Ptr<const QueueDiscItem> lastItem;
     Time lastItemTime;
     Ptr<const Packet> lastPacket;
@@ -62,6 +62,7 @@ private:
     void EnqueueNetDeviceQueue(Ptr< const Packet > packet);
     void EventHandler();
     void RecordPacket(Ptr<const Packet> packet);
+    void updateCounters(samplingEvent* event);
 
 public:
     PoissonSampler(const Time &steadyStartTime, const Time &steadyStopTime, Ptr<RedQueueDisc> queueDisc, Ptr<Queue<Packet>> queue, Ptr<PointToPointNetDevice> outgoingNetDevice, const string &sampleTag, double sampleRate);
