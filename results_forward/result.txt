@@ -1,8 +1,8 @@
-Consolidate compiler generated dependencies of target monitors_module
-[  0%] Building CXX object scratch/ECNMC/CMakeFiles/monitors_module.dir/monitors_module/E2EMonitor.cc.o
-[  0%] Linking CXX static library ../../lib/libmonitors_module.a
-[  0%] Building CXX object scratch/ECNMC/CMakeFiles/scratch_ECNMC_DatacenterSimulation.dir/DatacenterSimulation.cc.o
-[  0%] Linking CXX executable ns3.41-DatacenterSimulation-debug
+[  1%] Building CXX object scratch/ECNMC/CMakeFiles/monitors_module.dir/monitors_module/PoissonSampler.cc.o
+[  1%] Building CXX object scratch/ECNMC/CMakeFiles/monitors_module.dir/monitors_module/RegularSampler.cc.o
+[  1%] Linking CXX static library ../../lib/libmonitors_module.a
+[  1%] Building CXX object scratch/ECNMC/CMakeFiles/scratch_ECNMC_DatacenterSimulation.dir/DatacenterSimulation.cc.o
+[  1%] Linking CXX executable ns3.41-DatacenterSimulation-debug
 
 Start
 Hosts and Switches IP addresses
@@ -34,22 +34,22 @@ Config Parameters
 hostToTorLinkRate: 20Mbps
 hostToTorLinkRateCrossTraffic: 50Mbps
 hostToTorLinkDelay: 50us
-torToAggLinkRate: 63.0Mbps
+torToAggLinkRate: 62.4Mbps
 torToAggLinkDelay: 50us
 aggToCoreLinkRate: 63Mbps
 aggToCoreLinkDelay: 50us
 appDataRate: 10Mbps
-duration: 5
+duration: 20
 pctPacedBack: 0.8
 enableSwitchECN: 1
 enableECMP: 1
 sampleRate: 300
-errorRate: 0
+errorRate: 0.01
 dirName: forward
 experiment: 1
 trafficStartTime: 0.0
-trafficStopTime: 5.0
-steadyStartTime: 2
-steadyEndTime: 4
+trafficStopTime: 20.0
+steadyStartTime: 3
+steadyEndTime: 18
 Done 
-Total execution time = 296477844 microsecond
+Total execution time = 962859456 microsecond

@@ -58,6 +58,35 @@ def calculate_drop_rate(__ns3_path, steadyStart, steadyEnd, rate, segments, chec
     #     return 0
     # return sum([value for value in swtiches_dropRates.values() if value != 0]) / len([value for value in swtiches_dropRates.values() if value != 0])
 
+def calculate_drop_rate_online(endToEnd_dfs, paths):
+    loss_sum = 0
+    counts = 0
+    for flow in endToEnd_dfs.keys():
+        for p in range(len(paths)):
+            loss_sum += endToEnd_dfs[flow]['sentPackets'][p] - endToEnd_dfs[flow]['receivedPackets'][p]
+            counts += endToEnd_dfs[flow]['sentPackets'][p]
+    return loss_sum / counts
+
+def read_online_computations(__ns3_path, rate, segment, experiment, results_folder):
+    file_paths = glob.glob('{}/scratch/{}/{}/{}/*_{}.csv'.format(__ns3_path, results_folder, rate, experiment, segment))
+    dfs = {}
+    for file_path in file_paths:
+        df_name = file_path.split('/')[-1].split('_')[0]
+        df = pd.read_csv(file_path)
+        df = df.rename(columns={'sampleDelayMean': 'DelayMean', 'unbiasedSmapleDelayVariance': 'DelayStd'})
+        if segment == 'PoissonSampler':
+            df = df.rename(columns={'samplesDropMean': 'successProbMean', 'samplesDropVariance': 'successProbStd'})
+            df['DelayStd'] = np.sqrt(df['DelayStd'])
+            df['successProbStd'] = np.sqrt(df['successProbStd'])
+            # convert the success probability to loss probability
+            df['successProbMean'] = 1 - df['successProbMean']
+            # convert df to a dictionary
+            dfs[df_name] = df.iloc[0].to_dict()
+        else:
+            df['successProbMean'] = df['receivedPackets'] / df['sentPackets']
+            dfs[df_name] = df.to_dict()
+    return dfs
+
 def read_data(__ns3_path, steadyStart, steadyEnd, rate, segment, checkColumn, projectColumn, experiment, remove_duplicates, results_folder, removeDrops=True):
     file_paths = glob.glob('{}/scratch/{}/{}/{}/*_{}.csv'.format(__ns3_path, results_folder, rate, experiment, segment))
     dfs = {}

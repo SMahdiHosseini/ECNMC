@@ -24,7 +24,8 @@ PoissonSampler::PoissonSampler(const Time &steadyStartTime, const Time &steadySt
     m_var->SetAttribute("Mean", DoubleValue(1/sampleRate));
     _sampleRate = sampleRate;
     zeroDelayPort = 0;
-    droppedSamples = 0;
+    samplesDropMean = 0;
+    samplesDropVariance = 0;
     sampleMean.push_back(Seconds(0));
     unbiasedSmapleVariance.push_back(Seconds(0));
     sampleSize.push_back(0);
@@ -130,10 +131,16 @@ void PoissonSampler::EventHandler() {
 }
 
 void PoissonSampler::updateCounters(samplingEvent* event) {
-    if (event->GetMarkingProb() == 1.0) {
-        droppedSamples++;
-    }
     updateBasicCounters(event->GetSampleTime(), event->GetDepartureTime(), 0);
+    
+    double delta = (event->GetMarkingProb() - samplesDropMean);
+    samplesDropMean = samplesDropMean + (delta / sampleSize[0]);
+    if (sampleSize[0] <= 1) {
+        samplesDropVariance = 0;
+    }
+    else {
+        samplesDropVariance = samplesDropVariance + ((delta* delta) / sampleSize[0]) - (samplesDropVariance / (sampleSize[0] - 1));
+    }
 }
 void PoissonSampler::RecordPacket(Ptr<const Packet> packet) {
     PacketKey* packetKey = PacketKey::Packet2PacketKey(packet, FIRST_HEADER_PPP);
@@ -175,7 +182,7 @@ void PoissonSampler::RecordPacket(Ptr<const Packet> packet) {
 void PoissonSampler::SaveMonitorRecords(const string& filename) {
     ofstream outfile;
     outfile.open(filename);
-    outfile << "sampleDelayMean,unbiasedSmapleDelayVariance,sampleSize,droppedSamples" << endl;
-    outfile << sampleMean[0].GetNanoSeconds() << "," << unbiasedSmapleVariance[0].GetNanoSeconds() << "," << sampleSize[0] << "," << droppedSamples << endl;
+    outfile << "sampleDelayMean,unbiasedSmapleDelayVariance,sampleSize,samplesDropMean,samplesDropVariance" << endl;
+    outfile << sampleMean[0].GetNanoSeconds() << "," << unbiasedSmapleVariance[0].GetNanoSeconds() << "," << sampleSize[0] << "," << samplesDropMean << "," << samplesDropVariance << endl;
     outfile.close();
 }
