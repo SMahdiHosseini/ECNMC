@@ -91,6 +91,44 @@ def run_forward_experiment(exp):
             print('\tExperiment {} done'.format(i))
         print('Rate {} done'.format(rate))
 
+def run_reverse_experiment(exp):
+    expConfig = ExperimentConfig()
+    expConfig.read_config_file('Parameters.config')
+    os.system('mkdir -p {}/scratch/ECNMC/results_reverse/'.format(get_ns3_path()))
+    for rate in expConfig.errorRateScale:
+        exp_tor_to_agg_link_rate = "{}Mbps".format(round(float(expConfig.tor_to_agg_link_rate.split('M')[0]), 1))
+        exp_errorRate = "{}".format(float(expConfig.errorRate) * rate)
+        for i in exp:
+            os.system('mkdir -p {}/scratch/ECNMC/results_reverse/{}'.format(get_ns3_path(), i + 1))
+            os.system(
+                '{}/ns3 run \'DatacenterSimulation '.format(get_ns3_path()) +
+                '--hostToTorLinkRate={} '.format(expConfig.host_to_tor_link_rate) +
+                '--hostToTorLinkRateCrossTraffic={} '.format(expConfig.host_to_tor_cross_traffic_rate) +
+                '--torToAggLinkRate={} '.format(exp_tor_to_agg_link_rate) +
+                '--aggToCoreLinkRate={} '.format(expConfig.agg_to_core_link_rate) +
+                '--hostToTorLinkDelay={} '.format(expConfig.host_to_tor_link_delay) +
+                '--torToAggLinkDelay={} '.format(expConfig.tor_to_agg_link_delay) +
+                '--aggToCoreLinkDelay={} '.format(expConfig.agg_to_core_link_delay) +
+                '--pctPacedBack={} '.format(expConfig.pct_paced_back) +
+                '--appDataRate={} '.format(expConfig.app_data_rate) +
+                '--duration={} '.format(expConfig.duration) +
+                '--sampleRate={} '.format(expConfig.sampleRate) +
+                '--experiment={} '.format(i + 1) +
+                '--errorRate={} '.format(exp_errorRate) +
+                '--trafficStartTime={} '.format(i * float(expConfig.duration)) +
+                '--trafficStopTime={} '.format((i + 1) * float(expConfig.duration)) +
+                '--steadyStartTime={} '.format(expConfig.steadyStart) +
+                '--steadyStopTime={} '.format(expConfig.steadyEnd) +
+                '--dirName=' + 'reverse' +
+                '\' > {}/scratch/ECNMC/results_reverse/result.txt'.format(get_ns3_path())
+            )
+    
+            os.system('mkdir -p {}/scratch/Results_reverse/{}/{}'.format(get_ns3_path(), rate, i))
+            os.system('mv {}/scratch/ECNMC/results_reverse/{}/*.csv {}/scratch/Results_reverse/{}/{}'.format(get_ns3_path(), i + 1, get_ns3_path(), rate, i))
+            os.system('mkdir -p {}/scratch/ECNMC/results_reverse/{}'.format(get_ns3_path(), rate))
+            print('\tExperiment {} done'.format(i))
+        print('Rate {} done'.format(rate))
+
 # def run_experiment(exp):
 #     expConfig = ExperimentConfig()
 #     expConfig.read_config_file('Parameters.config')
@@ -165,5 +203,20 @@ if (args.IsForward):
         for th in ths:
             th.join()
 else:
-    print("Reverse Experiment")
+    if (args.IsTest):
+        run_reverse_experiment([0])
+    else:
+        expConfig = ExperimentConfig()
+        expConfig.read_config_file('Parameters.config')
+        expConfig.experiments = int(expConfig.experiments)
+        ths = []
+        numOfThs = 30
+        for th in range(numOfThs):
+            ths.append(threading.Thread(target=run_reverse_experiment, args=([i for i in range(int(th * expConfig.experiments / numOfThs), int((th + 1) * expConfig.experiments / numOfThs))], )))
+
+        for th in ths:
+            th.start()
+
+        for th in ths:
+            th.join()
 

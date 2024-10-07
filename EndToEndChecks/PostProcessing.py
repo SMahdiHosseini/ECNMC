@@ -230,7 +230,10 @@ def __main__():
     steadyStart = convert_to_float(config.get('Settings', 'steadyStart'))
     steadyEnd = convert_to_float(config.get('Settings', 'steadyEnd'))
     experiments = int(config.get('Settings', 'experiments'))
-    serviceRateScales = [float(x) for x in config.get('Settings', 'serviceRateScales').split(',')]
+    if args.dir == "forward":
+        serviceRateScales = [float(x) for x in config.get('Settings', 'serviceRateScales').split(',')]
+    else:
+        serviceRateScales = [float(x) for x in config.get('Settings', 'errorRateScale').split(',')]
 
     # serviceRateScales = [0.91, 0.93, 0.95, 0.97, 0.99, 1.01, 1.03, 1.05]
     # experiments = 1
