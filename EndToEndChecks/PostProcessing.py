@@ -232,8 +232,8 @@ def __main__():
     experiments = int(config.get('Settings', 'experiments'))
     serviceRateScales = [float(x) for x in config.get('Settings', 'serviceRateScales').split(',')]
 
-    # serviceRateScales = [1.0]
-    experiments = 1
+    # serviceRateScales = [0.91, 0.93, 0.95, 0.97, 0.99, 1.01, 1.03, 1.05]
+    # experiments = 1
 
     for rate in serviceRateScales:
         print("\nAnalyzing experiments for rate: ", rate)
