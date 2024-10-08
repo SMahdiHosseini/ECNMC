@@ -28,6 +28,7 @@ E2EMonitor::E2EMonitor(const Time &startTime, const Time &duration, const Time &
         markedPackets.push_back(0);
     }
     hasher = Hasher();
+    rand = CreateObject<UniformRandomVariable>();
     Simulator::Schedule(_startTime, &E2EMonitor::Connect, this, netDevice, rxNode->GetId());
     Simulator::Schedule(_startTime + _duration, &E2EMonitor::Disconnect, this, netDevice, rxNode->GetId());
 }
@@ -99,8 +100,16 @@ void E2EMonitor::RecordIpv4PacketReceived(Ptr<const Packet> packet, Ptr<Ipv4> ip
             Time transmissionDelay = hostToTorLinkRate.CalculateBytesTxTime(packetKeyEventPair->first.GetPacketSize()) * 2
                                     + torToAggLinkRate.CalculateBytesTxTime(packetKeyEventPair->first.GetPacketSize()) * 2
                                     + hostToTorLinkDelay * 4;
-            // TODO: Implement delay de-prioritization
-            updateBasicCounters(packetKeyEventPair->second->GetSentTime(), packetKeyEventPair->second->GetReceivedTime() - transmissionDelay, path);
+            // Implementation of delay de-prioritization
+            Time additionalDeprioritizationDelay = Seconds(0);
+            uint32_t temp = rand->GetInteger(0, 1 / _errorRate);
+            if (temp == 0 && (_monitorTag == "R0H0R2H0" || _monitorTag == "R0H1R2H1")) {
+                additionalDeprioritizationDelay = packetKeyEventPair->second->GetReceivedTime() - transmissionDelay - packetKeyEventPair->second->GetSentTime();
+                additionalDeprioritizationDelay = Time(additionalDeprioritizationDelay.GetNanoSeconds() * 0.3);
+            }
+
+
+            updateBasicCounters(packetKeyEventPair->second->GetSentTime(), packetKeyEventPair->second->GetReceivedTime() + additionalDeprioritizationDelay - transmissionDelay, path);
             // remove the packet from the map to reduce the memory usage of the simulation
             _recordedPackets.erase(packetKeyEventPair);
         }

@@ -8,6 +8,7 @@
 #include "ns3/core-module.h"
 #include "ns3/internet-module.h"
 #include "ns3/point-to-point-module.h"
+#include "ns3/random-variable-stream.h"
 #include "Monitor.h"
 #include "PacketKey.h"
 #include "AppKey.h"
@@ -40,6 +41,7 @@ private:
     DataRate torToAggLinkRate;
     Time hostToTorLinkDelay;
     Hasher hasher;
+    Ptr<UniformRandomVariable> rand;
 
     std::unordered_map<PacketKey, E2EMonitorEvent*, PacketKeyHash> _recordedPackets;
 
