@@ -25,7 +25,7 @@ SwitchMonitor::SwitchMonitor(const Time &startTime, const Time &duration, const 
     _startTime = startTime;
     _duration = duration;
     _monitorTag = monitorTag;
-
+    hasher = Hasher();
     Simulator::Schedule(_startTime, &SwitchMonitor::Connect, this, node);
     Simulator::Schedule(_startTime + _duration, &SwitchMonitor::Disconnect, this, node);
 }
@@ -77,18 +77,33 @@ void SwitchMonitor::AddAppKey(AppKey appKey) {
     _appsKey.insert(appKey);
 }
 
+uint64_t SwitchMonitor::GetHashValue(const Ipv4Address src, const Ipv4Address dst, const uint16_t srcPort, const uint16_t dstPort, const uint8_t protocol) {
+    hasher.clear();
+    std::ostringstream oss;
+    oss << src
+        << dst
+        << protocol
+        << dstPort
+        << srcPort;
+    std::string data = oss.str();
+    uint32_t hash = hasher.GetHash32(data);
+    oss.str("");
+    return hash;
+}
+
 void SwitchMonitor::SavePacketRecords(const string& filename) {
     ofstream outfile;
     outfile.open(filename);
-    outfile << "SourceIp,SourcePort,DestinationIp,DestinationPort,SequenceNb,Id,PayloadSize,ReceiveTime,IsSent,SentTime" << endl;
+    outfile << "SourceIp,SourcePort,DestinationIp,DestinationPort,SequenceNb,Id,PayloadSize,ReceiveTime,IsSent,SentTime,path" << endl;
     for (auto& packetKeyEventPair: _recordedPackets) {
         PacketKey key = packetKeyEventPair.first;
         SwitchMonitorEvent* event = packetKeyEventPair.second;
-
+        uint64_t hash = GetHashValue(key.GetSrcIp(), key.GetDstIp(), key.GetSrcPort(), key.GetDstPort(), 6);
+        int path = hash % 2;
         outfile << key.GetSrcIp() << "," << key.GetSrcPort() << ",";
         outfile << key.GetDstIp() << "," << key.GetDstPort() << "," << key.GetSeqNb() << "," << key.GetId()  << "," << key.GetSize() << ",";
         outfile << GetRelativeTime(event->GetReceivedTime()).GetNanoSeconds() << ",";
-        outfile << event->IsSent() << "," << GetRelativeTime(event->GetSentTime()).GetNanoSeconds() << endl;
+        outfile << event->IsSent() << "," << GetRelativeTime(event->GetSentTime()).GetNanoSeconds() << "," << path << endl;
     }
     outfile.close();
 }

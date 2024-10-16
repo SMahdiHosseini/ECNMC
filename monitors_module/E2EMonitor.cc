@@ -26,6 +26,9 @@ E2EMonitor::E2EMonitor(const Time &startTime, const Time &duration, const Time &
         sumOfPacketSizes.push_back(0);
         sentPackets.push_back(0);
         markedPackets.push_back(0);
+        timeAverageIntegral.push_back(Seconds(0));
+        integralStartTime.push_back(Time(-1));
+        integralEndTime.push_back(Time(-1));
     }
     hasher = Hasher();
     rand = CreateObject<UniformRandomVariable>();
@@ -49,6 +52,7 @@ uint64_t E2EMonitor::GetHashValue(const Ipv4Address src, const Ipv4Address dst, 
 
 void E2EMonitor::Connect(const Ptr<PointToPointNetDevice> netDevice, uint32_t rxNodeId) {
     netDevice->GetQueue()->TraceConnectWithoutContext("Enqueue", MakeCallback(&E2EMonitor::Enqueue, this));
+    // netDevice->TraceConnectWithoutContext("PromiscSniffer", MakeCallback(&E2EMonitor::Enqueue, this));
     Config::ConnectWithoutContext("/NodeList/" + to_string(rxNodeId) + "/$ns3::Ipv4L3Protocol/Rx", MakeCallback(
             &E2EMonitor::RecordIpv4PacketReceived, this));
 }
@@ -81,6 +85,17 @@ void E2EMonitor::Enqueue(Ptr<const Packet> packet) {
     }
 }
 
+void E2EMonitor::updateTimeAverageIntegral(uint32_t path, Time delay, Time endTime) {
+    if (integralStartTime[path] != Time(-1)) {
+        timeAverageIntegral[path] += Time(delay.GetNanoSeconds() * (endTime - integralEndTime[path]).GetNanoSeconds());
+    }
+
+    if (integralStartTime[path] == Time(-1)) {
+        integralStartTime[path] = endTime;
+    }
+    integralEndTime[path] = endTime;
+}
+
 void E2EMonitor::RecordIpv4PacketReceived(Ptr<const Packet> packet, Ptr<Ipv4> ipv4, uint32_t interface) {
     PacketKey* packetKey = PacketKey::Packet2PacketKey(packet, FIRST_HEADER_IPV4);
     if(_appsKey.count(AppKey::PacketKey2AppKey(*packetKey))) {
@@ -102,14 +117,15 @@ void E2EMonitor::RecordIpv4PacketReceived(Ptr<const Packet> packet, Ptr<Ipv4> ip
                                     + hostToTorLinkDelay * 4;
             // Implementation of delay de-prioritization
             Time additionalDeprioritizationDelay = Seconds(0);
-            uint32_t temp = rand->GetInteger(0, 1 / _errorRate);
-            if (temp == 0 && (_monitorTag == "R0H0R2H0" || _monitorTag == "R0H1R2H1")) {
-                additionalDeprioritizationDelay = packetKeyEventPair->second->GetReceivedTime() - transmissionDelay - packetKeyEventPair->second->GetSentTime();
-                additionalDeprioritizationDelay = Time(additionalDeprioritizationDelay.GetNanoSeconds() * 0.3);
-            }
+            // uint32_t temp = rand->GetInteger(0, 1 / _errorRate);
+            // if (temp == 0 && (_monitorTag == "R0H0R2H0" || _monitorTag == "R0H1R2H1")) {
+            //     additionalDeprioritizationDelay = packetKeyEventPair->second->GetReceivedTime() - transmissionDelay - packetKeyEventPair->second->GetSentTime();
+            //     additionalDeprioritizationDelay = Time(additionalDeprioritizationDelay.GetNanoSeconds() * 0.3);
+            // }
 
 
             updateBasicCounters(packetKeyEventPair->second->GetSentTime(), packetKeyEventPair->second->GetReceivedTime() + additionalDeprioritizationDelay - transmissionDelay, path);
+            updateTimeAverageIntegral(path, packetKeyEventPair->second->GetReceivedTime() + additionalDeprioritizationDelay - transmissionDelay - packetKeyEventPair->second->GetSentTime(), packetKeyEventPair->second->GetReceivedTime());
             // remove the packet from the map to reduce the memory usage of the simulation
             _recordedPackets.erase(packetKeyEventPair);
         }
@@ -119,8 +135,10 @@ void E2EMonitor::RecordIpv4PacketReceived(Ptr<const Packet> packet, Ptr<Ipv4> ip
 void E2EMonitor::SaveMonitorRecords(const string& filename) {
     ofstream outfile;
     outfile.open(filename);
-    outfile << "path,sampleDelayMean,unbiasedSmapleDelayVariance,averagePacketSize,receivedPackets,sentPackets,markedPackets" << endl;
-    outfile << 0 << "," << sampleMean[0].GetNanoSeconds() << "," << unbiasedSmapleVariance[0].GetNanoSeconds() << "," << sumOfPacketSizes[0] / sampleSize[0] << "," << sampleSize[0] << "," << sentPackets[0] << "," << markedPackets[0] << endl;
-    outfile << 1 << "," << sampleMean[1].GetNanoSeconds() << "," << unbiasedSmapleVariance[1].GetNanoSeconds() << "," << sumOfPacketSizes[1] / sampleSize[1] << "," << sampleSize[1] << "," << sentPackets[1] << "," << markedPackets[1] << endl;
+    outfile << "path,sampleDelayMean,unbiasedSmapleDelayVariance,averagePacketSize,receivedPackets,sentPackets,markedPackets,timeAverage" << endl;
+    outfile << 0 << "," << sampleMean[0].GetNanoSeconds() << "," << unbiasedSmapleVariance[0].GetNanoSeconds() << "," << sumOfPacketSizes[0] / sampleSize[0] << "," << sampleSize[0] << "," << sentPackets[0] << "," << markedPackets[0] 
+    << "," << timeAverageIntegral[0].GetNanoSeconds() / (integralEndTime[0] - integralStartTime[0]).GetNanoSeconds() << endl;
+    outfile << 1 << "," << sampleMean[1].GetNanoSeconds() << "," << unbiasedSmapleVariance[1].GetNanoSeconds() << "," << sumOfPacketSizes[1] / sampleSize[1] << "," << sampleSize[1] << "," << sentPackets[1] << "," << markedPackets[1] 
+    << "," << timeAverageIntegral[1].GetNanoSeconds() / (integralEndTime[1] - integralStartTime[1]).GetNanoSeconds() << endl;
     outfile.close();
 }

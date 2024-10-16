@@ -41,6 +41,7 @@ private:
     EventId _sendEvent, _startEvent;
     Time _trafficStartTime;
     Time _trafficEndTime;
+    bool _isSecondPhase;
 
 protected:
     void DoDispose() override;

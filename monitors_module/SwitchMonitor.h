@@ -49,16 +49,16 @@ private:
 
     std::string _monitorTag;
     set<AppKey> _appsKey;
-
+    Hasher hasher;
     std::unordered_map<PacketKey, SwitchMonitorEvent*, PacketKeyHash> _recordedPackets;
 
     void Connect(const Ptr<Node> &node);
     void Disconnect(const Ptr<Node> &node);
 
     void RecordPacket(Ptr<const Packet> packet);
-
+    
     ns3::Time GetRelativeTime(const Time &time);
-
+    uint64_t GetHashValue(const Ipv4Address src, const Ipv4Address dst, const uint16_t srcPort, const uint16_t dstPort, const uint8_t protocol);
 public:
     SwitchMonitor(const Time &startTime, const Time &duration, const Ptr<Node> &txNode, const string &monitorTag);
     void AddAppKey(AppKey appKey);

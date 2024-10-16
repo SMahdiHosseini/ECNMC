@@ -59,10 +59,10 @@ def read_data_ready(path):
     ddf['timestamp'] = pd.to_datetime(ddf['timestamp'])
     ddf = ddf.set_index('timestamp')
 
-    # Resample data to 1 second intervals and sum the payload sizes
-    traffic_over_time = ddf.resample('1s').sum()
+    # Resample data to 0.05 second intervals and sum the payload sizes
+    traffic_over_time = ddf.resample('0.02s').sum()
     # # Convert payload size to Megabits (Mb)
-    traffic_over_time['payload_size'] = traffic_over_time['payload_size'] * 8 / (1024 * 1024)
+    traffic_over_time['payload_size'] = traffic_over_time['payload_size'] * 8 / (1024 * 1024) / 0.02
     
     # creat a new column for the time and set to seconds
     traffic_over_time['time'] = traffic_over_time.index
@@ -81,32 +81,33 @@ def plot_traffic(traffic_over_time):
         plt.axhline(y=avg, color=colors[i], linestyle='--', label='Median of Traffic {}'.format(i))
         plt.plot(np.array(traffic_over_time[i]['time']), np.array(traffic_over_time[i]['payload_size']), label='Traffic {}'.format(i), color=colors[i])
 
-    avg = np.median(traffic_over_time[-1]['payload_size'])
-    plt.axhline(y=avg, color=colors[-1], linestyle='--', label='Median of Traffic {}'.format("All"))
-    plt.plot(np.array(traffic_over_time[-1]['time']), np.array(traffic_over_time[-1]['payload_size']), label='Traffic {}'.format(i), color=colors[-1])
+    # avg = np.median(traffic_over_time[-1]['payload_size'])
+    # plt.axhline(y=avg, color=colors[-1], linestyle='--', label='Median of Traffic {}'.format("All"))
+    # plt.plot(np.array(traffic_over_time[-1]['time']), np.array(traffic_over_time[-1]['payload_size']), label='Traffic {}'.format(i), color=colors[-1])
 
     plt.xlabel('Time')
     plt.ylabel('Traffic (Mbps)')
     plt.title('Network Traffic Over Time')
     plt.grid(True)
     plt.legend()
-    plt.savefig('results/traffic_over_time.png')
+    plt.savefig('traffic_over_time.png')
 
 def main(directories):
-    # for i in range(len(directories)):
-    #     ddf = read_csv_files_dask(directory=directories[i])
-    #     compute_traffic_over_time_dask(ddf, i)
+    for i in range(len(directories)):
+        ddf = read_csv_files_dask(directory=directories[i])
+        compute_traffic_over_time_dask(ddf, i)
 
     traffics_over_time = []
     for i in range(len(directories)):
         traffics_over_time.append(read_data_ready(i))
-    traffics_over_time.append(read_data_ready(-1))
+    # traffics_over_time.append(read_data_ready(-1))
     plot_traffic(traffics_over_time)
 
 # Directory containing the CSV files
 paths = [0, 1, 2]
 # directories = ['/home/mahdi/Documents/NAL/Data/chicago_2010_traffic_10min_2paths/path{}/TCP'.format(i) for i in paths]
-directories = ['/home/mahdi/Documents/Data/chicago_2010_traffic_10min_2paths/path{}/TCP'.format(i) for i in paths]
+# directories = ['/media/experiments/chicago_2010_traffic_10min_2paths/path{}/TCP'.format(i) for i in paths]
+directories = ['/media/experiments/flow_csv_files_2009_new/path_group_1/TCP']
 
 if __name__ == "__main__":
     main(directories)

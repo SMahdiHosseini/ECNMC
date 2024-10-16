@@ -49,6 +49,7 @@ TraceReplaySender::TraceReplaySender() {
     _socket = nullptr;
     _sendEvent = EventId ();
     _enablePacing = true;
+    _isSecondPhase = false;
 }
 
 TraceReplaySender::~TraceReplaySender() {
@@ -65,6 +66,7 @@ void TraceReplaySender::LoadTrace(const string& traceFile) {
     }
     ifstream traceInput(traceFile);
     string line;
+    Time previousTime = Seconds(0);
     while(getline(traceInput, line)) {
         vector<string> pkt_attributes = SplitStr(line, ',');
 
@@ -73,9 +75,12 @@ void TraceReplaySender::LoadTrace(const string& traceFile) {
         uint32_t payload_size = stoi(pkt_attributes[2]);
         // if (timestamp < _trafficStartTime || (timestamp > _trafficEndTime && _trafficEndTime != Seconds(0))) { continue; }
         // timestamp = timestamp - _trafficStartTime;
-        _traceItems.push_back({frameNb, timestamp, payload_size});
+        // _traceItems.push_back({frameNb, timestamp, payload_size});
+        _traceItems.push_back({frameNb, (timestamp - previousTime) / 30 , payload_size});
+        previousTime = timestamp;
     }
     traceInput.close();
+    // std::cout << "Loaded " << _traceItems.size() << " trace items from " << traceFile << std::endl;
     if (!_traceItems.empty()) {
         _startEvent = Simulator::Schedule(_traceItems.front().timestamp, &TraceReplaySender::PrepareSocket, this);
         Simulator::Schedule(_traceItems.back().timestamp + Seconds(1), &TraceReplaySender::StopApplication, this);
@@ -115,7 +120,7 @@ void TraceReplaySender::PrepareSocket() {
         Ptr<TcpSocketBase> tcpSocket = _socket->GetObject<TcpSocketBase>();
         tcpSocket->SetPacingStatus(_enablePacing);
     }
-
+    // std::cout << "Socket prepared for " << _traceFilename << std::endl;
     _sendEvent = Simulator::Schedule(Seconds(0), &TraceReplaySender::ScheduleNextSend, this);
 }
 
@@ -145,17 +150,28 @@ void TraceReplaySender::Send(const TraceReplayItem& item) {
 
 void TraceReplaySender::ScheduleNextSend() {
     NS_LOG_FUNCTION(this);
-    
-    if(_traceItemIdx >= _traceItems.size()) {return;}
+    // if(_traceItemIdx == 0) {
+    //     std::cout << "TraceReplaySender: Started sending packets from trace: " << _traceFilename << " at: " << Simulator::Now() << std::endl;
+    // }
+    if(_traceItemIdx >= _traceItems.size()) {
+        // std::cout << "TraceReplaySender: Finished sending all packets trace: " << _traceFilename << " at: " << Simulator::Now() << std::endl;
+        // return;
+        _traceItemIdx = 0;
+    }
 
     Send(_traceItems[_traceItemIdx]);
     _traceItemIdx++;
-    if(_traceItemIdx >= _traceItems.size()) {return;}
+    if(_traceItemIdx >= _traceItems.size()) {
+        // std::cout << "TraceReplaySender: Finished sending all packets trace: " << _traceFilename << " at: " << Simulator::Now() << std::endl;
+        // return;
+        _traceItemIdx = 0;
+    }
 
     TraceReplayItem nextItem = _traceItems[_traceItemIdx];
-    Time currTime = Simulator::Now();
-    Time remainingTime = (nextItem.timestamp > currTime) ? nextItem.timestamp - currTime : Seconds(0);
-    remainingTime += MicroSeconds(helper_methods::GetRandomNumber(0, 1000)); // to add randomness
+    // Time currTime = Simulator::Now();
+    // Time remainingTime = (nextItem.timestamp > currTime) ? nextItem.timestamp - currTime : Seconds(0);
+    // remainingTime += MicroSeconds(helper_methods::GetRandomNumber(0, 100)); // to add randomness
+    Time remainingTime = nextItem.timestamp + MicroSeconds(helper_methods::GetRandomNumber(0, 7)); // to add randomness
     _sendEvent = Simulator::Schedule(remainingTime, &TraceReplaySender::ScheduleNextSend, this);
 }
 

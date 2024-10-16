@@ -114,7 +114,7 @@ int main(int argc, char* argv[])
     Time startTime = Seconds(0);
     Time stopTime = Seconds(stof(duration));
     Time stopTime_1 = Seconds(stof(duration));  
-    Time convergenceTime = Seconds(0.5);
+    Time convergenceTime = Seconds(0.1);
     stopTime = stopTime + convergenceTime;
 
     Config::SetDefault("ns3::TcpL4Protocol::SocketType", StringValue("ns3::TcpDctcp"));
@@ -126,6 +126,8 @@ int main(int argc, char* argv[])
     Config::SetDefault("ns3::RedQueueDisc::UseHardDrop", BooleanValue(false));
     Config::SetDefault("ns3::RedQueueDisc::MeanPktSize", UintegerValue(1500));
     Config::SetDefault("ns3::RedQueueDisc::MaxSize", QueueSizeValue(QueueSize("37.5KB")));
+    // Config::SetDefault("ns3::RedQueueDisc::MaxSize", QueueSizeValue(QueueSize("1.8MB")));
+    // Config::SetDefault("ns3::RedQueueDisc::MaxSize", QueueSizeValue(QueueSize("250KB")));
     Config::SetDefault("ns3::RedQueueDisc::QW", DoubleValue(1));
     Config::SetDefault("ns3::RedQueueDisc::MinTh", DoubleValue(minTh));
     Config::SetDefault("ns3::RedQueueDisc::MaxTh", DoubleValue(maxTh));
@@ -316,8 +318,10 @@ int main(int argc, char* argv[])
     for (int i = 0; i < nHosts; i++) {
         auto* caidaTrafficGenerator = new BackgroundReplay(racks[0].Get(i), racks[2].Get(i), Seconds(stof(trafficStartTime)), Seconds(stof(trafficStopTime)));
         caidaTrafficGenerator->SetPctOfPacedTcps(pctPacedBack);
-        // string tracesPath = "/home/mahdi/Documents/Data/chicago_2010_traffic_10min_2paths/path" + to_string(i % 2);
         string tracesPath = "/media/experiments/chicago_2010_traffic_10min_2paths/path" + to_string(i % 2);
+        // string tracesPath = "/media/experiments/flow_csv_files/path_group_" + to_string(i % 4 + 1);
+        // string tracesPath = "/media/experiments/flow_csv_files_2009_new/path_group_1";
+        // string tracesPath = "/media/experiments/chicago_2010_traffic_10min_2paths/path0";
         if (std::filesystem::exists(tracesPath)) {
             caidaTrafficGenerator->RunAllTCPTraces(tracesPath, 0);
         } else {
@@ -329,8 +333,10 @@ int main(int argc, char* argv[])
     for (int i = 0; i < nHosts; i++) {
         auto* caidaTrafficGenerator = new BackgroundReplay(racks[1].Get(i), racks[3].Get(i), Seconds(stof(trafficStartTime)), Seconds(stof(trafficStopTime)));
         caidaTrafficGenerator->SetPctOfPacedTcps(pctPacedBack);
-        // string tracesPath = "/home/mahdi/Documents/Data/chicago_2010_traffic_10min_2paths/path" + to_string(i % 2);
         string tracesPath = "/media/experiments/chicago_2010_traffic_10min_2paths/path" + to_string(i % 2);
+        // string tracesPath = "/media/experiments/flow_csv_files/path_group_" + to_string(i % 4 + 1);
+        // string tracesPath = "/media/experiments/flow_csv_files_2009_new/path_group_1";
+        // string tracesPath = "/media/experiments/chicago_2010_traffic_10min_2paths/path0";
         if (std::filesystem::exists(tracesPath)) {
             caidaTrafficGenerator->RunAllTCPTraces(tracesPath, 0);
         } else {
@@ -363,54 +369,60 @@ int main(int argc, char* argv[])
     // }
 
     // NS3 application
-    // // Each host in R0 sends a flow to the corresponding host in R2
+    // Each host in R0 sends a flow to the corresponding host in R2
     // vector<Ptr<PacketSink>> R2Sinks;
     // for (int j = 0; j < nHosts; j++) {
-    //     uint16_t port = 50000 + j;
-    //     Address sinkLocalAddress(InetSocketAddress(Ipv4Address::GetAny(), port));
-    //     PacketSinkHelper sinkHelper("ns3::TcpSocketFactory", sinkLocalAddress);
-    //     ApplicationContainer sinkApp = sinkHelper.Install(racks[2].Get(j));
-    //     Ptr<PacketSink> sink = sinkApp.Get(0)->GetObject<PacketSink>();
-    //     sinkApp.Start(startTime);
-    //     sinkApp.Stop(stopTime);
-    //     R2Sinks.push_back(sink);
+    //     for (int k = 0; k <= 110; k++)
+    //     {
+    //         uint16_t port = 50000 + k;
+    //         Address sinkLocalAddress(InetSocketAddress(Ipv4Address::GetAny(), port));
+    //         PacketSinkHelper sinkHelper("ns3::TcpSocketFactory", sinkLocalAddress);
+    //         ApplicationContainer sinkApp = sinkHelper.Install(racks[2].Get(j));
+    //         Ptr<PacketSink> sink = sinkApp.Get(0)->GetObject<PacketSink>();
+    //         sinkApp.Start(startTime);
+    //         sinkApp.Stop(stopTime);
+    //         R2Sinks.push_back(sink);
 
-    //     OnOffHelper clientHelper("ns3::TcpSocketFactory", Address());
-    //     clientHelper.SetAttribute("OnTime", StringValue("ns3::ConstantRandomVariable[Constant=1]"));
-    //     clientHelper.SetAttribute("OffTime", StringValue("ns3::ConstantRandomVariable[Constant=0]"));
-    //     clientHelper.SetAttribute("DataRate", DataRateValue(DataRate(appDataRate)));
-    //     clientHelper.SetAttribute("PacketSize", UintegerValue(1000));
-    //     ApplicationContainer clientApp;
-    //     AddressValue remoteAddress(InetSocketAddress(ipsRacks[2][j].GetAddress(0), port));
-    //     clientHelper.SetAttribute("Remote", remoteAddress);
-    //     clientApp.Add(clientHelper.Install(racks[0].Get(j)));
-    //     clientApp.Start(startTime);
-    //     clientApp.Stop(stopTime);
+    //         OnOffHelper clientHelper("ns3::TcpSocketFactory", Address());
+    //         clientHelper.SetAttribute("OnTime", StringValue("ns3::ConstantRandomVariable[Constant=1]"));
+    //         clientHelper.SetAttribute("OffTime", StringValue("ns3::ConstantRandomVariable[Constant=0]"));
+    //         clientHelper.SetAttribute("DataRate", DataRateValue(DataRate("3.75Mbps")));
+    //         clientHelper.SetAttribute("PacketSize", UintegerValue(1000));
+    //         ApplicationContainer clientApp;
+    //         AddressValue remoteAddress(InetSocketAddress(ipsRacks[2][j].GetAddress(0), port));
+    //         clientHelper.SetAttribute("Remote", remoteAddress);
+    //         clientApp.Add(clientHelper.Install(racks[0].Get(j)));
+    //         clientApp.Start(startTime);
+    //         clientApp.Stop(stopTime);
+    //     }
     // }
 
     // // Each host in R1 sends a flow to the corresponding host in R3
     // vector<Ptr<PacketSink>> R3Sinks;
     // for (int j = 0; j < nHosts; j++) {
-    //     uint16_t port = 50000 + j;
-    //     Address sinkLocalAddress(InetSocketAddress(Ipv4Address::GetAny(), port));
-    //     PacketSinkHelper sinkHelper("ns3::TcpSocketFactory", sinkLocalAddress);
-    //     ApplicationContainer sinkApp = sinkHelper.Install(racks[3].Get(j));
-    //     Ptr<PacketSink> sink = sinkApp.Get(0)->GetObject<PacketSink>();
-    //     sinkApp.Start(startTime);
-    //     sinkApp.Stop(stopTime);
-    //     R3Sinks.push_back(sink);
+    //     for (int k = 0; k <= 110; k++)
+    //     {
+    //         uint16_t port = 50000 + k;
+    //         Address sinkLocalAddress(InetSocketAddress(Ipv4Address::GetAny(), port));
+    //         PacketSinkHelper sinkHelper("ns3::TcpSocketFactory", sinkLocalAddress);
+    //         ApplicationContainer sinkApp = sinkHelper.Install(racks[3].Get(j));
+    //         Ptr<PacketSink> sink = sinkApp.Get(0)->GetObject<PacketSink>();
+    //         sinkApp.Start(startTime);
+    //         sinkApp.Stop(stopTime);
+    //         R3Sinks.push_back(sink);
 
-    //     OnOffHelper clientHelper("ns3::TcpSocketFactory", Address());
-    //     clientHelper.SetAttribute("OnTime", StringValue("ns3::ConstantRandomVariable[Constant=1]"));
-    //     clientHelper.SetAttribute("OffTime", StringValue("ns3::ConstantRandomVariable[Constant=0]"));
-    //     clientHelper.SetAttribute("DataRate", DataRateValue(DataRate(appDataRate)));
-    //     clientHelper.SetAttribute("PacketSize", UintegerValue(1000));
-    //     ApplicationContainer clientApp;
-    //     AddressValue remoteAddress(InetSocketAddress(ipsRacks[3][j].GetAddress(0), port));
-    //     clientHelper.SetAttribute("Remote", remoteAddress);
-    //     clientApp.Add(clientHelper.Install(racks[1].Get(j)));
-    //     clientApp.Start(startTime);
-    //     clientApp.Stop(stopTime);
+    //         OnOffHelper clientHelper("ns3::TcpSocketFactory", Address());
+    //         clientHelper.SetAttribute("OnTime", StringValue("ns3::ConstantRandomVariable[Constant=1]"));
+    //         clientHelper.SetAttribute("OffTime", StringValue("ns3::ConstantRandomVariable[Constant=0]"));
+    //         clientHelper.SetAttribute("DataRate", DataRateValue(DataRate("3.75Mbps")));
+    //         clientHelper.SetAttribute("PacketSize", UintegerValue(1000));
+    //         ApplicationContainer clientApp;
+    //         AddressValue remoteAddress(InetSocketAddress(ipsRacks[3][j].GetAddress(0), port));
+    //         clientHelper.SetAttribute("Remote", remoteAddress);
+    //         clientApp.Add(clientHelper.Install(racks[1].Get(j)));
+    //         clientApp.Start(startTime);
+    //         clientApp.Stop(stopTime);
+    //     }
     // }
     /* ########## END: Application Setup ########## */
 
@@ -452,7 +464,7 @@ int main(int argc, char* argv[])
     //     endToendMonitors.push_back(R3R0Monitor);
     // }
 
-    // switch monitors on the ToR switches
+    // // switch monitors on the ToR switches
     // vector<SwitchMonitor *> torSwitchMonitors;
     // for (int i = 0; i < nRacks; i++) {
     //     auto *torSwitchMonitor = new SwitchMonitor(startTime, stopTime + convergenceTime, torSwitches.Get(i), "T" + to_string(i));
@@ -553,6 +565,10 @@ int main(int argc, char* argv[])
         }
     }
     //print config parameters
+
+    auto t = std::chrono::high_resolution_clock::now();
+    cout << "Total preparing time = " << std::chrono::duration_cast<std::chrono::microseconds>(t - start).count() << " microsecond" << endl;
+
     cout << "Config Parameters" << endl;
     cout << "hostToTorLinkRate: " << hostToTorLinkRate << endl;
     cout << "hostToTorLinkRateCrossTraffic: " << hostToTorLinkRateCrossTraffic << endl;

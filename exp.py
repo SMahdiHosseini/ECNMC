@@ -82,7 +82,7 @@ def run_forward_experiment(exp):
                 '--steadyStartTime={} '.format(expConfig.steadyStart) +
                 '--steadyStopTime={} '.format(expConfig.steadyEnd) +
                 '--dirName=' + 'forward' +
-                '\' > {}/scratch/ECNMC/results_forward/result.txt'.format(get_ns3_path())
+                '\' > {}/scratch/ECNMC/results_forward/result_{}.txt'.format(get_ns3_path(), i)
             )
     
             os.system('mkdir -p {}/scratch/Results_forward/{}/{}'.format(get_ns3_path(), rate, i))
@@ -120,7 +120,7 @@ def run_reverse_experiment(exp):
                 '--steadyStartTime={} '.format(expConfig.steadyStart) +
                 '--steadyStopTime={} '.format(expConfig.steadyEnd) +
                 '--dirName=' + 'reverse' +
-                '\' > {}/scratch/ECNMC/results_reverse/result.txt'.format(get_ns3_path())
+                '\' > {}/scratch/ECNMC/results_reverse/result_{}.txt'.format(get_ns3_path(), i)
             )
     
             os.system('mkdir -p {}/scratch/Results_reverse/{}/{}'.format(get_ns3_path(), rate, i))

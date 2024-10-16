@@ -40,13 +40,13 @@ def check_all_delayConsistency(endToEnd_statistics, samples_paths_aggregated_sta
             res['MaxEpsilonIneq'][flow][path] = check_MaxEpsilon_ineq_delay(endToEnd_statistics[flow][path], samples_paths_aggregated_statistics[flow][path])
     return res
 
-def check_all_successProbConsistency(endToEnd_statistics, samples_paths_aggregated_statistics, paths):
+def check_all_successProbConsistency(endToEnd_statistics, samples_paths_aggregated_statistics, paths, number_of_segments):
     res = {}
     res['MaxEpsilonIneq'] = {}
     for flow in endToEnd_statistics.keys():
         res['MaxEpsilonIneq'][flow] = {}
         for path in paths:
-            res['MaxEpsilonIneq'][flow][path] = check_MaxEpsilon_ineq_successProb(np.log(endToEnd_statistics[flow][path]['successProbMean']), samples_paths_aggregated_statistics[flow][path],len(paths))
+            res['MaxEpsilonIneq'][flow][path] = check_MaxEpsilon_ineq_successProb(np.log(endToEnd_statistics[flow][path]['successProbMean']), samples_paths_aggregated_statistics[flow][path], number_of_segments)
     return res
 
 def prepare_results(flows, queues, num_of_agg_switches):
@@ -59,6 +59,7 @@ def prepare_results(flows, queues, num_of_agg_switches):
     rounds_results['DropRate'] = []
     rounds_results['maxEpsilonDelay'] = {}
     rounds_results['maxEpsilonSuccessProb'] = {}
+    rounds_results['errors'] = {}
 
     for q in queues:
         if q[0] == 'T' and q[2] == 'H' and (q[1] == '2' or q[1] == '3'):
@@ -76,6 +77,7 @@ def prepare_results(flows, queues, num_of_agg_switches):
         rounds_results['EndToEndSuccessProb'][flow] = {}
         rounds_results['maxEpsilonDelay'][flow] = {}
         rounds_results['maxEpsilonSuccessProb'][flow] = {}
+        rounds_results['errors'][flow] = {}
 
         for i in range(num_of_agg_switches):
             rounds_results['MaxEpsilonIneqDelay'][flow]['A' + str(i)] = 0
@@ -85,14 +87,15 @@ def prepare_results(flows, queues, num_of_agg_switches):
             rounds_results['EndToEndSuccessProb'][flow]['A' + str(i)] = []
             rounds_results['maxEpsilonDelay'][flow]['A' + str(i)] = []
             rounds_results['maxEpsilonSuccessProb'][flow]['A' + str(i)] = []
+            rounds_results['errors'][flow]['A' + str(i)] = []
 
     rounds_results['experiments'] = 0
     return rounds_results
 
-def compatibility_check(rounds_results, samples_paths_aggregated_statistics, endToEnd_statistics, flows_name, paths):
+def compatibility_check(rounds_results, samples_paths_aggregated_statistics, endToEnd_statistics, flows_name, paths, number_of_segments):
     # End to End and Persegment Compatibility Check
     delay_results = check_all_delayConsistency(endToEnd_statistics, samples_paths_aggregated_statistics, paths)
-    successProb_results = check_all_successProbConsistency(endToEnd_statistics, samples_paths_aggregated_statistics, paths)
+    successProb_results = check_all_successProbConsistency(endToEnd_statistics, samples_paths_aggregated_statistics, paths, number_of_segments)
 
     for flow in flows_name:
         for path in paths:
@@ -106,7 +109,14 @@ def analyze_single_experiment(return_dict, rate, queues_names, confidenceValue, 
     paths = ['A' + str(i) for i in range(num_of_agg_switches)]
     endToEnd_dfs = read_online_computations(__ns3_path, rate, 'EndToEnd', str(experiment), results_folder)
     samples_dfs = read_online_computations(__ns3_path, rate, 'PoissonSampler', str(experiment), results_folder)
-
+    # switches_dfs = read_data(__ns3_path, 0.2, 1.2, rate, 'Switch', 'IsSent', 'ReceiveTime', str(experiment), True, results_folder)
+    # # # add delay columns which is ReceiveTime - SentTime and print the delay mean 9of the rows that path is 0 only for switch "T0"
+    # for switch in switches_dfs.keys():
+    #     switches_dfs[switch]['Delay'] = switches_dfs[switch]['SentTime'] - switches_dfs[switch]['ReceiveTime']
+    #     if switch == 'T0':
+    #         print(get_statistics(switches_dfs[switch][switches_dfs[switch]['path'] == 0], timeAvg=True)['timeAvg'])
+    #         print(switches_dfs[switch][switches_dfs[switch]['path'] == 0]['Delay'].mean())
+    #         # print(switches_dfs[switch][switches_dfs[switch]['SourceIp'] == '10.1.1.1']['Delay'].mean())
     rounds_results['DropRate'].append(calculate_drop_rate_online(endToEnd_dfs, paths))
 
     # samples_paths_statistics
@@ -138,18 +148,18 @@ def analyze_single_experiment(return_dict, rate, queues_names, confidenceValue, 
         endToEnd_statistics[flow] = {}
         for path in paths:
             endToEnd_statistics[flow][path] = {}
-            endToEnd_statistics[flow][path]['DelayMean'] = endToEnd_dfs[flow]['DelayMean'][int(path[1])]
+            endToEnd_statistics[flow][path]['DelayMean'] = endToEnd_dfs[flow]['timeAverage'][int(path[1])]
             endToEnd_statistics[flow][path]['successProbMean'] = endToEnd_dfs[flow]['successProbMean'][int(path[1])]            
 
             rounds_results['EndToEndSuccessProb'][flow][path].append(endToEnd_dfs[flow]['successProbMean'][int(path[1])])
-            rounds_results['EndToEndDelayMean'][flow][path].append(endToEnd_dfs[flow]['DelayMean'][int(path[1])])
+            rounds_results['EndToEndDelayMean'][flow][path].append(endToEnd_dfs[flow]['timeAverage'][int(path[1])])
             rounds_results['EndToEndDelayStd'][flow][path].append(endToEnd_dfs[flow]['DelayStd'][int(path[1])])
             rounds_results['maxEpsilonDelay'][flow][path].append(samples_paths_aggregated_statistics[flow][path]['MaxEpsilonDelay'])
             rounds_results['maxEpsilonSuccessProb'][flow][path].append(samples_paths_aggregated_statistics[flow][path]['MaxEpsilonSuccessProb'])
-    
+            rounds_results['errors'][flow][path].append(abs((samples_paths_aggregated_statistics[flow][path]['DelayMean'] - endToEnd_statistics[flow][path]['DelayMean']) / samples_paths_aggregated_statistics[flow][path]['DelayMean']))
     rounds_results['experiments'] += 1
-    
-    compatibility_check(rounds_results, samples_paths_aggregated_statistics, endToEnd_statistics, endToEnd_dfs.keys(), ['A' + str(i) for i in range(num_of_agg_switches)])
+    number_of_segments = 3
+    compatibility_check(rounds_results, samples_paths_aggregated_statistics, endToEnd_statistics, endToEnd_dfs.keys(), ['A' + str(i) for i in range(num_of_agg_switches)], number_of_segments)
     for q in queues_names:
         if q[0] == 'T' and q[2] == 'H' and (q[1] == '2' or q[1] == '3'):
             rounds_results[q+'Delaystd'].append(samples_dfs[q]['DelayStd'])
@@ -180,6 +190,7 @@ def merge_results(return_dict, merged_results, flows, queues):
                 merged_results['EndToEndSuccessProb'][flow]['A' + str(i)] += return_dict[exp]['EndToEndSuccessProb'][flow]['A' + str(i)]
                 merged_results['maxEpsilonDelay'][flow]['A' + str(i)] += return_dict[exp]['maxEpsilonDelay'][flow]['A' + str(i)]
                 merged_results['maxEpsilonSuccessProb'][flow]['A' + str(i)] += return_dict[exp]['maxEpsilonSuccessProb'][flow]['A' + str(i)]
+                merged_results['errors'][flow]['A' + str(i)] += return_dict[exp]['errors'][flow]['A' + str(i)]
     for exp in return_dict.keys():
         merged_results['experiments'] += return_dict[exp]['experiments']
         merged_results['DropRate'] += return_dict[exp]['DropRate']
@@ -234,7 +245,7 @@ def __main__():
         serviceRateScales = [float(x) for x in config.get('Settings', 'serviceRateScales').split(',')]
     else:
         serviceRateScales = [float(x) for x in config.get('Settings', 'errorRateScale').split(',')]
-
+    # serviceRateScales = [0.90]
     # serviceRateScales = [0.91, 0.93, 0.95, 0.97, 0.99, 1.01, 1.03, 1.05]
     # experiments = 1
 
