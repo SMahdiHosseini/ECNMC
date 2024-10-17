@@ -96,7 +96,7 @@ def run_reverse_experiment(exp):
     expConfig.read_config_file('Parameters.config')
     os.system('mkdir -p {}/scratch/ECNMC/results_reverse/'.format(get_ns3_path()))
     for rate in expConfig.errorRateScale:
-        exp_tor_to_agg_link_rate = "{}Mbps".format(round(float(expConfig.tor_to_agg_link_rate.split('M')[0]), 1))
+        exp_tor_to_agg_link_rate = "{}Mbps".format(round(float(expConfig.tor_to_agg_link_rate.split('M')[0]) * expConfig.serviceRateScales[0], 1))
         exp_errorRate = "{}".format(float(expConfig.errorRate) * rate)
         for i in exp:
             os.system('mkdir -p {}/scratch/ECNMC/results_reverse/{}'.format(get_ns3_path(), i + 1))

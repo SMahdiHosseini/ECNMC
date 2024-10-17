@@ -65,6 +65,8 @@ def calculate_drop_rate_online(endToEnd_dfs, paths):
         for p in range(len(paths)):
             loss_sum += endToEnd_dfs[flow]['sentPackets'][p] - endToEnd_dfs[flow]['receivedPackets'][p]
             counts += endToEnd_dfs[flow]['sentPackets'][p]
+    print("total sent packets: ", counts)
+    print("total loss: ", loss_sum)
     return loss_sum / counts
 
 def read_online_computations(__ns3_path, rate, segment, experiment, results_folder):
