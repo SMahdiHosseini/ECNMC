@@ -1,0 +1,49 @@
+
+Start
+Hosts and Switches IP addresses
+Rack: 0 Host: 0 Id:0 IP: 10.1.1.1
+Rack: 0 Host: 1 Id:1 IP: 10.1.2.1
+Rack: 0 Host: 2 Id:2 IP: 10.1.3.1
+Rack: 0 Host: 3 Id:3 IP: 10.1.4.1
+Rack: 0 Host: 4 Id:4 IP: 10.1.5.1
+Rack: 0 Host: 5 Id:5 IP: 10.1.6.1
+Rack: 1 Host: 0 Id:6 IP: 10.2.1.1
+Rack: 1 Host: 1 Id:7 IP: 10.2.2.1
+Rack: 1 Host: 2 Id:8 IP: 10.2.3.1
+Rack: 1 Host: 3 Id:9 IP: 10.2.4.1
+Rack: 1 Host: 4 Id:10 IP: 10.2.5.1
+Rack: 1 Host: 5 Id:11 IP: 10.2.6.1
+Rack: 2 Host: 0 Id:12 IP: 10.3.1.1
+Rack: 2 Host: 1 Id:13 IP: 10.3.2.1
+Rack: 2 Host: 2 Id:14 IP: 10.3.3.1
+Rack: 2 Host: 3 Id:15 IP: 10.3.4.1
+Rack: 2 Host: 4 Id:16 IP: 10.3.5.1
+Rack: 2 Host: 5 Id:17 IP: 10.3.6.1
+Rack: 3 Host: 0 Id:18 IP: 10.4.1.1
+Rack: 3 Host: 1 Id:19 IP: 10.4.2.1
+Rack: 3 Host: 2 Id:20 IP: 10.4.3.1
+Rack: 3 Host: 3 Id:21 IP: 10.4.4.1
+Rack: 3 Host: 4 Id:22 IP: 10.4.5.1
+Rack: 3 Host: 5 Id:23 IP: 10.4.6.1
+Total preparing time = 5309382 microsecond
+Config Parameters
+hostToTorLinkRate: 300Mbps
+hostToTorLinkRateCrossTraffic: 50Mbps
+hostToTorLinkDelay: 50us
+torToAggLinkRate: 765.5Mbps
+torToAggLinkDelay: 50us
+aggToCoreLinkRate: 945Mbps
+aggToCoreLinkDelay: 50us
+appDataRate: 10Mbps
+duration: 0.9
+pctPacedBack: 0.8
+enableSwitchECN: 1
+enableECMP: 1
+sampleRate: 4500
+errorRate: 0.002
+dirName: forward
+experiment: 12
+trafficStartTime: 9.9
+trafficStopTime: 10.8
+steadyStartTime: 0.3
+steadyEndTime: 0.8

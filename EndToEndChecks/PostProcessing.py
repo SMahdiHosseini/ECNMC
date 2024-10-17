@@ -60,6 +60,8 @@ def prepare_results(flows, queues, num_of_agg_switches):
     rounds_results['maxEpsilonDelay'] = {}
     rounds_results['maxEpsilonSuccessProb'] = {}
     rounds_results['errors'] = {}
+    rounds_results['workLoad'] = {}
+    rounds_results['AverageWorkLoad'] = []
 
     for q in queues:
         if q[0] == 'T' and q[2] == 'H' and (q[1] == '2' or q[1] == '3'):
@@ -78,6 +80,7 @@ def prepare_results(flows, queues, num_of_agg_switches):
         rounds_results['maxEpsilonDelay'][flow] = {}
         rounds_results['maxEpsilonSuccessProb'][flow] = {}
         rounds_results['errors'][flow] = {}
+        rounds_results['workLoad'][flow] = {}
 
         for i in range(num_of_agg_switches):
             rounds_results['MaxEpsilonIneqDelay'][flow]['A' + str(i)] = 0
@@ -88,6 +91,7 @@ def prepare_results(flows, queues, num_of_agg_switches):
             rounds_results['maxEpsilonDelay'][flow]['A' + str(i)] = []
             rounds_results['maxEpsilonSuccessProb'][flow]['A' + str(i)] = []
             rounds_results['errors'][flow]['A' + str(i)] = []
+            rounds_results['workLoad'][flow]['A' + str(i)] = []
 
     rounds_results['experiments'] = 0
     return rounds_results
@@ -144,6 +148,7 @@ def analyze_single_experiment(return_dict, rate, queues_names, confidenceValue, 
                                                                                      calc_epsilon_loss(confidenceValue, samples_dfs['T' + flow[5] + 'H' + flow[7]])])    
     # endToEnd_statistics
     endToEnd_statistics = {}
+    AverageWorkLoad = 0
     for flow in endToEnd_dfs.keys():
         endToEnd_statistics[flow] = {}
         for path in paths:
@@ -157,6 +162,10 @@ def analyze_single_experiment(return_dict, rate, queues_names, confidenceValue, 
             rounds_results['maxEpsilonDelay'][flow][path].append(samples_paths_aggregated_statistics[flow][path]['MaxEpsilonDelay'])
             rounds_results['maxEpsilonSuccessProb'][flow][path].append(samples_paths_aggregated_statistics[flow][path]['MaxEpsilonSuccessProb'])
             rounds_results['errors'][flow][path].append(abs((samples_paths_aggregated_statistics[flow][path]['DelayMean'] - endToEnd_statistics[flow][path]['DelayMean']) / samples_paths_aggregated_statistics[flow][path]['DelayMean']))
+            AverageWorkLoad += (endToEnd_dfs[flow]['sentPackets'][int(path[1])] * endToEnd_dfs[flow]['averagePacketSize'][int(path[1])] * 8)
+    
+        rounds_results['workLoad'][flow][path].append(((endToEnd_dfs[flow]['sentPackets'][0] * endToEnd_dfs[flow]['averagePacketSize'][0]) + (endToEnd_dfs[flow]['sentPackets'][1] * endToEnd_dfs[flow]['averagePacketSize'][1])) * 8 / 0.5)
+    rounds_results['AverageWorkLoad'].append((AverageWorkLoad / 0.5) / 12)
     rounds_results['experiments'] += 1
     number_of_segments = 3
     compatibility_check(rounds_results, samples_paths_aggregated_statistics, endToEnd_statistics, endToEnd_dfs.keys(), ['A' + str(i) for i in range(num_of_agg_switches)], number_of_segments)
@@ -191,9 +200,11 @@ def merge_results(return_dict, merged_results, flows, queues):
                 merged_results['maxEpsilonDelay'][flow]['A' + str(i)] += return_dict[exp]['maxEpsilonDelay'][flow]['A' + str(i)]
                 merged_results['maxEpsilonSuccessProb'][flow]['A' + str(i)] += return_dict[exp]['maxEpsilonSuccessProb'][flow]['A' + str(i)]
                 merged_results['errors'][flow]['A' + str(i)] += return_dict[exp]['errors'][flow]['A' + str(i)]
+                merged_results['workLoad'][flow]['A' + str(i)] += return_dict[exp]['workLoad'][flow]['A' + str(i)]
     for exp in return_dict.keys():
         merged_results['experiments'] += return_dict[exp]['experiments']
         merged_results['DropRate'] += return_dict[exp]['DropRate']
+        merged_results['AverageWorkLoad'] += return_dict[exp]['AverageWorkLoad']
     
 def analyze_all_experiments(rate, steadyStart, steadyEnd, confidenceValue, dir, experiments_end=3, ns3_path=__ns3_path):
     results_folder = 'Results_' + dir
@@ -222,7 +233,7 @@ def analyze_all_experiments(rate, steadyStart, steadyEnd, confidenceValue, dir, 
             th.join()
         merge_results(return_dict, merged_results, flows_name, queues_names)
         print("{} joind".format(i))
-    
+    merged_results['AverageWorkLoad'] = sum(merged_results['AverageWorkLoad']) / merged_results['experiments']
     with open('../results_{}/{}/delay_{}_{}_{}_to_{}.json'.format(dir, rate, results_folder, experiments_end, steadyStart, steadyEnd), 'w') as f:
         js.dump(merged_results, f, indent=4)
 
@@ -245,9 +256,10 @@ def __main__():
         serviceRateScales = [float(x) for x in config.get('Settings', 'serviceRateScales').split(',')]
     else:
         serviceRateScales = [float(x) for x in config.get('Settings', 'errorRateScale').split(',')]
-    serviceRateScales = [0.79, 0.83]
+    # serviceRateScales = [0.79, 0.81]
     # serviceRateScales = [0.91, 0.93, 0.95, 0.97, 0.99, 1.01, 1.03, 1.05]
-    experiments = 1
+    serviceRateScales = [float(x) for x in config.get('Settings', 'serviceRateScales').split(',')]
+    experiments = 30
 
     for rate in serviceRateScales:
         print("\nAnalyzing experiments for rate: ", rate)

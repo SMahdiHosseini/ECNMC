@@ -36,6 +36,7 @@ private:
     double _errorRate;
     std::vector<uint32_t> sumOfPacketSizes;
     std::vector<uint32_t> sentPackets;
+    std::vector<uint32_t> sentPackets_onlink;
     std::vector<uint32_t> markedPackets;
     std::vector<Time> timeAverageIntegral;
     std::vector<Time> integralStartTime;
@@ -52,6 +53,7 @@ private:
     void Disconnect(Ptr<PointToPointNetDevice> netDevice, uint32_t rxNodeId);
 
     void Enqueue(Ptr< const Packet > packet);
+    void Capture(Ptr< const Packet > packet);
     void RecordIpv4PacketReceived(Ptr<const Packet> packet, Ptr<Ipv4> ipv4, uint32_t interface);
     uint64_t GetHashValue(const Ipv4Address src, const Ipv4Address dst, const uint16_t srcPort, const uint16_t dstPort, const uint8_t protocol);
     void updateTimeAverageIntegral(uint32_t path, Time delay, Time endTime);

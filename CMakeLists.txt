@@ -9,6 +9,7 @@ add_library(
   monitors_module/PoissonSampler.cc
   monitors_module/RegularSampler.cc
   monitors_module/NetDeviceMonitor.cc
+  monitors_module/BurstMonitor.cc
 )
 
 add_library(

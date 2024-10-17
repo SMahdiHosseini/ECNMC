@@ -16,6 +16,7 @@
 #include "monitors_module/PoissonSampler.h"
 #include "monitors_module/RegularSampler.h"
 #include "monitors_module/NetDeviceMonitor.h"
+#include "monitors_module/BurstMonitor.h"
 #include "traffic_generator_module/background_replay/BackgroundReplay.h"
 #include <iomanip>
 #include <iostream>
@@ -122,7 +123,7 @@ int main(int argc, char* argv[])
     Config::SetDefault("ns3::RedQueueDisc::UseEcn", BooleanValue(enableSwitchECN));
     Config::SetDefault("ns3::TcpSocket::SegmentSize", UintegerValue(1448));
     Config::SetDefault("ns3::TcpSocket::DelAckCount", UintegerValue(2));
-    config::SetDefault("ns3::TcpSocket::SndBufSize", UitegerValue(1800000));
+    Config::SetDefault("ns3::TcpSocket::SndBufSize", UintegerValue(12000000));
     GlobalValue::Bind("ChecksumEnabled", BooleanValue(false));
     Config::SetDefault("ns3::RedQueueDisc::UseHardDrop", BooleanValue(false));
     Config::SetDefault("ns3::RedQueueDisc::MeanPktSize", UintegerValue(1500));
@@ -300,15 +301,15 @@ int main(int argc, char* argv[])
     Ipv4GlobalRoutingHelper::PopulateRoutingTables();
 
     /* Erro Model Setup for Silent packet drops*/
-    Ptr<RateErrorModel> em_R0H0T0 = CreateObject<RateErrorModel>();
-    em_R0H0T0->SetAttribute("ErrorRate", DoubleValue(errorRate));
-    em_R0H0T0->SetUnit(RateErrorModel::ErrorUnit::ERROR_UNIT_PACKET);
-    hostsToTorsNetDevices[0][0].Get(1)->SetAttribute("ReceiveErrorModel", PointerValue(em_R0H0T0));
+    // Ptr<RateErrorModel> em_R0H0T0 = CreateObject<RateErrorModel>();
+    // em_R0H0T0->SetAttribute("ErrorRate", DoubleValue(errorRate));
+    // em_R0H0T0->SetUnit(RateErrorModel::ErrorUnit::ERROR_UNIT_PACKET);
+    // hostsToTorsNetDevices[0][0].Get(1)->SetAttribute("ReceiveErrorModel", PointerValue(em_R0H0T0));
 
-    Ptr<RateErrorModel> em_R0H1T0 = CreateObject<RateErrorModel>();
-    em_R0H1T0->SetAttribute("ErrorRate", DoubleValue(errorRate));
-    em_R0H1T0->SetUnit(RateErrorModel::ErrorUnit::ERROR_UNIT_PACKET);
-    hostsToTorsNetDevices[0][1].Get(1)->SetAttribute("ReceiveErrorModel", PointerValue(em_R0H1T0));
+    // Ptr<RateErrorModel> em_R0H1T0 = CreateObject<RateErrorModel>();
+    // em_R0H1T0->SetAttribute("ErrorRate", DoubleValue(errorRate));
+    // em_R0H1T0->SetUnit(RateErrorModel::ErrorUnit::ERROR_UNIT_PACKET);
+    // hostsToTorsNetDevices[0][1].Get(1)->SetAttribute("ReceiveErrorModel", PointerValue(em_R0H1T0));
     /* ########## END: Ceating the topology ########## */
 
 
@@ -553,6 +554,16 @@ int main(int argc, char* argv[])
             PoissonSamplers.push_back(coreToAggSampler);
         }
     }
+
+    // BursMonitor on the tor to agg links
+    vector<BurstMonitor *> BurstMonitors;
+    for (int i = 0; i < nRacks; i++) {
+        for (int j = 0; j < nAggSwitches; j++) {
+            Ptr<PointToPointNetDevice> torToAggNetDevice = DynamicCast<PointToPointNetDevice>(torToAggNetDevices[i][j].Get(0));            
+            auto *torToAggSampler = new BurstMonitor(stopTime + convergenceTime, torToAggNetDevice, "T" + to_string(i) + "A" + to_string(j), Time("25us"), DataRate(torToAggLinkRate));
+            BurstMonitors.push_back(torToAggSampler);
+        }
+    }
     /* ########## END: Monitoring ########## */
 
 
@@ -625,6 +636,9 @@ int main(int argc, char* argv[])
     // }
     for (auto monitor: PoissonSamplers) {
         monitor->SaveMonitorRecords((string) (getenv("PWD")) + "/results_" + dirName + "/" + to_string(experiment)  + "/" + monitor->GetMonitorTag() + "_PoissonSampler.csv");
+    }
+    for (auto monitor: BurstMonitors) {
+        monitor->SaveRecords((string) (getenv("PWD")) + "/results_" + dirName + "/" + to_string(experiment)  + "/" + monitor->GetSampleTag() + "_BurstMonitor.csv");
     }
     /* ########## END: Scheduling and  Running ########## */
 

@@ -4503,3 +4503,1440 @@ Rate 10.0 done
 Rate 10.0 done
 	Experiment 22 done
 Rate 10.0 done
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+mv: cannot stat '/media/experiments/ns-allinone-3.41/ns-3.41/scratch/ECNMC/results_forward/17/*.csv': No such file or directory
+mv: cannot stat '/media/experiments/ns-allinone-3.41/ns-3.41/scratch/ECNMC/results_forward/12/*.csv': No such file or directory
+mv: cannot stat '/media/experiments/ns-allinone-3.41/ns-3.41/scratch/ECNMC/results_forward/27/*.csv': No such file or directory
+mv: cannot stat '/media/experiments/ns-allinone-3.41/ns-3.41/scratch/ECNMC/results_forward/24/*.csv': No such file or directory
+mv: cannot stat '/media/experiments/ns-allinone-3.41/ns-3.41/scratch/ECNMC/results_forward/4/*.csv': No such file or directory
+mv: cannot stat '/media/experiments/ns-allinone-3.41/ns-3.41/scratch/ECNMC/results_forward/6/*.csv': No such file or directory
+mv: cannot stat '/media/experiments/ns-allinone-3.41/ns-3.41/scratch/ECNMC/results_forward/1/*.csv': No such file or directory
+mv: cannot stat '/media/experiments/ns-allinone-3.41/ns-3.41/scratch/ECNMC/results_forward/9/*.csv': No such file or directory
+mv: cannot stat '/media/experiments/ns-allinone-3.41/ns-3.41/scratch/ECNMC/results_forward/7/*.csv': No such file or directory
+mv: cannot stat '/media/experiments/ns-allinone-3.41/ns-3.41/scratch/ECNMC/results_forward/22/*.csv': No such file or directory
+mv: cannot stat '/media/experiments/ns-allinone-3.41/ns-3.41/scratch/ECNMC/results_forward/28/*.csv': No such file or directory
+mv: cannot stat '/media/experiments/ns-allinone-3.41/ns-3.41/scratch/ECNMC/results_forward/26/*.csv': No such file or directory
+mv: cannot stat '/media/experiments/ns-allinone-3.41/ns-3.41/scratch/ECNMC/results_forward/19/*.csv': No such file or directory
+mv: cannot stat '/media/experiments/ns-allinone-3.41/ns-3.41/scratch/ECNMC/results_forward/2/*.csv': No such file or directory
+mv: cannot stat '/media/experiments/ns-allinone-3.41/ns-3.41/scratch/ECNMC/results_forward/3/*.csv': No such file or directory
+mv: cannot stat '/media/experiments/ns-allinone-3.41/ns-3.41/scratch/ECNMC/results_forward/21/*.csv': No such file or directory
+mv: cannot stat '/media/experiments/ns-allinone-3.41/ns-3.41/scratch/ECNMC/results_forward/30/*.csv': No such file or directory
+mv: cannot stat '/media/experiments/ns-allinone-3.41/ns-3.41/scratch/ECNMC/results_forward/15/*.csv': No such file or directory
+mv: cannot stat '/media/experiments/ns-allinone-3.41/ns-3.41/scratch/ECNMC/results_forward/20/*.csv': No such file or directory
+mv: cannot stat '/media/experiments/ns-allinone-3.41/ns-3.41/scratch/ECNMC/results_forward/13/*.csv': No such file or directory
+mv: cannot stat '/media/experiments/ns-allinone-3.41/ns-3.41/scratch/ECNMC/results_forward/25/*.csv': No such file or directory
+mv: cannot stat '/media/experiments/ns-allinone-3.41/ns-3.41/scratch/ECNMC/results_forward/10/*.csv': No such file or directory
+mv: cannot stat '/media/experiments/ns-allinone-3.41/ns-3.41/scratch/ECNMC/results_forward/29/*.csv': No such file or directory
+mv: cannot stat '/media/experiments/ns-allinone-3.41/ns-3.41/scratch/ECNMC/results_forward/5/*.csv': No such file or directory
+mv: cannot stat '/media/experiments/ns-allinone-3.41/ns-3.41/scratch/ECNMC/results_forward/23/*.csv': No such file or directory
+mv: cannot stat '/media/experiments/ns-allinone-3.41/ns-3.41/scratch/ECNMC/results_forward/11/*.csv': No such file or directory
+mv: cannot stat '/media/experiments/ns-allinone-3.41/ns-3.41/scratch/ECNMC/results_forward/14/*.csv': No such file or directory
+mv: cannot stat '/media/experiments/ns-allinone-3.41/ns-3.41/scratch/ECNMC/results_forward/16/*.csv': No such file or directory
+mv: cannot stat '/media/experiments/ns-allinone-3.41/ns-3.41/scratch/ECNMC/results_forward/18/*.csv': No such file or directory
+mv: cannot stat '/media/experiments/ns-allinone-3.41/ns-3.41/scratch/ECNMC/results_forward/8/*.csv': No such file or directory
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+Terminated
+gmake[3]: *** [scratch/ECNMC/CMakeFiles/monitors_module.dir/build.make:210: lib/libmonitors_module.a] Error 1
+gmake[3]: *** Deleting file 'lib/libmonitors_module.a'
+gmake[2]: *** [CMakeFiles/Makefile2:5048: scratch/ECNMC/CMakeFiles/monitors_module.dir/all] Error 2
+gmake[1]: *** [CMakeFiles/Makefile2:5169: scratch/ECNMC/CMakeFiles/scratch_ECNMC_DatacenterSimulation.dir/rule] Error 2
+gmake: *** [Makefile:1977: scratch_ECNMC_DatacenterSimulation] Error 2
+/usr/bin/ar: unable to copy file '../../lib/libmonitors_module.a'; reason: No such file or directory
+/usr/bin/ranlib: '../../lib/libmonitors_module.a': No such file
+/usr/bin/ar: unable to copy file '../../lib/libmonitors_module.a'; reason: No such file or directory
+gmake[3]: *** [scratch/ECNMC/CMakeFiles/monitors_module.dir/build.make:210: lib/libmonitors_module.a] Error 1
+gmake[2]: *** [CMakeFiles/Makefile2:5048: scratch/ECNMC/CMakeFiles/monitors_module.dir/all] Error 2
+gmake[1]: *** [CMakeFiles/Makefile2:5169: scratch/ECNMC/CMakeFiles/scratch_ECNMC_DatacenterSimulation.dir/rule] Error 2
+gmake: *** [Makefile:1977: scratch_ECNMC_DatacenterSimulation] Error 2
+gmake[3]: *** [scratch/ECNMC/CMakeFiles/monitors_module.dir/build.make:210: lib/libmonitors_module.a] Error 1
+gmake[2]: *** [CMakeFiles/Makefile2:5048: scratch/ECNMC/CMakeFiles/monitors_module.dir/all] Error 2
+gmake[3]: *** [scratch/ECNMC/CMakeFiles/monitors_module.dir/build.make:210: lib/libmonitors_module.a] Error 1
+gmake[1]: *** [CMakeFiles/Makefile2:5169: scratch/ECNMC/CMakeFiles/scratch_ECNMC_DatacenterSimulation.dir/rule] Error 2
+gmake[2]: *** [CMakeFiles/Makefile2:5048: scratch/ECNMC/CMakeFiles/monitors_module.dir/all] Error 2
+gmake: *** [Makefile:1977: scratch_ECNMC_DatacenterSimulation] Error 2
+gmake[1]: *** [CMakeFiles/Makefile2:5169: scratch/ECNMC/CMakeFiles/scratch_ECNMC_DatacenterSimulation.dir/rule] Error 2
+gmake: *** [Makefile:1977: scratch_ECNMC_DatacenterSimulation] Error 2
+/usr/bin/ranlib: '../../lib/libmonitors_module.a': No such file
+/usr/bin/ranlib: '../../lib/libmonitors_module.a': No such file
+gmake[3]: *** [scratch/ECNMC/CMakeFiles/monitors_module.dir/build.make:210: lib/libmonitors_module.a] Error 1
+/usr/bin/ld: cannot find ../../lib/libmonitors_module.a: No such file or directory
+gmake[2]: *** [CMakeFiles/Makefile2:5048: scratch/ECNMC/CMakeFiles/monitors_module.dir/all] Error 2
+gmake[3]: *** [scratch/ECNMC/CMakeFiles/monitors_module.dir/build.make:210: lib/libmonitors_module.a] Error 1
+gmake[1]: *** [CMakeFiles/Makefile2:5169: scratch/ECNMC/CMakeFiles/scratch_ECNMC_DatacenterSimulation.dir/rule] Error 2
+gmake[2]: *** [CMakeFiles/Makefile2:5048: scratch/ECNMC/CMakeFiles/monitors_module.dir/all] Error 2
+gmake: *** [Makefile:1977: scratch_ECNMC_DatacenterSimulation] Error 2
+gmake[1]: *** [CMakeFiles/Makefile2:5169: scratch/ECNMC/CMakeFiles/scratch_ECNMC_DatacenterSimulation.dir/rule] Error 2
+gmake: *** [Makefile:1977: scratch_ECNMC_DatacenterSimulation] Error 2
+/usr/bin/ranlib: '../../lib/libmonitors_module.a': No such file
+gmake[3]: *** [scratch/ECNMC/CMakeFiles/monitors_module.dir/build.make:210: lib/libmonitors_module.a] Error 1
+gmake[2]: *** [CMakeFiles/Makefile2:5048: scratch/ECNMC/CMakeFiles/monitors_module.dir/all] Error 2
+gmake[1]: *** [CMakeFiles/Makefile2:5169: scratch/ECNMC/CMakeFiles/scratch_ECNMC_DatacenterSimulation.dir/rule] Error 2
+gmake: *** [Makefile:1977: scratch_ECNMC_DatacenterSimulation] Error 2
+/usr/bin/ar: unable to copy file '../../lib/libmonitors_module.a'; reason: No such file or directory
+/usr/bin/ar: unable to copy file '../../lib/libmonitors_module.a'; reason: No such file or directory
+/usr/bin/ranlib: unable to copy file '../../lib/libmonitors_module.a'; reason: No such file or directory
+gmake[3]: *** [scratch/ECNMC/CMakeFiles/monitors_module.dir/build.make:210: lib/libmonitors_module.a] Error 1
+gmake[3]: *** Deleting file 'lib/libmonitors_module.a'
+gmake[3]: *** [scratch/ECNMC/CMakeFiles/monitors_module.dir/build.make:210: lib/libmonitors_module.a] Error 1
+gmake[2]: *** [CMakeFiles/Makefile2:5048: scratch/ECNMC/CMakeFiles/monitors_module.dir/all] Error 2
+gmake[3]: *** [scratch/ECNMC/CMakeFiles/monitors_module.dir/build.make:210: lib/libmonitors_module.a] Error 1
+gmake[2]: *** [CMakeFiles/Makefile2:5048: scratch/ECNMC/CMakeFiles/monitors_module.dir/all] Error 2
+gmake[2]: *** [CMakeFiles/Makefile2:5048: scratch/ECNMC/CMakeFiles/monitors_module.dir/all] Error 2
+gmake[1]: *** [CMakeFiles/Makefile2:5169: scratch/ECNMC/CMakeFiles/scratch_ECNMC_DatacenterSimulation.dir/rule] Error 2
+gmake[1]: *** [CMakeFiles/Makefile2:5169: scratch/ECNMC/CMakeFiles/scratch_ECNMC_DatacenterSimulation.dir/rule] Error 2
+gmake[1]: *** [CMakeFiles/Makefile2:5169: scratch/ECNMC/CMakeFiles/scratch_ECNMC_DatacenterSimulation.dir/rule] Error 2
+gmake: *** [Makefile:1977: scratch_ECNMC_DatacenterSimulation] Error 2
+gmake: *** [Makefile:1977: scratch_ECNMC_DatacenterSimulation] Error 2
+gmake: *** [Makefile:1977: scratch_ECNMC_DatacenterSimulation] Error 2
+/usr/bin/ar: unable to copy file '../../lib/libmonitors_module.a'; reason: No such file or directory
+gmake[3]: *** [scratch/ECNMC/CMakeFiles/monitors_module.dir/build.make:210: lib/libmonitors_module.a] Error 1
+gmake[3]: *** Deleting file 'lib/libmonitors_module.a'
+gmake[2]: *** [CMakeFiles/Makefile2:5048: scratch/ECNMC/CMakeFiles/monitors_module.dir/all] Error 2
+gmake[1]: *** [CMakeFiles/Makefile2:5169: scratch/ECNMC/CMakeFiles/scratch_ECNMC_DatacenterSimulation.dir/rule] Error 2
+gmake: *** [Makefile:1977: scratch_ECNMC_DatacenterSimulation] Error 2
+/usr/bin/ranlib: '../../lib/libmonitors_module.a': No such file
+gmake[3]: *** [scratch/ECNMC/CMakeFiles/monitors_module.dir/build.make:210: lib/libmonitors_module.a] Error 1
+gmake[2]: *** [CMakeFiles/Makefile2:5048: scratch/ECNMC/CMakeFiles/monitors_module.dir/all] Error 2
+gmake[1]: *** [CMakeFiles/Makefile2:5169: scratch/ECNMC/CMakeFiles/scratch_ECNMC_DatacenterSimulation.dir/rule] Error 2
+gmake: *** [Makefile:1977: scratch_ECNMC_DatacenterSimulation] Error 2
+/usr/bin/ar: unable to copy file '../../lib/libmonitors_module.a'; reason: No such file or directory
+/usr/bin/ld: cannot find ../../lib/libmonitors_module.a: No such file or directory
+gmake[3]: *** [scratch/ECNMC/CMakeFiles/monitors_module.dir/build.make:210: lib/libmonitors_module.a] Error 1
+gmake[2]: *** [CMakeFiles/Makefile2:5048: scratch/ECNMC/CMakeFiles/monitors_module.dir/all] Error 2
+gmake[1]: *** [CMakeFiles/Makefile2:5169: scratch/ECNMC/CMakeFiles/scratch_ECNMC_DatacenterSimulation.dir/rule] Error 2
+gmake: *** [Makefile:1977: scratch_ECNMC_DatacenterSimulation] Error 2
+/usr/bin/ar: unable to copy file '../../lib/libmonitors_module.a'; reason: No such file or directory
+gmake[3]: *** [scratch/ECNMC/CMakeFiles/monitors_module.dir/build.make:210: lib/libmonitors_module.a] Error 1
+gmake[2]: *** [CMakeFiles/Makefile2:5048: scratch/ECNMC/CMakeFiles/monitors_module.dir/all] Error 2
+gmake[1]: *** [CMakeFiles/Makefile2:5169: scratch/ECNMC/CMakeFiles/scratch_ECNMC_DatacenterSimulation.dir/rule] Error 2
+gmake: *** [Makefile:1977: scratch_ECNMC_DatacenterSimulation] Error 2
+/usr/bin/ar: unable to copy file '../../lib/libmonitors_module.a'; reason: No such file or directory
+gmake[3]: *** [scratch/ECNMC/CMakeFiles/monitors_module.dir/build.make:210: lib/libmonitors_module.a] Error 1
+gmake[3]: *** Deleting file 'lib/libmonitors_module.a'
+gmake[2]: *** [CMakeFiles/Makefile2:5048: scratch/ECNMC/CMakeFiles/monitors_module.dir/all] Error 2
+gmake[1]: *** [CMakeFiles/Makefile2:5169: scratch/ECNMC/CMakeFiles/scratch_ECNMC_DatacenterSimulation.dir/rule] Error 2
+gmake: *** [Makefile:1977: scratch_ECNMC_DatacenterSimulation] Error 2
+/usr/bin/ar: unable to copy file '../../lib/libmonitors_module.a'; reason: No such file or directory
+gmake[3]: *** [scratch/ECNMC/CMakeFiles/monitors_module.dir/build.make:210: lib/libmonitors_module.a] Error 1
+gmake[3]: *** Deleting file 'lib/libmonitors_module.a'
+gmake[2]: *** [CMakeFiles/Makefile2:5048: scratch/ECNMC/CMakeFiles/monitors_module.dir/all] Error 2
+gmake[1]: *** [CMakeFiles/Makefile2:5169: scratch/ECNMC/CMakeFiles/scratch_ECNMC_DatacenterSimulation.dir/rule] Error 2
+gmake: *** [Makefile:1977: scratch_ECNMC_DatacenterSimulation] Error 2
+/usr/bin/ar: unable to copy file '../../lib/libmonitors_module.a'; reason: No such file or directory
+gmake[3]: *** [scratch/ECNMC/CMakeFiles/monitors_module.dir/build.make:210: lib/libmonitors_module.a] Error 1
+gmake[3]: *** Deleting file 'lib/libmonitors_module.a'
+gmake[2]: *** [CMakeFiles/Makefile2:5048: scratch/ECNMC/CMakeFiles/monitors_module.dir/all] Error 2
+gmake[1]: *** [CMakeFiles/Makefile2:5169: scratch/ECNMC/CMakeFiles/scratch_ECNMC_DatacenterSimulation.dir/rule] Error 2
+gmake: *** [Makefile:1977: scratch_ECNMC_DatacenterSimulation] Error 2
+/usr/bin/ld: cannot find ../../lib/libmonitors_module.a: No such file or directory
+/usr/bin/ranlib: /usr/bin/ranlib: '../../lib/libmonitors_module.a': No such file'../../lib/libmonitors_module.a': No such file
+
+gmake[3]: *** [scratch/ECNMC/CMakeFiles/monitors_module.dir/build.make:210: lib/libmonitors_module.a] Error 1
+gmake[3]: *** [scratch/ECNMC/CMakeFiles/monitors_module.dir/build.make:210: lib/libmonitors_module.a] Error 1
+gmake[2]: *** [CMakeFiles/Makefile2:5048: scratch/ECNMC/CMakeFiles/monitors_module.dir/all] Error 2
+gmake[2]: *** [CMakeFiles/Makefile2:5048: scratch/ECNMC/CMakeFiles/monitors_module.dir/all] Error 2
+gmake[1]: *** [CMakeFiles/Makefile2:5169: scratch/ECNMC/CMakeFiles/scratch_ECNMC_DatacenterSimulation.dir/rule] Error 2
+gmake[1]: *** [CMakeFiles/Makefile2:5169: scratch/ECNMC/CMakeFiles/scratch_ECNMC_DatacenterSimulation.dir/rule] Error 2
+gmake: *** [Makefile:1977: scratch_ECNMC_DatacenterSimulation] Error 2
+gmake: *** [Makefile:1977: scratch_ECNMC_DatacenterSimulation] Error 2
+/usr/bin/ar: unable to copy file '../../lib/libmonitors_module.a'; reason: No such file or directory
+gmake[3]: *** [scratch/ECNMC/CMakeFiles/monitors_module.dir/build.make:210: lib/libmonitors_module.a] Error 1
+gmake[2]: *** [CMakeFiles/Makefile2:5048: scratch/ECNMC/CMakeFiles/monitors_module.dir/all] Error 2
+gmake[1]: *** [CMakeFiles/Makefile2:5169: scratch/ECNMC/CMakeFiles/scratch_ECNMC_DatacenterSimulation.dir/rule] Error 2
+gmake: *** [Makefile:1977: scratch_ECNMC_DatacenterSimulation] Error 2
+/usr/bin/ranlib: unable to copy file '../../lib/libmonitors_module.a'; reason: No such file or directory
+gmake[3]: *** [scratch/ECNMC/CMakeFiles/monitors_module.dir/build.make:210: lib/libmonitors_module.a] Error 1
+gmake[2]: *** [CMakeFiles/Makefile2:5048: scratch/ECNMC/CMakeFiles/monitors_module.dir/all] Error 2
+gmake[1]: *** [CMakeFiles/Makefile2:5169: scratch/ECNMC/CMakeFiles/scratch_ECNMC_DatacenterSimulation.dir/rule] Error 2
+gmake: *** [Makefile:1977: scratch_ECNMC_DatacenterSimulation] Error 2
+collect2: error: ld returned 1 exit status
+gmake[3]: *** [scratch/ECNMC/CMakeFiles/scratch_ECNMC_DatacenterSimulation.dir/build.make:103: scratch/ECNMC/ns3.41-DatacenterSimulation-debug] Error 1
+gmake[3]: *** Deleting file 'scratch/ECNMC/ns3.41-DatacenterSimulation-debug'
+gmake[2]: *** [CMakeFiles/Makefile2:5163: scratch/ECNMC/CMakeFiles/scratch_ECNMC_DatacenterSimulation.dir/all] Error 2
+gmake[1]: *** [CMakeFiles/Makefile2:5169: scratch/ECNMC/CMakeFiles/scratch_ECNMC_DatacenterSimulation.dir/rule] Error 2
+gmake: *** [Makefile:1977: scratch_ECNMC_DatacenterSimulation] Error 2
+/usr/bin/ld: cannot find ../../lib/libmonitors_module.a: No such file or directory
+collect2: error: ld returned 1 exit status
+gmake[3]: *** [scratch/ECNMC/CMakeFiles/scratch_ECNMC_DatacenterSimulation.dir/build.make:103: scratch/ECNMC/ns3.41-DatacenterSimulation-debug] Error 1
+gmake[2]: *** [CMakeFiles/Makefile2:5163: scratch/ECNMC/CMakeFiles/scratch_ECNMC_DatacenterSimulation.dir/all] Error 2
+gmake[1]: *** [CMakeFiles/Makefile2:5169: scratch/ECNMC/CMakeFiles/scratch_ECNMC_DatacenterSimulation.dir/rule] Error 2
+gmake: *** [Makefile:1977: scratch_ECNMC_DatacenterSimulation] Error 2
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x14
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x14
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x14
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x14
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x14
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0x8
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a(PoissonSampler.cc.o): invalid size field in group section header: 0xc
+/usr/bin/ld: ../../lib/libmonitors_module.a: error adding symbols: file format not recognized
+collect2: error: ld returned 1 exit status
+gmake[3]: *** [scratch/ECNMC/CMakeFiles/scratch_ECNMC_DatacenterSimulation.dir/build.make:103: scratch/ECNMC/ns3.41-DatacenterSimulation-debug] Error 1
+gmake[2]: *** [CMakeFiles/Makefile2:5163: scratch/ECNMC/CMakeFiles/scratch_ECNMC_DatacenterSimulation.dir/all] Error 2
+gmake[1]: *** [CMakeFiles/Makefile2:5169: scratch/ECNMC/CMakeFiles/scratch_ECNMC_DatacenterSimulation.dir/rule] Error 2
+gmake: *** [Makefile:1977: scratch_ECNMC_DatacenterSimulation] Error 2
+collect2: error: ld returned 1 exit status
+gmake[3]: *** [scratch/ECNMC/CMakeFiles/scratch_ECNMC_DatacenterSimulation.dir/build.make:103: scratch/ECNMC/ns3.41-DatacenterSimulation-debug] Error 1
+gmake[2]: *** [CMakeFiles/Makefile2:5163: scratch/ECNMC/CMakeFiles/scratch_ECNMC_DatacenterSimulation.dir/all] Error 2
+gmake[1]: *** [CMakeFiles/Makefile2:5169: scratch/ECNMC/CMakeFiles/scratch_ECNMC_DatacenterSimulation.dir/rule] Error 2
+gmake: *** [Makefile:1977: scratch_ECNMC_DatacenterSimulation] Error 2
+Error running link command: Bus error
+gmake[3]: *** [scratch/ECNMC/CMakeFiles/monitors_module.dir/build.make:210: lib/libmonitors_module.a] Error 1
+gmake[3]: *** Deleting file 'lib/libmonitors_module.a'
+gmake[2]: *** [CMakeFiles/Makefile2:5048: scratch/ECNMC/CMakeFiles/monitors_module.dir/all] Error 2
+gmake[1]: *** [CMakeFiles/Makefile2:5169: scratch/ECNMC/CMakeFiles/scratch_ECNMC_DatacenterSimulation.dir/rule] Error 2
+gmake: *** [Makefile:1977: scratch_ECNMC_DatacenterSimulation] Error 2
+collect2: error: ld returned 1 exit status
+gmake[3]: *** [scratch/ECNMC/CMakeFiles/scratch_ECNMC_DatacenterSimulation.dir/build.make:103: scratch/ECNMC/ns3.41-DatacenterSimulation-debug] Error 1
+gmake[2]: *** [CMakeFiles/Makefile2:5163: scratch/ECNMC/CMakeFiles/scratch_ECNMC_DatacenterSimulation.dir/all] Error 2
+gmake[1]: *** [CMakeFiles/Makefile2:5169: scratch/ECNMC/CMakeFiles/scratch_ECNMC_DatacenterSimulation.dir/rule] Error 2
+gmake: *** [Makefile:1977: scratch_ECNMC_DatacenterSimulation] Error 2
+/usr/bin/ld: Error running link command: Bus error
+gmake[3]: *** [scratch/ECNMC/CMakeFiles/monitors_module.dir/build.make:210: lib/libmonitors_module.a] Error 1
+gmake[2]: *** [CMakeFiles/Makefile2:5048: scratch/ECNMC/CMakeFiles/monitors_module.dir/all] Error 2
+gmake[1]: *** [CMakeFiles/Makefile2:5169: scratch/ECNMC/CMakeFiles/scratch_ECNMC_DatacenterSimulation.dir/rule] Error 2
+gmake: *** [Makefile:1977: scratch_ECNMC_DatacenterSimulation] Error 2
+CMakeFiles/scratch_ECNMC_DatacenterSimulation.dir/DatacenterSimulation.cc.o: in function `main':
+/media/experiments/ns-allinone-3.41/ns-3.41/scratch/ECNMC/DatacenterSimulation.cc:441: undefined reference to `E2EMonitor::E2EMonitor(ns3::Time const&, ns3::Time const&, ns3::Time const&, ns3::Time const&, ns3::Ptr<ns3::PointToPointNetDevice>, ns3::Ptr<ns3::Node> const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, double, ns3::DataRate const&, ns3::DataRate const&, ns3::Time const&)'
+/usr/bin/ld: /media/experiments/ns-allinone-3.41/ns-3.41/scratch/ECNMC/DatacenterSimulation.cc:449: undefined reference to `E2EMonitor::E2EMonitor(ns3::Time const&, ns3::Time const&, ns3::Time const&, ns3::Time const&, ns3::Ptr<ns3::PointToPointNetDevice>, ns3::Ptr<ns3::Node> const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, double, ns3::DataRate const&, ns3::DataRate const&, ns3::Time const&)'
+collect2: error: ld returned 1 exit status
+gmake[3]: *** [scratch/ECNMC/CMakeFiles/scratch_ECNMC_DatacenterSimulation.dir/build.make:103: scratch/ECNMC/ns3.41-DatacenterSimulation-debug] Error 1
+gmake[2]: *** [CMakeFiles/Makefile2:5163: scratch/ECNMC/CMakeFiles/scratch_ECNMC_DatacenterSimulation.dir/all] Error 2
+gmake[1]: *** [CMakeFiles/Makefile2:5169: scratch/ECNMC/CMakeFiles/scratch_ECNMC_DatacenterSimulation.dir/rule] Error 2
+gmake: *** [Makefile:1977: scratch_ECNMC_DatacenterSimulation] Error 2
+	Experiment 24 done
+Rate 0.79 done
+	Experiment 7 done
+Rate 0.79 done
+	Experiment 26 done
+Rate 0.79 done
+	Experiment 6 done
+Rate 0.79 done
+	Experiment 4 done
+Rate 0.79 done
+	Experiment 22 done
+Rate 0.79 done
+	Experiment 8 done
+Rate 0.79 done
+	Experiment 13 done
+Rate 0.79 done
+	Experiment 2 done
+Rate 0.79 done
+	Experiment 5 done
+Rate 0.79 done
+	Experiment 0 done
+Rate 0.79 done
+	Experiment 3 done
+Rate 0.79 done
+	Experiment 10 done
+Rate 0.79 done
+	Experiment 14 done
+Rate 0.79 done
+	Experiment 28 done
+Rate 0.79 done
+	Experiment 9 done
+Rate 0.79 done
+	Experiment 29 done
+Rate 0.79 done
+	Experiment 17 done
+Rate 0.79 done
+	Experiment 18 done
+Rate 0.79 done
+	Experiment 11 done
+Rate 0.79 done
+	Experiment 15 done
+Rate 0.79 done
+	Experiment 19 done
+Rate 0.79 done
+	Experiment 1 done
+Rate 0.79 done
+	Experiment 27 done
+Rate 0.79 done
+	Experiment 20 done
+Rate 0.79 done
+	Experiment 21 done
+Rate 0.79 done
+	Experiment 23 done
+Rate 0.79 done
+	Experiment 25 done
+Rate 0.79 done
+	Experiment 16 done
+Rate 0.79 done
+	Experiment 12 done
+Rate 0.79 done
+	Experiment 26 done
+Rate 0.81 done
+	Experiment 7 done
+Rate 0.81 done
+	Experiment 10 done
+Rate 0.81 done
+	Experiment 13 done
+Rate 0.81 done
+	Experiment 2 done
+Rate 0.81 done
+	Experiment 15 done
+Rate 0.81 done
+	Experiment 22 done
+Rate 0.81 done
+	Experiment 6 done
+Rate 0.81 done
+	Experiment 9 done
+Rate 0.81 done
+	Experiment 18 done
+Rate 0.81 done
+	Experiment 0 done
+Rate 0.81 done
+	Experiment 28 done
+Rate 0.81 done
+	Experiment 19 done
+Rate 0.81 done
+	Experiment 8 done
+Rate 0.81 done
+	Experiment 11 done
+Rate 0.81 done
+	Experiment 29 done
+Rate 0.81 done
+	Experiment 3 done
+Rate 0.81 done
+	Experiment 1 done
+Rate 0.81 done
+	Experiment 4 done
+Rate 0.81 done
+	Experiment 20 done
+Rate 0.81 done
+	Experiment 14 done
+Rate 0.81 done
+	Experiment 24 done
+Rate 0.81 done
+	Experiment 5 done
+Rate 0.81 done
+	Experiment 17 done
+Rate 0.81 done
+	Experiment 27 done
+Rate 0.81 done
+	Experiment 23 done
+Rate 0.81 done
+	Experiment 16 done
+Rate 0.81 done
+	Experiment 25 done
+Rate 0.81 done
+	Experiment 21 done
+Rate 0.81 done
+	Experiment 12 done
+Rate 0.81 done
+	Experiment 26 done
+Rate 0.83 done
+	Experiment 7 done
+Rate 0.83 done
+	Experiment 10 done
+Rate 0.83 done
+	Experiment 9 done
+Rate 0.83 done
+	Experiment 19 done
+Rate 0.83 done
+	Experiment 6 done
+Rate 0.83 done
+	Experiment 22 done
+Rate 0.83 done
+	Experiment 2 done
+Rate 0.83 done
+	Experiment 0 done
+Rate 0.83 done
+	Experiment 11 done
+Rate 0.83 done
+	Experiment 29 done
+Rate 0.83 done
+	Experiment 1 done
+Rate 0.83 done
+	Experiment 8 done
+Rate 0.83 done
+	Experiment 18 done
+Rate 0.83 done
+	Experiment 3 done
+Rate 0.83 done
+	Experiment 13 done
+Rate 0.83 done
+	Experiment 28 done
+Rate 0.83 done
+	Experiment 14 done
+Rate 0.83 done
+	Experiment 20 done
+Rate 0.83 done
+	Experiment 24 done
+Rate 0.83 done
+	Experiment 15 done
+Rate 0.83 done
+	Experiment 17 done
+Rate 0.83 done
+	Experiment 27 done
+Rate 0.83 done
+	Experiment 4 done
+Rate 0.83 done
+	Experiment 23 done
+Rate 0.83 done
+	Experiment 5 done
+Rate 0.83 done
+	Experiment 12 done
+Rate 0.83 done
+	Experiment 16 done
+Rate 0.83 done
+	Experiment 25 done
+Rate 0.83 done
+	Experiment 21 done
+Rate 0.83 done
+	Experiment 26 done
+Rate 0.85 done
+	Experiment 7 done
+Rate 0.85 done
+	Experiment 9 done
+Rate 0.85 done
+	Experiment 10 done
+Rate 0.85 done
+	Experiment 22 done
+Rate 0.85 done
+	Experiment 2 done
+Rate 0.85 done
+	Experiment 0 done
+Rate 0.85 done
+	Experiment 19 done
+Rate 0.85 done
+	Experiment 11 done
+Rate 0.85 done
+	Experiment 29 done
+Rate 0.85 done
+	Experiment 3 done
+Rate 0.85 done
+	Experiment 8 done
+Rate 0.85 done
+	Experiment 13 done
+Rate 0.85 done
+	Experiment 28 done
+Rate 0.85 done
+	Experiment 18 done
+Rate 0.85 done
+	Experiment 14 done
+Rate 0.85 done
+	Experiment 17 done
+Rate 0.85 done
+	Experiment 20 done
+Rate 0.85 done
+	Experiment 1 done
+Rate 0.85 done
+	Experiment 24 done
+Rate 0.85 done
+	Experiment 4 done
+Rate 0.85 done
+	Experiment 6 done
+Rate 0.85 done
+	Experiment 15 done
+Rate 0.85 done
+	Experiment 23 done
+Rate 0.85 done
+	Experiment 5 done
+Rate 0.85 done
+	Experiment 27 done
+Rate 0.85 done
+	Experiment 16 done
+Rate 0.85 done
+	Experiment 21 done
+Rate 0.85 done
+	Experiment 12 done
+Rate 0.85 done
+	Experiment 25 done
+Rate 0.85 done
+	Experiment 26 done
+Rate 0.87 done
+	Experiment 7 done
+Rate 0.87 done
+	Experiment 10 done
+Rate 0.87 done
+	Experiment 22 done
+Rate 0.87 done
+	Experiment 2 done
+Rate 0.87 done
+	Experiment 19 done
+Rate 0.87 done
+	Experiment 0 done
+Rate 0.87 done
+	Experiment 29 done
+Rate 0.87 done
+	Experiment 8 done
+Rate 0.87 done
+	Experiment 9 done
+Rate 0.87 done
+	Experiment 3 done
+Rate 0.87 done
+	Experiment 13 done
+Rate 0.87 done
+	Experiment 11 done
+Rate 0.87 done
+	Experiment 28 done
+Rate 0.87 done
+	Experiment 18 done
+Rate 0.87 done
+	Experiment 1 done
+Rate 0.87 done
+	Experiment 20 done
+Rate 0.87 done
+	Experiment 17 done
+Rate 0.87 done
+	Experiment 24 done
+Rate 0.87 done
+	Experiment 6 done
+Rate 0.87 done
+	Experiment 4 done
+Rate 0.87 done
+	Experiment 23 done
+Rate 0.87 done
+	Experiment 15 done
+Rate 0.87 done
+	Experiment 16 done
+Rate 0.87 done
+	Experiment 5 done
+Rate 0.87 done
+	Experiment 27 done
+Rate 0.87 done
+	Experiment 21 done
+Rate 0.87 done
+	Experiment 14 done
+Rate 0.87 done
+	Experiment 12 done
+Rate 0.87 done
+	Experiment 25 done
+Rate 0.87 done
+	Experiment 26 done
+Rate 0.89 done
+	Experiment 7 done
+Rate 0.89 done
+	Experiment 0 done
+Rate 0.89 done
+	Experiment 19 done
+Rate 0.89 done
+	Experiment 8 done
+Rate 0.89 done
+	Experiment 10 done
+Rate 0.89 done
+	Experiment 22 done
+Rate 0.89 done
+	Experiment 9 done
+Rate 0.89 done
+	Experiment 29 done
+Rate 0.89 done
+	Experiment 3 done
+Rate 0.89 done
+	Experiment 11 done
+Rate 0.89 done
+	Experiment 13 done
+Rate 0.89 done
+	Experiment 28 done
+Rate 0.89 done
+	Experiment 18 done
+Rate 0.89 done
+	Experiment 1 done
+Rate 0.89 done
+	Experiment 2 done
+Rate 0.89 done
+	Experiment 20 done
+Rate 0.89 done
+	Experiment 6 done
+Rate 0.89 done
+	Experiment 17 done
+Rate 0.89 done
+	Experiment 24 done
+Rate 0.89 done
+	Experiment 4 done
+Rate 0.89 done
+	Experiment 15 done
+Rate 0.89 done
+	Experiment 23 done
+Rate 0.89 done
+	Experiment 5 done
+Rate 0.89 done
+	Experiment 12 done
+Rate 0.89 done
+	Experiment 16 done
+Rate 0.89 done
+	Experiment 21 done
+Rate 0.89 done
+	Experiment 27 done
+Rate 0.89 done
+	Experiment 14 done
+Rate 0.89 done
+	Experiment 25 done
+Rate 0.89 done
+	Experiment 26 done
+Rate 0.91 done
+	Experiment 9 done
+Rate 0.91 done
+	Experiment 7 done
+Rate 0.91 done
+	Experiment 10 done
+Rate 0.91 done
+	Experiment 29 done
+Rate 0.91 done
+	Experiment 8 done
+Rate 0.91 done
+	Experiment 22 done
+Rate 0.91 done
+	Experiment 19 done
+Rate 0.91 done
+	Experiment 0 done
+Rate 0.91 done
+	Experiment 13 done
+Rate 0.91 done
+	Experiment 18 done
+Rate 0.91 done
+	Experiment 11 done
+Rate 0.91 done
+	Experiment 28 done
+Rate 0.91 done
+	Experiment 20 done
+Rate 0.91 done
+	Experiment 2 done
+Rate 0.91 done
+	Experiment 1 done
+Rate 0.91 done
+	Experiment 24 done
+Rate 0.91 done
+	Experiment 4 done
+Rate 0.91 done
+	Experiment 6 done
+Rate 0.91 done
+	Experiment 17 done
+Rate 0.91 done
+	Experiment 3 done
+Rate 0.91 done
+	Experiment 15 done
+Rate 0.91 done
+	Experiment 23 done
+Rate 0.91 done
+	Experiment 5 done
+Rate 0.91 done
+	Experiment 12 done
+Rate 0.91 done
+	Experiment 21 done
+Rate 0.91 done
+	Experiment 16 done
+Rate 0.91 done
+	Experiment 27 done
+Rate 0.91 done
+	Experiment 25 done
+Rate 0.91 done
+	Experiment 14 done
+Rate 0.91 done
+	Experiment 26 done
+Rate 0.93 done
+	Experiment 8 done
+Rate 0.93 done
+	Experiment 9 done
+Rate 0.93 done
+	Experiment 7 done
+Rate 0.93 done
+	Experiment 29 done
+Rate 0.93 done
+	Experiment 10 done
+Rate 0.93 done
+	Experiment 0 done
+Rate 0.93 done
+	Experiment 13 done
+Rate 0.93 done
+	Experiment 19 done
+Rate 0.93 done
+	Experiment 22 done
+Rate 0.93 done
+	Experiment 18 done
+Rate 0.93 done
+	Experiment 11 done
+Rate 0.93 done
+	Experiment 20 done
+Rate 0.93 done
+	Experiment 2 done
+Rate 0.93 done
+	Experiment 4 done
+Rate 0.93 done
+	Experiment 28 done
+Rate 0.93 done
+	Experiment 6 done
+Rate 0.93 done
+	Experiment 3 done
+Rate 0.93 done
+	Experiment 1 done
+Rate 0.93 done
+	Experiment 24 done
+Rate 0.93 done
+	Experiment 15 done
+Rate 0.93 done
+	Experiment 23 done
+Rate 0.93 done
+	Experiment 17 done
+Rate 0.93 done
+	Experiment 12 done
+Rate 0.93 done
+	Experiment 5 done
+Rate 0.93 done
+	Experiment 16 done
+Rate 0.93 done
+	Experiment 21 done
+Rate 0.93 done
+	Experiment 27 done
+Rate 0.93 done
+	Experiment 25 done
+Rate 0.93 done
+	Experiment 26 done
+Rate 0.95 done
+	Experiment 14 done
+Rate 0.93 done
+	Experiment 8 done
+Rate 0.95 done
+	Experiment 9 done
+Rate 0.95 done
+	Experiment 7 done
+Rate 0.95 done
+	Experiment 19 done
+Rate 0.95 done
+	Experiment 13 done
+Rate 0.95 done
+	Experiment 0 done
+Rate 0.95 done
+	Experiment 10 done
+Rate 0.95 done
+	Experiment 29 done
+Rate 0.95 done
+	Experiment 11 done
+Rate 0.95 done
+	Experiment 22 done
+Rate 0.95 done
+	Experiment 20 done
+Rate 0.95 done
+	Experiment 2 done
+Rate 0.95 done
+	Experiment 18 done
+Rate 0.95 done
+	Experiment 4 done
+Rate 0.95 done
+	Experiment 28 done
+Rate 0.95 done
+	Experiment 6 done
+Rate 0.95 done
+	Experiment 24 done
+Rate 0.95 done
+	Experiment 15 done
+Rate 0.95 done
+	Experiment 1 done
+Rate 0.95 done
+	Experiment 3 done
+Rate 0.95 done
+	Experiment 23 done
+Rate 0.95 done
+	Experiment 12 done
+Rate 0.95 done
+	Experiment 17 done
+Rate 0.95 done
+	Experiment 5 done
+Rate 0.95 done
+	Experiment 16 done
+Rate 0.95 done
+	Experiment 21 done
+Rate 0.95 done
+	Experiment 27 done
+Rate 0.95 done
+	Experiment 25 done
+Rate 0.95 done
+	Experiment 26 done
+Rate 0.97 done
+	Experiment 14 done
+Rate 0.95 done
+	Experiment 0 done
+Rate 0.97 done
+	Experiment 7 done
+Rate 0.97 done
+	Experiment 13 done
+Rate 0.97 done
+	Experiment 8 done
+Rate 0.97 done
+	Experiment 19 done
+Rate 0.97 done
+	Experiment 9 done
+Rate 0.97 done
+	Experiment 10 done
+Rate 0.97 done
+	Experiment 29 done
+Rate 0.97 done
+	Experiment 11 done
+Rate 0.97 done
+	Experiment 20 done
+Rate 0.97 done
+	Experiment 22 done
+Rate 0.97 done
+	Experiment 2 done
+Rate 0.97 done
+	Experiment 18 done
+Rate 0.97 done
+	Experiment 6 done
+Rate 0.97 done
+	Experiment 28 done
+Rate 0.97 done
+	Experiment 24 done
+Rate 0.97 done
+	Experiment 4 done
+Rate 0.97 done
+	Experiment 1 done
+Rate 0.97 done
+	Experiment 12 done
+Rate 0.97 done
+	Experiment 23 done
+Rate 0.97 done
+	Experiment 15 done
+Rate 0.97 done
+	Experiment 17 done
+Rate 0.97 done
+	Experiment 3 done
+Rate 0.97 done
+	Experiment 16 done
+Rate 0.97 done
+	Experiment 5 done
+Rate 0.97 done
+	Experiment 21 done
+Rate 0.97 done
+	Experiment 27 done
+Rate 0.97 done
+	Experiment 25 done
+Rate 0.97 done
+	Experiment 26 done
+Rate 0.99 done
+	Experiment 14 done
+Rate 0.97 done
+	Experiment 13 done
+Rate 0.99 done
+	Experiment 7 done
+Rate 0.99 done
+	Experiment 19 done
+Rate 0.99 done
+	Experiment 8 done
+Rate 0.99 done
+	Experiment 9 done
+Rate 0.99 done
+	Experiment 0 done
+Rate 0.99 done
+	Experiment 11 done
+Rate 0.99 done
+	Experiment 10 done
+Rate 0.99 done
+	Experiment 20 done
+Rate 0.99 done
+	Experiment 22 done
+Rate 0.99 done
+	Experiment 2 done
+Rate 0.99 done
+	Experiment 29 done
+Rate 0.99 done
+	Experiment 18 done
+Rate 0.99 done
+	Experiment 6 done
+Rate 0.99 done
+	Experiment 28 done
+Rate 0.99 done
+	Experiment 24 done
+Rate 0.99 done
+	Experiment 4 done
+Rate 0.99 done
+	Experiment 1 done
+Rate 0.99 done
+	Experiment 12 done
+Rate 0.99 done
+	Experiment 15 done
+Rate 0.99 done
+	Experiment 23 done
+Rate 0.99 done
+	Experiment 16 done
+Rate 0.99 done
+	Experiment 5 done
+Rate 0.99 done
+	Experiment 17 done
+Rate 0.99 done
+	Experiment 21 done
+Rate 0.99 done
+	Experiment 27 done
+Rate 0.99 done
+	Experiment 3 done
+Rate 0.99 done
+	Experiment 25 done
+Rate 0.99 done
+	Experiment 26 done
+Rate 1.0 done
+	Experiment 19 done
+Rate 1.0 done
+	Experiment 14 done
+Rate 0.99 done
+	Experiment 8 done
+Rate 1.0 done
+	Experiment 13 done
+Rate 1.0 done
+	Experiment 7 done
+Rate 1.0 done
+	Experiment 11 done
+Rate 1.0 done
+	Experiment 9 done
+Rate 1.0 done
+	Experiment 20 done
+Rate 1.0 done
+	Experiment 10 done
+Rate 1.0 done
+	Experiment 22 done
+Rate 1.0 done
+	Experiment 29 done
+Rate 1.0 done
+	Experiment 2 done
+Rate 1.0 done
+	Experiment 0 done
+Rate 1.0 done
+	Experiment 28 done
+Rate 1.0 done
+	Experiment 6 done
+Rate 1.0 done
+	Experiment 18 done
+Rate 1.0 done
+	Experiment 4 done
+Rate 1.0 done
+	Experiment 24 done
+Rate 1.0 done
+	Experiment 12 done
+Rate 1.0 done
+	Experiment 1 done
+Rate 1.0 done
+	Experiment 15 done
+Rate 1.0 done
+	Experiment 23 done
+Rate 1.0 done
+	Experiment 17 done
+Rate 1.0 done
+	Experiment 16 done
+Rate 1.0 done
+	Experiment 3 done
+Rate 1.0 done
+	Experiment 27 done
+Rate 1.0 done
+	Experiment 5 done
+Rate 1.0 done
+	Experiment 25 done
+Rate 1.0 done
+	Experiment 21 done
+Rate 1.0 done
+	Experiment 26 done
+Rate 1.01 done
+	Experiment 19 done
+Rate 1.01 done
+	Experiment 8 done
+Rate 1.01 done
+	Experiment 14 done
+Rate 1.0 done
+	Experiment 7 done
+Rate 1.01 done
+	Experiment 9 done
+Rate 1.01 done
+	Experiment 11 done
+Rate 1.01 done
+	Experiment 13 done
+Rate 1.01 done
+	Experiment 20 done
+Rate 1.01 done
+	Experiment 22 done
+Rate 1.01 done
+	Experiment 10 done
+Rate 1.01 done
+	Experiment 0 done
+Rate 1.01 done
+	Experiment 28 done
+Rate 1.01 done
+	Experiment 6 done
+Rate 1.01 done
+	Experiment 18 done
+Rate 1.01 done
+	Experiment 24 done
+Rate 1.01 done
+	Experiment 2 done
+Rate 1.01 done
+	Experiment 4 done
+Rate 1.01 done
+	Experiment 29 done
+Rate 1.01 done
+	Experiment 12 done
+Rate 1.01 done
+	Experiment 1 done
+Rate 1.01 done
+	Experiment 15 done
+Rate 1.01 done
+	Experiment 23 done
+Rate 1.01 done
+	Experiment 17 done
+Rate 1.01 done
+	Experiment 16 done
+Rate 1.01 done
+	Experiment 27 done
+Rate 1.01 done
+	Experiment 3 done
+Rate 1.01 done
+	Experiment 5 done
+Rate 1.01 done
+	Experiment 25 done
+Rate 1.01 done
+	Experiment 21 done
+Rate 1.01 done
+	Experiment 26 done
+Rate 1.03 done
+	Experiment 19 done
+Rate 1.03 done
+	Experiment 11 done
+Rate 1.03 done
+	Experiment 9 done
+Rate 1.03 done
+	Experiment 14 done
+Rate 1.01 done
+	Experiment 13 done
+Rate 1.03 done
+	Experiment 20 done
+Rate 1.03 done
+	Experiment 7 done
+Rate 1.03 done
+	Experiment 10 done
+Rate 1.03 done
+	Experiment 22 done
+Rate 1.03 done
+	Experiment 0 done
+Rate 1.03 done
+	Experiment 6 done
+Rate 1.03 done
+	Experiment 28 done
+Rate 1.03 done
+	Experiment 18 done
+Rate 1.03 done
+	Experiment 2 done
+Rate 1.03 done
+	Experiment 4 done
+Rate 1.03 done
+	Experiment 29 done
+Rate 1.03 done
+	Experiment 12 done
+Rate 1.03 done
+	Experiment 24 done
+Rate 1.03 done
+	Experiment 15 done
+Rate 1.03 done
+	Experiment 8 done
+Rate 1.03 done
+	Experiment 1 done
+Rate 1.03 done
+	Experiment 23 done
+Rate 1.03 done
+	Experiment 17 done
+Rate 1.03 done
+	Experiment 27 done
+Rate 1.03 done
+	Experiment 16 done
+Rate 1.03 done
+	Experiment 3 done
+Rate 1.03 done
+	Experiment 5 done
+Rate 1.03 done
+	Experiment 25 done
+Rate 1.03 done
+	Experiment 26 done
+Rate 1.05 done
+	Experiment 19 done
+Rate 1.05 done
+	Experiment 11 done
+Rate 1.05 done
+	Experiment 9 done
+Rate 1.05 done
+	Experiment 7 done
+Rate 1.05 done
+	Experiment 20 done
+Rate 1.05 done
+	Experiment 10 done
+Rate 1.05 done
+	Experiment 22 done
+Rate 1.05 done
+	Experiment 21 done
+Rate 1.03 done
+	Experiment 14 done
+Rate 1.03 done
+	Experiment 0 done
+Rate 1.05 done
+	Experiment 6 done
+Rate 1.05 done
+	Experiment 18 done
+Rate 1.05 done
+	Experiment 13 done
+Rate 1.05 done
+	Experiment 28 done
+Rate 1.05 done
+	Experiment 4 done
+Rate 1.05 done
+	Experiment 2 done
+Rate 1.05 done
+	Experiment 24 done
+Rate 1.05 done
+	Experiment 29 done
+Rate 1.05 done
+	Experiment 12 done
+Rate 1.05 done
+	Experiment 15 done
+Rate 1.05 done
+	Experiment 1 done
+Rate 1.05 done
+	Experiment 23 done
+Rate 1.05 done
+	Experiment 8 done
+Rate 1.05 done
+	Experiment 17 done
+Rate 1.05 done
+	Experiment 27 done
+Rate 1.05 done
+	Experiment 16 done
+Rate 1.05 done
+	Experiment 3 done
+Rate 1.05 done
+	Experiment 25 done
+Rate 1.05 done
+	Experiment 5 done
+Rate 1.05 done
+	Experiment 14 done
+Rate 1.05 done
+	Experiment 21 done
+Rate 1.05 done

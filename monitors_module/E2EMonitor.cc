@@ -29,6 +29,7 @@ E2EMonitor::E2EMonitor(const Time &startTime, const Time &duration, const Time &
         timeAverageIntegral.push_back(Seconds(0));
         integralStartTime.push_back(Time(-1));
         integralEndTime.push_back(Time(-1));
+        sentPackets_onlink.push_back(0);
     }
     hasher = Hasher();
     rand = CreateObject<UniformRandomVariable>();
@@ -52,13 +53,32 @@ uint64_t E2EMonitor::GetHashValue(const Ipv4Address src, const Ipv4Address dst, 
 
 void E2EMonitor::Connect(const Ptr<PointToPointNetDevice> netDevice, uint32_t rxNodeId) {
     netDevice->GetQueue()->TraceConnectWithoutContext("Enqueue", MakeCallback(&E2EMonitor::Enqueue, this));
-    // netDevice->TraceConnectWithoutContext("PromiscSniffer", MakeCallback(&E2EMonitor::Enqueue, this));
+    netDevice->TraceConnectWithoutContext("PromiscSniffer", MakeCallback(&E2EMonitor::Capture, this));
     Config::ConnectWithoutContext("/NodeList/" + to_string(rxNodeId) + "/$ns3::Ipv4L3Protocol/Rx", MakeCallback(
             &E2EMonitor::RecordIpv4PacketReceived, this));
 }
 
 void E2EMonitor::Disconnect(const Ptr<PointToPointNetDevice> netDevice, uint32_t rxNodeId) {
     netDevice->GetQueue()->TraceDisconnectWithoutContext("Enqueue", MakeCallback(&E2EMonitor::Enqueue, this));
+}
+
+void E2EMonitor::Capture(Ptr< const Packet > packet) {
+    if (Simulator::Now() < _steadyStartTime || Simulator::Now() > _steadyStopTime) {
+        return;
+    }
+    PacketKey* packetKey = PacketKey::Packet2PacketKey(packet, FIRST_HEADER_PPP);
+    if(_appsKey.count(AppKey::PacketKey2AppKey(*packetKey))) {
+        const Ptr<Packet> &pktCopy = packet->Copy();
+        PppHeader pppHeader;
+        pktCopy->RemoveHeader(pppHeader);
+        Ipv4Header IPHeader;
+        pktCopy->RemoveHeader(IPHeader);
+        uint64_t hash = GetHashValue(packetKey->GetSrcIp(), packetKey->GetDstIp(), packetKey->GetSrcPort(), packetKey->GetDstPort(), IPHeader.GetProtocol());
+        pktCopy->AddHeader(IPHeader);
+        pktCopy->AddHeader(pppHeader);
+
+        sentPackets_onlink[hash % 2] += 1;
+    }
 }
 
 void E2EMonitor::Enqueue(Ptr<const Packet> packet) {
@@ -135,10 +155,10 @@ void E2EMonitor::RecordIpv4PacketReceived(Ptr<const Packet> packet, Ptr<Ipv4> ip
 void E2EMonitor::SaveMonitorRecords(const string& filename) {
     ofstream outfile;
     outfile.open(filename);
-    outfile << "path,sampleDelayMean,unbiasedSmapleDelayVariance,averagePacketSize,receivedPackets,sentPackets,markedPackets,timeAverage" << endl;
+    outfile << "path,sampleDelayMean,unbiasedSmapleDelayVariance,averagePacketSize,receivedPackets,sentPackets,markedPackets,timeAverage,sentPacketsOnLink" << endl;
     outfile << 0 << "," << sampleMean[0].GetNanoSeconds() << "," << unbiasedSmapleVariance[0].GetNanoSeconds() << "," << sumOfPacketSizes[0] / sampleSize[0] << "," << sampleSize[0] << "," << sentPackets[0] << "," << markedPackets[0] 
-    << "," << timeAverageIntegral[0].GetNanoSeconds() / (integralEndTime[0] - integralStartTime[0]).GetNanoSeconds() << endl;
+    << "," << timeAverageIntegral[0].GetNanoSeconds() / (integralEndTime[0] - integralStartTime[0]).GetNanoSeconds() << "," << sentPackets_onlink[0] << endl;
     outfile << 1 << "," << sampleMean[1].GetNanoSeconds() << "," << unbiasedSmapleVariance[1].GetNanoSeconds() << "," << sumOfPacketSizes[1] / sampleSize[1] << "," << sampleSize[1] << "," << sentPackets[1] << "," << markedPackets[1] 
-    << "," << timeAverageIntegral[1].GetNanoSeconds() / (integralEndTime[1] - integralStartTime[1]).GetNanoSeconds() << endl;
+    << "," << timeAverageIntegral[1].GetNanoSeconds() / (integralEndTime[1] - integralStartTime[1]).GetNanoSeconds() << "," << sentPackets_onlink[1] << endl;
     outfile.close();
 }
