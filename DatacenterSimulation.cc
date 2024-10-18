@@ -560,7 +560,7 @@ int main(int argc, char* argv[])
     for (int i = 0; i < nRacks; i++) {
         for (int j = 0; j < nAggSwitches; j++) {
             Ptr<PointToPointNetDevice> torToAggNetDevice = DynamicCast<PointToPointNetDevice>(torToAggNetDevices[i][j].Get(0));            
-            auto *torToAggSampler = new BurstMonitor(stopTime + convergenceTime, torToAggNetDevice, "T" + to_string(i) + "A" + to_string(j), Time("25us"), DataRate(torToAggLinkRate));
+            auto *torToAggSampler = new BurstMonitor(stopTime + convergenceTime, torToAggNetDevice, DynamicCast<RedQueueDisc>(torToAggQueueDiscs[i][j].Get(0)), "T" + to_string(i) + "A" + to_string(j), Time("25us"), DataRate(torToAggLinkRate));
             BurstMonitors.push_back(torToAggSampler);
         }
     }

@@ -45,14 +45,14 @@ serviceRateScales = [float(x) for x in config.get('Settings', 'serviceRateScales
 # errorRates = [1.0, 2.0, 3.0, 3.5, 4.0, 6.0]
 # errorRates = [0.5, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 9.0, 10.0, 12.0, 14.0, 15.0]
 # errorRates = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
-# utilizationFactors = [round(6 * 300 / (r * 2 * 945), 3) for r in serviceRateScales]
+utilizationFactors = [round(6 * 300 / (r * 2 * 945), 3) for r in serviceRateScales]
 # selectedUtils = [utilizationFactors[0], utilizationFactors[2], utilizationFactors[4], utilizationFactors[6], utilizationFactors[8], utilizationFactors[10]]
 # print("serviceRateScales: ", serviceRateScales)
 check = sys.argv[1]
 results_dir = sys.argv[2]
 results = {}
 flows = []
-utilizationFactors = []
+# utilizationFactors = []
 for rate in serviceRateScales:
 # for rate in errorRates:
     if rate >= 6.0:
@@ -83,7 +83,7 @@ for rate in serviceRateScales:
 
             results[rate]['DropRate'] = temp['DropRate']
             # results[rate]['DropRate'] = dropRate / 10
-            utilizationFactors.append(round(6 * temp['AverageWorkLoad'] / (rate * 2 * 945000000), 3))
+            # utilizationFactors.append(round(6 * temp['AverageWorkLoad'] / (rate * 2 * 945000000), 3))
 droprates_mean = [np.mean(value['DropRate']) for value in results.values()]
 droprates_xticks = [round(x, 3) for x in droprates_mean]
 

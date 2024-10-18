@@ -23,12 +23,14 @@ struct BurstSamplingEvent {
 private:
     Time _sampleTime;
     bool _isHotThroughputUtilization;
+    uint32_t queueSize;
 
 public:
     [[nodiscard]] Time GetSampleTime() const;
     [[nodiscard]] bool IsHotThroughputUtilization() const;
     [[nodiscard]] BurstSamplingEvent();
-    [[nodiscard]] BurstSamplingEvent(Time sampleTime, bool isHotThroughputUtilization);
+    [[nodiscard]] BurstSamplingEvent(Time sampleTime, bool isHotThroughputUtilization, uint32_t queueSize);
+    [[nodiscard]] uint32_t GetQueueSize() const;
 
     void SetSampleTime();
     void SetSampleTime(Time t);
@@ -45,6 +47,8 @@ private:
     uint64_t lastByteCount;
     std::string _sampleTag;
     DataRate linkRate;
+    Ptr<RedQueueDisc> REDQueueDisc;
+    Ptr<PointToPointNetDevice> outgoingNetDevice;
     void Connect(Ptr<PointToPointNetDevice> outgoingNetDevice);
     void Disconnect(Ptr<PointToPointNetDevice> outgoingNetDevice);
     void EventHandler();
@@ -52,7 +56,7 @@ private:
     void EnqueueNetDeviceQueue(Ptr<const Packet> packet);
 
 public:
-    BurstMonitor(Time steadyStopTime, Ptr<PointToPointNetDevice> outgoingNetDevice, const string &sampleTag, Time sampleInterval, const DataRate &_linkRate);
+    BurstMonitor(Time steadyStopTime, Ptr<PointToPointNetDevice> outgoingNetDevice, Ptr<RedQueueDisc> _REDQueueDisc, const string &sampleTag, Time sampleInterval, const DataRate &_linkRate);
     void SaveRecords(const string &filename);
     string GetSampleTag() const;
 };

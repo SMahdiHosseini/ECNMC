@@ -240,7 +240,8 @@ QueueDisc::Stats::Print(std::ostream& os) const
 uint64_t
 QueueDisc::Stats::GetTotalDroppedBytes() const
 {
-    return nTotalDroppedBytes;
+    // return nTotalDroppedBytes;
+    return nTotalDroppedPackets;
 }
 uint64_t
 QueueDisc::Stats::GetTotalBytes() const

@@ -129,6 +129,42 @@ def run_reverse_experiment(exp):
             print('\tExperiment {} done'.format(i))
         print('Rate {} done'.format(rate))
 
+def run_burst_experiment(exp, rate):
+    expConfig = ExperimentConfig()
+    expConfig.read_config_file('Parameters.config')
+    os.system('mkdir -p {}/scratch/ECNMC/results_burst/'.format(get_ns3_path()))
+    exp_tor_to_agg_link_rate = "{}Mbps".format(round(float(expConfig.tor_to_agg_link_rate.split('M')[0]) * rate, 1))
+    for i in exp:
+        os.system('mkdir -p {}/scratch/ECNMC/results_burst/{}'.format(get_ns3_path(), i + 1))
+        os.system(
+            '{}/ns3 run \'DatacenterSimulation '.format(get_ns3_path()) +
+            '--hostToTorLinkRate={} '.format(expConfig.host_to_tor_link_rate) +
+            '--hostToTorLinkRateCrossTraffic={} '.format(expConfig.host_to_tor_cross_traffic_rate) +
+            '--torToAggLinkRate={} '.format(exp_tor_to_agg_link_rate) +
+            '--aggToCoreLinkRate={} '.format(expConfig.agg_to_core_link_rate) +
+            '--hostToTorLinkDelay={} '.format(expConfig.host_to_tor_link_delay) +
+            '--torToAggLinkDelay={} '.format(expConfig.tor_to_agg_link_delay) +
+            '--aggToCoreLinkDelay={} '.format(expConfig.agg_to_core_link_delay) +
+            '--pctPacedBack={} '.format(expConfig.pct_paced_back) +
+            '--appDataRate={} '.format(expConfig.app_data_rate) +
+            '--duration={} '.format(expConfig.duration) +
+            '--sampleRate={} '.format(expConfig.sampleRate) +
+            '--experiment={} '.format(i + 1) +
+            '--errorRate={} '.format(expConfig.errorRate) +
+            '--trafficStartTime={} '.format(i * float(expConfig.duration)) +
+            '--trafficStopTime={} '.format((i + 1) * float(expConfig.duration)) +
+            '--steadyStartTime={} '.format(expConfig.steadyStart) +
+            '--steadyStopTime={} '.format(expConfig.steadyEnd) +
+            '--dirName=' + 'burst' +
+            '\' > {}/scratch/ECNMC/results_burst/result_{}.txt'.format(get_ns3_path(), i)
+        )
+
+        os.system('mkdir -p {}/scratch/Results_burst/{}/{}'.format(get_ns3_path(), rate, 0))
+        os.system('mv {}/scratch/ECNMC/results_burst/{}/*.csv {}/scratch/Results_burst/{}/{}'.format(get_ns3_path(), i + 1, get_ns3_path(), rate, 0))
+        os.system('mkdir -p {}/scratch/ECNMC/results_burst/{}'.format(get_ns3_path(), rate))
+        print('\tExperiment {} done'.format(i))
+        print('Rate {} done'.format(rate))
+
 # def run_experiment(exp):
 #     expConfig = ExperimentConfig()
 #     expConfig.read_config_file('Parameters.config')
@@ -182,10 +218,10 @@ parser.add_argument("--IsTest",
                     default=1)
 
 args = parser.parse_args()
-args.IsForward = bool(args.IsForward)
+args.IsForward = int(args.IsForward)
 args.IsTest = bool(args.IsTest)
 # rebuild_project()
-if (args.IsForward):
+if (args.IsForward == 1):
     if (args.IsTest):
         run_forward_experiment([0])
     else:
@@ -202,7 +238,7 @@ if (args.IsForward):
 
         for th in ths:
             th.join()
-else:
+elif(args.IsForward == 0):
     if (args.IsTest):
         run_reverse_experiment([0])
     else:
@@ -219,4 +255,18 @@ else:
 
         for th in ths:
             th.join()
+else:
+    expConfig = ExperimentConfig()
+    expConfig.read_config_file('Parameters.config')
+    ths = []
+    numOfThs = len(expConfig.serviceRateScales)
+    # numOfThs = 1
+    for th in range(numOfThs):
+        ths.append(threading.Thread(target=run_burst_experiment, args=([th], expConfig.serviceRateScales[th], )))
+
+    for th in ths:
+        th.start()
+
+    for th in ths:
+        th.join()
 
