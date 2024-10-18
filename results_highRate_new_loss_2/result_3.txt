@@ -25,12 +25,12 @@ Rack: 3 Host: 2 Id:20 IP: 10.4.3.1
 Rack: 3 Host: 3 Id:21 IP: 10.4.4.1
 Rack: 3 Host: 4 Id:22 IP: 10.4.5.1
 Rack: 3 Host: 5 Id:23 IP: 10.4.6.1
-Total preparing time = 4525958 microsecond
+Total preparing time = 7481340 microsecond
 Config Parameters
 hostToTorLinkRate: 300Mbps
 hostToTorLinkRateCrossTraffic: 50Mbps
 hostToTorLinkDelay: 50us
-torToAggLinkRate: 746.6Mbps
+torToAggLinkRate: 992.2Mbps
 torToAggLinkDelay: 50us
 aggToCoreLinkRate: 945Mbps
 aggToCoreLinkDelay: 50us
@@ -40,10 +40,12 @@ pctPacedBack: 0.8
 enableSwitchECN: 1
 enableECMP: 1
 sampleRate: 4500
-errorRate: 0.002
+errorRate: 0.01
 dirName: forward
-experiment: 1
-trafficStartTime: 0.0
-trafficStopTime: 0.9
+experiment: 4
+trafficStartTime: 2.7
+trafficStopTime: 3.6
 steadyStartTime: 0.3
 steadyEndTime: 0.8
+Done 
+Total execution time = 1129299935 microsecond
