@@ -1,0 +1,93 @@
+Consolidate compiler generated dependencies of target helper_classes
+Consolidate compiler generated dependencies of target traffic_generator_module
+Consolidate compiler generated dependencies of target monitors_module
+Consolidate compiler generated dependencies of target libcore-obj
+Consolidate compiler generated dependencies of target libconfig-store-obj
+Consolidate compiler generated dependencies of target libantenna-obj
+Consolidate compiler generated dependencies of target libstats-obj
+Consolidate compiler generated dependencies of target libnetwork-obj
+Consolidate compiler generated dependencies of target tap-device-creator
+Consolidate compiler generated dependencies of target libbridge-obj
+Consolidate compiler generated dependencies of target libvirtual-net-device-obj
+Consolidate compiler generated dependencies of target libcsma-obj
+Consolidate compiler generated dependencies of target libpoint-to-point-obj
+Consolidate compiler generated dependencies of target libtopology-read-obj
+Consolidate compiler generated dependencies of target libfd-net-device-obj
+Consolidate compiler generated dependencies of target libmobility-obj
+Consolidate compiler generated dependencies of target libtraffic-control-obj
+Consolidate compiler generated dependencies of target libenergy-obj
+Consolidate compiler generated dependencies of target libpropagation-obj
+Consolidate compiler generated dependencies of target libuan-obj
+Consolidate compiler generated dependencies of target libbuildings-obj
+Consolidate compiler generated dependencies of target libspectrum-obj
+Consolidate compiler generated dependencies of target libinternet-obj
+Consolidate compiler generated dependencies of target liblr-wpan-obj
+Consolidate compiler generated dependencies of target libcsma-layout-obj
+Consolidate compiler generated dependencies of target libnix-vector-routing-obj
+Consolidate compiler generated dependencies of target libolsr-obj
+Consolidate compiler generated dependencies of target libtap-bridge-obj
+Consolidate compiler generated dependencies of target libsixlowpan-obj
+Consolidate compiler generated dependencies of target libflow-monitor-obj
+Consolidate compiler generated dependencies of target libpoint-to-point-layout-obj
+Consolidate compiler generated dependencies of target libinternet-apps-obj
+Consolidate compiler generated dependencies of target libapplications-obj
+Consolidate compiler generated dependencies of target libwimax-obj
+Consolidate compiler generated dependencies of target libwifi-obj
+Consolidate compiler generated dependencies of target liblte-obj
+Consolidate compiler generated dependencies of target libaodv-obj
+Consolidate compiler generated dependencies of target libmesh-obj
+Consolidate compiler generated dependencies of target libnetanim-obj
+Consolidate compiler generated dependencies of target libdsdv-obj
+Consolidate compiler generated dependencies of target libdsr-obj
+Consolidate compiler generated dependencies of target scratch_ECNMC_DatacenterSimulation
+Start
+
+Start
+Hosts and Switches IP addresses
+Rack: 0 Host: 0 Id:0 IP: 10.1.1.1
+Rack: 0 Host: 1 Id:1 IP: 10.1.2.1
+Rack: 0 Host: 2 Id:2 IP: 10.1.3.1
+Rack: 0 Host: 3 Id:3 IP: 10.1.4.1
+Rack: 0 Host: 4 Id:4 IP: 10.1.5.1
+Rack: 0 Host: 5 Id:5 IP: 10.1.6.1
+Rack: 1 Host: 0 Id:6 IP: 10.2.1.1
+Rack: 1 Host: 1 Id:7 IP: 10.2.2.1
+Rack: 1 Host: 2 Id:8 IP: 10.2.3.1
+Rack: 1 Host: 3 Id:9 IP: 10.2.4.1
+Rack: 1 Host: 4 Id:10 IP: 10.2.5.1
+Rack: 1 Host: 5 Id:11 IP: 10.2.6.1
+Rack: 2 Host: 0 Id:12 IP: 10.3.1.1
+Rack: 2 Host: 1 Id:13 IP: 10.3.2.1
+Rack: 2 Host: 2 Id:14 IP: 10.3.3.1
+Rack: 2 Host: 3 Id:15 IP: 10.3.4.1
+Rack: 2 Host: 4 Id:16 IP: 10.3.5.1
+Rack: 2 Host: 5 Id:17 IP: 10.3.6.1
+Rack: 3 Host: 0 Id:18 IP: 10.4.1.1
+Rack: 3 Host: 1 Id:19 IP: 10.4.2.1
+Rack: 3 Host: 2 Id:20 IP: 10.4.3.1
+Rack: 3 Host: 3 Id:21 IP: 10.4.4.1
+Rack: 3 Host: 4 Id:22 IP: 10.4.5.1
+Rack: 3 Host: 5 Id:23 IP: 10.4.6.1
+Total preparing time = 4563610 microsecond
+Config Parameters
+hostToTorLinkRate: 300Mbps
+hostToTorLinkRateCrossTraffic: 50Mbps
+hostToTorLinkDelay: 50us
+torToAggLinkRate: 916.6Mbps
+torToAggLinkDelay: 50us
+aggToCoreLinkRate: 945Mbps
+aggToCoreLinkDelay: 50us
+appDataRate: 10Mbps
+duration: 0.9
+pctPacedBack: 0.8
+enableSwitchECN: 1
+enableECMP: 1
+sampleRate: 4500
+errorRate: 0.05
+dirName: forward
+experiment: 1
+trafficStartTime: 0.0
+trafficStopTime: 0.9
+steadyStartTime: 0.3
+steadyEndTime: 0.8
+Process was interrupted by the user
