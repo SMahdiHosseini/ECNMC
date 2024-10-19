@@ -258,7 +258,7 @@ def __main__():
         serviceRateScales = [float(x) for x in config.get('Settings', 'errorRateScale').split(',')]
     # serviceRateScales = [0.79, 0.81]
     # serviceRateScales = [0.91, 0.93, 0.95, 0.97, 0.99, 1.01, 1.03, 1.05]
-    serviceRateScales = [float(x) for x in config.get('Settings', 'serviceRateScales').split(',')]
+    # serviceRateScales = [float(x) for x in config.get('Settings', 'serviceRateScales').split(',')]
     experiments = 30
 
     for rate in serviceRateScales:
