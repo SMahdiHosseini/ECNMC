@@ -60,6 +60,7 @@ def run_forward_experiment(exp):
     os.system('mkdir -p {}/scratch/ECNMC/results_forward/'.format(get_ns3_path()))
     for rate in expConfig.serviceRateScales:
         exp_tor_to_agg_link_rate = "{}Mbps".format(round(float(expConfig.tor_to_agg_link_rate.split('M')[0]) * rate, 1))
+        exp_errorRate = "{}".format(float(expConfig.errorRate) * expConfig.errorRateScale[0])
         for i in exp:
             os.system('mkdir -p {}/scratch/ECNMC/results_forward/{}'.format(get_ns3_path(), i + 1))
             os.system(
@@ -76,7 +77,7 @@ def run_forward_experiment(exp):
                 '--duration={} '.format(expConfig.duration) +
                 '--sampleRate={} '.format(expConfig.sampleRate) +
                 '--experiment={} '.format(i + 1) +
-                '--errorRate={} '.format(expConfig.errorRate) +
+                '--errorRate={} '.format(exp_errorRate) +
                 '--trafficStartTime={} '.format(i * float(expConfig.duration)) +
                 '--trafficStopTime={} '.format((i + 1) * float(expConfig.duration)) +
                 '--steadyStartTime={} '.format(expConfig.steadyStart) +

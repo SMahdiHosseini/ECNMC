@@ -10239,3 +10239,1728 @@ Rate 10.0 done
 Rate 10.0 done
 	Experiment 2 done
 Rate 10.0 done
+Traceback (most recent call last):
+  File "/media/experiments/ns-allinone-3.41/ns-3.41/ns3", line 1914, in <module>
+    main()
+  File "/media/experiments/ns-allinone-3.41/ns-3.41/ns3", line 1909, in main
+    run_step(args, target_to_run, target_args)
+  File "/media/experiments/ns-allinone-3.41/ns-3.41/ns3", line 1476, in run_step
+    subprocess.run(
+  File "/usr/lib/python3.10/subprocess.py", line 503, in run
+    with Popen(*popenargs, **kwargs) as process:
+  File "/usr/lib/python3.10/subprocess.py", line 971, in __init__
+    self._execute_child(args, executable, preexec_fn, close_fds,
+  File "/usr/lib/python3.10/subprocess.py", line 1863, in _execute_child
+    raise child_exception_type(errno_num, err_msg, err_filename)
+OSError: [Errno 26] Text file busy: '/media/experiments/ns-allinone-3.41/ns-3.41/build/scratch/ECNMC/ns3.41-DatacenterSimulation-debug'
+mv: cannot stat '/media/experiments/ns-allinone-3.41/ns-3.41/scratch/ECNMC/results_forward/10/*.csv': No such file or directory
+Traceback (most recent call last):
+  File "/media/experiments/ns-allinone-3.41/ns-3.41/ns3", line 1914, in <module>
+    main()
+  File "/media/experiments/ns-allinone-3.41/ns-3.41/ns3", line 1909, in main
+    run_step(args, target_to_run, target_args)
+  File "/media/experiments/ns-allinone-3.41/ns-3.41/ns3", line 1476, in run_step
+    subprocess.run(
+  File "/usr/lib/python3.10/subprocess.py", line 503, in run
+    with Popen(*popenargs, **kwargs) as process:
+  File "/usr/lib/python3.10/subprocess.py", line 971, in __init__
+    self._execute_child(args, executable, preexec_fn, close_fds,
+  File "/usr/lib/python3.10/subprocess.py", line 1863, in _execute_child
+    raise child_exception_type(errno_num, err_msg, err_filename)
+OSError: [Errno 26] Text file busy: '/media/experiments/ns-allinone-3.41/ns-3.41/build/scratch/ECNMC/ns3.41-DatacenterSimulation-debug'
+mv: cannot stat '/media/experiments/ns-allinone-3.41/ns-3.41/scratch/ECNMC/results_forward/16/*.csv': No such file or directory
+Traceback (most recent call last):
+  File "/media/experiments/ns-allinone-3.41/ns-3.41/ns3", line 1914, in <module>
+    main()
+  File "/media/experiments/ns-allinone-3.41/ns-3.41/ns3", line 1909, in main
+    run_step(args, target_to_run, target_args)
+  File "/media/experiments/ns-allinone-3.41/ns-3.41/ns3", line 1476, in run_step
+    subprocess.run(
+  File "/usr/lib/python3.10/subprocess.py", line 503, in run
+    with Popen(*popenargs, **kwargs) as process:
+  File "/usr/lib/python3.10/subprocess.py", line 971, in __init__
+    self._execute_child(args, executable, preexec_fn, close_fds,
+  File "/usr/lib/python3.10/subprocess.py", line 1863, in _execute_child
+    raise child_exception_type(errno_num, err_msg, err_filename)
+OSError: [Errno 26] Text file busy: '/media/experiments/ns-allinone-3.41/ns-3.41/build/scratch/ECNMC/ns3.41-DatacenterSimulation-debug'
+mv: cannot stat '/media/experiments/ns-allinone-3.41/ns-3.41/scratch/ECNMC/results_forward/10/*.csv': No such file or directory
+	Experiment 10 done
+Rate 0.79 done
+	Experiment 1 done
+Rate 0.79 done
+	Experiment 25 done
+Rate 0.79 done
+	Experiment 14 done
+Rate 0.79 done
+	Experiment 18 done
+Rate 0.79 done
+	Experiment 17 done
+Rate 0.79 done
+	Experiment 27 done
+Rate 0.79 done
+	Experiment 5 done
+Rate 0.79 done
+	Experiment 15 done
+Rate 0.79 done
+	Experiment 24 done
+Rate 0.79 done
+	Experiment 13 done
+Rate 0.79 done
+	Experiment 23 done
+Rate 0.79 done
+	Experiment 19 done
+Rate 0.79 done
+	Experiment 12 done
+Rate 0.79 done
+	Experiment 9 done
+Rate 0.79 done
+	Experiment 4 done
+Rate 0.79 done
+	Experiment 28 done
+Rate 0.79 done
+	Experiment 11 done
+Rate 0.79 done
+	Experiment 26 done
+Rate 0.79 done
+	Experiment 7 done
+Rate 0.79 done
+	Experiment 20 done
+Rate 0.79 done
+	Experiment 29 done
+Rate 0.79 done
+	Experiment 22 done
+Rate 0.79 done
+	Experiment 21 done
+Rate 0.79 done
+	Experiment 8 done
+Rate 0.79 done
+	Experiment 3 done
+Rate 0.79 done
+	Experiment 6 done
+Rate 0.79 done
+	Experiment 2 done
+Rate 0.79 done
+	Experiment 16 done
+Rate 0.79 done
+	Experiment 0 done
+Rate 0.79 done
+	Experiment 10 done
+Rate 0.81 done
+	Experiment 14 done
+Rate 0.81 done
+	Experiment 1 done
+Rate 0.81 done
+	Experiment 27 done
+Rate 0.81 done
+	Experiment 19 done
+Rate 0.81 done
+	Experiment 15 done
+Rate 0.81 done
+	Experiment 23 done
+Rate 0.81 done
+	Experiment 24 done
+Rate 0.81 done
+	Experiment 5 done
+Rate 0.81 done
+	Experiment 9 done
+Rate 0.81 done
+	Experiment 12 done
+Rate 0.81 done
+	Experiment 17 done
+Rate 0.81 done
+	Experiment 28 done
+Rate 0.81 done
+	Experiment 11 done
+Rate 0.81 done
+	Experiment 4 done
+Rate 0.81 done
+	Experiment 13 done
+Rate 0.81 done
+	Experiment 22 done
+Rate 0.81 done
+	Experiment 18 done
+Rate 0.81 done
+	Experiment 25 done
+Rate 0.81 done
+	Experiment 7 done
+Rate 0.81 done
+	Experiment 21 done
+Rate 0.81 done
+	Experiment 20 done
+Rate 0.81 done
+	Experiment 3 done
+Rate 0.81 done
+	Experiment 29 done
+Rate 0.81 done
+	Experiment 26 done
+Rate 0.81 done
+	Experiment 6 done
+Rate 0.81 done
+	Experiment 8 done
+Rate 0.81 done
+	Experiment 2 done
+Rate 0.81 done
+	Experiment 16 done
+Rate 0.81 done
+	Experiment 0 done
+Rate 0.81 done
+	Experiment 15 done
+Rate 0.83 done
+	Experiment 1 done
+Rate 0.83 done
+	Experiment 13 done
+Rate 0.83 done
+	Experiment 24 done
+Rate 0.83 done
+	Experiment 10 done
+Rate 0.83 done
+	Experiment 9 done
+Rate 0.83 done
+	Experiment 22 done
+Rate 0.83 done
+	Experiment 25 done
+Rate 0.83 done
+	Experiment 17 done
+Rate 0.83 done
+	Experiment 18 done
+Rate 0.83 done
+	Experiment 27 done
+Rate 0.83 done
+	Experiment 23 done
+Rate 0.83 done
+	Experiment 12 done
+Rate 0.83 done
+	Experiment 21 done
+Rate 0.83 done
+	Experiment 5 done
+Rate 0.83 done
+	Experiment 4 done
+Rate 0.83 done
+	Experiment 20 done
+Rate 0.83 done
+	Experiment 14 done
+Rate 0.83 done
+	Experiment 19 done
+Rate 0.83 done
+	Experiment 11 done
+Rate 0.83 done
+	Experiment 3 done
+Rate 0.83 done
+	Experiment 28 done
+Rate 0.83 done
+	Experiment 29 done
+Rate 0.83 done
+	Experiment 26 done
+Rate 0.83 done
+	Experiment 8 done
+Rate 0.83 done
+	Experiment 6 done
+Rate 0.83 done
+	Experiment 7 done
+Rate 0.83 done
+	Experiment 2 done
+Rate 0.83 done
+	Experiment 0 done
+Rate 0.83 done
+	Experiment 16 done
+Rate 0.83 done
+	Experiment 1 done
+Rate 0.85 done
+	Experiment 15 done
+Rate 0.85 done
+	Experiment 22 done
+Rate 0.85 done
+	Experiment 9 done
+Rate 0.85 done
+	Experiment 24 done
+Rate 0.85 done
+	Experiment 23 done
+Rate 0.85 done
+	Experiment 27 done
+Rate 0.85 done
+	Experiment 18 done
+Rate 0.85 done
+	Experiment 17 done
+Rate 0.85 done
+	Experiment 12 done
+Rate 0.85 done
+	Experiment 21 done
+Rate 0.85 done
+	Experiment 4 done
+Rate 0.85 done
+	Experiment 13 done
+Rate 0.85 done
+	Experiment 14 done
+Rate 0.85 done
+	Experiment 11 done
+Rate 0.85 done
+	Experiment 20 done
+Rate 0.85 done
+	Experiment 19 done
+Rate 0.85 done
+	Experiment 3 done
+Rate 0.85 done
+	Experiment 25 done
+Rate 0.85 done
+	Experiment 28 done
+Rate 0.85 done
+	Experiment 29 done
+Rate 0.85 done
+	Experiment 26 done
+Rate 0.85 done
+	Experiment 8 done
+Rate 0.85 done
+	Experiment 5 done
+Rate 0.85 done
+	Experiment 2 done
+Rate 0.85 done
+	Experiment 10 done
+Rate 0.85 done
+	Experiment 7 done
+Rate 0.85 done
+	Experiment 6 done
+Rate 0.85 done
+	Experiment 0 done
+Rate 0.85 done
+	Experiment 16 done
+Rate 0.85 done
+	Experiment 15 done
+Rate 0.87 done
+	Experiment 1 done
+Rate 0.87 done
+	Experiment 24 done
+Rate 0.87 done
+	Experiment 22 done
+Rate 0.87 done
+	Experiment 9 done
+Rate 0.87 done
+	Experiment 18 done
+Rate 0.87 done
+	Experiment 12 done
+Rate 0.87 done
+	Experiment 27 done
+Rate 0.87 done
+	Experiment 21 done
+Rate 0.87 done
+	Experiment 17 done
+Rate 0.87 done
+	Experiment 19 done
+Rate 0.87 done
+	Experiment 13 done
+Rate 0.87 done
+	Experiment 14 done
+Rate 0.87 done
+	Experiment 23 done
+Rate 0.87 done
+	Experiment 11 done
+Rate 0.87 done
+	Experiment 25 done
+Rate 0.87 done
+	Experiment 28 done
+Rate 0.87 done
+	Experiment 29 done
+Rate 0.87 done
+	Experiment 26 done
+Rate 0.87 done
+	Experiment 3 done
+Rate 0.87 done
+	Experiment 8 done
+Rate 0.87 done
+	Experiment 20 done
+Rate 0.87 done
+	Experiment 2 done
+Rate 0.87 done
+	Experiment 5 done
+Rate 0.87 done
+	Experiment 10 done
+Rate 0.87 done
+	Experiment 6 done
+Rate 0.87 done
+	Experiment 4 done
+Rate 0.87 done
+	Experiment 7 done
+Rate 0.87 done
+	Experiment 0 done
+Rate 0.87 done
+	Experiment 16 done
+Rate 0.87 done
+	Experiment 15 done
+Rate 0.91 done
+	Experiment 1 done
+Rate 0.91 done
+	Experiment 24 done
+Rate 0.91 done
+	Experiment 9 done
+Rate 0.91 done
+	Experiment 22 done
+Rate 0.91 done
+	Experiment 18 done
+Rate 0.91 done
+	Experiment 21 done
+Rate 0.91 done
+	Experiment 12 done
+Rate 0.91 done
+	Experiment 17 done
+Rate 0.91 done
+	Experiment 27 done
+Rate 0.91 done
+	Experiment 23 done
+Rate 0.91 done
+	Experiment 13 done
+Rate 0.91 done
+	Experiment 28 done
+Rate 0.91 done
+	Experiment 11 done
+Rate 0.91 done
+	Experiment 25 done
+Rate 0.91 done
+	Experiment 29 done
+Rate 0.91 done
+	Experiment 26 done
+Rate 0.91 done
+	Experiment 19 done
+Rate 0.91 done
+	Experiment 3 done
+Rate 0.91 done
+	Experiment 14 done
+Rate 0.91 done
+	Experiment 8 done
+Rate 0.91 done
+	Experiment 2 done
+Rate 0.91 done
+	Experiment 10 done
+Rate 0.91 done
+	Experiment 20 done
+Rate 0.91 done
+	Experiment 6 done
+Rate 0.91 done
+	Experiment 7 done
+Rate 0.91 done
+	Experiment 0 done
+Rate 0.91 done
+	Experiment 16 done
+Rate 0.91 done
+	Experiment 4 done
+Rate 0.91 done
+	Experiment 5 done
+Rate 0.91 done
+	Experiment 15 done
+Rate 0.93 done
+	Experiment 9 done
+Rate 0.93 done
+	Experiment 1 done
+Rate 0.93 done
+	Experiment 9 done
+Rate 0.95 done
+	Experiment 15 done
+Rate 0.95 done
+	Experiment 9 done
+Rate 0.97 done
+	Experiment 21 done
+Rate 0.93 done
+	Experiment 24 done
+Rate 0.93 done
+	Experiment 18 done
+Rate 0.93 done
+	Experiment 22 done
+Rate 0.93 done
+	Experiment 17 done
+Rate 0.93 done
+	Experiment 12 done
+Rate 0.93 done
+	Experiment 27 done
+Rate 0.93 done
+	Experiment 23 done
+Rate 0.93 done
+	Experiment 28 done
+Rate 0.93 done
+	Experiment 25 done
+Rate 0.93 done
+	Experiment 13 done
+Rate 0.93 done
+	Experiment 29 done
+Rate 0.93 done
+	Experiment 14 done
+Rate 0.93 done
+	Experiment 11 done
+Rate 0.93 done
+	Experiment 3 done
+Rate 0.93 done
+	Experiment 19 done
+Rate 0.93 done
+	Experiment 2 done
+Rate 0.93 done
+	Experiment 26 done
+Rate 0.93 done
+	Experiment 8 done
+Rate 0.93 done
+	Experiment 10 done
+Rate 0.93 done
+	Experiment 20 done
+Rate 0.93 done
+	Experiment 6 done
+Rate 0.93 done
+	Experiment 0 done
+Rate 0.93 done
+	Experiment 7 done
+Rate 0.93 done
+	Experiment 4 done
+Rate 0.93 done
+	Experiment 5 done
+Rate 0.93 done
+	Experiment 16 done
+Rate 0.93 done
+	Experiment 1 done
+Rate 0.95 done
+	Experiment 9 done
+Rate 0.99 done
+	Experiment 15 done
+Rate 0.97 done
+	Experiment 18 done
+Rate 0.95 done
+	Experiment 22 done
+Rate 0.95 done
+	Experiment 21 done
+Rate 0.95 done
+	Experiment 24 done
+Rate 0.95 done
+	Experiment 12 done
+Rate 0.95 done
+	Experiment 17 done
+Rate 0.95 done
+	Experiment 27 done
+Rate 0.95 done
+	Experiment 28 done
+Rate 0.95 done
+	Experiment 23 done
+Rate 0.95 done
+	Experiment 25 done
+Rate 0.95 done
+	Experiment 13 done
+Rate 0.95 done
+	Experiment 11 done
+Rate 0.95 done
+	Experiment 3 done
+Rate 0.95 done
+	Experiment 2 done
+Rate 0.95 done
+	Experiment 26 done
+Rate 0.95 done
+	Experiment 19 done
+Rate 0.95 done
+	Experiment 14 done
+Rate 0.95 done
+	Experiment 10 done
+Rate 0.95 done
+	Experiment 29 done
+Rate 0.95 done
+	Experiment 8 done
+Rate 0.95 done
+	Experiment 20 done
+Rate 0.95 done
+	Experiment 6 done
+Rate 0.95 done
+	Experiment 4 done
+Rate 0.95 done
+	Experiment 7 done
+Rate 0.95 done
+	Experiment 5 done
+Rate 0.95 done
+	Experiment 0 done
+Rate 0.95 done
+	Experiment 16 done
+Rate 0.95 done
+	Experiment 1 done
+Rate 0.97 done
+	Experiment 15 done
+Rate 0.99 done
+	Experiment 9 done
+Rate 1.0 done
+	Experiment 18 done
+Rate 0.97 done
+	Experiment 22 done
+Rate 0.97 done
+	Experiment 21 done
+Rate 0.97 done
+	Experiment 12 done
+Rate 0.97 done
+	Experiment 27 done
+Rate 0.97 done
+	Experiment 24 done
+Rate 0.97 done
+	Experiment 28 done
+Rate 0.97 done
+	Experiment 23 done
+Rate 0.97 done
+	Experiment 25 done
+Rate 0.97 done
+	Experiment 11 done
+Rate 0.97 done
+	Experiment 17 done
+Rate 0.97 done
+	Experiment 13 done
+Rate 0.97 done
+	Experiment 3 done
+Rate 0.97 done
+	Experiment 2 done
+Rate 0.97 done
+	Experiment 26 done
+Rate 0.97 done
+	Experiment 10 done
+Rate 0.97 done
+	Experiment 20 done
+Rate 0.97 done
+	Experiment 14 done
+Rate 0.97 done
+	Experiment 29 done
+Rate 0.97 done
+	Experiment 19 done
+Rate 0.97 done
+	Experiment 6 done
+Rate 0.97 done
+	Experiment 8 done
+Rate 0.97 done
+	Experiment 4 done
+Rate 0.97 done
+	Experiment 7 done
+Rate 0.97 done
+	Experiment 5 done
+Rate 0.97 done
+	Experiment 16 done
+Rate 0.97 done
+	Experiment 0 done
+Rate 0.97 done
+	Experiment 1 done
+Rate 0.99 done
+	Experiment 9 done
+Rate 1.01 done
+	Experiment 22 done
+Rate 0.99 done
+	Experiment 15 done
+Rate 1.0 done
+	Experiment 18 done
+Rate 0.99 done
+	Experiment 27 done
+Rate 0.99 done
+	Experiment 12 done
+Rate 0.99 done
+	Experiment 24 done
+Rate 0.99 done
+	Experiment 28 done
+Rate 0.99 done
+	Experiment 25 done
+Rate 0.99 done
+	Experiment 23 done
+Rate 0.99 done
+	Experiment 13 done
+Rate 0.99 done
+	Experiment 21 done
+Rate 0.99 done
+	Experiment 3 done
+Rate 0.99 done
+	Experiment 17 done
+Rate 0.99 done
+	Experiment 11 done
+Rate 0.99 done
+	Experiment 2 done
+Rate 0.99 done
+	Experiment 10 done
+Rate 0.99 done
+	Experiment 20 done
+Rate 0.99 done
+	Experiment 29 done
+Rate 0.99 done
+	Experiment 14 done
+Rate 0.99 done
+	Experiment 26 done
+Rate 0.99 done
+	Experiment 19 done
+Rate 0.99 done
+	Experiment 6 done
+Rate 0.99 done
+	Experiment 8 done
+Rate 0.99 done
+	Experiment 4 done
+Rate 0.99 done
+	Experiment 5 done
+Rate 0.99 done
+	Experiment 7 done
+Rate 0.99 done
+	Experiment 16 done
+Rate 0.99 done
+	Experiment 0 done
+Rate 0.99 done
+	Experiment 18 done
+Rate 1.0 done
+	Experiment 1 done
+Rate 1.0 done
+	Experiment 15 done
+Rate 1.01 done
+	Experiment 9 done
+Rate 1.03 done
+	Experiment 22 done
+Rate 1.0 done
+	Experiment 27 done
+Rate 1.0 done
+	Experiment 24 done
+Rate 1.0 done
+	Experiment 13 done
+Rate 1.0 done
+	Experiment 25 done
+Rate 1.0 done
+	Experiment 28 done
+Rate 1.0 done
+	Experiment 23 done
+Rate 1.0 done
+	Experiment 12 done
+Rate 1.0 done
+	Experiment 3 done
+Rate 1.0 done
+	Experiment 17 done
+Rate 1.0 done
+	Experiment 21 done
+Rate 1.0 done
+	Experiment 2 done
+Rate 1.0 done
+	Experiment 11 done
+Rate 1.0 done
+	Experiment 10 done
+Rate 1.0 done
+	Experiment 20 done
+Rate 1.0 done
+	Experiment 14 done
+Rate 1.0 done
+	Experiment 26 done
+Rate 1.0 done
+	Experiment 19 done
+Rate 1.0 done
+	Experiment 29 done
+Rate 1.0 done
+	Experiment 6 done
+Rate 1.0 done
+	Experiment 8 done
+Rate 1.0 done
+	Experiment 7 done
+Rate 1.0 done
+	Experiment 5 done
+Rate 1.0 done
+	Experiment 4 done
+Rate 1.0 done
+	Experiment 16 done
+Rate 1.0 done
+	Experiment 0 done
+Rate 1.0 done
+	Experiment 15 done
+Rate 1.03 done
+	Experiment 18 done
+Rate 1.01 done
+	Experiment 22 done
+Rate 1.01 done
+	Experiment 27 done
+Rate 1.01 done
+	Experiment 23 done
+Rate 1.01 done
+	Experiment 24 done
+Rate 1.01 done
+	Experiment 12 done
+Rate 1.01 done
+	Experiment 28 done
+Rate 1.01 done
+	Experiment 13 done
+Rate 1.01 done
+	Experiment 9 done
+Rate 1.05 done
+	Experiment 1 done
+Rate 1.01 done
+	Experiment 25 done
+Rate 1.01 done
+	Experiment 3 done
+Rate 1.01 done
+	Experiment 17 done
+Rate 1.01 done
+	Experiment 21 done
+Rate 1.01 done
+	Experiment 2 done
+Rate 1.01 done
+	Experiment 14 done
+Rate 1.01 done
+	Experiment 20 done
+Rate 1.01 done
+	Experiment 11 done
+Rate 1.01 done
+	Experiment 8 done
+Rate 1.01 done
+	Experiment 29 done
+Rate 1.01 done
+	Experiment 19 done
+Rate 1.01 done
+	Experiment 10 done
+Rate 1.01 done
+	Experiment 6 done
+Rate 1.01 done
+	Experiment 26 done
+Rate 1.01 done
+	Experiment 4 done
+Rate 1.01 done
+	Experiment 5 done
+Rate 1.01 done
+	Experiment 7 done
+Rate 1.01 done
+	Experiment 16 done
+Rate 1.01 done
+	Experiment 0 done
+Rate 1.01 done
+	Experiment 15 done
+Rate 1.05 done
+	Experiment 18 done
+Rate 1.03 done
+	Experiment 22 done
+Rate 1.03 done
+	Experiment 24 done
+Rate 1.03 done
+	Experiment 13 done
+Rate 1.03 done
+	Experiment 27 done
+Rate 1.03 done
+	Experiment 28 done
+Rate 1.03 done
+	Experiment 12 done
+Rate 1.03 done
+	Experiment 23 done
+Rate 1.03 done
+	Experiment 3 done
+Rate 1.03 done
+	Experiment 25 done
+Rate 1.03 done
+	Experiment 17 done
+Rate 1.03 done
+	Experiment 2 done
+Rate 1.03 done
+	Experiment 21 done
+Rate 1.03 done
+	Experiment 1 done
+Rate 1.03 done
+	Experiment 20 done
+Rate 1.03 done
+	Experiment 14 done
+Rate 1.03 done
+	Experiment 8 done
+Rate 1.03 done
+	Experiment 19 done
+Rate 1.03 done
+	Experiment 29 done
+Rate 1.03 done
+	Experiment 11 done
+Rate 1.03 done
+	Experiment 6 done
+Rate 1.03 done
+	Experiment 10 done
+Rate 1.03 done
+	Experiment 4 done
+Rate 1.03 done
+	Experiment 26 done
+Rate 1.03 done
+	Experiment 5 done
+Rate 1.03 done
+	Experiment 7 done
+Rate 1.03 done
+	Experiment 16 done
+Rate 1.03 done
+	Experiment 0 done
+Rate 1.03 done
+	Experiment 18 done
+Rate 1.05 done
+	Experiment 22 done
+Rate 1.05 done
+	Experiment 24 done
+Rate 1.05 done
+	Experiment 13 done
+Rate 1.05 done
+	Experiment 27 done
+Rate 1.05 done
+	Experiment 28 done
+Rate 1.05 done
+	Experiment 12 done
+Rate 1.05 done
+	Experiment 23 done
+Rate 1.05 done
+	Experiment 3 done
+Rate 1.05 done
+	Experiment 25 done
+Rate 1.05 done
+	Experiment 17 done
+Rate 1.05 done
+	Experiment 2 done
+Rate 1.05 done
+	Experiment 21 done
+Rate 1.05 done
+	Experiment 20 done
+Rate 1.05 done
+	Experiment 14 done
+Rate 1.05 done
+	Experiment 1 done
+Rate 1.05 done
+	Experiment 19 done
+Rate 1.05 done
+	Experiment 8 done
+Rate 1.05 done
+	Experiment 29 done
+Rate 1.05 done
+	Experiment 10 done
+Rate 1.05 done
+	Experiment 11 done
+Rate 1.05 done
+	Experiment 6 done
+Rate 1.05 done
+	Experiment 4 done
+Rate 1.05 done
+	Experiment 5 done
+Rate 1.05 done
+	Experiment 26 done
+Rate 1.05 done
+	Experiment 7 done
+Rate 1.05 done
+	Experiment 16 done
+Rate 1.05 done
+	Experiment 0 done
+Rate 1.05 done
+	Experiment 9 done
+Rate 0.79 done
+	Experiment 25 done
+Rate 0.79 done
+	Experiment 23 done
+Rate 0.79 done
+	Experiment 29 done
+Rate 0.79 done
+	Experiment 26 done
+Rate 0.79 done
+	Experiment 5 done
+Rate 0.79 done
+	Experiment 0 done
+Rate 0.79 done
+	Experiment 28 done
+Rate 0.79 done
+	Experiment 20 done
+Rate 0.79 done
+	Experiment 24 done
+Rate 0.79 done
+	Experiment 27 done
+Rate 0.79 done
+	Experiment 19 done
+Rate 0.79 done
+	Experiment 12 done
+Rate 0.79 done
+	Experiment 21 done
+Rate 0.79 done
+	Experiment 2 done
+Rate 0.79 done
+	Experiment 4 done
+Rate 0.79 done
+	Experiment 1 done
+Rate 0.79 done
+	Experiment 3 done
+Rate 0.79 done
+	Experiment 7 done
+Rate 0.79 done
+	Experiment 6 done
+Rate 0.79 done
+	Experiment 17 done
+Rate 0.79 done
+	Experiment 11 done
+Rate 0.79 done
+	Experiment 22 done
+Rate 0.79 done
+	Experiment 15 done
+Rate 0.79 done
+	Experiment 18 done
+Rate 0.79 done
+	Experiment 8 done
+Rate 0.79 done
+	Experiment 13 done
+Rate 0.79 done
+	Experiment 16 done
+Rate 0.79 done
+	Experiment 14 done
+Rate 0.79 done
+	Experiment 10 done
+Rate 0.79 done
+	Experiment 25 done
+Rate 0.81 done
+	Experiment 23 done
+Rate 0.81 done
+	Experiment 9 done
+Rate 0.81 done
+	Experiment 29 done
+Rate 0.81 done
+	Experiment 0 done
+Rate 0.81 done
+	Experiment 5 done
+Rate 0.81 done
+	Experiment 28 done
+Rate 0.81 done
+	Experiment 24 done
+Rate 0.81 done
+	Experiment 21 done
+Rate 0.81 done
+	Experiment 19 done
+Rate 0.81 done
+	Experiment 4 done
+Rate 0.81 done
+	Experiment 12 done
+Rate 0.81 done
+	Experiment 27 done
+Rate 0.81 done
+	Experiment 7 done
+Rate 0.81 done
+	Experiment 17 done
+Rate 0.81 done
+	Experiment 20 done
+Rate 0.81 done
+	Experiment 6 done
+Rate 0.81 done
+	Experiment 3 done
+Rate 0.81 done
+	Experiment 2 done
+Rate 0.81 done
+	Experiment 1 done
+Rate 0.81 done
+	Experiment 22 done
+Rate 0.81 done
+	Experiment 18 done
+Rate 0.81 done
+	Experiment 15 done
+Rate 0.81 done
+	Experiment 26 done
+Rate 0.81 done
+	Experiment 13 done
+Rate 0.81 done
+	Experiment 16 done
+Rate 0.81 done
+	Experiment 14 done
+Rate 0.81 done
+	Experiment 11 done
+Rate 0.81 done
+	Experiment 8 done
+Rate 0.81 done
+	Experiment 10 done
+Rate 0.81 done
+	Experiment 23 done
+Rate 0.83 done
+	Experiment 9 done
+Rate 0.83 done
+	Experiment 29 done
+Rate 0.83 done
+	Experiment 24 done
+Rate 0.83 done
+	Experiment 4 done
+Rate 0.83 done
+	Experiment 19 done
+Rate 0.83 done
+	Experiment 0 done
+Rate 0.83 done
+	Experiment 21 done
+Rate 0.83 done
+	Experiment 12 done
+Rate 0.83 done
+	Experiment 28 done
+Rate 0.83 done
+	Experiment 27 done
+Rate 0.83 done
+	Experiment 6 done
+Rate 0.83 done
+	Experiment 20 done
+Rate 0.83 done
+	Experiment 3 done
+Rate 0.83 done
+	Experiment 2 done
+Rate 0.83 done
+	Experiment 22 done
+Rate 0.83 done
+	Experiment 7 done
+Rate 0.83 done
+	Experiment 1 done
+Rate 0.83 done
+	Experiment 18 done
+Rate 0.83 done
+	Experiment 15 done
+Rate 0.83 done
+	Experiment 26 done
+Rate 0.83 done
+	Experiment 25 done
+Rate 0.83 done
+	Experiment 14 done
+Rate 0.83 done
+	Experiment 16 done
+Rate 0.83 done
+	Experiment 13 done
+Rate 0.83 done
+	Experiment 17 done
+Rate 0.83 done
+	Experiment 11 done
+Rate 0.83 done
+	Experiment 5 done
+Rate 0.83 done
+	Experiment 8 done
+Rate 0.83 done
+	Experiment 10 done
+Rate 0.83 done
+	Experiment 23 done
+Rate 0.85 done
+	Experiment 29 done
+Rate 0.85 done
+	Experiment 24 done
+Rate 0.85 done
+	Experiment 4 done
+Rate 0.85 done
+	Experiment 12 done
+Rate 0.85 done
+	Experiment 19 done
+Rate 0.85 done
+	Experiment 28 done
+Rate 0.85 done
+	Experiment 20 done
+Rate 0.85 done
+	Experiment 21 done
+Rate 0.85 done
+	Experiment 3 done
+Rate 0.85 done
+	Experiment 6 done
+Rate 0.85 done
+	Experiment 27 done
+Rate 0.85 done
+	Experiment 2 done
+Rate 0.85 done
+	Experiment 7 done
+Rate 0.85 done
+	Experiment 0 done
+Rate 0.85 done
+	Experiment 1 done
+Rate 0.85 done
+	Experiment 9 done
+Rate 0.85 done
+	Experiment 15 done
+Rate 0.85 done
+	Experiment 18 done
+Rate 0.85 done
+	Experiment 26 done
+Rate 0.85 done
+	Experiment 25 done
+Rate 0.85 done
+	Experiment 16 done
+Rate 0.85 done
+	Experiment 14 done
+Rate 0.85 done
+	Experiment 17 done
+Rate 0.85 done
+	Experiment 13 done
+Rate 0.85 done
+	Experiment 8 done
+Rate 0.85 done
+	Experiment 22 done
+Rate 0.85 done
+	Experiment 5 done
+Rate 0.85 done
+	Experiment 10 done
+Rate 0.85 done
+	Experiment 11 done
+Rate 0.85 done
+	Experiment 29 done
+Rate 0.87 done
+	Experiment 23 done
+Rate 0.87 done
+	Experiment 12 done
+Rate 0.87 done
+	Experiment 28 done
+Rate 0.87 done
+	Experiment 4 done
+Rate 0.87 done
+	Experiment 20 done
+Rate 0.87 done
+	Experiment 21 done
+Rate 0.87 done
+	Experiment 2 done
+Rate 0.87 done
+	Experiment 27 done
+Rate 0.87 done
+	Experiment 19 done
+Rate 0.87 done
+	Experiment 7 done
+Rate 0.87 done
+	Experiment 3 done
+Rate 0.87 done
+	Experiment 1 done
+Rate 0.87 done
+	Experiment 9 done
+Rate 0.87 done
+	Experiment 24 done
+Rate 0.87 done
+	Experiment 26 done
+Rate 0.87 done
+	Experiment 15 done
+Rate 0.87 done
+	Experiment 18 done
+Rate 0.87 done
+	Experiment 0 done
+Rate 0.87 done
+	Experiment 25 done
+Rate 0.87 done
+	Experiment 16 done
+Rate 0.87 done
+	Experiment 14 done
+Rate 0.87 done
+	Experiment 17 done
+Rate 0.87 done
+	Experiment 13 done
+Rate 0.87 done
+	Experiment 6 done
+Rate 0.87 done
+	Experiment 22 done
+Rate 0.87 done
+	Experiment 5 done
+Rate 0.87 done
+	Experiment 8 done
+Rate 0.87 done
+	Experiment 11 done
+Rate 0.87 done
+	Experiment 10 done
+Rate 0.87 done
+	Experiment 29 done
+Rate 0.91 done
+	Experiment 23 done
+Rate 0.91 done
+	Experiment 20 done
+Rate 0.91 done
+	Experiment 28 done
+Rate 0.91 done
+	Experiment 4 done
+Rate 0.91 done
+	Experiment 2 done
+Rate 0.91 done
+	Experiment 19 done
+Rate 0.91 done
+	Experiment 21 done
+Rate 0.91 done
+	Experiment 27 done
+Rate 0.91 done
+	Experiment 3 done
+Rate 0.91 done
+	Experiment 7 done
+Rate 0.91 done
+	Experiment 1 done
+Rate 0.91 done
+	Experiment 24 done
+Rate 0.91 done
+	Experiment 26 done
+Rate 0.91 done
+	Experiment 15 done
+Rate 0.91 done
+	Experiment 12 done
+Rate 0.91 done
+	Experiment 0 done
+Rate 0.91 done
+	Experiment 25 done
+Rate 0.91 done
+	Experiment 16 done
+Rate 0.91 done
+	Experiment 14 done
+Rate 0.91 done
+	Experiment 17 done
+Rate 0.91 done
+	Experiment 18 done
+Rate 0.91 done
+	Experiment 9 done
+Rate 0.91 done
+	Experiment 22 done
+Rate 0.91 done
+	Experiment 5 done
+Rate 0.91 done
+	Experiment 6 done
+Rate 0.91 done
+	Experiment 8 done
+Rate 0.91 done
+	Experiment 11 done
+Rate 0.91 done
+	Experiment 13 done
+Rate 0.91 done
+	Experiment 10 done
+Rate 0.91 done
+	Experiment 23 done
+Rate 0.93 done
+	Experiment 20 done
+Rate 0.93 done
+	Experiment 4 done
+Rate 0.93 done
+	Experiment 28 done
+Rate 0.93 done
+	Experiment 19 done
+Rate 0.93 done
+	Experiment 29 done
+Rate 0.93 done
+	Experiment 3 done
+Rate 0.93 done
+	Experiment 2 done
+Rate 0.93 done
+	Experiment 1 done
+Rate 0.93 done
+	Experiment 7 done
+Rate 0.93 done
+	Experiment 27 done
+Rate 0.93 done
+	Experiment 24 done
+Rate 0.93 done
+	Experiment 15 done
+Rate 0.93 done
+	Experiment 26 done
+Rate 0.93 done
+	Experiment 21 done
+Rate 0.93 done
+	Experiment 12 done
+Rate 0.93 done
+	Experiment 25 done
+Rate 0.93 done
+	Experiment 16 done
+Rate 0.93 done
+	Experiment 14 done
+Rate 0.93 done
+	Experiment 17 done
+Rate 0.93 done
+	Experiment 18 done
+Rate 0.93 done
+	Experiment 9 done
+Rate 0.93 done
+	Experiment 22 done
+Rate 0.93 done
+	Experiment 5 done
+Rate 0.93 done
+	Experiment 0 done
+Rate 0.93 done
+	Experiment 11 done
+Rate 0.93 done
+	Experiment 8 done
+Rate 0.93 done
+	Experiment 13 done
+Rate 0.93 done
+	Experiment 6 done
+Rate 0.93 done
+	Experiment 10 done
+Rate 0.93 done
+	Experiment 23 done
+Rate 0.95 done
+	Experiment 20 done
+Rate 0.95 done
+	Experiment 4 done
+Rate 0.95 done
+	Experiment 19 done
+Rate 0.95 done
+	Experiment 29 done
+Rate 0.95 done
+	Experiment 28 done
+Rate 0.95 done
+	Experiment 2 done
+Rate 0.95 done
+	Experiment 7 done
+Rate 0.95 done
+	Experiment 3 done
+Rate 0.95 done
+	Experiment 24 done
+Rate 0.95 done
+	Experiment 1 done
+Rate 0.95 done
+	Experiment 21 done
+Rate 0.95 done
+	Experiment 15 done
+Rate 0.95 done
+	Experiment 12 done
+Rate 0.95 done
+	Experiment 26 done
+Rate 0.95 done
+	Experiment 27 done
+Rate 0.95 done
+	Experiment 16 done
+Rate 0.95 done
+	Experiment 25 done
+Rate 0.95 done
+	Experiment 14 done
+Rate 0.95 done
+	Experiment 9 done
+Rate 0.95 done
+	Experiment 18 done
+Rate 0.95 done
+	Experiment 5 done
+Rate 0.95 done
+	Experiment 11 done
+Rate 0.95 done
+	Experiment 8 done
+Rate 0.95 done
+	Experiment 22 done
+Rate 0.95 done
+	Experiment 6 done
+Rate 0.95 done
+	Experiment 13 done
+Rate 0.95 done
+	Experiment 17 done
+Rate 0.95 done
+	Experiment 0 done
+Rate 0.95 done
+	Experiment 10 done
+Rate 0.95 done
+	Experiment 23 done
+Rate 0.97 done
+	Experiment 20 done
+Rate 0.97 done
+	Experiment 4 done
+Rate 0.97 done
+	Experiment 29 done
+Rate 0.97 done
+	Experiment 19 done
+Rate 0.97 done
+	Experiment 28 done
+Rate 0.97 done
+	Experiment 3 done
+Rate 0.97 done
+	Experiment 24 done
+Rate 0.97 done
+	Experiment 15 done
+Rate 0.97 done
+	Experiment 1 done
+Rate 0.97 done
+	Experiment 2 done
+Rate 0.97 done
+	Experiment 21 done
+Rate 0.97 done
+	Experiment 26 done
+Rate 0.97 done
+	Experiment 7 done
+Rate 0.97 done
+	Experiment 16 done
+Rate 0.97 done
+	Experiment 14 done
+Rate 0.97 done
+	Experiment 25 done
+Rate 0.97 done
+	Experiment 12 done
+Rate 0.97 done
+	Experiment 9 done
+Rate 0.97 done
+	Experiment 8 done
+Rate 0.97 done
+	Experiment 18 done
+Rate 0.97 done
+	Experiment 11 done
+Rate 0.97 done
+	Experiment 5 done
+Rate 0.97 done
+	Experiment 27 done
+Rate 0.97 done
+	Experiment 6 done
+Rate 0.97 done
+	Experiment 22 done
+Rate 0.97 done
+	Experiment 17 done
+Rate 0.97 done
+	Experiment 0 done
+Rate 0.97 done
+	Experiment 13 done
+Rate 0.97 done
+	Experiment 10 done
+Rate 0.97 done
+	Experiment 23 done
+Rate 0.99 done
+	Experiment 4 done
+Rate 0.99 done
+	Experiment 20 done
+Rate 0.99 done
+	Experiment 29 done
+Rate 0.99 done
+	Experiment 28 done
+Rate 0.99 done
+	Experiment 19 done
+Rate 0.99 done
+	Experiment 24 done
+Rate 0.99 done
+	Experiment 2 done
+Rate 0.99 done
+	Experiment 21 done
+Rate 0.99 done
+	Experiment 1 done
+Rate 0.99 done
+	Experiment 15 done
+Rate 0.99 done
+	Experiment 7 done
+Rate 0.99 done
+	Experiment 16 done
+Rate 0.99 done
+	Experiment 3 done
+Rate 0.99 done
+	Experiment 26 done
+Rate 0.99 done
+	Experiment 12 done
+Rate 0.99 done
+	Experiment 25 done
+Rate 0.99 done
+	Experiment 14 done
+Rate 0.99 done
+	Experiment 9 done
+Rate 0.99 done
+	Experiment 8 done
+Rate 0.99 done
+	Experiment 11 done
+Rate 0.99 done
+	Experiment 5 done
+Rate 0.99 done
+	Experiment 27 done
+Rate 0.99 done
+	Experiment 22 done
+Rate 0.99 done
+	Experiment 17 done
+Rate 0.99 done
+	Experiment 6 done
+Rate 0.99 done
+	Experiment 0 done
+Rate 0.99 done
+	Experiment 13 done
+Rate 0.99 done
+	Experiment 10 done
+Rate 0.99 done
+	Experiment 18 done
+Rate 0.99 done
+	Experiment 4 done
+Rate 1.0 done
+	Experiment 23 done
+Rate 1.0 done
+	Experiment 24 done
+Rate 1.0 done
+	Experiment 28 done
+Rate 1.0 done
+	Experiment 19 done
+Rate 1.0 done
+	Experiment 20 done
+Rate 1.0 done
+	Experiment 29 done
+Rate 1.0 done
+	Experiment 15 done
+Rate 1.0 done
+	Experiment 2 done
+Rate 1.0 done
+	Experiment 1 done
+Rate 1.0 done
+	Experiment 21 done
+Rate 1.0 done
+	Experiment 16 done
+Rate 1.0 done
+	Experiment 3 done
+Rate 1.0 done
+	Experiment 7 done
+Rate 1.0 done
+	Experiment 26 done
+Rate 1.0 done
+	Experiment 12 done
+Rate 1.0 done
+	Experiment 25 done
+Rate 1.0 done
+	Experiment 9 done
+Rate 1.0 done
+	Experiment 14 done
+Rate 1.0 done
+	Experiment 8 done
+Rate 1.0 done
+	Experiment 11 done
+Rate 1.0 done
+	Experiment 5 done
+Rate 1.0 done
+	Experiment 6 done
+Rate 1.0 done
+	Experiment 27 done
+Rate 1.0 done
+	Experiment 17 done
+Rate 1.0 done
+	Experiment 0 done
+Rate 1.0 done
+	Experiment 22 done
+Rate 1.0 done
+	Experiment 10 done
+Rate 1.0 done
+	Experiment 13 done
+Rate 1.0 done
+	Experiment 18 done
+Rate 1.0 done
+	Experiment 4 done
+Rate 1.01 done
+	Experiment 23 done
+Rate 1.01 done
+	Experiment 28 done
+Rate 1.01 done
+	Experiment 24 done
+Rate 1.01 done
+	Experiment 20 done
+Rate 1.01 done
+	Experiment 29 done
+Rate 1.01 done
+	Experiment 19 done
+Rate 1.01 done
+	Experiment 2 done
+Rate 1.01 done
+	Experiment 15 done
+Rate 1.01 done
+	Experiment 21 done
+Rate 1.01 done
+	Experiment 1 done
+Rate 1.01 done
+	Experiment 3 done
+Rate 1.01 done
+	Experiment 26 done
+Rate 1.01 done
+	Experiment 7 done
+Rate 1.01 done
+	Experiment 12 done
+Rate 1.01 done
+	Experiment 16 done
+Rate 1.01 done
+	Experiment 25 done
+Rate 1.01 done
+	Experiment 9 done
+Rate 1.01 done
+	Experiment 8 done
+Rate 1.01 done
+	Experiment 14 done
+Rate 1.01 done
+	Experiment 5 done
+Rate 1.01 done
+	Experiment 11 done
+Rate 1.01 done
+	Experiment 17 done
+Rate 1.01 done
+	Experiment 27 done
+Rate 1.01 done
+	Experiment 0 done
+Rate 1.01 done
+	Experiment 6 done
+Rate 1.01 done
+	Experiment 22 done
+Rate 1.01 done
+	Experiment 10 done
+Rate 1.01 done
+	Experiment 13 done
+Rate 1.01 done
+	Experiment 18 done
+Rate 1.01 done
+	Experiment 4 done
+Rate 1.03 done
+	Experiment 28 done
+Rate 1.03 done
+	Experiment 20 done
+Rate 1.03 done
+	Experiment 29 done
+Rate 1.03 done
+	Experiment 23 done
+Rate 1.03 done
+	Experiment 2 done
+Rate 1.03 done
+	Experiment 15 done
+Rate 1.03 done
+	Experiment 21 done
+Rate 1.03 done
+	Experiment 3 done
+Rate 1.03 done
+	Experiment 26 done
+Rate 1.03 done
+	Experiment 7 done
+Rate 1.03 done
+	Experiment 1 done
+Rate 1.03 done
+	Experiment 12 done
+Rate 1.03 done
+	Experiment 16 done
+Rate 1.03 done
+	Experiment 19 done
+Rate 1.03 done
+	Experiment 24 done
+Rate 1.03 done
+	Experiment 25 done
+Rate 1.03 done
+	Experiment 9 done
+Rate 1.03 done
+	Experiment 8 done
+Rate 1.03 done
+	Experiment 5 done
+Rate 1.03 done
+	Experiment 17 done
+Rate 1.03 done
+	Experiment 0 done
+Rate 1.03 done
+	Experiment 27 done
+Rate 1.03 done
+	Experiment 14 done
+Rate 1.03 done
+	Experiment 11 done
+Rate 1.03 done
+	Experiment 22 done
+Rate 1.03 done
+	Experiment 6 done
+Rate 1.03 done
+	Experiment 10 done
+Rate 1.03 done
+	Experiment 18 done
+Rate 1.03 done
+	Experiment 28 done
+Rate 1.05 done
+	Experiment 13 done
+Rate 1.03 done
+	Experiment 29 done
+Rate 1.05 done
+	Experiment 20 done
+Rate 1.05 done
+	Experiment 2 done
+Rate 1.05 done
+	Experiment 21 done
+Rate 1.05 done
+	Experiment 26 done
+Rate 1.05 done
+	Experiment 3 done
+Rate 1.05 done
+	Experiment 7 done
+Rate 1.05 done
+	Experiment 12 done
+Rate 1.05 done
+	Experiment 4 done
+Rate 1.05 done
+	Experiment 1 done
+Rate 1.05 done
+	Experiment 16 done
+Rate 1.05 done
+	Experiment 19 done
+Rate 1.05 done
+	Experiment 25 done
+Rate 1.05 done
+	Experiment 24 done
+Rate 1.05 done
+	Experiment 23 done
+Rate 1.05 done
+	Experiment 15 done
+Rate 1.05 done
+	Experiment 9 done
+Rate 1.05 done
+	Experiment 8 done
+Rate 1.05 done
+	Experiment 5 done
+Rate 1.05 done
+	Experiment 0 done
+Rate 1.05 done
+	Experiment 17 done
+Rate 1.05 done
+	Experiment 27 done
+Rate 1.05 done
+	Experiment 14 done
+Rate 1.05 done
+	Experiment 11 done
+Rate 1.05 done
+	Experiment 22 done
+Rate 1.05 done
+	Experiment 10 done
+Rate 1.05 done
+	Experiment 6 done
+Rate 1.05 done
+	Experiment 18 done
+Rate 1.05 done
+	Experiment 13 done
+Rate 1.05 done
