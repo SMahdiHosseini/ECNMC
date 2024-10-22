@@ -40,13 +40,14 @@ __ns3_path = "/media/experiments/ns-allinone-3.41/ns-3.41"
 config = configparser.ConfigParser()
 config.read('../Parameters.config')
 serviceRateScales = [float(x) for x in config.get('Settings', 'serviceRateScales').split(',')]
-serviceRateScales = [0.79, 0.81, 0.83, 0.85, 0.87, 0.91, 0.93, 0.95, 0.97, 0.99, 1.0, 1.01, 1.03, 1.05]
+serviceRateScales = [0.79, 0.81, 0.83, 0.85, 0.87, 0.89, 0.91, 0.93, 0.95, 0.97, 0.99, 1.0, 1.01, 1.03, 1.05]
+# serviceRateScales = [0.89]
 # serviceRateScales = [0.85, 0.87, 0.89, 0.91, 0.93, 0.95, 0.97, 0.99, 1.01]
 errorRates = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 12.0, 14.0, 16.0, 18.0, 20.0, 22.0, 24.0, 28.0, 30.0]
 # errorRates = [0.5, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 9.0, 10.0, 12.0, 14.0, 15.0]
 # errorRates = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
 utilizationFactors = [round(6 * 300 / (r * 2 * 945), 3) for r in serviceRateScales]
-selectedUtils = [utilizationFactors[1], utilizationFactors[3], utilizationFactors[5], utilizationFactors[7], utilizationFactors[9], utilizationFactors[11], utilizationFactors[13]]
+# selectedUtils = [utilizationFactors[1], utilizationFactors[3], utilizationFactors[5], utilizationFactors[7], utilizationFactors[9], utilizationFactors[11], utilizationFactors[13]]
 # print("serviceRateScales: ", serviceRateScales)
 check = sys.argv[1]
 results_dir = sys.argv[2]
@@ -75,7 +76,7 @@ for rate in serviceRateScales:
             results[rate] = prepare_results(flows)
             x = round(6 * 300 / (rate * 2 * 945), 3)
             utils_success[x] = []
-            # dropRate = 0
+            dropRate = 0
             for flow in flows:
                 for i in range(2):
                     results[rate]['MaxEpsilonIneqDelay'][flow]['A' + str(i)] = temp['MaxEpsilonIneqDelay'][flow]['A' + str(i)] / temp['experiments']
@@ -84,12 +85,12 @@ for rate in serviceRateScales:
                 utils_success[x].append(max(results[rate]['MaxEpsilonIneqSuccessProb'][flow]['A0'], results[rate]['MaxEpsilonIneqSuccessProb'][flow]['A1']))
 
                 # just for the reverse_loss_2
-                # if flow != 'R0H0R2H0' and flow != 'R0H1R2H1':
-                #     dropRate += (1.0 - np.mean(temp['EndToEndSuccessProbPackets'][flow]['A0']) + 1.0 - np.mean(temp['EndToEndSuccessProbPackets'][flow]['A1'])) / 2
+                if flow != 'R0H0R2H0' and flow != 'R0H1R2H1':
+                    dropRate += (1.0 - np.mean(temp['EndToEndSuccessProb'][flow]['A0']) + 1.0 - np.mean(temp['EndToEndSuccessProb'][flow]['A1'])) / 2
             results[rate]['experiments'] = temp['experiments']
 
-            results[rate]['DropRate'] = temp['DropRate']
-            # results[rate]['DropRate'] = dropRate / 10
+            # results[rate]['DropRate'] = temp['DropRate']
+            results[rate]['DropRate'] = dropRate / 10
             # utilizationFactors.append(round(6 * temp['AverageWorkLoad'] / (rate * 2 * 945000000), 3))
             congestion_utils.append([round(6 * 300 / (rate * 2 * 945), 3), round(np.mean(temp['DropRate']), 3), round(6 * temp['AverageWorkLoad'] / (rate * 2 * 945000000), 3)])
 
@@ -100,7 +101,7 @@ for rate in serviceRateScales:
 # print(error_success)
 print(congestion_utils)
 # print(queueSizesStd)
-# print(utils_success)
+# print([(a, np.mean(b)) for a,b in utils_success.items()])
 droprates_mean = [np.mean(value['DropRate']) for value in results.values()]
 droprates_xticks = [round(x, 3) for x in droprates_mean]
 
@@ -165,52 +166,52 @@ droprates_xticks = [round(x, 3) for x in droprates_mean]
 # plt.savefig('../results_{}/{}_boxPLot.pdf'.format(results_dir, check))
 # plt.clf()
 
-# plot for forward experiment -- BoxPLots:
-fig = plt.figure()
-fig.set_size_inches(7, 6)
-ax1 = fig.add_subplot(111)
-# ax2 = ax1.twiny()
-data = [[] for i in range(len(utilizationFactors))]
-for flow in flows:
-    # if flow != 'R0H0R2H0' and flow != 'R0H1R2H1':
-    for i in range(len(utilizationFactors))[::-1]:
-        data[len(utilizationFactors) - i - 1].append(max(results[serviceRateScales[i]]['MaxEpsilonIneqSuccessProb'][flow]['A0'], results[serviceRateScales[i]]['MaxEpsilonIneqSuccessProb'][flow]['A1']))
-bp = ax1.boxplot(data)
-for box in bp['boxes']:
-    box.set(linewidth=2)
-for whisker in bp['whiskers']:
-    whisker.set_linewidth(2)
-for cap in bp['caps']:
-    cap.set_linewidth(2)
-for median in bp['medians']:
-    median.set_linewidth(2)
+# # plot for forward experiment -- BoxPLots:
+# fig = plt.figure()
+# fig.set_size_inches(7, 6)
+# ax1 = fig.add_subplot(111)
+# # ax2 = ax1.twiny()
+# data = [[] for i in range(len(utilizationFactors))]
+# for flow in flows:
+#     # if flow != 'R0H0R2H0' and flow != 'R0H1R2H1':
+#     for i in range(len(utilizationFactors))[::-1]:
+#         data[len(utilizationFactors) - i - 1].append(max(results[serviceRateScales[i]]['MaxEpsilonIneqSuccessProb'][flow]['A0'], results[serviceRateScales[i]]['MaxEpsilonIneqSuccessProb'][flow]['A1']))
+# bp = ax1.boxplot(data)
+# for box in bp['boxes']:
+#     box.set(linewidth=2)
+# for whisker in bp['whiskers']:
+#     whisker.set_linewidth(2)
+# for cap in bp['caps']:
+#     cap.set_linewidth(2)
+# for median in bp['medians']:
+#     median.set_linewidth(2)
 
-ax1.set_ylim(-10, 110)
-ax1.set_xlabel('Congestion Factor', fontsize=25, labelpad=-1)
-ax1.set_ylabel('Success Rate (%)', fontsize=25, labelpad=-10)
-ax1.tick_params(axis='y', labelsize=20)
-# x = selectedUtils
-x = utilizationFactors
-x.reverse()
-x = [str(x[k]) if k % 2 == 0 else '' for k in range(len(x))]
-y = [i+1 for i in range(len(x))]
-# y = [y[1], y[3], y[5], y[7], y[9], y[11], y[13]]
-ax1.set_xticks(y, x)
-ax1.set_xticklabels(x, fontsize=17)
-ax1.set_ylim(0, 110)
-# ax2.set_xlim(ax1.get_xlim())
-# ax2.set_xticks(y)
-# print(queueSizesStd)
-# # x = [droprates_xticks[0], droprates_xticks[2], droprates_xticks[4], droprates_xticks[6], droprates_xticks[8], droprates_xticks[10]]
-# x = queueSizesStd
+# ax1.set_ylim(-10, 110)
+# ax1.set_xlabel('Congestion Factor', fontsize=25, labelpad=-1)
+# ax1.set_ylabel('Success Rate (%)', fontsize=25, labelpad=-10)
+# ax1.tick_params(axis='y', labelsize=20)
+# # x = selectedUtils
+# x = utilizationFactors
 # x.reverse()
-# ax2.set_xticklabels(x, fontsize=5)
-# ax2.set_xlabel('Queue Size std(KB)', fontsize=15, labelpad=10)
-plt.axvline(x = 11, color = 'gray', label = 'axvline - full height', linestyle='--', fillstyle='top')
-plt.annotate('Loss:{}%'.format(congestion_utils[3][1] * 100), xy=(10.5, plt.ylim()[1]), xytext=(9.5, plt.ylim()[1] + 1), fontsize=15)
-plt.setp(ax1.spines.values(), lw=1.5, color='black')
-plt.savefig('../results_{}/{}_boxPLot.pdf'.format(results_dir, check))
-plt.clf()
+# x = [str(x[k]) if k % 2 == 0 else '' for k in range(len(x))]
+# y = [i+1 for i in range(len(x))]
+# # y = [y[1], y[3], y[5], y[7], y[9], y[11], y[13]]
+# ax1.set_xticks(y, x)
+# ax1.set_xticklabels(x, fontsize=17)
+# ax1.set_ylim(0, 110)
+# # ax2.set_xlim(ax1.get_xlim())
+# # ax2.set_xticks(y)
+# # print(queueSizesStd)
+# # # x = [droprates_xticks[0], droprates_xticks[2], droprates_xticks[4], droprates_xticks[6], droprates_xticks[8], droprates_xticks[10]]
+# # x = queueSizesStd
+# # x.reverse()
+# # ax2.set_xticklabels(x, fontsize=5)
+# # ax2.set_xlabel('Queue Size std(KB)', fontsize=15, labelpad=10)
+# # plt.axvline(x = 11, color = 'gray', label = 'axvline - full height', linestyle='--', fillstyle='top')
+# # plt.annotate('Loss:{}%'.format(congestion_utils[3][1] * 100), xy=(10.5, plt.ylim()[1]), xytext=(9.5, plt.ylim()[1] + 1), fontsize=15)
+# plt.setp(ax1.spines.values(), lw=1.5, color='black')
+# plt.savefig('../results_{}/{}_boxPLot.pdf'.format(results_dir, check))
+# plt.clf()
 
 # plot for reverse experiment loss_1:
 # fig = plt.figure()
@@ -235,33 +236,33 @@ plt.clf()
 # plt.savefig('../results_{}/{}_success_perDropRate.pdf'.format(results_dir, check))
 # plt.clf()
 
-# # plot for reverse experiment loss_2:
-# fig = plt.figure()
-# fig.set_size_inches(20, 6)
-# ax1 = fig.add_subplot(111)
-# ax2 = ax1.twiny()
-# for flow in flows:
-#     if flow == 'R0H0R2H0':
-#         ax1.plot(utilizationFactors, [100 - min(value['MaxEpsilonIneqSuccessProb'][flow]['A0'], value['MaxEpsilonIneqSuccessProb'][flow]['A1']) for value in results.values()], 'ro-')
-#     if flow == 'R0H1R2H1':
-#         ax1.plot(utilizationFactors, [100 - min(value['MaxEpsilonIneqSuccessProb'][flow]['A0'], value['MaxEpsilonIneqSuccessProb'][flow]['A1']) for value in results.values()], 'bo-')
-# ax1.legend(['ToR1S1 -> ToR3S1', 'ToR1S2 -> ToR3S2'], fontsize=15)
-# ax1.set_xlabel('Utilization Factor', fontsize=25, labelpad=-1)
-# ax1.set_ylabel('Success Rate (%)', fontsize=25, labelpad=-10)
-# ax1.set_xticks(utilizationFactors)
-# ax1.set_xticklabels(utilizationFactors, fontsize=20)
-# ax1.tick_params(axis='y', labelsize=20)
-# ax1.set_ylim(0, 110)
+# plot for reverse experiment loss_2:
+fig = plt.figure()
+fig.set_size_inches(20, 6)
+ax1 = fig.add_subplot(111)
+ax2 = ax1.twiny()
+for flow in flows:
+    if flow == 'R0H0R2H0':
+        ax1.plot(utilizationFactors, [100 - min(value['MaxEpsilonIneqSuccessProb'][flow]['A0'], value['MaxEpsilonIneqSuccessProb'][flow]['A1']) for value in results.values()], 'ro-')
+    if flow == 'R0H1R2H1':
+        ax1.plot(utilizationFactors, [100 - min(value['MaxEpsilonIneqSuccessProb'][flow]['A0'], value['MaxEpsilonIneqSuccessProb'][flow]['A1']) for value in results.values()], 'bo-')
+ax1.legend(['ToR1S1 -> ToR3S1', 'ToR1S2 -> ToR3S2'], fontsize=15)
+ax1.set_xlabel('Utilization Factor', fontsize=25, labelpad=-1)
+ax1.set_ylabel('Success Rate (%)', fontsize=25, labelpad=-10)
+ax1.set_xticks(utilizationFactors)
+ax1.set_xticklabels(utilizationFactors, fontsize=20)
+ax1.tick_params(axis='y', labelsize=20)
+ax1.set_ylim(0, 110)
 
-# ax2.set_xlim(ax1.get_xlim())
-# ax2.set_xticks(utilizationFactors)
-# ax2.set_xticklabels(droprates_xticks, fontsize=17)
-# ax2.set_xlabel('Congestion Loss Rate', fontsize=23, labelpad=10)
-# plt.grid(True)
-# plt.title('success rate of detecting the silent packet drop for different utulization factors')
-# plt.setp(ax1.spines.values(), lw=1.5, color='black')
-# plt.savefig('../results_{}/{}_success_perDropRate.pdf'.format(results_dir, check))
-# plt.clf()
+ax2.set_xlim(ax1.get_xlim())
+ax2.set_xticks(utilizationFactors)
+ax2.set_xticklabels(droprates_xticks, fontsize=17)
+ax2.set_xlabel('Congestion Loss Rate', fontsize=23, labelpad=10)
+plt.grid(True)
+plt.title('success rate of detecting the silent packet drop for different utulization factors')
+plt.setp(ax1.spines.values(), lw=1.5, color='black')
+plt.savefig('../results_{}/{}_success_perDropRate.pdf'.format(results_dir, check))
+plt.clf()
 
 # # plot for reverse experiment delay_1:
 # fig = plt.figure()
