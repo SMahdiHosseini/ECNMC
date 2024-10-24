@@ -89,7 +89,7 @@ void PoissonSampler::EventHandler() {
             packetKey->SetSrcIp(ipHeader.GetSource());
             packetKey->SetDstIp(ipHeader.GetDestination());
             sampleTime = lastItemTime;
-            if ((QueueSize("37.5KB").GetValue() - REDQueueDisc->GetCurrentSize().GetValue()) < QueueSize("700B").GetValue()) {
+            if ((QueueSize("37.5KB").GetValue() - REDQueueDisc->GetCurrentSize().GetValue()) < QueueSize("620B").GetValue()) {
                 drop = true;
             }
 

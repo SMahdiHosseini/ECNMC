@@ -1,0 +1,3 @@
+path,sampleDelayMean,unbiasedSmapleDelayVariance,averagePacketSize,receivedPackets,sentPackets,markedPackets,timeAverage,sentPacketsOnLink
+0,3817956,109469074339,1088,7786,7786,398,3830187,7789
+1,3657778,121485901547,1181,8689,8689,583,3656451,8686

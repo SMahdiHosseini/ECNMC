@@ -169,6 +169,10 @@ def analyze_single_experiment(return_dict, rate, queues_names, confidenceValue, 
     rounds_results['experiments'] += 1
     number_of_segments = 3
     compatibility_check(rounds_results, samples_paths_aggregated_statistics, endToEnd_statistics, endToEnd_dfs.keys(), ['A' + str(i) for i in range(num_of_agg_switches)], number_of_segments)
+    if rounds_results['MaxEpsilonIneqSuccessProb']['R0H0R2H0']['A1'] != 0:
+        print(path, np.log(endToEnd_statistics['R0H0R2H0']['A1']['successProbMean']), samples_paths_aggregated_statistics['R0H0R2H0']['A1']['successProbMean'], 
+            samples_paths_aggregated_statistics['R0H0R2H0']['A1']['MaxEpsilonSuccessProb'])
+              
     for q in queues_names:
         if q[0] == 'T' and q[2] == 'H' and (q[1] == '2' or q[1] == '3'):
             rounds_results[q+'Delaystd'].append(samples_dfs[q]['DelayStd'])
@@ -256,7 +260,7 @@ def __main__():
         serviceRateScales = [float(x) for x in config.get('Settings', 'serviceRateScales').split(',')]
     else:
         serviceRateScales = [float(x) for x in config.get('Settings', 'errorRateScale').split(',')]
-    serviceRateScales = [0.91, 0.93]
+    serviceRateScales = [0.89]
     # serviceRateScales = [0.91, 0.93, 0.95, 0.97, 0.99, 1.01, 1.03, 1.05]
     # serviceRateScales = [float(x) for x in config.get('Settings', 'serviceRateScales').split(',')]
     experiments = 30
