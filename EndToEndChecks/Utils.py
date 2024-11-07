@@ -77,6 +77,28 @@ def read_burst_samples(__ns3_path, rate, segment, experiment, results_folder):
         dfs[df_name] = df
     return dfs
 
+def read_lossProb(__ns3_path, rate, segment, experiment, results_folder):
+    file_paths = glob.glob('{}/scratch/{}/{}/{}/*_{}.csv'.format(__ns3_path, results_folder, rate, experiment, segment))
+    dfs = {}
+    for file_path in file_paths:
+        df_name = file_path.split('/')[-1].split('_')[0]
+        full_df = pd.read_csv(file_path)
+        dfs[df_name] = {}
+        dfs[df_name]['timeAvgSuccessProb'] = {}
+        for path in full_df['path'].unique():
+            # sort data by 'sentTime' column
+            df = full_df[full_df['path'] == path]
+            df = df.sort_values(by='sentTime').reset_index(drop=True)
+            df['sentTime'] = df['sentTime'] - df['sentTime'].min()
+            # add a new columns 'lossProb' to calculate the loss probability at each time step. It is 1 of 'receivedTime' is -1 and 0 otherwise
+            df['lossProb'] = 0
+            df.loc[df['receivedTime'] == -1, 'lossProb'] = 1
+            # now let's get the time average of the loss prob, which is the integral of the loss prob over sentTime divided by the total time
+            time_avg_loss_prob = np.trapezoid(df['lossProb'], df['sentTime']) / df['sentTime'].max()
+            dfs[df_name]['timeAvgSuccessProb']['A' + str(path)] = 1.0 - time_avg_loss_prob
+    return dfs
+            
+
 def read_online_computations(__ns3_path, rate, segment, experiment, results_folder):
     file_paths = glob.glob('{}/scratch/{}/{}/{}/*_{}.csv'.format(__ns3_path, results_folder, rate, experiment, segment))
     dfs = {}

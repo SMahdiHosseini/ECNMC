@@ -1,2 +1,0 @@
-[  0%] Building CXX object scratch/ECNMC/CMakeFiles/monitors_module.dir/monitors_module/BurstMonitor.cc.o
-[  0%] Linking CXX static library ../../lib/libmonitors_module.a

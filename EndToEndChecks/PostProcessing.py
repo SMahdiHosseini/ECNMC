@@ -108,11 +108,40 @@ def compatibility_check(rounds_results, samples_paths_aggregated_statistics, end
             if successProb_results['MaxEpsilonIneq'][flow][path]:
                 rounds_results['MaxEpsilonIneqSuccessProb'][flow][path] += 1
 
+def sample_endToEnd_packets(ns3_path, rate, segment, experiment, results_folder):
+    file_paths = glob.glob('{}/scratch/{}/{}/{}/*_{}.csv'.format(__ns3_path, results_folder, rate, experiment, segment))
+    dfs = {}
+    for file_path in file_paths:
+        df_name = file_path.split('/')[-1].split('_')[0]
+        full_df = pd.read_csv(file_path)
+        dfs[df_name] = {}
+        dfs[df_name]['timeAvgSuccessProb'] = {}
+        for path in full_df['path'].unique():
+            lossProbs = []
+            df = full_df[full_df['path'] == path]
+            df = df.sort_values(by='sentTime').reset_index(drop=True)
+            df['sentTime'] = df['sentTime'] - df['sentTime'].min()
+            # generate sample times that are from a poisson distribution, the rate of samples is 4500 samples per second and the actual times are in nanoseconds
+            sample_times = np.cumsum(np.random.exponential((df['sentTime'].max() / (len(df) * sample_rate)), int(len(df) * sample_rate)))
+            # now for each sample time, pick the closest packet that was sent before or after the sample time. Then check if the packet was received or not. Then the lossProb is 0 or 1
+            for sample_time in sample_times:
+                closest_packet = df.iloc[(df['sentTime'] - sample_time).abs().argsort()[:1]]
+                if closest_packet['receivedTime'].values[0] != -1:
+                    lossProbs.append(0)
+                else:
+                    lossProbs.append(1)
+            # now compute the time average of the lossProbs
+            dfs[df_name]['timeAvgSuccessProb']['A' + str(path)] = 1 - np.mean(lossProbs)
+    return dfs
+
+            
 def analyze_single_experiment(return_dict, rate, queues_names, confidenceValue, rounds_results, results_folder, experiment=0, ns3_path=__ns3_path):
     num_of_agg_switches = 2
     paths = ['A' + str(i) for i in range(num_of_agg_switches)]
     endToEnd_dfs = read_online_computations(__ns3_path, rate, 'EndToEnd', str(experiment), results_folder)
     samples_dfs = read_online_computations(__ns3_path, rate, 'PoissonSampler', str(experiment), results_folder)
+    successProbs = read_lossProb(__ns3_path, rate, 'EndToEnd_packets', str(experiment), results_folder)
+    successProbs_poisson = sample_endToEnd_packets(__ns3_path, rate, 'EndToEnd_packets', experiment, results_folder)
     # switches_dfs = read_data(__ns3_path, 0.2, 1.2, rate, 'Switch', 'IsSent', 'ReceiveTime', str(experiment), True, results_folder)
     # # # add delay columns which is ReceiveTime - SentTime and print the delay mean 9of the rows that path is 0 only for switch "T0"
     # for switch in switches_dfs.keys():
@@ -154,9 +183,13 @@ def analyze_single_experiment(return_dict, rate, queues_names, confidenceValue, 
         for path in paths:
             endToEnd_statistics[flow][path] = {}
             endToEnd_statistics[flow][path]['DelayMean'] = endToEnd_dfs[flow]['timeAverage'][int(path[1])]
-            endToEnd_statistics[flow][path]['successProbMean'] = endToEnd_dfs[flow]['successProbMean'][int(path[1])]            
-
-            rounds_results['EndToEndSuccessProb'][flow][path].append(endToEnd_dfs[flow]['successProbMean'][int(path[1])])
+            # endToEnd_statistics[flow][path]['successProbMean'] = endToEnd_dfs[flow]['successProbMean'][int(path[1])]            
+            # endToEnd_statistics[flow][path]['successProbMean'] = successProbs[flow]['timeAvgSuccessProb'][path]
+            endToEnd_statistics[flow][path]['successProbMean'] = successProbs_poisson[flow]['timeAvgSuccessProb'][path]
+            # print(flow, path, successProbs_poisson[flow]['timeAvgSuccessProb'][path], successProbs[flow]['timeAvgSuccessProb'][path], endToEnd_dfs[flow]['successProbMean'][int(path[1])], np.power(np.e, samples_paths_aggregated_statistics[flow][path]['successProbMean']))
+            # rounds_results['EndToEndSuccessProb'][flow][path].append(endToEnd_dfs[flow]['successProbMean'][int(path[1])])
+            # rounds_results['EndToEndSuccessProb'][flow][path].append(successProbs[flow]['timeAvgSuccessProb'][path])
+            rounds_results['EndToEndSuccessProb'][flow][path].append(successProbs_poisson[flow]['timeAvgSuccessProb'][path])
             rounds_results['EndToEndDelayMean'][flow][path].append(endToEnd_dfs[flow]['timeAverage'][int(path[1])])
             rounds_results['EndToEndDelayStd'][flow][path].append(endToEnd_dfs[flow]['DelayStd'][int(path[1])])
             rounds_results['maxEpsilonDelay'][flow][path].append(samples_paths_aggregated_statistics[flow][path]['MaxEpsilonDelay'])
@@ -169,9 +202,9 @@ def analyze_single_experiment(return_dict, rate, queues_names, confidenceValue, 
     rounds_results['experiments'] += 1
     number_of_segments = 3
     compatibility_check(rounds_results, samples_paths_aggregated_statistics, endToEnd_statistics, endToEnd_dfs.keys(), ['A' + str(i) for i in range(num_of_agg_switches)], number_of_segments)
-    if rounds_results['MaxEpsilonIneqSuccessProb']['R0H0R2H0']['A1'] != 0:
-        print(path, np.log(endToEnd_statistics['R0H0R2H0']['A1']['successProbMean']), samples_paths_aggregated_statistics['R0H0R2H0']['A1']['successProbMean'], 
-            samples_paths_aggregated_statistics['R0H0R2H0']['A1']['MaxEpsilonSuccessProb'])
+    # if rounds_results['MaxEpsilonIneqSuccessProb']['R0H0R2H0']['A1'] != 0:
+    #     print(path, np.log(endToEnd_statistics['R0H0R2H0']['A1']['successProbMean']), samples_paths_aggregated_statistics['R0H0R2H0']['A1']['successProbMean'], 
+    #         samples_paths_aggregated_statistics['R0H0R2H0']['A1']['MaxEpsilonSuccessProb'])
               
     for q in queues_names:
         if q[0] == 'T' and q[2] == 'H' and (q[1] == '2' or q[1] == '3'):
@@ -238,7 +271,7 @@ def analyze_all_experiments(rate, steadyStart, steadyEnd, confidenceValue, dir, 
         merge_results(return_dict, merged_results, flows_name, queues_names)
         print("{} joind".format(i))
     merged_results['AverageWorkLoad'] = sum(merged_results['AverageWorkLoad']) / merged_results['experiments']
-    with open('../results_{}/{}/delay_{}_{}_{}_to_{}.json'.format(dir, rate, results_folder, experiments_end, steadyStart, steadyEnd), 'w') as f:
+    with open('../Results/results_{}/{}/delay_{}_{}_{}_to_{}.json'.format(dir, rate, results_folder, experiments_end, steadyStart, steadyEnd), 'w') as f:
         js.dump(merged_results, f, indent=4)
 
 # main function
@@ -260,10 +293,10 @@ def __main__():
         serviceRateScales = [float(x) for x in config.get('Settings', 'serviceRateScales').split(',')]
     else:
         serviceRateScales = [float(x) for x in config.get('Settings', 'errorRateScale').split(',')]
-    serviceRateScales = [0.89]
+    # serviceRateScales = [0.79]
     # serviceRateScales = [0.91, 0.93, 0.95, 0.97, 0.99, 1.01, 1.03, 1.05]
     # serviceRateScales = [float(x) for x in config.get('Settings', 'serviceRateScales').split(',')]
-    experiments = 30
+    # experiments = 1
 
     for rate in serviceRateScales:
         print("\nAnalyzing experiments for rate: ", rate)

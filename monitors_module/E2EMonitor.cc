@@ -100,7 +100,7 @@ void E2EMonitor::Enqueue(Ptr<const Packet> packet) {
         uint64_t hash = GetHashValue(packetKey->GetSrcIp(), packetKey->GetDstIp(), packetKey->GetSrcPort(), packetKey->GetDstPort(), IPHeader.GetProtocol());
         pktCopy->AddHeader(IPHeader);
         pktCopy->AddHeader(pppHeader);
-
+        packetKey->SetPath(hash % 2);
         sentPackets[hash % 2] += 1;
     }
 }
@@ -147,7 +147,7 @@ void E2EMonitor::RecordIpv4PacketReceived(Ptr<const Packet> packet, Ptr<Ipv4> ip
             updateBasicCounters(packetKeyEventPair->second->GetSentTime(), packetKeyEventPair->second->GetReceivedTime() + additionalDeprioritizationDelay - transmissionDelay, path);
             updateTimeAverageIntegral(path, packetKeyEventPair->second->GetReceivedTime() + additionalDeprioritizationDelay - transmissionDelay - packetKeyEventPair->second->GetSentTime(), packetKeyEventPair->second->GetReceivedTime());
             // remove the packet from the map to reduce the memory usage of the simulation
-            _recordedPackets.erase(packetKeyEventPair);
+            // _recordedPackets.erase(packetKeyEventPair);
         }
     }
 }
@@ -161,4 +161,13 @@ void E2EMonitor::SaveMonitorRecords(const string& filename) {
     outfile << 1 << "," << sampleMean[1].GetNanoSeconds() << "," << unbiasedSmapleVariance[1].GetNanoSeconds() << "," << sumOfPacketSizes[1] / sampleSize[1] << "," << sampleSize[1] << "," << sentPackets[1] << "," << markedPackets[1] 
     << "," << timeAverageIntegral[1].GetNanoSeconds() / (integralEndTime[1] - integralStartTime[1]).GetNanoSeconds() << "," << sentPackets_onlink[1] << endl;
     outfile.close();
+
+   // now save the recorded packets to a file which name is filename after removing the .csv extension and adding _packets.csv
+    ofstream packetsFile;
+    packetsFile.open(filename.substr(0, filename.size() - 4) + "_packets.csv");
+    packetsFile << "sentTime,receivedTime,path" << endl;
+    for (auto &recordedPacket : _recordedPackets) {
+        packetsFile << recordedPacket.second->GetSentTime().GetNanoSeconds() << "," << recordedPacket.second->GetReceivedTime().GetNanoSeconds() << "," << recordedPacket.second->GetPath() << endl;
+    }
+    packetsFile.close();
 }
