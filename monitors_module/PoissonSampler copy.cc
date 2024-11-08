@@ -37,6 +37,8 @@ PoissonSampler::PoissonSampler(const Time &steadyStartTime, const Time &steadySt
 void PoissonSampler::EnqueueQueueDisc(Ptr<const QueueDiscItem> item) {
     lastItem = item;
     lastItemTime = Simulator::Now();
+    REDQueueDisc->GetStats().GetTotalDroppedBytes();
+    REDQueueDisc->GetStats().GetTotalBytes();
 }
 
 void PoissonSampler::EnqueueNetDeviceQueue(Ptr<const Packet> packet) {

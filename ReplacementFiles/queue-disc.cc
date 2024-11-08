@@ -246,7 +246,8 @@ QueueDisc::Stats::GetTotalDroppedBytes() const
 uint64_t
 QueueDisc::Stats::GetTotalBytes() const
 {
-    return nTotalReceivedBytes;
+    // return nTotalReceivedBytes;
+    return nTotalReceivedPackets;
 }
 // ***** Mahdi Change ***** (END) ***** //
 std::ostream&
