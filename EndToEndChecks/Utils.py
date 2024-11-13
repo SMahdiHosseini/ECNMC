@@ -108,6 +108,7 @@ def read_online_computations(__ns3_path, rate, segment, experiment, results_fold
         df = df.rename(columns={'sampleDelayMean': 'DelayMean', 'unbiasedSmapleDelayVariance': 'DelayStd'})
         if segment == 'PoissonSampler':
             df = df.rename(columns={'samplesDropMean': 'successProbMean', 'samplesDropVariance': 'successProbStd'})
+            # df = df.rename(columns={'GTDropMean': 'successProbMean', 'samplesDropVariance': 'successProbStd'})
             df['DelayStd'] = np.sqrt(df['DelayStd'])
             df['successProbStd'] = np.sqrt(df['successProbStd'])
             # convert the success probability to loss probability

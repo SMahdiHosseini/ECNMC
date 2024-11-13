@@ -29,14 +29,34 @@ PoissonSampler::PoissonSampler(const Time &steadyStartTime, const Time &steadySt
     sampleMean.push_back(Seconds(0));
     unbiasedSmapleVariance.push_back(Seconds(0));
     sampleSize.push_back(0);
-
+    packetCDF.loadCDFData("/media/experiments/ns-allinone-3.41/ns-3.41/scratch/ECNMC/Helpers/packet_size_cdf.csv");
+    numOfGTSamples = 0;
+    GTPacketSizeMean = 0;
+    GTDropMean = 0;
+    firstItemTime = Time(-1);
+    lastItemTime = Time(0);
+    
     Simulator::Schedule(Seconds(0), &PoissonSampler::Connect, this, outgoingNetDevice);
     Simulator::Schedule(steadyStopTime, &PoissonSampler::Disconnect, this, outgoingNetDevice);
 }
 
+
 void PoissonSampler::EnqueueQueueDisc(Ptr<const QueueDiscItem> item) {
     lastItem = item;
+    // packetCDF.addPacket(item->GetSize());
+    Time prev = lastItemTime;
     lastItemTime = Simulator::Now();
+    if (Simulator::Now() < _steadyStartTime || Simulator::Now() > _steadyStopTime) { 
+        return;
+    }
+    if (firstItemTime == Time(-1)) {
+        firstItemTime = Simulator::Now();
+        return;
+    }
+    numOfGTSamples++;
+    GTPacketSizeMean = (item->GetSize() + (GTPacketSizeMean * (numOfGTSamples - 1))) / numOfGTSamples;
+    double dropProbDynamicCDF = packetCDF.calculateProbabilityGreaterThan((QueueSize("37.5KB").GetValue() - REDQueueDisc->GetCurrentSize().GetValue()));
+    GTDropMean = (GTDropMean * (prev - firstItemTime).GetNanoSeconds() + dropProbDynamicCDF * (lastItemTime - prev).GetNanoSeconds()) / (lastItemTime - firstItemTime).GetNanoSeconds();
 }
 
 void PoissonSampler::EnqueueNetDeviceQueue(Ptr<const Packet> packet) {
@@ -73,6 +93,7 @@ void PoissonSampler::EventHandler() {
     PacketKey* packetKey;
     bool zeroDelay = false;
     bool drop = false;
+    double dropProbDynamicCDF = 0;
     Time sampleTime = Simulator::Now();
     if (REDQueueDisc != nullptr && REDQueueDisc->GetNPackets() > 0) {
         // check the quque disc size
@@ -89,10 +110,11 @@ void PoissonSampler::EventHandler() {
             packetKey->SetSrcIp(ipHeader.GetSource());
             packetKey->SetDstIp(ipHeader.GetDestination());
             sampleTime = lastItemTime;
-            if ((QueueSize("37.5KB").GetValue() - REDQueueDisc->GetCurrentSize().GetValue()) < QueueSize("700B").GetValue()) {
-                drop = true;
-            }
-
+            // if ((QueueSize("37.5KB").GetValue() - REDQueueDisc->GetCurrentSize().GetValue()) < QueueSize("700B").GetValue()) {
+            //     drop = true;
+            // }
+            drop = true;
+            dropProbDynamicCDF = packetCDF.calculateProbabilityGreaterThan((QueueSize("37.5KB").GetValue() - REDQueueDisc->GetCurrentSize().GetValue()));
         }
     }
     else if (NetDeviceQueue->GetNPackets() > 0) {
@@ -100,6 +122,7 @@ void PoissonSampler::EventHandler() {
         sampleTime = lastPacketTime;
         if ((REDQueueDisc == nullptr) && (NetDeviceQueue->GetCurrentSize() >= QueueSize("100p"))) {
             drop = true;
+            dropProbDynamicCDF = 1.0;
         }
     }
     else {
@@ -126,7 +149,8 @@ void PoissonSampler::EventHandler() {
     //     event->SetMarkingProb(REDQueueDisc->GetMarkingProbability());
     // }
     if (drop) {
-        event->SetMarkingProb(1.0);
+        // event->SetMarkingProb(1.0);
+        event->SetMarkingProb(dropProbDynamicCDF);
     }
 }
 
@@ -182,7 +206,10 @@ void PoissonSampler::RecordPacket(Ptr<const Packet> packet) {
 void PoissonSampler::SaveMonitorRecords(const string& filename) {
     ofstream outfile;
     outfile.open(filename);
-    outfile << "sampleDelayMean,unbiasedSmapleDelayVariance,sampleSize,samplesDropMean,samplesDropVariance" << endl;
-    outfile << sampleMean[0].GetNanoSeconds() << "," << unbiasedSmapleVariance[0].GetNanoSeconds() << "," << sampleSize[0] << "," << samplesDropMean << "," << samplesDropVariance << endl;
+    outfile << "sampleDelayMean,unbiasedSmapleDelayVariance,sampleSize,samplesDropMean,samplesDropVariance,GTSampleSize,GTPacketSizeMean,GTDropMean" << endl;
+    outfile << sampleMean[0].GetNanoSeconds() << "," << unbiasedSmapleVariance[0].GetNanoSeconds() << "," << sampleSize[0] << "," << samplesDropMean << "," << samplesDropVariance << "," << numOfGTSamples << "," << GTPacketSizeMean << "," << GTDropMean << endl;
     outfile.close();
+    if (_monitorTag == "T0A0") {
+        packetCDF.printCDF();
+    }
 }

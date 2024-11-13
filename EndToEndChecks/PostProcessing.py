@@ -17,7 +17,7 @@ __ns3_path = "/media/experiments/ns-allinone-3.41/ns-3.41"
 errorRate = 0.05
 difference = 1.30
 # sample_rate = 0.30
-sample_rates = [0.2, 0.5, 1.0, 2.0, 3.0, 4.0]
+sample_rates = [0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 3.0, 4.0]
 confidenceValue = 1.96 # 95% confidence interval
 propagationDelay = 50000
         
@@ -163,8 +163,8 @@ def sample_endToEnd_packets(ns3_path, rate, segment, experiment, results_folder,
                     break
                 closest_packet = df.iloc[(df['sentTime'] - sample_time).abs().argsort()[:1]]
                 # now check if the difference between the closest packet and the sample time is less than the average delay of the path
-                if abs(closest_packet['sentTime'].values[0] - sample_time) > (rtt / 10):
-                    print(_sample_rate, df_name, path, closest_packet['sentTime'].values[0], sample_time, e2e_delays[df_name]['timeAverage'][path])
+                if abs(closest_packet['sentTime'].values[0] - sample_time) > (rtt / 2):
+                    # print(_sample_rate, df_name, path, closest_packet['sentTime'].values[0], sample_time, e2e_delays[df_name]['timeAverage'][path])
                     continue
 
                 if closest_packet['receivedTime'].values[0] != -1:

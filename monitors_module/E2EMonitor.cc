@@ -165,9 +165,9 @@ void E2EMonitor::SaveMonitorRecords(const string& filename) {
    // now save the recorded packets to a file which name is filename after removing the .csv extension and adding _packets.csv
     ofstream packetsFile;
     packetsFile.open(filename.substr(0, filename.size() - 4) + "_packets.csv");
-    packetsFile << "sentTime,receivedTime,path" << endl;
+    packetsFile << "sentTime,receivedTime,size,path" << endl;
     for (auto &recordedPacket : _recordedPackets) {
-        packetsFile << recordedPacket.second->GetSentTime().GetNanoSeconds() << "," << recordedPacket.second->GetReceivedTime().GetNanoSeconds() << "," << recordedPacket.second->GetPath() << endl;
+        packetsFile << recordedPacket.second->GetSentTime().GetNanoSeconds() << "," << recordedPacket.second->GetReceivedTime().GetNanoSeconds() << "," << recordedPacket.first.GetPacketSize() << "," << recordedPacket.second->GetPath() << endl;
     }
     packetsFile.close();
 }

@@ -12,6 +12,7 @@
 #include "ns3/red-queue-disc.h"
 #include "Monitor.h"
 #include "PacketKey.h"
+#include "PacketCDF.h"
 
 #include <ostream>
 #include <unordered_map>
@@ -56,7 +57,12 @@ private:
     Time lastItemTime;
     Ptr<const Packet> lastPacket;
     Time lastPacketTime;
-
+    uint32_t numOfGTSamples;
+    double GTPacketSizeMean;
+    double GTDropMean;
+    Time firstItemTime;
+    PacketCDF packetCDF;
+    
     void Connect(Ptr<PointToPointNetDevice> outgoingNetDevice);
     void Disconnect(Ptr<PointToPointNetDevice> outgoingNetDevice);
     void EnqueueQueueDisc(Ptr<const QueueDiscItem> item);
@@ -64,6 +70,7 @@ private:
     void EventHandler();
     void RecordPacket(Ptr<const Packet> packet);
     void updateCounters(samplingEvent* event);
+    void loadCDFData(const std::string& filename);
 
 public:
     PoissonSampler(const Time &steadyStartTime, const Time &steadyStopTime, Ptr<RedQueueDisc> queueDisc, Ptr<Queue<Packet>> queue, Ptr<PointToPointNetDevice> outgoingNetDevice, const string &sampleTag, double sampleRate);
