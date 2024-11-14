@@ -300,16 +300,16 @@ int main(int argc, char* argv[])
 
     Ipv4GlobalRoutingHelper::PopulateRoutingTables();
 
-    // /* Erro Model Setup for Silent packet drops*/
-    // Ptr<RateErrorModel> em_R0H0T0 = CreateObject<RateErrorModel>();
-    // em_R0H0T0->SetAttribute("ErrorRate", DoubleValue(errorRate));
-    // em_R0H0T0->SetUnit(RateErrorModel::ErrorUnit::ERROR_UNIT_PACKET);
-    // hostsToTorsNetDevices[0][0].Get(1)->SetAttribute("ReceiveErrorModel", PointerValue(em_R0H0T0));
+    /* Erro Model Setup for Silent packet drops*/
+    Ptr<RateErrorModel> em_R0H0T0 = CreateObject<RateErrorModel>();
+    em_R0H0T0->SetAttribute("ErrorRate", DoubleValue(errorRate));
+    em_R0H0T0->SetUnit(RateErrorModel::ErrorUnit::ERROR_UNIT_PACKET);
+    hostsToTorsNetDevices[0][0].Get(1)->SetAttribute("ReceiveErrorModel", PointerValue(em_R0H0T0));
 
-    // Ptr<RateErrorModel> em_R0H1T0 = CreateObject<RateErrorModel>();
-    // em_R0H1T0->SetAttribute("ErrorRate", DoubleValue(errorRate));
-    // em_R0H1T0->SetUnit(RateErrorModel::ErrorUnit::ERROR_UNIT_PACKET);
-    // hostsToTorsNetDevices[0][1].Get(1)->SetAttribute("ReceiveErrorModel", PointerValue(em_R0H1T0));
+    Ptr<RateErrorModel> em_R0H1T0 = CreateObject<RateErrorModel>();
+    em_R0H1T0->SetAttribute("ErrorRate", DoubleValue(errorRate));
+    em_R0H1T0->SetUnit(RateErrorModel::ErrorUnit::ERROR_UNIT_PACKET);
+    hostsToTorsNetDevices[0][1].Get(1)->SetAttribute("ReceiveErrorModel", PointerValue(em_R0H1T0));
     /* ########## END: Ceating the topology ########## */
 
 

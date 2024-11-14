@@ -161,16 +161,32 @@ def sample_endToEnd_packets(ns3_path, rate, segment, experiment, results_folder,
             for sample_time in sample_times:
                 if sample_time > df['sentTime'].max():
                     break
-                closest_packet = df.iloc[(df['sentTime'] - sample_time).abs().argsort()[:1]]
+                # pick the closest packet that was sent after sample time
+                closest_packet_after = df[df['sentTime'] > sample_time].iloc[0]
+                # pick the closest packet that was sent before sample time
+                closest_packet_before = df[df['sentTime'] < sample_time].iloc[-1]
                 # now check if the difference between the closest packet and the sample time is less than the average delay of the path
-                if abs(closest_packet['sentTime'].values[0] - sample_time) > (rtt / 2):
-                    # print(_sample_rate, df_name, path, closest_packet['sentTime'].values[0], sample_time, e2e_delays[df_name]['timeAverage'][path])
+                if abs(closest_packet_after['sentTime'] - sample_time) > (rtt / 2) or abs(closest_packet_before['sentTime'] - sample_time) > (rtt / 2):
                     continue
-
-                if closest_packet['receivedTime'].values[0] != -1:
+                if closest_packet_after['receivedTime'] != -1 and closest_packet_before['receivedTime'] != -1:
                     lossProbs.append(0)
-                else:
+                elif closest_packet_after['receivedTime'] == -1 and closest_packet_before['receivedTime'] == -1:
                     lossProbs.append(1)
+                elif closest_packet_after['receivedTime'] != -1 and closest_packet_before['receivedTime'] == -1:
+                    lossProbs.append(abs(closest_packet_before['sentTime'] - sample_time) / abs(closest_packet_after['sentTime'] - closest_packet_before['sentTime']))
+                else:
+                    lossProbs.append(abs(closest_packet_after['sentTime'] - sample_time) / abs(closest_packet_after['sentTime'] - closest_packet_before['sentTime']))
+
+                # closest_packet = df.iloc[(df['sentTime'] - sample_time).abs().argsort()[:1]]
+                # # now check if the difference between the closest packet and the sample time is less than the average delay of the path
+                # if abs(closest_packet['sentTime'].values[0] - sample_time) > (rtt / 2):
+                #     # print(_sample_rate, df_name, path, closest_packet['sentTime'].values[0], sample_time, e2e_delays[df_name]['timeAverage'][path])
+                #     continue
+
+                # if closest_packet['receivedTime'].values[0] != -1:
+                #     lossProbs.append(0)
+                # else:
+                #     lossProbs.append(1)
             # now compute the time average of the lossProbs
             dfs[df_name]['timeAvgSuccessProb']['A' + str(path)] = 1 - np.mean(lossProbs)
     return dfs
@@ -232,7 +248,8 @@ def analyze_single_experiment(return_dict, rate, queues_names, confidenceValue, 
             endToEnd_statistics[flow][path]['successProbMean']['poisson_sentTime_est'] = {}
             for sample_rate in sample_rates:
                 endToEnd_statistics[flow][path]['successProbMean']['poisson_sentTime_est'][sample_rate] = successProbs_poisson[sample_rate][flow]['timeAvgSuccessProb'][path]
-            # print(flow, path, successProbs_poisson[flow]['timeAvgSuccessProb'][path], successProbs[flow]['timeAvgSuccessProb'][path], endToEnd_dfs[flow]['successProbMean'][int(path[1])], np.power(np.e, samples_paths_aggregated_statistics[flow][path]['successProbMean']))
+            # if (flow == 'R0H0R2H0' and path == 'A0'):
+            #     print(flow, path, endToEnd_statistics[flow][path]['successProbMean']['E2E_eventAvg'], successProbs[flow]['timeAvgSuccessProb'][path], samples_paths_aggregated_statistics[flow][path]['successProbMean'], samples_paths_aggregated_statistics[flow][path]['MaxEpsilonSuccessProb'])
             # rounds_results['EndToEndSuccessProb'][flow][path].append(endToEnd_dfs[flow]['successProbMean'][int(path[1])])
             # rounds_results['EndToEndSuccessProb'][flow][path].append(successProbs[flow]['timeAvgSuccessProb'][path])
             rounds_results['EndToEndSuccessProb']['E2E_eventAvg'][flow][path].append(endToEnd_dfs[flow]['successProbMean'][int(path[1])])
@@ -308,10 +325,11 @@ def analyze_all_experiments(rate, steadyStart, steadyEnd, confidenceValue, dir, 
 
     rounds_results = prepare_results(flows_name, queues_names, num_of_agg_switches)
     merged_results = prepare_results(flows_name, queues_names, num_of_agg_switches)
-    for i in range(int(experiments_end / 10) + 1):
+    batch_size = 30
+    for i in range(int(experiments_end / batch_size) + 1):
         ths = []
         return_dict = multiprocessing.Manager().dict()
-        for experiment in range(10 * i, min(experiments_end, 10 * (i + 1))):
+        for experiment in range(batch_size * i, min(experiments_end, batch_size * (i + 1))):
             if len(os.listdir('{}/scratch/{}/{}/{}'.format(__ns3_path, results_folder, rate, experiment))) == 0:
                 print(experiment)
                 continue
@@ -348,7 +366,7 @@ def __main__():
     else:
         serviceRateScales = [float(x) for x in config.get('Settings', 'errorRateScale').split(',')]
     serviceRateScales = [0.79, 0.81, 0.83, 0.85, 0.87, 0.89, 0.91, 0.93, 0.95, 0.97, 0.99, 1.0, 1.01, 1.03, 1.05]
-    # serviceRateScales = [0.79]
+    # serviceRateScales = [1.0, 1.01, 1.03, 1.05]
     # serviceRateScales = [0.91, 0.93, 0.95, 0.97, 0.99, 1.01, 1.03, 1.05]
     # serviceRateScales = [float(x) for x in config.get('Settings', 'serviceRateScales').split(',')]
     # experiments = 1

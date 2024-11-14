@@ -89,13 +89,18 @@ def read_lossProb(__ns3_path, rate, segment, experiment, results_folder):
             # sort data by 'sentTime' column
             df = full_df[full_df['path'] == path]
             df = df.sort_values(by='sentTime').reset_index(drop=True)
-            df['sentTime'] = df['sentTime'] - df['sentTime'].min()
-            # add a new columns 'lossProb' to calculate the loss probability at each time step. It is 1 of 'receivedTime' is -1 and 0 otherwise
             df['lossProb'] = 0
             df.loc[df['receivedTime'] == -1, 'lossProb'] = 1
-            # now let's get the time average of the loss prob, which is the integral of the loss prob over sentTime divided by the total time
-            time_avg_loss_prob = np.trapezoid(df['lossProb'], df['sentTime']) / df['sentTime'].max()
-            dfs[df_name]['timeAvgSuccessProb']['A' + str(path)] = 1.0 - time_avg_loss_prob
+            df['time_diff'] = df['sentTime'].shift(-1) - df['sentTime']
+            df['time_diff'] = df['time_diff'].fillna(0)
+            integral_lossProb = (df['lossProb'] * df['time_diff']).sum()
+            total_duration = df['sentTime'].iloc[-1] - df['sentTime'].iloc[0]
+            time_average_lossProb = integral_lossProb / total_duration
+            # df['sentTime'] = df['sentTime'] - df['sentTime'].min()
+            # # add a new columns 'lossProb' to calculate the loss probability at each time step. It is 1 of 'receivedTime' is -1 and 0 otherwise
+            # # now let's get the time average of the loss prob, which is the integral of the loss prob over sentTime divided by the total time. The integral should be calculated using the step function not the trapezoid
+            # time_avg_loss_prob = np.trapezoid(df['lossProb'], df['sentTime']) / df['sentTime'].max()
+            dfs[df_name]['timeAvgSuccessProb']['A' + str(path)] = 1.0 - time_average_lossProb
     return dfs
             
 
