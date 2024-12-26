@@ -66,6 +66,7 @@ private:
     void Connect(Ptr<PointToPointNetDevice> outgoingNetDevice);
     void Disconnect(Ptr<PointToPointNetDevice> outgoingNetDevice);
     void EnqueueQueueDisc(Ptr<const QueueDiscItem> item);
+    void DequeueQueueDisc(Ptr<const QueueDiscItem> item);
     void EnqueueNetDeviceQueue(Ptr< const Packet > packet);
     void EventHandler();
     void RecordPacket(Ptr<const Packet> packet);

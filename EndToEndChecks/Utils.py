@@ -77,6 +77,32 @@ def read_burst_samples(__ns3_path, rate, segment, experiment, results_folder):
         dfs[df_name] = df
     return dfs
 
+def read_queuingDelay(__ns3_path, rate, segment, experiment, results_folder, linkDelay, incomingLinkRate, outgoingLinkRate):
+    file_paths = glob.glob('{}/scratch/{}/{}/{}/*_{}.csv'.format(__ns3_path, results_folder, rate, experiment, segment))
+    dfs = {}
+    for file_path in file_paths:
+        df_name = file_path.split('/')[-1].split('_')[0]
+        full_df = pd.read_csv(file_path)
+        dfs[df_name] = {}
+        # first rename the columns Path to path, SentTime to sentTime, ReceiveTime to receivedTime
+        full_df = full_df.rename(columns={'Path': 'path', 'SentTime': 'sentTime', 'ReceiveTime': 'receivedTime'})
+        for path in full_df['path'].unique():
+            # sort data by 'sentTime' column
+            df = full_df[full_df['path'] == path]
+            df = df.sort_values(by='sentTime').reset_index(drop=True)
+            # add 54 bytes to the packet size to account for the ethernet header
+            df['PayloadSize'] = df['PayloadSize'] + 54
+            # add a nre columns "enqueueTime" which is the packet sentTime + linkDelay + (packetSize * 8) / incomingLinkRate
+            df['enqueueTime'] = df['sentTime'] + linkDelay + (df['PayloadSize'] * 8) / incomingLinkRate
+            # add a new columns "dequeueTime" which is the packet receivedTime - linkDelay - (packetSize * 8) / outgoingLinkRate
+            df['dequeueTime'] = df['receivedTime'] - linkDelay - (df['PayloadSize'] * 8) / outgoingLinkRate
+            # add a new columns "queuelength" which is the (dequeueTime - enqueueTime) * outgoingLinkRate
+            df['queuelength'] = (df['dequeueTime'] - df['enqueueTime']) * outgoingLinkRate / 8
+            # remove all columns other than path, enqueueTime, dequeueTime, queuelength, size
+            df = df[['path', 'enqueueTime', 'dequeueTime', 'queuelength', 'PayloadSize']]
+            dfs[df_name]['A' + str(path)] = df
+    return dfs
+
 def read_lossProb(__ns3_path, rate, segment, experiment, results_folder):
     file_paths = glob.glob('{}/scratch/{}/{}/{}/*_{}.csv'.format(__ns3_path, results_folder, rate, experiment, segment))
     dfs = {}
@@ -85,6 +111,10 @@ def read_lossProb(__ns3_path, rate, segment, experiment, results_folder):
         full_df = pd.read_csv(file_path)
         dfs[df_name] = {}
         dfs[df_name]['timeAvgSuccessProb'] = {}
+        # remove all columns other than path, sentTime, receivedTime
+        # first rename the columns Path to path, SentTime to sentTime, ReceiveTime to receivedTime
+        full_df = full_df.rename(columns={'Path': 'path', 'SentTime': 'sentTime', 'ReceiveTime': 'receivedTime'})
+        full_df = full_df[['path', 'sentTime', 'receivedTime']]
         for path in full_df['path'].unique():
             # sort data by 'sentTime' column
             df = full_df[full_df['path'] == path]

@@ -29,7 +29,8 @@ PoissonSampler::PoissonSampler(const Time &steadyStartTime, const Time &steadySt
     sampleMean.push_back(Seconds(0));
     unbiasedSmapleVariance.push_back(Seconds(0));
     sampleSize.push_back(0);
-    packetCDF.loadCDFData("/media/experiments/ns-allinone-3.41/ns-3.41/scratch/ECNMC/Helpers/packet_size_cdf.csv");
+    // packetCDF.loadCDFData("/media/experiments/ns-allinone-3.41/ns-3.41/scratch/ECNMC/Helpers/packet_size_cdf.csv");
+    packetCDF.loadCDFData("/media/experiments/ns-allinone-3.41/ns-3.41/scratch/ECNMC/Helpers/packet_size_cdf_singleQueue.csv");
     numOfGTSamples = 0;
     GTPacketSizeMean = 0;
     GTDropMean = 0;
@@ -56,7 +57,24 @@ void PoissonSampler::EnqueueQueueDisc(Ptr<const QueueDiscItem> item) {
     numOfGTSamples++;
     GTPacketSizeMean = (item->GetSize() + (GTPacketSizeMean * (numOfGTSamples - 1))) / numOfGTSamples;
     double dropProbDynamicCDF = packetCDF.calculateProbabilityGreaterThan((QueueSize("37.5KB").GetValue() - REDQueueDisc->GetCurrentSize().GetValue()));
+    std::cout << Simulator::Now().GetNanoSeconds() << "     ENQUEUE PPOISSON: " << REDQueueDisc->GetCurrentSize().GetValue() + NetDeviceQueue->GetNBytes() << endl;
+    std::cout << "    item VS packet " << item->GetSize() << " VS " << item->GetPacket()->GetSize() << endl;
+    item->Print(std::cout);
+    item->GetPacket()->Print(std::cout);
+    std::cout << " Size: " << item->GetPacket()->GetSize() << endl;    
     GTDropMean = (GTDropMean * (prev - firstItemTime).GetNanoSeconds() + dropProbDynamicCDF * (lastItemTime - prev).GetNanoSeconds()) / (lastItemTime - firstItemTime).GetNanoSeconds();
+    // std::cout << "POISSON:     " << Simulator::Now().GetNanoSeconds() << "    GTDropMean: " << GTDropMean << endl;
+}
+
+void PoissonSampler::DequeueQueueDisc(Ptr<const QueueDiscItem> item) {
+    if (Simulator::Now() < _steadyStartTime || Simulator::Now() > _steadyStopTime) { 
+        return;
+    }
+    std::cout << Simulator::Now().GetNanoSeconds() << "     DEQUEUE PPOISSON: " << REDQueueDisc->GetCurrentSize().GetValue() + NetDeviceQueue->GetNBytes() << endl;
+    std::cout << "    item VS packet " << item->GetSize() << " VS " << item->GetPacket()->GetSize() << endl;
+    item->Print(std::cout);
+    item->GetPacket()->Print(std::cout);
+    std::cout << " Size: " << item->GetPacket()->GetSize() << endl;
 }
 
 void PoissonSampler::EnqueueNetDeviceQueue(Ptr<const Packet> packet) {
@@ -67,6 +85,7 @@ void PoissonSampler::EnqueueNetDeviceQueue(Ptr<const Packet> packet) {
 void PoissonSampler::Connect(Ptr<PointToPointNetDevice> outgoingNetDevice) {
     if (REDQueueDisc != nullptr) {
         REDQueueDisc->TraceConnectWithoutContext("Enqueue", MakeCallback(&PoissonSampler::EnqueueQueueDisc, this));
+        REDQueueDisc->TraceConnectWithoutContext("Dequeue", MakeCallback(&PoissonSampler::DequeueQueueDisc, this));
     }
     NetDeviceQueue->TraceConnectWithoutContext("Enqueue", MakeCallback(&PoissonSampler::EnqueueNetDeviceQueue, this));
     outgoingNetDevice->TraceConnectWithoutContext("PromiscSniffer", MakeCallback(&PoissonSampler::RecordPacket, this));
@@ -121,6 +140,7 @@ void PoissonSampler::EventHandler() {
         packetKey = PacketKey::Packet2PacketKey(lastPacket, FIRST_HEADER_PPP);
         sampleTime = lastPacketTime;
         if ((REDQueueDisc == nullptr) && (NetDeviceQueue->GetCurrentSize() >= QueueSize("100p"))) {
+        // if ((REDQueueDisc == nullptr) && (NetDeviceQueue->GetCurrentSize() >= QueueSize("100KB"))) {
             drop = true;
             dropProbDynamicCDF = 1.0;
         }
@@ -209,7 +229,7 @@ void PoissonSampler::SaveMonitorRecords(const string& filename) {
     outfile << "sampleDelayMean,unbiasedSmapleDelayVariance,sampleSize,samplesDropMean,samplesDropVariance,GTSampleSize,GTPacketSizeMean,GTDropMean" << endl;
     outfile << sampleMean[0].GetNanoSeconds() << "," << unbiasedSmapleVariance[0].GetNanoSeconds() << "," << sampleSize[0] << "," << samplesDropMean << "," << samplesDropVariance << "," << numOfGTSamples << "," << GTPacketSizeMean << "," << GTDropMean << endl;
     outfile.close();
-    if (_monitorTag == "T0A0") {
+    if (_monitorTag == "SD0") {
         packetCDF.printCDF();
     }
 }

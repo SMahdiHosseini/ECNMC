@@ -76,6 +76,7 @@ void TraceReplaySender::LoadTrace(const string& traceFile) {
         // if (timestamp < _trafficStartTime || (timestamp > _trafficEndTime && _trafficEndTime != Seconds(0))) { continue; }
         // timestamp = timestamp - _trafficStartTime;
         // _traceItems.push_back({frameNb, timestamp, payload_size});
+        // _traceItems.push_back({frameNb, (timestamp - previousTime) / 100 , payload_size});
         _traceItems.push_back({frameNb, (timestamp - previousTime) / 30 , payload_size});
         previousTime = timestamp;
     }
@@ -162,7 +163,7 @@ void TraceReplaySender::ScheduleNextSend() {
     Send(_traceItems[_traceItemIdx]);
     _traceItemIdx++;
     if(_traceItemIdx >= _traceItems.size()) {
-        // std::cout << "TraceReplaySender: Finished sending all packets trace: " << _traceFilename << " at: " << Simulator::Now() << std::endl;
+        // std::cout << "TraceReplaySender: Finished sending all packets trace: " << InetSocketAddress::ConvertFrom(_receiverAddress).GetPort() << " " << InetSocketAddress::ConvertFrom(_receiverAddress).GetIpv4() << " at: " << Simulator::Now() << std::endl;
         // return;
         _traceItemIdx = 0;
     }

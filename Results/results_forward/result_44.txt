@@ -1,0 +1,4 @@
+
+Start Single Queue Simulation
+Queue Size: 100p
+Command 'build/scratch/ECNMC/ns3.41-DatacenterSimulation-debug True --srcHostToSwitchLinkRate=300Mbps --ctHostToSwitchLinkRate=300Mbps --hostToSwitchLinkDelay=50us --bottleneckLinkRate=474.0Mbps --pctPacedBack=0.8 --duration=0.9 --sampleRate=4500.0 --experiment=45 --errorRate=1.5e-05 --trafficStartTime=39.6 --trafficStopTime=40.5 --steadyStartTime=0.3 --steadyStopTime=0.8 --dirName=forward' died with <Signals.SIGABRT: 6>.

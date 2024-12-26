@@ -29,6 +29,14 @@ void queueDiscSize(uint32_t oldValue, uint32_t newValue) {
     std::cout << Simulator::Now().GetNanoSeconds() << ": Queue Disc Size: " << newValue << endl;
 }
 
+void netDeviceBytes(uint32_t oldValue, uint32_t newValue) {
+    std::cout << Simulator::Now().GetNanoSeconds() << ": Bytes in NetDevice Queue: " << newValue << endl;
+}
+
+void REDQueueBytes(uint32_t oldValue, uint32_t newValue) {
+    std::cout << Simulator::Now().GetNanoSeconds() << ": Bytes in RED Queue: " << newValue << endl;
+}
+
 void queueSize(uint32_t oldValue, uint32_t newValue) {
     std::cout << Simulator::Now().GetNanoSeconds() << ": Queue Size Measure: " << newValue << endl;
 }
@@ -38,26 +46,268 @@ void queueSize2(uint32_t oldValue, uint32_t newValue) {
 }
 
 void dequeue(Ptr< const Packet > packet){
-    std::cout << "Packet dequeued: ";
+    std::cout << Simulator::Now().GetNanoSeconds() << " Packet dequeued: ";
+    packet->Print(std::cout);
+    std::cout << endl;
+}
+
+void depart(Ptr< const Packet > packet){
+    std::cout << Simulator::Now().GetNanoSeconds() << "Packet Departed: ";
     packet->Print(std::cout);
     std::cout << endl;
 }
 
 void enqueue(Ptr< const Packet > packet){
-    std::cout << Simulator::Now().GetNanoSeconds() << "Packet enqueued: ";
+    std::cout << Simulator::Now().GetNanoSeconds() << " Packet enqueued: ";
     packet->Print(std::cout);
     std::cout << endl;
 }
 
-void enqueueDisc(Ptr< const QueueDiscItem > item){
-    std::cout << Simulator::Now().GetNanoSeconds() << ": Packet enqueued Disc: ";
+void dequeueDisc(Ptr< const QueueDiscItem > item){
+    std::cout << Simulator::Now().GetNanoSeconds() << ": Packet dequeued Disc: ";
     item->Print(std::cout);
     item->GetPacket()->Print(std::cout);
     std::cout << endl;
 }
 
-int main(int argc, char* argv[])
-{
+void run_single_queue_simulation(int argc, char* argv[]) {
+    auto start = std::chrono::high_resolution_clock::now();
+    cout << endl<< "Start Single Queue Simulation" << endl;
+
+    string srcHostToSwitchLinkRate = "53Mbps";         // Links bandwith between src host and switch
+    string hostToSwitchLinkDelay = "10us";             // Links delay between src host and switch
+    string ctHostToSwitchLinkRate = "53Mbps";          // Links bandwith between cross traffic host and switch
+    string bottleneckLinkRate = "10Mbps";              // Links bandwith between switches and dst host
+    string duration = "20";                            // Duration of the simulation
+    string trafficStartTime = "0";                     // Start time of the traffic
+    string trafficStopTime = "20";                     // Stop time of the traffic
+    string steadyStartTime = "3";                      // Start time of the steady state
+    string steadyStopTime = "10";                      // Stop time of the steady state
+    string dirName = "";                               // Directory name for the output files
+    double pctPacedBack = 0.8;                         // the percentage of tcp flows of the CAIDA trace to be paced
+    bool enableSwitchECN = true;                       // Enable ECN on the switches
+    bool enableECMP = true;                            // Enable ECMP on the switches
+    double sampleRate = 10;                            // Sample rate for the PoissonSampler
+    int minTh = 9000;                                  // RED Queue Disc MinTh
+    int maxTh = 28000;                                 // RED Queue Disc MaxTh
+    int experiment = 1;                                // Experiment number
+    double errorRate = 0.005;                          // Silent Packet Drop Error rate
+
+    /*command line input*/
+    CommandLine cmd;
+    cmd.AddValue("srcHostToSwitchLinkRate", "Links bandwith between src host and switch", srcHostToSwitchLinkRate);
+    cmd.AddValue("hostToSwitchLinkDelay", "Links delay between src host and switch", hostToSwitchLinkDelay);
+    cmd.AddValue("ctHostToSwitchLinkRate", "Links bandwith between cross traffic host and switch", ctHostToSwitchLinkRate);
+    cmd.AddValue("bottleneckLinkRate", "Links bandwith between switches and dst host", bottleneckLinkRate);
+    cmd.AddValue("enableSwichECN", "Enable ECN on the switches", enableSwitchECN);
+    cmd.AddValue("enableECMP", "Enable ECMP on the switches", enableECMP);
+    cmd.AddValue("duration", "Duration of the simulation", duration);
+    cmd.AddValue("trafficStartTime", "Start time of the traffic", trafficStartTime);
+    cmd.AddValue("trafficStopTime", "Stop time of the traffic", trafficStopTime);
+    cmd.AddValue("steadyStartTime", "Start time of the steady state for measuring", steadyStartTime);
+    cmd.AddValue("steadyStopTime", "Stop time of the steady state for measuring", steadyStopTime);
+    cmd.AddValue("pctPacedBack", "the percentage of tcp flows of the CAIDA trace to be paced", pctPacedBack);
+    cmd.AddValue("sampleRate", "Sample rate for the PoissonSampler", sampleRate);
+    cmd.AddValue("minTh", "RED Queue Disc MinTh", minTh);
+    cmd.AddValue("maxTh", "RED Queue Disc MaxTh", maxTh);
+    cmd.AddValue("experiment", "Experiment number", experiment);
+    cmd.AddValue("errorRate", "Silent Packet Drop Error rate", errorRate);
+    cmd.AddValue("dirName", "Directory name for the output files", dirName);
+    cmd.Parse(argc, argv);
+
+    /*set default values*/
+    ns3::RngSeedManager::SetSeed(experiment);
+    Time startTime = Seconds(0);
+    Time stopTime = Seconds(stof(duration));
+    Time stopTime_1 = Seconds(stof(duration));  
+    Time convergenceTime = Seconds(0.1);
+    stopTime = stopTime + convergenceTime;
+
+    Config::SetDefault("ns3::TcpL4Protocol::SocketType", StringValue("ns3::TcpDctcp"));
+    Config::SetDefault("ns3::Ipv4GlobalRouting::RandomEcmpRouting", BooleanValue(enableECMP));
+    Config::SetDefault("ns3::RedQueueDisc::UseEcn", BooleanValue(enableSwitchECN));
+    Config::SetDefault("ns3::TcpSocket::SegmentSize", UintegerValue(1448));
+    Config::SetDefault("ns3::TcpSocket::DelAckCount", UintegerValue(2));
+    Config::SetDefault("ns3::TcpSocket::SndBufSize", UintegerValue(12000000));
+    GlobalValue::Bind("ChecksumEnabled", BooleanValue(false));
+    Config::SetDefault("ns3::RedQueueDisc::UseHardDrop", BooleanValue(false));
+    Config::SetDefault("ns3::RedQueueDisc::MeanPktSize", UintegerValue(1500));
+    Config::SetDefault("ns3::RedQueueDisc::MaxSize", QueueSizeValue(QueueSize("37.5KB")));
+    Config::SetDefault("ns3::DropTailQueue<Packet>::MaxSize", QueueSizeValue(QueueSize("100p")));
+    // Config::SetDefault("ns3::RedQueueDisc::MaxSize", QueueSizeValue(QueueSize("1.8MB")));
+    // Config::SetDefault("ns3::RedQueueDisc::MaxSize", QueueSizeValue(QueueSize("250KB")));
+    Config::SetDefault("ns3::RedQueueDisc::QW", DoubleValue(1));
+    Config::SetDefault("ns3::RedQueueDisc::MinTh", DoubleValue(minTh));
+    Config::SetDefault("ns3::RedQueueDisc::MaxTh", DoubleValue(maxTh));
+
+
+    int nSrcHosts = 2;
+    int nDstHosts = 1;
+    int nSwitches = 1;
+
+    NodeContainer srcHosts;
+    NodeContainer dstHosts;
+    NodeContainer switches;
+    srcHosts.Create(nSrcHosts);
+    dstHosts.Create(nDstHosts);
+    switches.Create(nSwitches);
+
+    // connecting the hosts to the ToR switches
+    vector<NetDeviceContainer> srcHostsToSwitchNetDevices;
+    PointToPointHelper p2pSrcHostToSwitch;
+    p2pSrcHostToSwitch.SetDeviceAttribute("DataRate", StringValue(srcHostToSwitchLinkRate));
+    p2pSrcHostToSwitch.SetChannelAttribute("Delay", StringValue(hostToSwitchLinkDelay));
+
+    srcHostsToSwitchNetDevices.push_back(p2pSrcHostToSwitch.Install(srcHosts.Get(0), switches.Get(0)));
+    
+
+    vector<NetDeviceContainer> ctHostsToSwitchNetDevices;
+    PointToPointHelper p2pCtHostToSwitch;
+    p2pCtHostToSwitch.SetDeviceAttribute("DataRate", StringValue(ctHostToSwitchLinkRate));
+    p2pCtHostToSwitch.SetChannelAttribute("Delay", StringValue(hostToSwitchLinkDelay));
+    ctHostsToSwitchNetDevices.push_back(p2pCtHostToSwitch.Install(srcHosts.Get(1), switches.Get(0)));
+    
+    
+    NetDeviceContainer dstHostsToSwitchNetDevices;
+    PointToPointHelper p2pDstHostToSwitch;
+    p2pDstHostToSwitch.SetDeviceAttribute("DataRate", StringValue(bottleneckLinkRate));
+    p2pDstHostToSwitch.SetChannelAttribute("Delay", StringValue(hostToSwitchLinkDelay));
+    
+    dstHostsToSwitchNetDevices = p2pDstHostToSwitch.Install(dstHosts.Get(0), switches.Get(0));
+
+    // Install the network stack on the nodes
+    InternetStackHelper stack;
+    stack.InstallAll();
+
+    // Install RED Queue Discs on the switche to src hosts links
+    TrafficControlHelper switchToSrcHostTCH;
+    switchToSrcHostTCH.SetRootQueueDisc("ns3::RedQueueDisc", 
+                                  "LinkBandwidth", StringValue(srcHostToSwitchLinkRate),
+                                  "LinkDelay", StringValue(hostToSwitchLinkDelay), 
+                                  "MinTh", DoubleValue(minTh),
+                                  "MaxTh", DoubleValue(maxTh));
+    vector<QueueDiscContainer> switchToSrcHostQueueDiscs;    
+    switchToSrcHostQueueDiscs.push_back(switchToSrcHostTCH.Install(srcHostsToSwitchNetDevices[0].Get(1)));
+
+    //Install RED Queue Discs on the switches to cross traffic hosts links
+    TrafficControlHelper switchToCtHostTCH;
+    switchToCtHostTCH.SetRootQueueDisc("ns3::RedQueueDisc", 
+                                  "LinkBandwidth", StringValue(ctHostToSwitchLinkRate),
+                                  "LinkDelay", StringValue(hostToSwitchLinkDelay), 
+                                  "MinTh", DoubleValue(minTh),
+                                  "MaxTh", DoubleValue(maxTh));
+    vector<QueueDiscContainer> switchToCtHostQueueDiscs;
+    switchToCtHostQueueDiscs.push_back(switchToCtHostTCH.Install(ctHostsToSwitchNetDevices[0].Get(1)));
+
+    // Install RED Queue Discs on the switches to dst hosts links
+    TrafficControlHelper switchToDstHostTCH;
+    switchToDstHostTCH.SetRootQueueDisc("ns3::RedQueueDisc", 
+                                  "LinkBandwidth", StringValue(bottleneckLinkRate),
+                                  "LinkDelay", StringValue(hostToSwitchLinkDelay), 
+                                  "MinTh", DoubleValue(minTh),
+                                  "MaxTh", DoubleValue(maxTh));
+    QueueDiscContainer switchToDstHostQueueDisc = switchToDstHostTCH.Install(dstHostsToSwitchNetDevices.Get(1));
+
+    // Assign IP addresses
+    uint16_t nbSubnet = 0;
+    Ipv4AddressHelper address;
+
+    // set the ips between the src hosts and the switch
+    vector<Ipv4InterfaceContainer> srcHostsToSwitchIps;
+    srcHostsToSwitchIps.reserve(1);
+    address.SetBase(("10." + to_string(++nbSubnet) + ".1.0").c_str(), "255.255.255.0");
+    srcHostsToSwitchIps.push_back(address.Assign(srcHostsToSwitchNetDevices[0]));
+    address.NewNetwork();
+    
+    // set the ips between the cross traffic hosts and the switch
+    vector<Ipv4InterfaceContainer> ctHostsToSwitchIps;
+    ctHostsToSwitchIps.reserve(1);
+    address.SetBase(("10." + to_string(++nbSubnet) + ".1.0").c_str(), "255.255.255.0");
+    ctHostsToSwitchIps.push_back(address.Assign(ctHostsToSwitchNetDevices[0]));
+    address.NewNetwork();
+
+    // set the ips between the switche and the dst hosts
+    address.SetBase(("10." + to_string(++nbSubnet) + ".1.0").c_str(), "255.255.255.0");
+    Ipv4InterfaceContainer dstHostsToSwitchIps = address.Assign(dstHostsToSwitchNetDevices);
+
+    Ipv4GlobalRoutingHelper::PopulateRoutingTables();
+
+    // Each src host sends a flow to the dst host
+    for (int i = 0; i < nSrcHosts; i++) {
+        auto* caidaTrafficGenerator = new BackgroundReplay(srcHosts.Get(i), dstHosts.Get(0), Seconds(stof(trafficStartTime)), Seconds(stof(trafficStopTime)));
+        caidaTrafficGenerator->SetPctOfPacedTcps(pctPacedBack);
+        string tracesPath = "/media/experiments/chicago_2010_traffic_10min_2paths/path" + to_string(i % 2);
+        if (std::filesystem::exists(tracesPath)) {
+            caidaTrafficGenerator->RunAllTCPTraces(tracesPath, 0);
+        } else {
+            cout << "requested Background Directory does not exist" << endl;
+        }
+    }
+    ns3::PacketMetadata::Enable();
+    // Monitor the packets between src Host 0 and dst Host 0
+    auto *S0D0Monitor = new E2EMonitor(startTime, stopTime + convergenceTime, Seconds(stof(steadyStartTime)), Seconds(stof(steadyStopTime)), DynamicCast<PointToPointNetDevice>(srcHostsToSwitchNetDevices[0].Get(0)), dstHosts.Get(0), "A0D0", errorRate, DataRate(srcHostToSwitchLinkRate), DataRate(bottleneckLinkRate), Time(hostToSwitchLinkDelay), 1, 1);
+    S0D0Monitor->AddAppKey(AppKey(srcHostsToSwitchIps[0].GetAddress(0), dstHostsToSwitchIps.GetAddress(0), 0, 0));
+
+    Ptr<PointToPointNetDevice> hostToSwitchrNetDevice = DynamicCast<PointToPointNetDevice>(srcHostsToSwitchNetDevices[0].Get(0));
+    auto *hostToSwitchrSampler = new PoissonSampler(Seconds(stof(steadyStartTime)), Seconds(stof(steadyStopTime)), nullptr, hostToSwitchrNetDevice->GetQueue(), hostToSwitchrNetDevice, "H", sampleRate);
+
+    Ptr<PointToPointNetDevice> switchToDstNetDevice = DynamicCast<PointToPointNetDevice>(dstHostsToSwitchNetDevices.Get(1));
+    auto *switchToDstSampler = new PoissonSampler(Seconds(stof(steadyStartTime)), Seconds(stof(steadyStopTime)), DynamicCast<RedQueueDisc>(switchToDstHostQueueDisc.Get(0)), switchToDstNetDevice->GetQueue(), switchToDstNetDevice, "SD0", sampleRate);
+    cout << "Queue Size: " << switchToDstNetDevice->GetQueue()->GetMaxSize() << endl;
+    // switchToDstNetDevice->GetQueue()->TraceConnectWithoutContext("Dequeue", MakeCallback(&dequeue));
+    // switchToDstNetDevice->GetQueue()->TraceConnectWithoutContext("Enqueue", MakeCallback(&enqueue));
+    // DynamicCast<RedQueueDisc>(switchToDstHostQueueDisc.Get(0))->TraceConnectWithoutContext("Dequeue", MakeCallback(&dequeueDisc));
+    // switchToDstNetDevice->TraceConnectWithoutContext("PromiscSniffer", MakeCallback(&depart));
+
+    cout << "Hosts and Switches IP addresses" << endl;
+    cout << "Src: " << 0 << " Id:" << srcHosts.Get(0)->GetId() << " IP: " << srcHostsToSwitchIps[0].GetAddress(0) << endl;
+    cout << "Src CT: " << 1 << " Id:" << srcHosts.Get(1)->GetId() << " IP: " << ctHostsToSwitchIps[0].GetAddress(0) << endl;
+    
+    cout << "Dst: " << 0 << " Id:" << dstHosts.Get(0)->GetId() << " IP: " << dstHostsToSwitchIps.GetAddress(0) << endl;
+    //print config parameters
+    auto t = std::chrono::high_resolution_clock::now();
+    cout << "Total preparing time = " << std::chrono::duration_cast<std::chrono::microseconds>(t - start).count() << " microsecond" << endl;
+    cout << "Config Parameters" << endl;
+    cout << "srcHostToSwitchLinkRate: " << srcHostToSwitchLinkRate << endl;
+    cout << "ctHostToSwitchLinkRate: " << ctHostToSwitchLinkRate << endl;
+    cout << "hostToSwitchLinkDelay: " << hostToSwitchLinkDelay << endl;
+    cout << "bottleneckLinkRate: " << bottleneckLinkRate << endl;
+    cout << "pctPacedBack: " << pctPacedBack << endl;
+    cout << "enableSwitchECN: " << enableSwitchECN << endl;
+    cout << "enableECMP: " << enableECMP << endl;
+    cout << "sampleRate: " << sampleRate << endl;
+    cout << "errorRate: " << errorRate << endl;
+    cout << "dirName: " << dirName << endl;
+    cout << "experiment: " << experiment << endl;
+    cout << "trafficStartTime: " << trafficStartTime << endl;
+    cout << "trafficStopTime: " << trafficStopTime << endl;
+    cout << "steadyStartTime: " << steadyStartTime << endl;
+    cout << "steadyEndTime: " << steadyStopTime << endl;
+
+    // /* ########## END: Check Config ########## */
+
+
+    // /* ########## START: Scheduling and  Running ########## */
+
+    Simulator::Stop(stopTime_1);
+    Simulator::Run();
+    Simulator::Destroy();
+
+    S0D0Monitor->SaveMonitorRecords((string) (getenv("PWD")) + "/Results/results_" + dirName + "/" + to_string(experiment)  + "/" + S0D0Monitor->GetMonitorTag() + "_EndToEnd.csv");
+
+
+    hostToSwitchrSampler->SaveMonitorRecords((string) (getenv("PWD")) + "/Results/results_" + dirName + "/" + to_string(experiment)  + "/" + hostToSwitchrSampler->GetMonitorTag() + "_PoissonSampler.csv");
+    switchToDstSampler->SaveMonitorRecords((string) (getenv("PWD")) + "/Results/results_" + dirName + "/" + to_string(experiment)  + "/" + switchToDstSampler->GetMonitorTag() + "_PoissonSampler.csv");
+
+
+    /* ########## END: Scheduling and  Running ########## */
+
+    cout << "Done " << endl;
+    auto stop = std::chrono::high_resolution_clock::now();
+    cout << "Total execution time = " << std::chrono::duration_cast<std::chrono::microseconds>(stop - start).count() << " microsecond" << endl;
+}
+
+void run_DC_simulation(int argc, char* argv[]){
     auto start = std::chrono::high_resolution_clock::now();
     cout << endl<< "Start" << endl;
     /* ########## START: Config ########## */
@@ -300,16 +550,16 @@ int main(int argc, char* argv[])
 
     Ipv4GlobalRoutingHelper::PopulateRoutingTables();
 
-    /* Erro Model Setup for Silent packet drops*/
-    Ptr<RateErrorModel> em_R0H0T0 = CreateObject<RateErrorModel>();
-    em_R0H0T0->SetAttribute("ErrorRate", DoubleValue(errorRate));
-    em_R0H0T0->SetUnit(RateErrorModel::ErrorUnit::ERROR_UNIT_PACKET);
-    hostsToTorsNetDevices[0][0].Get(1)->SetAttribute("ReceiveErrorModel", PointerValue(em_R0H0T0));
+    // /* Erro Model Setup for Silent packet drops*/
+    // Ptr<RateErrorModel> em_R0H0T0 = CreateObject<RateErrorModel>();
+    // em_R0H0T0->SetAttribute("ErrorRate", DoubleValue(errorRate));
+    // em_R0H0T0->SetUnit(RateErrorModel::ErrorUnit::ERROR_UNIT_PACKET);
+    // hostsToTorsNetDevices[0][0].Get(1)->SetAttribute("ReceiveErrorModel", PointerValue(em_R0H0T0));
 
-    Ptr<RateErrorModel> em_R0H1T0 = CreateObject<RateErrorModel>();
-    em_R0H1T0->SetAttribute("ErrorRate", DoubleValue(errorRate));
-    em_R0H1T0->SetUnit(RateErrorModel::ErrorUnit::ERROR_UNIT_PACKET);
-    hostsToTorsNetDevices[0][1].Get(1)->SetAttribute("ReceiveErrorModel", PointerValue(em_R0H1T0));
+    // Ptr<RateErrorModel> em_R0H1T0 = CreateObject<RateErrorModel>();
+    // em_R0H1T0->SetAttribute("ErrorRate", DoubleValue(errorRate));
+    // em_R0H1T0->SetUnit(RateErrorModel::ErrorUnit::ERROR_UNIT_PACKET);
+    // hostsToTorsNetDevices[0][1].Get(1)->SetAttribute("ReceiveErrorModel", PointerValue(em_R0H1T0));
     /* ########## END: Ceating the topology ########## */
 
 
@@ -648,5 +898,14 @@ int main(int argc, char* argv[])
 
     auto stop = std::chrono::high_resolution_clock::now();
     cout << "Total execution time = " << std::chrono::duration_cast<std::chrono::microseconds>(stop - start).count() << " microsecond" << endl;
+}
+
+int main(int argc, char* argv[])
+{
+    if (strcmp(argv[1], "True") == 0) {
+        run_single_queue_simulation(argc, argv);
+    } else {
+        run_DC_simulation(argc, argv);  
+    }
     return 0;
 }

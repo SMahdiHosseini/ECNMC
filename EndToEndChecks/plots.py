@@ -79,7 +79,7 @@ def plot_boxplot_loss(utilizationFactors, droprates_xticks, data, key):
     # print(queueSizesStd)
     # x = [droprates_xticks[0], droprates_xticks[2], droprates_xticks[4], droprates_xticks[6], droprates_xticks[8], droprates_xticks[10]]
     # x = queueSizesStd
-    x = droprates_xticks
+    x = droprates_xticks.copy()
     x.reverse()
     ax2.set_xticklabels(x, fontsize=5)
     ax2.set_xlabel('Drop Rate', fontsize=15, labelpad=10)
@@ -92,7 +92,8 @@ def plot_boxplot_loss(utilizationFactors, droprates_xticks, data, key):
 
 def prepare_results(flows, sample_rates):
     rounds_results = {}
-    num_of_agg_switches = 2
+    # num_of_paths = 2
+    num_of_paths = 1
 
     rounds_results['MaxEpsilonIneqDelay'] = {}
     rounds_results['MaxEpsilonIneqSuccessProb'] = {}
@@ -110,7 +111,7 @@ def prepare_results(flows, sample_rates):
         rounds_results['MaxEpsilonIneqSuccessProb']['sentTime_est'][flow] = {}
         for sample_rate in sample_rates:
             rounds_results['MaxEpsilonIneqSuccessProb']['poisson_sentTime_est'][sample_rate][flow] = {}
-        for i in range(num_of_agg_switches):
+        for i in range(num_of_paths):
             rounds_results['MaxEpsilonIneqDelay'][flow]['A' + str(i)] = 0
             rounds_results['MaxEpsilonIneqSuccessProb']['E2E_eventAvg'][flow]['A' + str(i)] = 0
             rounds_results['MaxEpsilonIneqSuccessProb']['sentTime_est'][flow]['A' + str(i)] = 0
@@ -126,24 +127,29 @@ __ns3_path = "/media/experiments/ns-allinone-3.41/ns-3.41"
 config = configparser.ConfigParser()
 config.read('../Parameters.config')
 serviceRateScales = [float(x) for x in config.get('Settings', 'serviceRateScales').split(',')]
-serviceRateScales = [0.79, 0.81, 0.83, 0.85, 0.87, 0.89, 0.91, 0.93, 0.95, 0.97, 0.99, 1.0, 1.01, 1.03, 1.05]
+serviceRateScales = [0.79, 0.81, 0.83, 0.85, 0.87, 0.89, 0.91, 0.93, 0.95, 0.99, 1.0, 1.01, 1.03, 1.05]
 # serviceRateScales = [0.89]
 # serviceRateScales = [0.85, 0.87, 0.89, 0.91, 0.93, 0.95, 0.97, 0.99, 1.01]
 errorRates = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 12.0, 14.0, 16.0, 18.0, 20.0, 22.0, 24.0, 28.0, 30.0]
 # errorRates = [0.5, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 9.0, 10.0, 12.0, 14.0, 15.0]
 # errorRates = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
-utilizationFactors = [round(6 * 300 / (r * 2 * 945), 3) for r in serviceRateScales]
+# utilizationFactors = [round(6 * 300 / (r * 2 * 945), 3) for r in serviceRateScales]
+utilizationFactors = [round(2 * 1000 / (r * 2 * 1000), 3) for r in serviceRateScales]
+print("utilizationFactors: ", utilizationFactors)
 # selectedUtils = [utilizationFactors[1], utilizationFactors[3], utilizationFactors[5], utilizationFactors[7], utilizationFactors[9], utilizationFactors[11], utilizationFactors[13]]
 # print("serviceRateScales: ", serviceRateScales)
 check = sys.argv[1]
 results_dir = sys.argv[2]
-results_dir_file = 'naive'
+# results_dir_file = 'naive'
+# results_dir_file = 'delay_Results_forward_diff_loss_est_and_pckt_CDF'
+results_dir_file = 'forward'
 results = {}
 flows = []
 congestion_utils = []
 # error_success = {}
 # utilizationFactors = []
 sample_rates = []
+num_of_paths = 1
 for rate in serviceRateScales:
 # for rate in errorRates:
     # if rate >= 6.0:
@@ -158,32 +164,30 @@ for rate in serviceRateScales:
         if file.find(results_dir_file) != -1:
             with open('../Results/results_' + results_dir + '/'+str(rate)+'/'+file) as f:
                 temp = js.load(f)
-            if results_dir_file not in file:
-                continue
             flows = read_data_flowIndicator(temp)
             results[rate] = prepare_results(flows, temp['MaxEpsilonIneqSuccessProb']['poisson_sentTime_est'].keys() if 'poisson_sentTime_est' in temp['MaxEpsilonIneqSuccessProb'] else [])
-            # sample_rates = temp['MaxEpsilonIneqSuccessProb']['poisson_sentTime_est'].keys()
-            x = round(6 * 300 / (rate * 2 * 945), 3)
+            sample_rates = temp['MaxEpsilonIneqSuccessProb']['poisson_sentTime_est'].keys()
+            # x = round(6 * 300 / (rate * 2 * 945), 3)
+            x = round(2 * 1000 / (rate * 2 * 1000), 3)
             dropRate = 0
             for flow in flows:
-                for i in range(2):
+                for i in range(num_of_paths):
                     results[rate]['MaxEpsilonIneqDelay'][flow]['A' + str(i)] = temp['MaxEpsilonIneqDelay'][flow]['A' + str(i)] / temp['experiments'] * 100
-                    
+                    print(flow, rate, results[rate]['MaxEpsilonIneqDelay'][flow]['A' + str(i)])
                     results[rate]['MaxEpsilonIneqSuccessProb']['E2E_eventAvg'][flow]['A' + str(i)] = temp['MaxEpsilonIneqSuccessProb']['E2E_eventAvg'][flow]['A' + str(i)] / temp['experiments'] * 100
-                    # results[rate]['MaxEpsilonIneqSuccessProb']['sentTime_est'][flow]['A' + str(i)] = temp['MaxEpsilonIneqSuccessProb']['sentTime_est'][flow]['A' + str(i)] / temp['experiments'] * 100
-                    # for sample_rate in sample_rates:
-                    #     results[rate]['MaxEpsilonIneqSuccessProb']['poisson_sentTime_est'][sample_rate][flow]['A' + str(i)] = temp['MaxEpsilonIneqSuccessProb']['poisson_sentTime_est'][sample_rate][flow]['A' + str(i)] / temp['experiments'] * 100
-
+                    results[rate]['MaxEpsilonIneqSuccessProb']['sentTime_est'][flow]['A' + str(i)] = temp['MaxEpsilonIneqSuccessProb']['sentTime_est'][flow]['A' + str(i)] / temp['experiments'] * 100
+                    for sample_rate in sample_rates:
+                        results[rate]['MaxEpsilonIneqSuccessProb']['poisson_sentTime_est'][sample_rate][flow]['A' + str(i)] = temp['MaxEpsilonIneqSuccessProb']['poisson_sentTime_est'][sample_rate][flow]['A' + str(i)] / temp['experiments'] * 100
                 # just for the reverse_loss_2
                 if flow != 'R0H0R2H0' and flow != 'R0H1R2H1':
-                    dropRate += (1.0 - np.mean(temp['EndToEndSuccessProb']['E2E_eventAvg'][flow]['A0']) + 1.0 - np.mean(temp['EndToEndSuccessProb']['E2E_eventAvg'][flow]['A1'])) / 2
+                    dropRate += sum([1.0 - np.mean(temp['EndToEndSuccessProb']['E2E_eventAvg'][flow]['A' + str(i)]) for i in range(num_of_paths)])
             results[rate]['experiments'] = temp['experiments']
 
             # results[rate]['DropRate'] = temp['DropRate']
-            results[rate]['DropRate'] = dropRate / 10
+            results[rate]['DropRate'] = dropRate
             # utilizationFactors.append(round(6 * temp['AverageWorkLoad'] / (rate * 2 * 945000000), 3))
-            congestion_utils.append([round(6 * 300 / (rate * 2 * 945), 3), round(np.mean(temp['DropRate']), 3), round(6 * temp['AverageWorkLoad'] / (rate * 2 * 945000000), 3)])
-
+            # congestion_utils.append([round(6 * 300 / (rate * 2 * 945), 3), round(np.mean(temp['DropRate']), 3), round(6 * temp['AverageWorkLoad'] / (rate * 2 * 945000000), 3)])
+            congestion_utils.append([round(2 * 1000 / (rate * 2 * 1000), 3), round(np.mean(temp['DropRate']), 3), round(2 * temp['AverageWorkLoad'] / (rate * 2 * 100000000), 3)])
 # print(error_success)
 print(congestion_utils)
 # print([(a, np.mean(b)) for a,b in utils_success.items()])
@@ -198,7 +202,7 @@ if check == 'loss':
             for flow in flows:
                 # if flow != 'R0H0R2H0' and flow != 'R0H1R2H1':
                 for i in range(len(utilizationFactors))[::-1]:
-                    data[len(utilizationFactors) - i - 1].append(max(results[serviceRateScales[i]]['MaxEpsilonIneqSuccessProb'][key][flow]['A0'], results[serviceRateScales[i]]['MaxEpsilonIneqSuccessProb'][key][flow]['A1']))
+                    data[len(utilizationFactors) - i - 1].append(max([results[serviceRateScales[i]]['MaxEpsilonIneqSuccessProb'][key][flow]['A' + str(j)] for j in range(num_of_paths)]))
             plot_boxplot_loss(utilizationFactors, droprates_xticks, data, key)
         if key == 'poisson_sentTime_est':
             for sample_rate in sample_rates:
@@ -206,7 +210,7 @@ if check == 'loss':
                 for flow in flows:
                     # if flow != 'R0H0R2H0' and flow != 'R0H1R2H1':
                     for i in range(len(utilizationFactors))[::-1]:
-                        data[len(utilizationFactors) - i - 1].append(max(results[serviceRateScales[i]]['MaxEpsilonIneqSuccessProb'][key][sample_rate][flow]['A0'], results[serviceRateScales[i]]['MaxEpsilonIneqSuccessProb'][key][sample_rate][flow]['A1']))
+                        data[len(utilizationFactors) - i - 1].append(max(results[serviceRateScales[i]]['MaxEpsilonIneqSuccessProb'][key][sample_rate][flow]['A' + str(j)] for j in range(num_of_paths)))
                 plot_boxplot_loss(utilizationFactors, droprates_xticks, data, key + '_' + sample_rate)
     
 # plot for forward experiment -- BoxPLots(delay): 
@@ -215,11 +219,11 @@ if check == 'delay':
     for flow in flows:
         # if flow != 'R0H0R2H0' and flow != 'R0H1R2H1':
         for i in range(len(utilizationFactors))[::-1]:
-            print(flow, serviceRateScales[i], max(results[serviceRateScales[i]]['MaxEpsilonIneqDelay'][flow]['A0'], results[serviceRateScales[i]]['MaxEpsilonIneqDelay'][flow]['A1']))
-            data[len(utilizationFactors) - i - 1].append(max(results[serviceRateScales[i]]['MaxEpsilonIneqDelay'][flow]['A0'], results[serviceRateScales[i]]['MaxEpsilonIneqDelay'][flow]['A1']))
-    plot_boxplot_loss(utilizationFactors, droprates_xticks, data, '')
+            # print(flow, serviceRateScales[i], max(results[serviceRateScales[i]]['MaxEpsilonIneqDelay'][flow]['A0'], results[serviceRateScales[i]]['MaxEpsilonIneqDelay'][flow]['A1']))
+            data[len(utilizationFactors) - i - 1].append(max(results[serviceRateScales[i]]['MaxEpsilonIneqDelay'][flow]['A' + str(j)] for j in range(num_of_paths)))
+    plot_boxplot_loss(utilizationFactors, droprates_xticks, data, 'delay')
 
-# plot for reverse experiment loss_1:s
+# # plot for reverse experiment loss_1:s
 # for key in results[1.0]['MaxEpsilonIneqSuccessProb'].keys():
 #     if key != 'poisson_sentTime_est':
 #         plot_reverse_loss_1(results, flows, errorRates, key)

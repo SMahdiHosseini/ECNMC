@@ -1,0 +1,2 @@
+[  0%] Building CXX object scratch/ECNMC/CMakeFiles/scratch_ECNMC_DatacenterSimulation.dir/DatacenterSimulation.cc.o
+[  0%] Linking CXX executable ns3.41-DatacenterSimulation-debug

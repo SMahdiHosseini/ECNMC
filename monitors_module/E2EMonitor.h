@@ -12,6 +12,7 @@
 #include "Monitor.h"
 #include "PacketKey.h"
 #include "AppKey.h"
+#include "PacketCDF.h"
 
 #include <ostream>
 #include <unordered_map>
@@ -46,9 +47,14 @@ private:
     Time hostToTorLinkDelay;
     Hasher hasher;
     Ptr<UniformRandomVariable> rand;
-
+    int numOfPaths = 2;
+    int numOfSegmetns = 3;
+    PacketCDF packetCDF;
+    double GTDropMean;
+    Time lastItemTime;
+    Time firstItemTime;
     std::unordered_map<PacketKey, E2EMonitorEvent*, PacketKeyHash> _recordedPackets;
-
+    
     void Connect(Ptr<PointToPointNetDevice> netDevice, uint32_t rxNodeId);
     void Disconnect(Ptr<PointToPointNetDevice> netDevice, uint32_t rxNodeId);
 
@@ -60,6 +66,8 @@ private:
 public:
     E2EMonitor(const Time &startTime, const Time &duration, const Time &steadyStartTime, const Time &steadyStopTime, const Ptr<PointToPointNetDevice> netDevice, const Ptr<Node> &rxNode, const string &monitorTag, const double errorRate, 
     const DataRate &hostToTorLinkRate, const DataRate &torToAggLinkRate, const Time &hostToTorLinkDelay);
+    E2EMonitor(const Time &startTime, const Time &duration, const Time &steadyStartTime, const Time &steadyStopTime, const Ptr<PointToPointNetDevice> netDevice, const Ptr<Node> &rxNode, const string &monitorTag, const double errorRate, 
+    const DataRate &hostToTorLinkRate, const DataRate &torToAggLinkRate, const Time &hostToTorLinkDelay, const int numOfPaths, const int numOfSegmetns);
     void SaveMonitorRecords(const string &filename);
 };
 

@@ -17,7 +17,7 @@ __ns3_path = "/media/experiments/ns-allinone-3.41/ns-3.41"
 errorRate = 0.05
 difference = 1.30
 # sample_rate = 0.30
-sample_rates = [0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 3.0, 4.0]
+sample_rates = [0.5]
 confidenceValue = 1.96 # 95% confidence interval
 propagationDelay = 50000
         
@@ -82,10 +82,13 @@ def prepare_results(flows, queues, num_of_agg_switches):
     for q in queues:
         if q[0] == 'T' and q[2] == 'H' and (q[1] == '2' or q[1] == '3'):
             rounds_results[q+'Delaystd'] = []
+            rounds_results[q+'DelayMean'] = []
         if q[0] == 'T' and q[2] == 'A' and (q[1] == '0' or q[1] == '1'):
             rounds_results[q+'Delaystd'] = []
+            rounds_results[q+'DelayMean'] = []
         if q[0] == 'A' and q[2] == 'T' and (q[3] == '2' or q[3] == '3'):
             rounds_results[q+'Delaystd'] = []
+            rounds_results[q+'DelayMean'] = []
 
     for flow in flows:
         rounds_results['MaxEpsilonIneqDelay'][flow] = {}
@@ -146,6 +149,10 @@ def sample_endToEnd_packets(ns3_path, rate, segment, experiment, results_folder,
     for file_path in file_paths:
         df_name = file_path.split('/')[-1].split('_')[0]
         full_df = pd.read_csv(file_path)
+        # remove all columns other than path, sentTime, receivedTime
+        # first rename the columns Path to path, SentTime to sentTime, ReceiveTime to receivedTime
+        full_df = full_df.rename(columns={'Path': 'path', 'SentTime': 'sentTime', 'ReceiveTime': 'receivedTime'})
+        full_df = full_df[['path', 'sentTime', 'receivedTime']]
         dfs[df_name] = {}
         dfs[df_name]['timeAvgSuccessProb'] = {}
         for path in full_df['path'].unique():
@@ -275,10 +282,13 @@ def analyze_single_experiment(return_dict, rate, queues_names, confidenceValue, 
     for q in queues_names:
         if q[0] == 'T' and q[2] == 'H' and (q[1] == '2' or q[1] == '3'):
             rounds_results[q+'Delaystd'].append(samples_dfs[q]['DelayStd'])
+            rounds_results[q+'DelayMean'].append(samples_dfs[q]['DelayMean'])
         if q[0] == 'T' and q[2] == 'A' and (q[1] == '0' or q[1] == '1'):
             rounds_results[q+'Delaystd'].append(samples_dfs[q]['DelayStd'])
+            rounds_results[q+'DelayMean'].append(samples_dfs[q]['DelayMean'])
         if q[0] == 'A' and q[2] == 'T' and (q[3] == '2' or q[3] == '3'):
             rounds_results[q+'Delaystd'].append(samples_dfs[q]['DelayStd'])
+            rounds_results[q+'DelayMean'].append(samples_dfs[q]['DelayMean'])
     return_dict[experiment] = rounds_results
 
 def merge_results(return_dict, merged_results, flows, queues):
@@ -287,10 +297,13 @@ def merge_results(return_dict, merged_results, flows, queues):
         for q in queues:
             if q[0] == 'T' and q[2] == 'H' and (q[1] == '2' or q[1] == '3'):
                 merged_results[q+'Delaystd'] += return_dict[exp][q+'Delaystd']
+                merged_results[q+'DelayMean'] += return_dict[exp][q+'DelayMean']
             if q[0] == 'T' and q[2] == 'A' and (q[1] == '0' or q[1] == '1'):
                 merged_results[q+'Delaystd'] += return_dict[exp][q+'Delaystd']
+                merged_results[q+'DelayMean'] += return_dict[exp][q+'DelayMean']
             if q[0] == 'A' and q[2] == 'T' and (q[3] == '2' or q[3] == '3'):
                 merged_results[q+'Delaystd'] += return_dict[exp][q+'Delaystd']
+                merged_results[q+'DelayMean'] += return_dict[exp][q+'DelayMean']
 
     for flow in flows:
         for i in range(num_of_agg_switches):
@@ -343,7 +356,7 @@ def analyze_all_experiments(rate, steadyStart, steadyEnd, confidenceValue, dir, 
         merge_results(return_dict, merged_results, flows_name, queues_names)
         print("{} joind".format(i))
     merged_results['AverageWorkLoad'] = sum(merged_results['AverageWorkLoad']) / merged_results['experiments']
-    with open('../Results/results_{}/{}/delay_{}_{}_{}_to_{}.json'.format(dir, rate, results_folder, experiments_end, steadyStart, steadyEnd), 'w') as f:
+    with open('../Results/results_{}/{}/{}_{}_{}_{}_to_{}.json'.format(dir, rate, dir, results_folder, experiments_end, steadyStart, steadyEnd), 'w') as f:
         js.dump(merged_results, f, indent=4)
 
 # main function
@@ -361,15 +374,17 @@ def __main__():
     steadyStart = convert_to_float(config.get('Settings', 'steadyStart'))
     steadyEnd = convert_to_float(config.get('Settings', 'steadyEnd'))
     experiments = int(config.get('Settings', 'experiments'))
-    if args.dir == "forward":
+    if "forward" in args.dir:
         serviceRateScales = [float(x) for x in config.get('Settings', 'serviceRateScales').split(',')]
+    elif "param" in args.dir:
+        serviceRateScales = [float(x) for x in config.get('Settings', 'sampleRateScales').split(',')]
     else:
         serviceRateScales = [float(x) for x in config.get('Settings', 'errorRateScale').split(',')]
     # serviceRateScales = [0.79, 0.81, 0.83, 0.85, 0.87, 0.89, 0.91, 0.93, 0.95, 0.97, 0.99, 1.0, 1.01, 1.03, 1.05]
-    # serviceRateScales = [1.0, 1.01, 1.03, 1.05]
+    serviceRateScales = [1.0]
     # serviceRateScales = [0.91, 0.93, 0.95, 0.97, 0.99, 1.01, 1.03, 1.05]
     # serviceRateScales = [float(x) for x in config.get('Settings', 'serviceRateScales').split(',')]
-    # experiments = 1
+    experiments = 30
 
     for rate in serviceRateScales:
         print("\nAnalyzing experiments for rate: ", rate)
