@@ -1,3 +1,0 @@
-
-Start Single Queue Simulation
-Queue Size: 100p

@@ -84,7 +84,7 @@ void TraceReplaySender::LoadTrace(const string& traceFile) {
     // std::cout << "Loaded " << _traceItems.size() << " trace items from " << traceFile << std::endl;
     if (!_traceItems.empty()) {
         _startEvent = Simulator::Schedule(_traceItems.front().timestamp, &TraceReplaySender::PrepareSocket, this);
-        Simulator::Schedule(_traceItems.back().timestamp + Seconds(1), &TraceReplaySender::StopApplication, this);
+        // Simulator::Schedule(_traceItems.back().timestamp + Seconds(1), &TraceReplaySender::StopApplication, this);
     }
 }
 

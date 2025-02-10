@@ -37,6 +37,7 @@ public:
     void SetSampleTime();
     void SetSampleTime(Time t);
     void SetDepartureTime();
+    void SetDepartureTime(Time t);
     void SetMarkingProb(double markingProb);
 };
 
@@ -62,17 +63,19 @@ private:
     double GTDropMean;
     Time firstItemTime;
     PacketCDF packetCDF;
+    Time lastLeftTime;
+    uint32_t lastLeftSize;
+    DataRate outgoingDataRate;
     
     void Connect(Ptr<PointToPointNetDevice> outgoingNetDevice);
     void Disconnect(Ptr<PointToPointNetDevice> outgoingNetDevice);
     void EnqueueQueueDisc(Ptr<const QueueDiscItem> item);
-    void DequeueQueueDisc(Ptr<const QueueDiscItem> item);
     void EnqueueNetDeviceQueue(Ptr< const Packet > packet);
     void EventHandler();
     void RecordPacket(Ptr<const Packet> packet);
     void updateCounters(samplingEvent* event);
     void loadCDFData(const std::string& filename);
-
+    uint32_t ComputeQueueSize();
 public:
     PoissonSampler(const Time &steadyStartTime, const Time &steadyStopTime, Ptr<RedQueueDisc> queueDisc, Ptr<Queue<Packet>> queue, Ptr<PointToPointNetDevice> outgoingNetDevice, const string &sampleTag, double sampleRate);
     void SaveMonitorRecords(const string &filename);

@@ -46,6 +46,8 @@ class SwitchMonitor {
 private:
     ns3::Time _startTime = Seconds(0);
     ns3::Time _duration = Seconds(0);
+    ns3::Time _steadyStartTime = Seconds(0);
+    ns3::Time _steadyStopTime = Seconds(0);
 
     std::string _monitorTag;
     set<AppKey> _appsKey;
@@ -60,7 +62,7 @@ private:
     ns3::Time GetRelativeTime(const Time &time);
     uint64_t GetHashValue(const Ipv4Address src, const Ipv4Address dst, const uint16_t srcPort, const uint16_t dstPort, const uint8_t protocol);
 public:
-    SwitchMonitor(const Time &startTime, const Time &duration, const Ptr<Node> &txNode, const string &monitorTag);
+    SwitchMonitor(const Time &startTime, const Time &duration, const Time &steadyStartTime, const Time  &steadyStopTime, const Ptr<Node> &node, const string &monitorTag);
     void AddAppKey(AppKey appKey);
     std::string GetMonitorTag() const;
     void SavePacketRecords(const string &filename);

@@ -21,10 +21,12 @@ ostream &operator<<(ostream &os, const SwitchMonitorEvent &event) {
     return os;
 }
 
-SwitchMonitor::SwitchMonitor(const Time &startTime, const Time &duration, const Ptr<Node> &node, const string &monitorTag){
+SwitchMonitor::SwitchMonitor(const Time &startTime, const Time &duration, const Time &steadyStartTime, const Time  &steadyStopTime, const Ptr<Node> &node, const string &monitorTag) {
     _startTime = startTime;
     _duration = duration;
     _monitorTag = monitorTag;
+    _steadyStartTime = steadyStartTime;
+    _steadyStopTime = steadyStopTime;
     hasher = Hasher();
     Simulator::Schedule(_startTime, &SwitchMonitor::Connect, this, node);
     Simulator::Schedule(_startTime + _duration, &SwitchMonitor::Disconnect, this, node);
@@ -59,6 +61,9 @@ void SwitchMonitor::Disconnect(const Ptr<Node> &node) {
 }
 
 void SwitchMonitor::RecordPacket(Ptr<const Packet> packet) {
+    if (Simulator::Now() < _steadyStartTime || Simulator::Now() > _steadyStopTime) {
+        return;
+    }
     PacketKey* packetKey = PacketKey::Packet2PacketKey(packet, FIRST_HEADER_PPP);
     if(_appsKey.count(AppKey::PacketKey2AppKey(*packetKey))) {
         auto packetKeyEventPair = _recordedPackets.find(*packetKey);

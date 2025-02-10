@@ -8,6 +8,7 @@ samplingEvent::samplingEvent(PacketKey *key) { SetPacketKey(key); }
 
 void samplingEvent::SetSampleTime() { SetSent(ns3::Simulator::Now()); }
 void samplingEvent::SetSampleTime(Time t) { SetSent(t); }
+void samplingEvent::SetDepartureTime(Time t) { SetReceived(t); }
 void samplingEvent::SetDepartureTime() { SetReceived(ns3::Simulator::Now()); }
 void samplingEvent::SetMarkingProb(double markingProb) { _markingProb = markingProb; }
 PacketKey *samplingEvent::GetPacketKey() const { return _key; }
@@ -36,56 +37,61 @@ PoissonSampler::PoissonSampler(const Time &steadyStartTime, const Time &steadySt
     GTDropMean = 0;
     firstItemTime = Time(-1);
     lastItemTime = Time(0);
-    
+    outgoingDataRate = outgoingNetDevice->GetDataRate();
     Simulator::Schedule(Seconds(0), &PoissonSampler::Connect, this, outgoingNetDevice);
     Simulator::Schedule(steadyStopTime, &PoissonSampler::Disconnect, this, outgoingNetDevice);
 }
 
+uint32_t PoissonSampler::ComputeQueueSize() {
+    uint32_t TXedBytes = (outgoingDataRate * (Simulator::Now() - lastLeftTime)) / 8;
+    uint32_t remainedBytes = (lastLeftSize > TXedBytes) ? lastLeftSize - TXedBytes : 0;
+    if (REDQueueDisc != nullptr) {
+        return REDQueueDisc->GetCurrentSize().GetValue() + NetDeviceQueue->GetNBytes() + (REDQueueDisc->GetNPackets() - 1) * 2 + remainedBytes - 2;
+    }
+    return NetDeviceQueue->GetNBytes() + remainedBytes;
+}
 
 void PoissonSampler::EnqueueQueueDisc(Ptr<const QueueDiscItem> item) {
     lastItem = item;
     // packetCDF.addPacket(item->GetSize());
-    Time prev = lastItemTime;
     lastItemTime = Simulator::Now();
-    if (Simulator::Now() < _steadyStartTime || Simulator::Now() > _steadyStopTime) { 
-        return;
-    }
-    if (firstItemTime == Time(-1)) {
-        firstItemTime = Simulator::Now();
-        return;
-    }
-    numOfGTSamples++;
-    GTPacketSizeMean = (item->GetSize() + (GTPacketSizeMean * (numOfGTSamples - 1))) / numOfGTSamples;
-    double dropProbDynamicCDF = packetCDF.calculateProbabilityGreaterThan((QueueSize("37.5KB").GetValue() - REDQueueDisc->GetCurrentSize().GetValue()));
-    std::cout << Simulator::Now().GetNanoSeconds() << "     ENQUEUE PPOISSON: " << REDQueueDisc->GetCurrentSize().GetValue() + NetDeviceQueue->GetNBytes() << endl;
-    std::cout << "    item VS packet " << item->GetSize() << " VS " << item->GetPacket()->GetSize() << endl;
-    item->Print(std::cout);
-    item->GetPacket()->Print(std::cout);
-    std::cout << " Size: " << item->GetPacket()->GetSize() << endl;    
-    GTDropMean = (GTDropMean * (prev - firstItemTime).GetNanoSeconds() + dropProbDynamicCDF * (lastItemTime - prev).GetNanoSeconds()) / (lastItemTime - firstItemTime).GetNanoSeconds();
-    // std::cout << "POISSON:     " << Simulator::Now().GetNanoSeconds() << "    GTDropMean: " << GTDropMean << endl;
-}
-
-void PoissonSampler::DequeueQueueDisc(Ptr<const QueueDiscItem> item) {
-    if (Simulator::Now() < _steadyStartTime || Simulator::Now() > _steadyStopTime) { 
-        return;
-    }
-    std::cout << Simulator::Now().GetNanoSeconds() << "     DEQUEUE PPOISSON: " << REDQueueDisc->GetCurrentSize().GetValue() + NetDeviceQueue->GetNBytes() << endl;
-    std::cout << "    item VS packet " << item->GetSize() << " VS " << item->GetPacket()->GetSize() << endl;
-    item->Print(std::cout);
-    item->GetPacket()->Print(std::cout);
-    std::cout << " Size: " << item->GetPacket()->GetSize() << endl;
 }
 
 void PoissonSampler::EnqueueNetDeviceQueue(Ptr<const Packet> packet) {
     lastPacket = packet;
-    lastPacketTime = Simulator::Now();
+    if (Simulator::Now() < _steadyStartTime || Simulator::Now() > _steadyStopTime) {
+        return;
+    }
+    // uncomment the fllowing lines to calculate the Ground Truth Mean Drop probability
+    // const Ptr<Packet> &pktCopy = packet->Copy();
+    // PppHeader pppHeader;
+    // pktCopy->RemoveHeader(pppHeader);
+    // Ipv4Header ipHeader;
+    // pktCopy->RemoveHeader(ipHeader);
+    // if (ipHeader.GetSource() != Ipv4Address("10.1.1.1")) {
+    //     return;
+    // }
+    // Time prev = lastPacketTime;
+    // lastPacketTime = Simulator::Now();
+    // if (firstItemTime == Time(-1)) {
+    //     firstItemTime = lastPacketTime;
+    //     return;
+    // }
+    // double dropProbDynamicCDF = 0;
+    // // if (QueueSize("100KB").GetValue() <= ComputeQueueSize()){
+    // //     dropProbDynamicCDF = 1.0;
+    // // }
+    // // else {
+    //     dropProbDynamicCDF = packetCDF.calculateProbabilityGreaterThan(NetDeviceQueue->GetMaxSize().GetValue() - NetDeviceQueue->GetCurrentSize().GetValue());
+    // // }
+    // GTDropMean = (GTDropMean * (prev - firstItemTime).GetNanoSeconds() + dropProbDynamicCDF * (lastPacketTime - prev).GetNanoSeconds()) / (Simulator::Now() - firstItemTime).GetNanoSeconds();
+    // cout << "### POISSON ### Enqueue Time: " << Simulator::Now().GetNanoSeconds() << " Queue Size: " << NetDeviceQueue->GetCurrentSize().GetValue() << " Drop Prob: " << dropProbDynamicCDF << " GTDropMean: " << GTDropMean << endl;
+    // cout << "Vars: " << " firstItemTime: " << firstItemTime.GetNanoSeconds() << " lastItemTime: " << lastPacketTime.GetNanoSeconds() << " prev: " << prev.GetNanoSeconds() << endl;
 }
 
 void PoissonSampler::Connect(Ptr<PointToPointNetDevice> outgoingNetDevice) {
     if (REDQueueDisc != nullptr) {
         REDQueueDisc->TraceConnectWithoutContext("Enqueue", MakeCallback(&PoissonSampler::EnqueueQueueDisc, this));
-        REDQueueDisc->TraceConnectWithoutContext("Dequeue", MakeCallback(&PoissonSampler::DequeueQueueDisc, this));
     }
     NetDeviceQueue->TraceConnectWithoutContext("Enqueue", MakeCallback(&PoissonSampler::EnqueueNetDeviceQueue, this));
     outgoingNetDevice->TraceConnectWithoutContext("PromiscSniffer", MakeCallback(&PoissonSampler::RecordPacket, this));
@@ -105,73 +111,31 @@ void PoissonSampler::Disconnect(Ptr<PointToPointNetDevice> outgoingNetDevice) {
 void PoissonSampler::EventHandler() {
     // Generate a new event
     double nextEvent = m_var->GetValue();
-    Simulator::Schedule(Seconds(nextEvent), &PoissonSampler::EventHandler, this);
-    if (Simulator::Now() < _steadyStartTime || Simulator::Now() > _steadyStopTime) {
+    if (Simulator::Now() > _steadyStopTime) {
         return;
     }
-    PacketKey* packetKey;
-    bool zeroDelay = false;
-    bool drop = false;
-    double dropProbDynamicCDF = 0;
-    Time sampleTime = Simulator::Now();
-    if (REDQueueDisc != nullptr && REDQueueDisc->GetNPackets() > 0) {
-        // check the quque disc size
-        if (REDQueueDisc->GetNPackets() > 0) {
-            // extract transport layer info
-            Ipv4Header ipHeader = DynamicCast<const Ipv4QueueDiscItem>(lastItem)->GetHeader();
-            if (ipHeader.GetProtocol() == 6){
-                packetKey = PacketKey::Packet2PacketKey(lastItem->GetPacket(), FIRST_HEADER_TCP);
-            }
-            else {
-                packetKey = PacketKey::Packet2PacketKey(lastItem->GetPacket(), FIRST_HEADER_UDP);
-            }
-            packetKey->SetId(ipHeader.GetIdentification());
-            packetKey->SetSrcIp(ipHeader.GetSource());
-            packetKey->SetDstIp(ipHeader.GetDestination());
-            sampleTime = lastItemTime;
-            // if ((QueueSize("37.5KB").GetValue() - REDQueueDisc->GetCurrentSize().GetValue()) < QueueSize("700B").GetValue()) {
-            //     drop = true;
-            // }
-            drop = true;
-            dropProbDynamicCDF = packetCDF.calculateProbabilityGreaterThan((QueueSize("37.5KB").GetValue() - REDQueueDisc->GetCurrentSize().GetValue()));
-        }
-    }
-    else if (NetDeviceQueue->GetNPackets() > 0) {
-        packetKey = PacketKey::Packet2PacketKey(lastPacket, FIRST_HEADER_PPP);
-        sampleTime = lastPacketTime;
-        if ((REDQueueDisc == nullptr) && (NetDeviceQueue->GetCurrentSize() >= QueueSize("100p"))) {
-        // if ((REDQueueDisc == nullptr) && (NetDeviceQueue->GetCurrentSize() >= QueueSize("100KB"))) {
-            drop = true;
-            dropProbDynamicCDF = 1.0;
-        }
-    }
-    else {
-        packetKey = new PacketKey(ns3::Ipv4Address("0.0.0.0"), ns3::Ipv4Address("0.0.0.1"), 0, zeroDelayPort++, zeroDelayPort++, ns3::SequenceNumber32(0), ns3::SequenceNumber32(0), 0, 0);
-        zeroDelay = true;
-        sampleTime = Simulator::Now();
+    Simulator::Schedule(Seconds(nextEvent), &PoissonSampler::EventHandler, this);
+    if (Simulator::Now() < _steadyStartTime) {
+        return;
     }
     
-    // add the event to the recorded samples
+    double dropProbDynamicCDF = 0;
+    uint32_t queueSize = ComputeQueueSize();
+    if (REDQueueDisc != nullptr) {
+        dropProbDynamicCDF = packetCDF.calculateProbabilityGreaterThan(REDQueueDisc->GetMaxSize().GetValue() - REDQueueDisc->GetCurrentSize().GetValue());
+    }
+    else {
+        dropProbDynamicCDF = packetCDF.calculateProbabilityGreaterThan(NetDeviceQueue->GetMaxSize().GetValue() - NetDeviceQueue->GetCurrentSize().GetValue());
+    }
+    PacketKey* packetKey = new PacketKey(ns3::Ipv4Address("0.0.0.0"), ns3::Ipv4Address("0.0.0.1"), 0, zeroDelayPort++, zeroDelayPort++, ns3::SequenceNumber32(0), ns3::SequenceNumber32(0), 0, 0);
+    Time queuingDelay = outgoingDataRate.CalculateBytesTxTime(queueSize);
     samplingEvent* event = new samplingEvent(packetKey);
-    // check if the packet is already recorded, add 1 to the record field of the packet and add the event to the recorded samples
-    while (_recordedSamples.find(*packetKey) != _recordedSamples.end()) {
-        packetKey->SetRecords(packetKey->GetRecords() + 1);
-    }
-    event->SetSampleTime(sampleTime);
+    event->SetSampleTime(Simulator::Now());
+    event->SetDepartureTime(Simulator::Now() + queuingDelay);
+    event->SetMarkingProb(dropProbDynamicCDF);
     _recordedSamples[*packetKey] = event;
-    // if there is no packet in the queue, then add the event pair with zero delay
-    if (zeroDelay) {
-        event->SetDepartureTime();
-        updateCounters(event);
-    }
-    // set the drop information
-    // if (REDQueueDisc != nullptr) {
-    //     event->SetMarkingProb(REDQueueDisc->GetMarkingProbability());
-    // }
-    if (drop) {
-        // event->SetMarkingProb(1.0);
-        event->SetMarkingProb(dropProbDynamicCDF);
-    }
+    // cout << "### EVENT ### " << "Time: " << Simulator::Now().GetNanoSeconds() << " Queue Size: " << NetDeviceQueue->GetCurrentSize().GetValue() << " Drop Prob: " << dropProbDynamicCDF << endl;
+    updateCounters(event);
 }
 
 void PoissonSampler::updateCounters(samplingEvent* event) {
@@ -186,7 +150,17 @@ void PoissonSampler::updateCounters(samplingEvent* event) {
         samplesDropVariance = samplesDropVariance + ((delta* delta) / sampleSize[0]) - (samplesDropVariance / (sampleSize[0] - 1));
     }
 }
+
 void PoissonSampler::RecordPacket(Ptr<const Packet> packet) {
+    const Ptr<Packet> &pktCopy = packet->Copy();
+    PppHeader pppHeader;
+    pktCopy->RemoveHeader(pppHeader);
+    Ipv4Header ipHeader;
+    pktCopy->RemoveHeader(ipHeader);
+    if (ipHeader.GetSource() != Ipv4Address("10.3.1.1")) {
+        lastLeftTime = Simulator::Now();
+        lastLeftSize = packet->GetSize();
+    }
     PacketKey* packetKey = PacketKey::Packet2PacketKey(packet, FIRST_HEADER_PPP);
     if (_recordedSamples.find(*packetKey) != _recordedSamples.end()) {
         _recordedSamples[*packetKey]->SetDepartureTime();
@@ -229,7 +203,7 @@ void PoissonSampler::SaveMonitorRecords(const string& filename) {
     outfile << "sampleDelayMean,unbiasedSmapleDelayVariance,sampleSize,samplesDropMean,samplesDropVariance,GTSampleSize,GTPacketSizeMean,GTDropMean" << endl;
     outfile << sampleMean[0].GetNanoSeconds() << "," << unbiasedSmapleVariance[0].GetNanoSeconds() << "," << sampleSize[0] << "," << samplesDropMean << "," << samplesDropVariance << "," << numOfGTSamples << "," << GTPacketSizeMean << "," << GTDropMean << endl;
     outfile.close();
-    if (_monitorTag == "SD0") {
-        packetCDF.printCDF();
-    }
+    // if (_monitorTag == "SD0") {
+    //     packetCDF.printCDF();
+    // }
 }

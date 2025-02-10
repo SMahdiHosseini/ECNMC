@@ -64,7 +64,7 @@ uint64_t E2EMonitor::GetHashValue(const Ipv4Address src, const Ipv4Address dst, 
 }
 
 void E2EMonitor::Connect(const Ptr<PointToPointNetDevice> netDevice, uint32_t rxNodeId) {
-    netDevice->GetQueue()->TraceConnectWithoutContext("Enqueue", MakeCallback(&E2EMonitor::Enqueue, this));
+    // netDevice->GetQueue()->TraceConnectWithoutContext("Enqueue", MakeCallback(&E2EMonitor::Enqueue, this));
     netDevice->TraceConnectWithoutContext("PromiscSniffer", MakeCallback(&E2EMonitor::Capture, this));
     Config::ConnectWithoutContext("/NodeList/" + to_string(rxNodeId) + "/$ns3::Ipv4L3Protocol/Rx", MakeCallback(
             &E2EMonitor::RecordIpv4PacketReceived, this));
@@ -72,6 +72,8 @@ void E2EMonitor::Connect(const Ptr<PointToPointNetDevice> netDevice, uint32_t rx
 
 void E2EMonitor::Disconnect(const Ptr<PointToPointNetDevice> netDevice, uint32_t rxNodeId) {
     netDevice->GetQueue()->TraceDisconnectWithoutContext("Enqueue", MakeCallback(&E2EMonitor::Enqueue, this));
+    Config::DisconnectWithoutContext("/NodeList/" + to_string(rxNodeId) + "/$ns3::Ipv4L3Protocol/Rx", MakeCallback(
+            &E2EMonitor::RecordIpv4PacketReceived, this));
 }
 
 void E2EMonitor::Capture(Ptr< const Packet > packet) {
@@ -175,51 +177,66 @@ void E2EMonitor::RecordIpv4PacketReceived(Ptr<const Packet> packet, Ptr<Ipv4> ip
             // remove the packet from the map to reduce the memory usage of the simulation
             // _recordedPackets.erase(packetKeyEventPair);
             Time prev = lastItemTime;
-            lastItemTime = packetKeyEventPair->second->GetSentTime();
+            lastItemTime = packetKeyEventPair->second->GetSentTime() + hostToTorLinkRate.CalculateBytesTxTime(packetKeyEventPair->first.GetPacketSize()) + hostToTorLinkDelay;
             if (firstItemTime == Time(-1)) {
-                firstItemTime =  packetKeyEventPair->second->GetSentTime();
-                cout << "First Item Time: " << firstItemTime.GetNanoSeconds() << endl;
-                cout << "Last Item Time: " << lastItemTime.GetNanoSeconds() << endl;
-                cout << "Prev: " << prev.GetNanoSeconds() << endl;        
+                firstItemTime = packetKeyEventPair->second->GetSentTime() + hostToTorLinkRate.CalculateBytesTxTime(packetKeyEventPair->first.GetPacketSize()) + hostToTorLinkDelay;
                 return;
             }
-            uint32_t queueSize = ((packetKeyEventPair->second->GetReceivedTime() - transmissionDelay - packetKeyEventPair->second->GetSentTime()) * torToAggLinkRate) / 8;
-            std::cout << 
-            " Queue Size Measure: " << queueSize << 
-            " Equeue: " << (packetKeyEventPair->second->GetSentTime() + hostToTorLinkDelay + hostToTorLinkRate.CalculateBytesTxTime(packetKeyEventPair->first.GetPacketSize())).GetNanoSeconds() << 
-            " Dequeue: " << (packetKeyEventPair->second->GetReceivedTime() - hostToTorLinkDelay - torToAggLinkRate.CalculateBytesTxTime(packetKeyEventPair->first.GetPacketSize())).GetNanoSeconds() << endl;
-            packet->Print(std::cout);
-            std::cout << endl;
-
-            double dropProbDynamicCDF = 0;
-            if (queueSize > 100000) {
-                queueSize = queueSize - 100000;
-                dropProbDynamicCDF = packetCDF.calculateProbabilityGreaterThan(QueueSize("37.5KB").GetValue() - queueSize);
-            }
+            int availableCapacity = max((int) packetKeyEventPair->first.GetPacketSize(), (int) (QueueSize("100KB").GetValue() - (((packetKeyEventPair->second->GetReceivedTime() - transmissionDelay - packetKeyEventPair->second->GetSentTime()) * torToAggLinkRate) / 8)));
+            double dropProbDynamicCDF = packetCDF.calculateProbabilityGreaterThan(availableCapacity);
+            
             GTDropMean = (GTDropMean * (prev - firstItemTime).GetNanoSeconds() + dropProbDynamicCDF * (lastItemTime - prev).GetNanoSeconds()) / (lastItemTime - firstItemTime).GetNanoSeconds();
-            // if (dropProbDynamicCDF > 0) {
-
-            //     std::cout << "E2E:     " << (packetKeyEventPair->second->GetSentTime() + hostToTorLinkDelay + hostToTorLinkRate.CalculateBytesTxTime(packetKeyEventPair->first.GetPacketSize())).GetNanoSeconds() << "    GTDropMean: " << GTDropMean << endl;
-            //     std::cout << "prev: " << prev.GetNanoSeconds() << " first: " << firstItemTime.GetNanoSeconds() << " last: " << lastItemTime.GetNanoSeconds() << " dropProbDynamicCDF: " << dropProbDynamicCDF << endl;
-            //     std::cout << 
-            //     "prev_enq: " << (prev + hostToTorLinkDelay + hostToTorLinkRate.CalculateBytesTxTime(packetKeyEventPair->first.GetPacketSize())).GetNanoSeconds() << 
-            //     " first_enq: " << (firstItemTime + hostToTorLinkDelay + hostToTorLinkRate.CalculateBytesTxTime(packetKeyEventPair->first.GetPacketSize())).GetNanoSeconds() << 
-            //     " last: " << (lastItemTime + hostToTorLinkDelay + hostToTorLinkRate.CalculateBytesTxTime(packetKeyEventPair->first.GetPacketSize())).GetNanoSeconds() << " dropProbDynamicCDF: " << dropProbDynamicCDF << endl;
-            // }
+            // cout << "### E2E ### Enqueue Time: " << lastItemTime.GetNanoSeconds() << " Queue Size: " << (((packetKeyEventPair->second->GetReceivedTime() - transmissionDelay - packetKeyEventPair->second->GetSentTime()) * torToAggLinkRate) / 8) << " Drop Prob: " << dropProbDynamicCDF << " queuingDelay: " << (packetKeyEventPair->second->GetReceivedTime() - transmissionDelay - packetKeyEventPair->second->GetSentTime()).GetNanoSeconds() << endl;
         }
     }
 }
 
+double E2EMonitor::calculateUnbiasedGTDrop() {
+    std::vector<E2EMonitorEvent*> sortedSamples;
+    for (auto &sample : _recordedPackets) {
+        sortedSamples.push_back(sample.second);
+    }
+    std::sort(sortedSamples.begin(), sortedSamples.end(), [](E2EMonitorEvent* a, E2EMonitorEvent* b) {
+        return a->GetSentTime() < b->GetSentTime();
+    });
+    double GTDropMean = 0;
+    Time lastItemTime = Time(0);
+    Time firstItemTime = Time(-1);
+    for (auto &sample : sortedSamples) {
+        Time prev = lastItemTime;
+        uint32_t packteSize = _recordedPackets.find(*sample->GetPacketKey())->first.GetPacketSize();
+        lastItemTime = sample->GetSentTime() + hostToTorLinkRate.CalculateBytesTxTime(packteSize) + hostToTorLinkDelay;
+        if (firstItemTime == Time(-1)) {
+            firstItemTime = lastItemTime;
+            continue;
+        }
+        double dropProbDynamicCDF = 0;
+        if (sample->GetReceivedTime() == Time(-1)) {
+            // dropProbDynamicCDF = packetCDF.calculateProbabilityGreaterThan(packteSize);
+            dropProbDynamicCDF = 1.0;
+        }
+        else {
+            Time transmissionDelay = hostToTorLinkRate.CalculateBytesTxTime(packteSize)
+                                    + torToAggLinkRate.CalculateBytesTxTime(packteSize)
+                                    + hostToTorLinkDelay * 2;
+
+            int availableCapacity = max((int) packteSize, (int)(QueueSize("100KB").GetValue() - (((sample->GetReceivedTime() - transmissionDelay - sample->GetSentTime()) * torToAggLinkRate) / 8)));
+            dropProbDynamicCDF = packetCDF.calculateProbabilityGreaterThan(availableCapacity);   
+        }
+        GTDropMean = (GTDropMean * (prev - firstItemTime).GetNanoSeconds() + dropProbDynamicCDF * (lastItemTime - prev).GetNanoSeconds()) / (lastItemTime - firstItemTime).GetNanoSeconds();
+    }
+    return GTDropMean;
+
+}
 void E2EMonitor::SaveMonitorRecords(const string& filename) {
     ofstream outfile;
     outfile.open(filename);
-    outfile << "path,sampleDelayMean,unbiasedSmapleDelayVariance,averagePacketSize,receivedPackets,sentPackets,markedPackets,timeAverage,sentPacketsOnLink,GTDropMean" << endl;
+    outfile << "path,sampleDelayMean,unbiasedSmapleDelayVariance,averagePacketSize,receivedPackets,sentPackets,markedPackets,timeAverage,sentPacketsOnLink,GTDropMean,UnbiasedGTDropMean" << endl;
     for (int i = 0; i < numOfPaths; i++) {
-        outfile << i << "," << sampleMean[i].GetNanoSeconds() << "," << unbiasedSmapleVariance[i].GetNanoSeconds() << "," << sumOfPacketSizes[i] / sampleSize[i] << "," << sampleSize[i] << "," << sentPackets[i] << "," << markedPackets[i] 
+        outfile << i << "," << sampleMean[i].GetNanoSeconds() << "," << unbiasedSmapleVariance[i].GetNanoSeconds() << "," << sumOfPacketSizes[i] / sampleSize[i] << "," << sampleSize[i] << "," << sentPackets_onlink[i] << "," << markedPackets[i] 
         << "," << timeAverageIntegral[i].GetNanoSeconds() / (integralEndTime[i] - integralStartTime[i]).GetNanoSeconds() << "," << sentPackets_onlink[i]
-        << "," << GTDropMean << endl;
+        << "," << GTDropMean << "," << calculateUnbiasedGTDrop() << endl;
     }
-    outfile << firstItemTime.GetNanoSeconds() << "," << lastItemTime.GetNanoSeconds() << endl;
     outfile.close();
     // ofstream packetsFile;
     // packetsFile.open(filename.substr(0, filename.size() - 4) + "_packets.csv");

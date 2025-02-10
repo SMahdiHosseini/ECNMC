@@ -63,6 +63,7 @@ private:
     void RecordIpv4PacketReceived(Ptr<const Packet> packet, Ptr<Ipv4> ipv4, uint32_t interface);
     uint64_t GetHashValue(const Ipv4Address src, const Ipv4Address dst, const uint16_t srcPort, const uint16_t dstPort, const uint8_t protocol);
     void updateTimeAverageIntegral(uint32_t path, Time delay, Time endTime);
+    double calculateUnbiasedGTDrop();
 public:
     E2EMonitor(const Time &startTime, const Time &duration, const Time &steadyStartTime, const Time &steadyStopTime, const Ptr<PointToPointNetDevice> netDevice, const Ptr<Node> &rxNode, const string &monitorTag, const double errorRate, 
     const DataRate &hostToTorLinkRate, const DataRate &torToAggLinkRate, const Time &hostToTorLinkDelay);
