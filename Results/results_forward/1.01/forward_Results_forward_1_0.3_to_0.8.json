@@ -1,0 +1,104 @@
+{
+    "MaxEpsilonIneqDelay": {
+        "A0D0": {
+            "A0": 0
+        }
+    },
+    "MaxEpsilonIneqSuccessProb": {
+        "E2E_eventAvg": {
+            "A0D0": {
+                "A0": 1
+            }
+        },
+        "sentTime_est": {
+            "A0D0": {
+                "A0": 1
+            }
+        },
+        "poisson_sentTime_est": {
+            "0.5": {
+                "A0D0": {
+                    "A0": 1
+                }
+            }
+        }
+    },
+    "EndToEndDelayMean": {
+        "A0D0": {
+            "A0": [
+                9139.0
+            ]
+        }
+    },
+    "EndToEndDelayStd": {
+        "A0D0": {
+            "A0": [
+                100538958.0
+            ]
+        }
+    },
+    "EndToEndSuccessProb": {
+        "E2E_eventAvg": {
+            "A0D0": {
+                "A0": [
+                    1.0
+                ]
+            }
+        },
+        "sentTime_est": {
+            "A0D0": {
+                "A0": [
+                    1.0
+                ]
+            }
+        },
+        "poisson_sentTime_est": {
+            "0.5": {
+                "A0D0": {
+                    "A0": [
+                        1.0
+                    ]
+                }
+            }
+        }
+    },
+    "DropRate": [
+        0.0
+    ],
+    "maxEpsilonDelay": {
+        "A0D0": {
+            "A0": [
+                0.04736133278926326
+            ]
+        }
+    },
+    "maxEpsilonSuccessProb": {
+        "A0D0": {
+            "A0": [
+                0.0
+            ]
+        }
+    },
+    "errors": {
+        "A0D0": {
+            "A0": [
+                0.12428133384438482
+            ]
+        }
+    },
+    "workLoad": {
+        "A0D0": {
+            "A0": [
+                299803392.0
+            ]
+        }
+    },
+    "AverageWorkLoad": 24983616.0,
+    "SD0Delaystd": [
+        11660.193694789123
+    ],
+    "SD0DelayMean": [
+        10436.0
+    ],
+    "experiments": 1
+}

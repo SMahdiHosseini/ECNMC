@@ -35,6 +35,7 @@ PoissonSampler::PoissonSampler(const Time &steadyStartTime, const Time &steadySt
     numOfGTSamples = 0;
     GTPacketSizeMean = 0;
     GTDropMean = 0;
+    GTQueuingDelay = 0;
     firstItemTime = Time(-1);
     lastItemTime = Time(0);
     outgoingDataRate = outgoingNetDevice->GetDataRate();
@@ -71,12 +72,17 @@ void PoissonSampler::EnqueueNetDeviceQueue(Ptr<const Packet> packet) {
     // if (ipHeader.GetSource() != Ipv4Address("10.1.1.1")) {
     //     return;
     // }
-    // Time prev = lastPacketTime;
-    // lastPacketTime = Simulator::Now();
-    // if (firstItemTime == Time(-1)) {
-    //     firstItemTime = lastPacketTime;
-    //     return;
-    // }
+    Time prev = lastPacketTime;
+    lastPacketTime = Simulator::Now();
+    if (firstItemTime == Time(-1)) {
+        firstItemTime = lastPacketTime;
+        return;
+    }
+    Time queuingDelay = outgoingDataRate.CalculateBytesTxTime(ComputeQueueSize() - packet->GetSize());
+    GTQueuingDelay = ((GTQueuingDelay * (prev - firstItemTime).GetNanoSeconds()) + (queuingDelay.GetNanoSeconds() * (lastPacketTime - prev).GetNanoSeconds())) / (lastPacketTime - firstItemTime).GetNanoSeconds();
+    queueSizeProcess.push_back(std::make_tuple(Simulator::Now(), ComputeQueueSize() - packet->GetSize()));
+    // cout << "### POISSON ### Enqueue Time: " << Simulator::Now().GetNanoSeconds() << " Queueing Delay: " << queuingDelay.GetNanoSeconds() << " Queue Size: " << ComputeQueueSize() - packet->GetSize() << " GTQueuingDelay: " << GTQueuingDelay << endl;
+
     // double dropProbDynamicCDF = 0;
     // // if (QueueSize("100KB").GetValue() <= ComputeQueueSize()){
     // //     dropProbDynamicCDF = 1.0;
@@ -134,7 +140,7 @@ void PoissonSampler::EventHandler() {
     event->SetDepartureTime(Simulator::Now() + queuingDelay);
     event->SetMarkingProb(dropProbDynamicCDF);
     _recordedSamples[*packetKey] = event;
-    // cout << "### EVENT ### " << "Time: " << Simulator::Now().GetNanoSeconds() << " Queue Size: " << NetDeviceQueue->GetCurrentSize().GetValue() << " Drop Prob: " << dropProbDynamicCDF << endl;
+    cout << "### EVENT ### " << "Time: " << Simulator::Now().GetNanoSeconds() << " Queuing delay: " << queuingDelay.GetNanoSeconds() << " Queue Size: " << queueSize << " Drop Prob: " << dropProbDynamicCDF << endl;
     updateCounters(event);
 }
 
@@ -200,8 +206,13 @@ void PoissonSampler::RecordPacket(Ptr<const Packet> packet) {
 void PoissonSampler::SaveMonitorRecords(const string& filename) {
     ofstream outfile;
     outfile.open(filename);
-    outfile << "sampleDelayMean,unbiasedSmapleDelayVariance,sampleSize,samplesDropMean,samplesDropVariance,GTSampleSize,GTPacketSizeMean,GTDropMean" << endl;
-    outfile << sampleMean[0].GetNanoSeconds() << "," << unbiasedSmapleVariance[0].GetNanoSeconds() << "," << sampleSize[0] << "," << samplesDropMean << "," << samplesDropVariance << "," << numOfGTSamples << "," << GTPacketSizeMean << "," << GTDropMean << endl;
+    outfile << "sampleDelayMean,unbiasedSmapleDelayVariance,sampleSize,samplesDropMean,samplesDropVariance,GTSampleSize,GTPacketSizeMean,GTDropMean,GTQueuingDelay" << endl;
+    outfile << sampleMean[0].GetNanoSeconds() << "," << unbiasedSmapleVariance[0].GetNanoSeconds() << "," << sampleSize[0] << "," << samplesDropMean << "," << samplesDropVariance << "," << numOfGTSamples << "," << GTPacketSizeMean << "," << GTDropMean << "," << GTQueuingDelay << endl;
+
+    outfile << "Time,QueueSize" << endl;
+    for (auto &item : queueSizeProcess) {
+        outfile << std::get<0>(item).GetNanoSeconds() << "," << std::get<1>(item) << endl;
+    }
     outfile.close();
     // if (_monitorTag == "SD0") {
     //     packetCDF.printCDF();

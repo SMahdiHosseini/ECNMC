@@ -173,7 +173,8 @@ void E2EMonitor::RecordIpv4PacketReceived(Ptr<const Packet> packet, Ptr<Ipv4> ip
 
 
             updateBasicCounters(packetKeyEventPair->second->GetSentTime(), packetKeyEventPair->second->GetReceivedTime() + additionalDeprioritizationDelay - transmissionDelay, path);
-            updateTimeAverageIntegral(path, packetKeyEventPair->second->GetReceivedTime() + additionalDeprioritizationDelay - transmissionDelay - packetKeyEventPair->second->GetSentTime(), packetKeyEventPair->second->GetReceivedTime());
+            updateTimeAverageIntegral(path, packetKeyEventPair->second->GetReceivedTime() + additionalDeprioritizationDelay - transmissionDelay - packetKeyEventPair->second->GetSentTime(), packetKeyEventPair->second->GetSentTime() + hostToTorLinkRate.CalculateBytesTxTime(packetKeyEventPair->first.GetPacketSize()) + hostToTorLinkDelay);
+
             // remove the packet from the map to reduce the memory usage of the simulation
             // _recordedPackets.erase(packetKeyEventPair);
             Time prev = lastItemTime;
@@ -186,7 +187,7 @@ void E2EMonitor::RecordIpv4PacketReceived(Ptr<const Packet> packet, Ptr<Ipv4> ip
             double dropProbDynamicCDF = packetCDF.calculateProbabilityGreaterThan(availableCapacity);
             
             GTDropMean = (GTDropMean * (prev - firstItemTime).GetNanoSeconds() + dropProbDynamicCDF * (lastItemTime - prev).GetNanoSeconds()) / (lastItemTime - firstItemTime).GetNanoSeconds();
-            // cout << "### E2E ### Enqueue Time: " << lastItemTime.GetNanoSeconds() << " Queue Size: " << (((packetKeyEventPair->second->GetReceivedTime() - transmissionDelay - packetKeyEventPair->second->GetSentTime()) * torToAggLinkRate) / 8) << " Drop Prob: " << dropProbDynamicCDF << " queuingDelay: " << (packetKeyEventPair->second->GetReceivedTime() - transmissionDelay - packetKeyEventPair->second->GetSentTime()).GetNanoSeconds() << endl;
+            // cout << "### E2E ### Enqueue Time: " << lastItemTime.GetNanoSeconds() << " Queuing delay: " << (packetKeyEventPair->second->GetReceivedTime() + additionalDeprioritizationDelay - transmissionDelay - packetKeyEventPair->second->GetSentTime()).GetNanoSeconds() << " Queue Size: " << (((packetKeyEventPair->second->GetReceivedTime() - transmissionDelay - packetKeyEventPair->second->GetSentTime()) * torToAggLinkRate) / 8) << " Drop Prob: " << dropProbDynamicCDF << " queuingDelay: " << (packetKeyEventPair->second->GetReceivedTime() - transmissionDelay - packetKeyEventPair->second->GetSentTime()).GetNanoSeconds() << endl;
         }
     }
 }

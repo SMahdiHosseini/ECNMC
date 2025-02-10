@@ -61,6 +61,8 @@ private:
     uint32_t numOfGTSamples;
     double GTPacketSizeMean;
     double GTDropMean;
+    double GTQueuingDelay;
+    std::vector<std::tuple<Time, uint32_t>> queueSizeProcess;
     Time firstItemTime;
     PacketCDF packetCDF;
     Time lastLeftTime;
