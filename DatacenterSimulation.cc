@@ -162,7 +162,8 @@ void run_single_queue_simulation(int argc, char* argv[]) {
     Config::SetDefault("ns3::RedQueueDisc::UseHardDrop", BooleanValue(false));
     Config::SetDefault("ns3::RedQueueDisc::MeanPktSize", UintegerValue(1500));
     Config::SetDefault("ns3::RedQueueDisc::MaxSize", QueueSizeValue(QueueSize("37.5KB")));
-    Config::SetDefault("ns3::DropTailQueue<Packet>::MaxSize", QueueSizeValue(QueueSize("100KB")));
+    Config::SetDefault("ns3::DropTailQueue<Packet>::MaxSize", QueueSizeValue(QueueSize("10KB")));
+    // Config::SetDefault("ns3::DropTailQueue<Packet>::MaxSize", QueueSizeValue(QueueSize("100KB")));
     // Config::SetDefault("ns3::DropTailQueue<Packet>::MaxSize", QueueSizeValue(QueueSize("100p")));
     // Config::SetDefault("ns3::RedQueueDisc::MaxSize", QueueSizeValue(QueueSize("1.8MB")));
     // Config::SetDefault("ns3::RedQueueDisc::MaxSize", QueueSizeValue(QueueSize("250KB")));

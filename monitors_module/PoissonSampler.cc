@@ -126,12 +126,13 @@ void PoissonSampler::EventHandler() {
     }
     
     double dropProbDynamicCDF = 0;
-    // uint32_t queueSize = ComputeQueueSize();
-    uint32_t queueSize = NetDeviceQueue->GetCurrentSize().GetValue();
+    uint32_t queueSize;
     if (REDQueueDisc != nullptr) {
+        queueSize = REDQueueDisc->GetCurrentSize().GetValue();
         dropProbDynamicCDF = packetCDF.calculateProbabilityGreaterThan(REDQueueDisc->GetMaxSize().GetValue() - REDQueueDisc->GetCurrentSize().GetValue());
     }
     else {
+        queueSize = NetDeviceQueue->GetCurrentSize().GetValue();
         dropProbDynamicCDF = packetCDF.calculateProbabilityGreaterThan(NetDeviceQueue->GetMaxSize().GetValue() - NetDeviceQueue->GetCurrentSize().GetValue());
     }
     PacketKey* packetKey = new PacketKey(ns3::Ipv4Address("0.0.0.0"), ns3::Ipv4Address("0.0.0.1"), 0, zeroDelayPort++, zeroDelayPort++, ns3::SequenceNumber32(0), ns3::SequenceNumber32(0), 0, 0);
