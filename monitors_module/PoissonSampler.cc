@@ -64,14 +64,14 @@ void PoissonSampler::EnqueueNetDeviceQueue(Ptr<const Packet> packet) {
         return;
     }
     // uncomment the fllowing lines to calculate the Ground Truth Mean Drop probability
-    // const Ptr<Packet> &pktCopy = packet->Copy();
-    // PppHeader pppHeader;
-    // pktCopy->RemoveHeader(pppHeader);
-    // Ipv4Header ipHeader;
-    // pktCopy->RemoveHeader(ipHeader);
-    // if (ipHeader.GetSource() != Ipv4Address("10.1.1.1")) {
-    //     return;
-    // }
+    const Ptr<Packet> &pktCopy = packet->Copy();
+    PppHeader pppHeader;
+    pktCopy->RemoveHeader(pppHeader);
+    Ipv4Header ipHeader;
+    pktCopy->RemoveHeader(ipHeader);
+    if (ipHeader.GetSource() != Ipv4Address("10.1.1.1")) {
+        return;
+    }
     Time prev = lastPacketTime;
     lastPacketTime = Simulator::Now();
     if (firstItemTime == Time(-1)) {
@@ -126,7 +126,8 @@ void PoissonSampler::EventHandler() {
     }
     
     double dropProbDynamicCDF = 0;
-    uint32_t queueSize = ComputeQueueSize();
+    // uint32_t queueSize = ComputeQueueSize();
+    uint32_t queueSize = NetDeviceQueue->GetCurrentSize().GetValue();
     if (REDQueueDisc != nullptr) {
         dropProbDynamicCDF = packetCDF.calculateProbabilityGreaterThan(REDQueueDisc->GetMaxSize().GetValue() - REDQueueDisc->GetCurrentSize().GetValue());
     }
@@ -140,7 +141,7 @@ void PoissonSampler::EventHandler() {
     event->SetDepartureTime(Simulator::Now() + queuingDelay);
     event->SetMarkingProb(dropProbDynamicCDF);
     _recordedSamples[*packetKey] = event;
-    cout << "### EVENT ### " << "Time: " << Simulator::Now().GetNanoSeconds() << " Queuing delay: " << queuingDelay.GetNanoSeconds() << " Queue Size: " << queueSize << " Drop Prob: " << dropProbDynamicCDF << endl;
+    // cout << "### EVENT ### " << "Time: " << Simulator::Now().GetNanoSeconds() << " Queuing delay: " << queuingDelay.GetNanoSeconds() << " Queue Size: " << queueSize << " Drop Prob: " << dropProbDynamicCDF << endl;
     updateCounters(event);
 }
 
@@ -208,12 +209,15 @@ void PoissonSampler::SaveMonitorRecords(const string& filename) {
     outfile.open(filename);
     outfile << "sampleDelayMean,unbiasedSmapleDelayVariance,sampleSize,samplesDropMean,samplesDropVariance,GTSampleSize,GTPacketSizeMean,GTDropMean,GTQueuingDelay" << endl;
     outfile << sampleMean[0].GetNanoSeconds() << "," << unbiasedSmapleVariance[0].GetNanoSeconds() << "," << sampleSize[0] << "," << samplesDropMean << "," << samplesDropVariance << "," << numOfGTSamples << "," << GTPacketSizeMean << "," << GTDropMean << "," << GTQueuingDelay << endl;
-
-    outfile << "Time,QueueSize" << endl;
-    for (auto &item : queueSizeProcess) {
-        outfile << std::get<0>(item).GetNanoSeconds() << "," << std::get<1>(item) << endl;
-    }
     outfile.close();
+
+    // ofstream queueSizeFile;
+    // packetsFile.open(filename.substr(0, filename.size() - 4) + "_packets.csv");
+
+    // outfile << "Time,QueueSize" << endl;
+    // for (auto &item : queueSizeProcess) {
+    //     outfile << std::get<0>(item).GetNanoSeconds() << "," << std::get<1>(item) << endl;
+    // }
     // if (_monitorTag == "SD0") {
     //     packetCDF.printCDF();
     // }

@@ -129,6 +129,13 @@ def read_lossProb(__ns3_path, rate, segment, experiment, results_folder):
             dfs[df_name]['timeAvgSuccessProb']['A' + str(path)] = 1.0 - time_average_lossProb
     return dfs
             
+def plot_queueSize_time(__ns3_path, rate, segment, experiment, results_folder):
+    file_paths = glob.glob('{}/scratch/{}/{}/{}/*_{}.csv'.format(__ns3_path, results_folder, rate, experiment, segment))
+    dfs = {}
+    for file_path in file_paths:
+        df_name = file_path.split('/')[-1].split('_')[0]
+        df = pd.read_csv(file_path)
+        print(df)
 
 def read_online_computations(__ns3_path, rate, segment, experiment, results_folder):
     file_paths = glob.glob('{}/scratch/{}/{}/{}/*_{}.csv'.format(__ns3_path, results_folder, rate, experiment, segment))
