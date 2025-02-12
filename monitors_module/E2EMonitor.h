@@ -27,8 +27,15 @@ public:
 
     [[nodiscard]] bool GetEcn() const;
     [[nodiscard]] int GetPath() const;
+    [[nodiscard]] Time GetTxEnqueueTime() const;
+    [[nodiscard]] Time GetTxDequeueTime() const;
     void SetEcn(bool ecn);
     void SetPath(int path);
+    void SetTxEnqueueTime(Time time);
+    void SetTxDequeueTime(Time time);
+private:
+    ns3::Time _TxEnqueueTime = Time(-1);
+    ns3::Time _TxDequeuTime = Time(-1);
 };
 
 class E2EMonitor : public Monitor {
@@ -42,6 +49,8 @@ private:
     std::vector<Time> timeAverageIntegral;
     std::vector<Time> integralStartTime;
     std::vector<Time> integralEndTime;
+    std::vector<Time> lastDelay;
+    uint32_t QueueCapacity;
     DataRate hostToTorLinkRate;
     DataRate torToAggLinkRate;
     Time hostToTorLinkDelay;
@@ -68,8 +77,9 @@ public:
     E2EMonitor(const Time &startTime, const Time &duration, const Time &steadyStartTime, const Time &steadyStopTime, const Ptr<PointToPointNetDevice> netDevice, const Ptr<Node> &rxNode, const string &monitorTag, const double errorRate, 
     const DataRate &hostToTorLinkRate, const DataRate &torToAggLinkRate, const Time &hostToTorLinkDelay);
     E2EMonitor(const Time &startTime, const Time &duration, const Time &steadyStartTime, const Time &steadyStopTime, const Ptr<PointToPointNetDevice> netDevice, const Ptr<Node> &rxNode, const string &monitorTag, const double errorRate, 
-    const DataRate &hostToTorLinkRate, const DataRate &torToAggLinkRate, const Time &hostToTorLinkDelay, const int numOfPaths, const int numOfSegmetns);
+    const DataRate &hostToTorLinkRate, const DataRate &torToAggLinkRate, const Time &hostToTorLinkDelay, const int numOfPaths, const int numOfSegmetns, uint32_t queueCapacity);
     void SaveMonitorRecords(const string &filename);
+    void RecordPacket(Ptr<const Packet> packet);
 };
 
 #endif //E2EMONITOR_H

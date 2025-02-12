@@ -8,18 +8,28 @@ E2EMonitorEvent::E2EMonitorEvent(PacketKey *key) { SetPacketKey(key); }
 
 void E2EMonitorEvent::SetEcn(bool ecn) { _key->SetEcn(ecn); }
 void E2EMonitorEvent::SetPath(int path) { _key->SetPath(path);  }
+void E2EMonitorEvent::SetTxEnqueueTime(Time time) { _TxEnqueueTime = time; }
+void E2EMonitorEvent::SetTxDequeueTime(Time time) { _TxDequeuTime = time; }
 bool E2EMonitorEvent::GetEcn() const { return _key->GetEcn(); } 
 int E2EMonitorEvent::GetPath() const { return _key->GetPath(); }
+Time E2EMonitorEvent::GetTxEnqueueTime() const { return _TxEnqueueTime; }
+Time E2EMonitorEvent::GetTxDequeueTime() const { return _TxDequeuTime; }
 
 
 E2EMonitor::E2EMonitor(const Time &startTime, const Time &duration, const Time &steadyStartTime, const Time &steadyStopTime, const Ptr<PointToPointNetDevice> netDevice, const Ptr<Node> &rxNode, const string &monitorTag, double errorRate,
                        const DataRate &_hostToTorLinkRate, const DataRate &_torToAggLinkRate, const Time &_hostToTorLinkDelay) 
-: E2EMonitor(startTime, duration, steadyStartTime, steadyStopTime, netDevice, rxNode, monitorTag, errorRate, _hostToTorLinkRate, _torToAggLinkRate, _hostToTorLinkDelay, 2, 3) {
+: E2EMonitor(startTime, duration, steadyStartTime, steadyStopTime, netDevice, rxNode, monitorTag, errorRate, _hostToTorLinkRate, _torToAggLinkRate, _hostToTorLinkDelay, 2, 3, 10000) {
     
 }
 
+void E2EMonitor::RecordPacket(Ptr<const Packet> packet) {
+    cout << Simulator::Now().GetNanoSeconds() << " packet arrived: ";
+    packet->Print(std::cout);
+    cout << endl;
+}
+
 E2EMonitor::E2EMonitor(const Time &startTime, const Time &duration, const Time &steadyStartTime, const Time &steadyStopTime, const Ptr<PointToPointNetDevice> netDevice, const Ptr<Node> &rxNode, const string &monitorTag, double errorRate,
-                       const DataRate &_hostToTorLinkRate, const DataRate &_torToAggLinkRate, const Time &_hostToTorLinkDelay, const int _numOfPaths, const int _numOfSegmetns) 
+                       const DataRate &_hostToTorLinkRate, const DataRate &_torToAggLinkRate, const Time &_hostToTorLinkDelay, const int _numOfPaths, const int _numOfSegmetns, uint32_t queueCapacity) 
 : Monitor(startTime, duration, steadyStartTime, steadyStopTime, monitorTag) {
     numOfPaths = _numOfPaths;
     numOfSegmetns = _numOfSegmetns;
@@ -37,6 +47,7 @@ E2EMonitor::E2EMonitor(const Time &startTime, const Time &duration, const Time &
         timeAverageIntegral.push_back(Seconds(0));
         integralStartTime.push_back(Time(-1));
         integralEndTime.push_back(Time(-1));
+        lastDelay.push_back(Time(0));
         sentPackets_onlink.push_back(0);
     }
     packetCDF.loadCDFData("/media/experiments/ns-allinone-3.41/ns-3.41/scratch/ECNMC/Helpers/packet_size_cdf_singleQueue.csv");
@@ -45,6 +56,8 @@ E2EMonitor::E2EMonitor(const Time &startTime, const Time &duration, const Time &
     firstItemTime = Time(-1);
     hasher = Hasher();
     rand = CreateObject<UniformRandomVariable>();
+    QueueCapacity = queueCapacity;
+    rxNode->GetDevice(0)->TraceConnectWithoutContext("PromiscSniffer", MakeCallback(&E2EMonitor::RecordPacket, this));
     Simulator::Schedule(_startTime, &E2EMonitor::Connect, this, netDevice, rxNode->GetId());
     Simulator::Schedule(_startTime + _duration, &E2EMonitor::Disconnect, this, netDevice, rxNode->GetId());
 }
@@ -64,7 +77,7 @@ uint64_t E2EMonitor::GetHashValue(const Ipv4Address src, const Ipv4Address dst, 
 }
 
 void E2EMonitor::Connect(const Ptr<PointToPointNetDevice> netDevice, uint32_t rxNodeId) {
-    // netDevice->GetQueue()->TraceConnectWithoutContext("Enqueue", MakeCallback(&E2EMonitor::Enqueue, this));
+    netDevice->GetQueue()->TraceConnectWithoutContext("Enqueue", MakeCallback(&E2EMonitor::Enqueue, this));
     netDevice->TraceConnectWithoutContext("PromiscSniffer", MakeCallback(&E2EMonitor::Capture, this));
     Config::ConnectWithoutContext("/NodeList/" + to_string(rxNodeId) + "/$ns3::Ipv4L3Protocol/Rx", MakeCallback(
             &E2EMonitor::RecordIpv4PacketReceived, this));
@@ -83,10 +96,19 @@ void E2EMonitor::Capture(Ptr< const Packet > packet) {
     PacketKey* packetKey = PacketKey::Packet2PacketKey(packet, FIRST_HEADER_PPP);
     if(_appsKey.count(AppKey::PacketKey2AppKey(*packetKey))) {
         packetKey->SetPacketSize(packet->GetSize());
-        auto *packetEvent = new E2EMonitorEvent(packetKey);
+        E2EMonitorEvent* packetEvent;
+        auto packetKeyEventPair = _recordedPackets.find(*packetKey);
+        if (packetKeyEventPair == _recordedPackets.end()) {
+            packetEvent = new E2EMonitorEvent(packetKey);
+            _recordedPackets[*packetKey] = packetEvent;
+        }
+        else {
+            packetEvent = packetKeyEventPair->second;
+        }
         packetEvent->SetSent();
+        packetEvent->SetTxDequeueTime(Simulator::Now());
         // uncomment the following line to record the packets when they are sent over the link
-        _recordedPackets[*packetKey] = packetEvent;
+        // _recordedPackets[*packetKey] = packetEvent;
 
         const Ptr<Packet> &pktCopy = packet->Copy();
         PppHeader pppHeader;
@@ -109,9 +131,9 @@ void E2EMonitor::Enqueue(Ptr<const Packet> packet) {
     if(_appsKey.count(AppKey::PacketKey2AppKey(*packetKey))) {
         packetKey->SetPacketSize(packet->GetSize());
         auto *packetEvent = new E2EMonitorEvent(packetKey);
-        packetEvent->SetSent();
+        packetEvent->SetTxEnqueueTime(Simulator::Now());
         // uncomment the following line to record the packets when they are enqueued
-        // _recordedPackets[*packetKey] = packetEvent;
+        _recordedPackets[*packetKey] = packetEvent;
 
         const Ptr<Packet> &pktCopy = packet->Copy();
         PppHeader pppHeader;
@@ -128,20 +150,31 @@ void E2EMonitor::Enqueue(Ptr<const Packet> packet) {
 
 void E2EMonitor::updateTimeAverageIntegral(uint32_t path, Time delay, Time endTime) {
     if (integralStartTime[path] != Time(-1)) {
+        // timeAverageIntegral[path] += Time(((delay + lastDelay[path]) / 2).GetNanoSeconds() * (endTime - integralEndTime[path]).GetNanoSeconds());
         timeAverageIntegral[path] += Time(delay.GetNanoSeconds() * (endTime - integralEndTime[path]).GetNanoSeconds());
     }
 
     if (integralStartTime[path] == Time(-1)) {
         integralStartTime[path] = endTime;
+        lastDelay[path] = delay;
     }
     integralEndTime[path] = endTime;
+    lastDelay[path] = delay;
 }
 
 void E2EMonitor::RecordIpv4PacketReceived(Ptr<const Packet> packet, Ptr<Ipv4> ipv4, uint32_t interface) {
+    cout << Simulator::Now().GetNanoSeconds() << " packet received: ";
+    packet->Print(std::cout);
+    cout << endl;
+    
     PacketKey* packetKey = PacketKey::Packet2PacketKey(packet, FIRST_HEADER_IPV4);
     if(_appsKey.count(AppKey::PacketKey2AppKey(*packetKey))) {
         auto packetKeyEventPair = _recordedPackets.find(*packetKey);
         if (packetKeyEventPair != _recordedPackets.end()) {
+            if (packetKeyEventPair->second->GetTxDequeueTime() == Time(-1)) {
+                _recordedPackets.erase(packetKeyEventPair);
+                return;
+            }
             Ipv4Header header;
             packet->PeekHeader(header);
             uint64_t hash = GetHashValue(packetKey->GetSrcIp(), packetKey->GetDstIp(), packetKey->GetSrcPort(), packetKey->GetDstPort(), header.GetProtocol());
@@ -171,7 +204,8 @@ void E2EMonitor::RecordIpv4PacketReceived(Ptr<const Packet> packet, Ptr<Ipv4> ip
             //     additionalDeprioritizationDelay = Time(additionalDeprioritizationDelay.GetNanoSeconds() * 0.35);
             // }
 
-
+            // updateBasicCounters(packetKeyEventPair->second->GetTxEnqueueTime(), packetKeyEventPair->second->GetReceivedTime() + additionalDeprioritizationDelay - transmissionDelay, path);
+            // updateTimeAverageIntegral(path, packetKeyEventPair->second->GetReceivedTime() + additionalDeprioritizationDelay - transmissionDelay - packetKeyEventPair->second->GetTxEnqueueTime(), packetKeyEventPair->second->GetTxEnqueueTime());
             updateBasicCounters(packetKeyEventPair->second->GetSentTime(), packetKeyEventPair->second->GetReceivedTime() + additionalDeprioritizationDelay - transmissionDelay, path);
             updateTimeAverageIntegral(path, packetKeyEventPair->second->GetReceivedTime() + additionalDeprioritizationDelay - transmissionDelay - packetKeyEventPair->second->GetSentTime(), packetKeyEventPair->second->GetSentTime() + hostToTorLinkRate.CalculateBytesTxTime(packetKeyEventPair->first.GetPacketSize()) + hostToTorLinkDelay);
 
@@ -183,7 +217,7 @@ void E2EMonitor::RecordIpv4PacketReceived(Ptr<const Packet> packet, Ptr<Ipv4> ip
                 firstItemTime = packetKeyEventPair->second->GetSentTime() + hostToTorLinkRate.CalculateBytesTxTime(packetKeyEventPair->first.GetPacketSize()) + hostToTorLinkDelay;
                 return;
             }
-            int availableCapacity = max((int) packetKeyEventPair->first.GetPacketSize(), (int) (QueueSize("100KB").GetValue() - (((packetKeyEventPair->second->GetReceivedTime() - transmissionDelay - packetKeyEventPair->second->GetSentTime()) * torToAggLinkRate) / 8)));
+            int availableCapacity = max((int) packetKeyEventPair->first.GetPacketSize(), (int) (QueueCapacity - (((packetKeyEventPair->second->GetReceivedTime() - transmissionDelay - packetKeyEventPair->second->GetSentTime()) * torToAggLinkRate) / 8)));
             double dropProbDynamicCDF = packetCDF.calculateProbabilityGreaterThan(availableCapacity);
             
             GTDropMean = (GTDropMean * (prev - firstItemTime).GetNanoSeconds() + dropProbDynamicCDF * (lastItemTime - prev).GetNanoSeconds()) / (lastItemTime - firstItemTime).GetNanoSeconds();
@@ -221,7 +255,7 @@ double E2EMonitor::calculateUnbiasedGTDrop() {
                                     + torToAggLinkRate.CalculateBytesTxTime(packteSize)
                                     + hostToTorLinkDelay * 2;
 
-            int availableCapacity = max((int) packteSize, (int)(QueueSize("100KB").GetValue() - (((sample->GetReceivedTime() - transmissionDelay - sample->GetSentTime()) * torToAggLinkRate) / 8)));
+            int availableCapacity = max((int) packteSize, (int)(QueueCapacity - (((sample->GetReceivedTime() - transmissionDelay - sample->GetSentTime()) * torToAggLinkRate) / 8)));
             dropProbDynamicCDF = packetCDF.calculateProbabilityGreaterThan(availableCapacity);   
         }
         GTDropMean = (GTDropMean * (prev - firstItemTime).GetNanoSeconds() + dropProbDynamicCDF * (lastItemTime - prev).GetNanoSeconds()) / (lastItemTime - firstItemTime).GetNanoSeconds();
@@ -234,32 +268,36 @@ void E2EMonitor::SaveMonitorRecords(const string& filename) {
     outfile.open(filename);
     outfile << "path,sampleDelayMean,unbiasedSmapleDelayVariance,averagePacketSize,receivedPackets,sentPackets,markedPackets,timeAverage,sentPacketsOnLink,GTDropMean,UnbiasedGTDropMean,OWAQsize" << endl;
     for (int i = 0; i < numOfPaths; i++) {
-        outfile << i << "," << sampleMean[i].GetNanoSeconds() << "," << unbiasedSmapleVariance[i].GetNanoSeconds() << "," << sumOfPacketSizes[i] / sampleSize[i] << "," << sampleSize[i] << "," << sentPackets_onlink[i] << "," << markedPackets[i] 
+        outfile << i << "," << sampleMean[i].GetNanoSeconds() << "," << unbiasedSmapleVariance[i].GetNanoSeconds() << "," << sumOfPacketSizes[i] / sampleSize[i] << "," << sampleSize[i] << "," << sentPackets[i] << "," << markedPackets[i] 
         << "," << timeAverageIntegral[i].GetNanoSeconds() / (integralEndTime[i] - integralStartTime[i]).GetNanoSeconds() << "," << sentPackets_onlink[i]
         << "," << GTDropMean << "," << calculateUnbiasedGTDrop() 
         << "," << (Time(timeAverageIntegral[i].GetNanoSeconds() / (integralEndTime[i] - integralStartTime[i]).GetNanoSeconds()) * torToAggLinkRate) / 8 << endl;
 
     }
     outfile.close();
-    // ofstream packetsFile;
-    // packetsFile.open(filename.substr(0, filename.size() - 4) + "_packets.csv");
-    // packetsFile << "sentTime,receivedTime,size,path" << endl;
-    // for (auto &recordedPacket : _recordedPackets) {
-    //     packetsFile << recordedPacket.second->GetSentTime().GetNanoSeconds() << "," << recordedPacket.second->GetReceivedTime().GetNanoSeconds() << "," << recordedPacket.first.GetPacketSize() << "," << recordedPacket.second->GetPath() << endl;
-    // }
-    // packetsFile.close();
+
     ofstream packetsFile;
     packetsFile.open(filename.substr(0, filename.size() - 4) + "_packets.csv");
-    packetsFile << "SourceIp,SourcePort,DestinationIp,DestinationPort,SequenceNb,Id,PayloadSize,Path,SentTime,IsReceived,ReceiveTime,ECN" << endl;
+    packetsFile << "SourceIp,SourcePort,DestinationIp,DestinationPort,SequenceNb,Id,PayloadSize,Path,TxEnqueueTime,TxDequeueTime,SentTime,IsReceived,ReceiveTime,transmissionDelay,ECN" << endl;
     for (auto& packetKeyEventPair: _recordedPackets) {
         PacketKey key = packetKeyEventPair.first;
         E2EMonitorEvent* event = packetKeyEventPair.second;
-
+        Time transmissionDelay = Seconds(0);
+        if (numOfSegmetns == 3) {
+            transmissionDelay = hostToTorLinkRate.CalculateBytesTxTime(key.GetPacketSize()) * 2
+                                + torToAggLinkRate.CalculateBytesTxTime(key.GetPacketSize()) * 2
+                                + hostToTorLinkDelay * 4;
+        } else if (numOfSegmetns == 1) {
+            transmissionDelay = hostToTorLinkRate.CalculateBytesTxTime(key.GetPacketSize())
+                                + torToAggLinkRate.CalculateBytesTxTime(key.GetPacketSize())
+                                + hostToTorLinkDelay * 2;
+        }
         packetsFile << key.GetSrcIp() << "," << key.GetSrcPort() << ",";
-        packetsFile << key.GetDstIp() << "," << key.GetDstPort() << "," << key.GetSeqNb() << "," << key.GetId()  << "," << key.GetSize() << ",";
+        packetsFile << key.GetDstIp() << "," << key.GetDstPort() << "," << key.GetSeqNb() << "," << key.GetId()  << "," << key.GetPacketSize() << ",";
         packetsFile << event->GetPath() << ",";
-        packetsFile << GetRelativeTime(event->GetSentTime()).GetNanoSeconds() << ",";
-        packetsFile << event->IsReceived() << "," << GetRelativeTime(event->GetReceivedTime()).GetNanoSeconds() << "," << event->GetEcn() << endl;
+        packetsFile << event->GetTxEnqueueTime().GetNanoSeconds() << "," << event->GetTxDequeueTime().GetNanoSeconds() << ",";
+        packetsFile << event->GetSentTime().GetNanoSeconds() << ",";
+        packetsFile << event->IsReceived() << "," << event->GetReceivedTime().GetNanoSeconds() << "," << transmissionDelay.GetNanoSeconds() << "," << event->GetEcn() << endl;
     }
     packetsFile.close();
 }

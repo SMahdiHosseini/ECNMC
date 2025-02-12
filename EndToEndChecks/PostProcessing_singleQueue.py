@@ -252,7 +252,7 @@ def analyze_single_experiment(return_dict, rate, queues_names, confidenceValue, 
             endToEnd_statistics[flow][path]['successProbMean']['poisson_sentTime_est'] = {}
             for sample_rate in sample_rates:
                 endToEnd_statistics[flow][path]['successProbMean']['poisson_sentTime_est'][sample_rate] = successProbs_poisson[sample_rate][flow]['timeAvgSuccessProb'][path]
-
+            print(flow, path, (samples_paths_aggregated_statistics[flow][path]['DelayMean'] * rate * 0.6 / 8) / 100, "%")
             rounds_results['EndToEndSuccessProb']['E2E_eventAvg'][flow][path].append(endToEnd_dfs[flow]['successProbMean'][int(path[1])])
             rounds_results['EndToEndSuccessProb']['sentTime_est'][flow][path].append(successProbs[flow]['timeAvgSuccessProb'][path])
             rounds_results['EndToEndSuccessProb']['enqueueTime_est'][flow][path].append(endToEnd_dfs[flow]['enqueueTimeAvgSuccessProb'][int(path[1])])
