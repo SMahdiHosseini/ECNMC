@@ -128,11 +128,12 @@ void PoissonSampler::EventHandler() {
     double dropProbDynamicCDF = 0;
     uint32_t queueSize;
     if (REDQueueDisc != nullptr) {
-        queueSize = REDQueueDisc->GetCurrentSize().GetValue() + NetDeviceQueue->GetCurrentSize().GetValue();
-        dropProbDynamicCDF = packetCDF.calculateProbabilityGreaterThan(REDQueueDisc->GetMaxSize().GetValue() - REDQueueDisc->GetCurrentSize().GetValue());
+        queueSize = REDQueueDisc->GetNBytes() + NetDeviceQueue->GetNBytes();
+        dropProbDynamicCDF = packetCDF.calculateProbabilityGreaterThan(REDQueueDisc->GetMaxSize().GetValue() - REDQueueDisc->GetNBytes());
     }
     else {
-        queueSize = NetDeviceQueue->GetCurrentSize().GetValue();
+        queueSize = NetDeviceQueue->GetNBytes();
+        //TODO: the following line has to be fixed. It is not correct if the queue max size is in packets
         dropProbDynamicCDF = packetCDF.calculateProbabilityGreaterThan(NetDeviceQueue->GetMaxSize().GetValue() - NetDeviceQueue->GetCurrentSize().GetValue());
     }
     // queueSize = ComputeQueueSize();

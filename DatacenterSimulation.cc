@@ -171,7 +171,10 @@ void run_single_queue_simulation(int argc, char* argv[]) {
     Config::SetDefault("ns3::RedQueueDisc::MeanPktSize", UintegerValue(1500));
     // Config::SetDefault("ns3::DropTailQueue<Packet>::MaxSize", QueueSizeValue(QueueSize("10KB")));
     // Config::SetDefault("ns3::RedQueueDisc::MaxSize", QueueSizeValue(QueueSize("1.8MB")));
+    // DCTCP tracks instantaneous queue length only; so set QW = 1
     Config::SetDefault("ns3::RedQueueDisc::QW", DoubleValue(1));
+    // DCTCP uses K > 1/7(C * RTT) and minTh = maxTh = K
+    maxTh = minTh = 0.15;
     // Config::SetDefault("ns3::RedQueueDisc::MinTh", DoubleValue(minTh));
     // Config::SetDefault("ns3::RedQueueDisc::MaxTh", DoubleValue(maxTh));
 

@@ -7,6 +7,10 @@ NS_LOG_COMPONENT_DEFINE ("TraceReplaySender");
 
 NS_OBJECT_ENSURE_REGISTERED (TraceReplaySender);
 
+void dctcpCallBack(uint32_t bytesAcked, uint32_t bytesMarked, double alpha) {
+    cout << Simulator::Now().GetNanoSeconds() << " DCTCP: Bytes Acked: " << bytesAcked << " Bytes Marked: " << bytesMarked << " Alpha: " << alpha << endl;
+}
+
 TypeId TraceReplaySender::GetTypeId() {
 
     static TypeId tid = TypeId ("ns3::TraceReplaySender")
@@ -120,6 +124,10 @@ void TraceReplaySender::PrepareSocket() {
     if(_protocol == "ns3::TcpSocketFactory") {
         Ptr<TcpSocketBase> tcpSocket = _socket->GetObject<TcpSocketBase>();
         tcpSocket->SetPacingStatus(_enablePacing);
+        // mahdi
+        // Ptr<TcpDctcp> dctcp = tcpSocket->GetCongestionControlAlgorithm()->GetObject<TcpDctcp>();
+        // dctcp->TraceConnectWithoutContext("CongestionEstimate", MakeCallback(&dctcpCallBack));
+        // mahdi
     }
     // std::cout << "Socket prepared for " << _traceFilename << std::endl;
     _sendEvent = Simulator::Schedule(Seconds(0), &TraceReplaySender::ScheduleNextSend, this);

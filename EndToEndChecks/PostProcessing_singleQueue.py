@@ -252,7 +252,7 @@ def analyze_single_experiment(return_dict, rate, queues_names, confidenceValue, 
             endToEnd_statistics[flow][path]['successProbMean']['poisson_sentTime_est'] = {}
             for sample_rate in sample_rates:
                 endToEnd_statistics[flow][path]['successProbMean']['poisson_sentTime_est'][sample_rate] = successProbs_poisson[sample_rate][flow]['timeAvgSuccessProb'][path]
-            print(flow, path, (samples_paths_aggregated_statistics[flow][path]['DelayMean'] * rate * 0.6 / 8) / 100, "%")
+            # print(flow, path, (samples_paths_aggregated_statistics[flow][path]['DelayMean'] * rate * 0.6 / 8) / 100, "%")
             rounds_results['EndToEndSuccessProb']['E2E_eventAvg'][flow][path].append(endToEnd_dfs[flow]['successProbMean'][int(path[1])])
             rounds_results['EndToEndSuccessProb']['sentTime_est'][flow][path].append(successProbs[flow]['timeAvgSuccessProb'][path])
             rounds_results['EndToEndSuccessProb']['enqueueTime_est'][flow][path].append(endToEnd_dfs[flow]['enqueueTimeAvgSuccessProb'][int(path[1])])
@@ -337,6 +337,7 @@ def analyze_all_experiments(rate, steadyStart, steadyEnd, confidenceValue, dir, 
         merge_results(return_dict, merged_results, flows_name, queues_names, num_of_paths)
         print("{} joind".format(i))
     merged_results['AverageWorkLoad'] = sum(merged_results['AverageWorkLoad']) / merged_results['experiments']
+    print("average drop rate =", np.average(merged_results['DropRate']) * 100, "%", "average queue capacity usage = ", np.average(merged_results['SD0DelayMean']) * 0.6 * rate / 800, "%", "Delay consistency check " , merged_results['MaxEpsilonIneqDelay']['A0D0']["A0"] / merged_results['experiments'] * 100)
     with open('../Results/results_{}/{}/{}_{}_{}_{}_to_{}.json'.format(dir, rate, dir, results_folder, experiments_end, steadyStart, steadyEnd), 'w') as f:
         js.dump(merged_results, f, indent=4)
 
@@ -361,7 +362,7 @@ def __main__():
         serviceRateScales = [float(x) for x in config.get('Settings', 'sampleRateScales').split(',')]
     else:
         serviceRateScales = [float(x) for x in config.get('Settings', 'errorRateScale').split(',')]
-    # serviceRateScales = [0.79, 0.81]
+    # serviceRateScales = [0.79]
     # serviceRateScales = [1.0, 1.01, 1.03, 1.05]
     # serviceRateScales = [0.91, 0.93, 0.95, 0.97, 0.99, 1.01, 1.03, 1.05]
     # serviceRateScales = [float(x) for x in config.get('Settings', 'serviceRateScales').split(',')]

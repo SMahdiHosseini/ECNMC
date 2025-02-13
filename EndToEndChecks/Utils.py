@@ -63,8 +63,8 @@ def calculate_drop_rate_online(endToEnd_dfs, paths):
     counts = 0
     for flow in endToEnd_dfs.keys():
         for p in range(len(paths)):
-            loss_sum += endToEnd_dfs[flow]['sentPackets'][p] - endToEnd_dfs[flow]['receivedPackets'][p]
-            counts += endToEnd_dfs[flow]['sentPackets'][p]
+            loss_sum += endToEnd_dfs[flow]['sentPacketsOnLink'][p] - endToEnd_dfs[flow]['receivedPackets'][p]
+            counts += endToEnd_dfs[flow]['sentPacketsOnLink'][p]
     return loss_sum / counts
 
 def read_burst_samples(__ns3_path, rate, segment, experiment, results_folder):
@@ -145,6 +145,9 @@ def read_online_computations(__ns3_path, rate, segment, experiment, results_fold
         df = pd.read_csv(file_path)
         df = df.rename(columns={'sampleDelayMean': 'DelayMean', 'unbiasedSmapleDelayVariance': 'DelayStd'})
         if segment == 'PoissonSampler':
+            df = df.loc[:0]
+            # change the all columns type to double
+            df = df.astype(float)
             df = df.rename(columns={'samplesDropMean': 'successProbMean', 'samplesDropVariance': 'successProbStd'})
             # df = df.rename(columns={'GTDropMean': 'successProbMean', 'samplesDropVariance': 'successProbStd'})
             df['DelayStd'] = np.sqrt(df['DelayStd'])
@@ -155,7 +158,7 @@ def read_online_computations(__ns3_path, rate, segment, experiment, results_fold
             dfs[df_name] = df.iloc[0].to_dict()
         else:
             df = df.rename(columns={'UnbiasedGTDropMean': 'enqueueTimeAvgSuccessProb'})
-            df['successProbMean'] = df['receivedPackets'] / df['sentPackets']
+            df['successProbMean'] = df['receivedPackets'] / df['sentPacketsOnLink']
             df['enqueueTimeAvgSuccessProb'] = 1 - df['enqueueTimeAvgSuccessProb']
             dfs[df_name] = df.to_dict()
     return dfs

@@ -22,12 +22,6 @@ E2EMonitor::E2EMonitor(const Time &startTime, const Time &duration, const Time &
     
 }
 
-void E2EMonitor::RecordPacket(Ptr<const Packet> packet) {
-    cout << Simulator::Now().GetNanoSeconds() << " packet arrived: ";
-    packet->Print(std::cout);
-    cout << endl;
-}
-
 E2EMonitor::E2EMonitor(const Time &startTime, const Time &duration, const Time &steadyStartTime, const Time &steadyStopTime, const Ptr<PointToPointNetDevice> netDevice, const Ptr<Node> &rxNode, const string &monitorTag, double errorRate,
                        const DataRate &_hostToTorLinkRate, const DataRate &_torToAggLinkRate, const Time &_hostToTorLinkDelay, const int _numOfPaths, const int _numOfSegmetns, uint32_t queueCapacity) 
 : Monitor(startTime, duration, steadyStartTime, steadyStopTime, monitorTag) {
@@ -57,7 +51,6 @@ E2EMonitor::E2EMonitor(const Time &startTime, const Time &duration, const Time &
     hasher = Hasher();
     rand = CreateObject<UniformRandomVariable>();
     QueueCapacity = queueCapacity;
-    rxNode->GetDevice(0)->TraceConnectWithoutContext("PromiscSniffer", MakeCallback(&E2EMonitor::RecordPacket, this));
     Simulator::Schedule(_startTime, &E2EMonitor::Connect, this, netDevice, rxNode->GetId());
     Simulator::Schedule(_startTime + _duration, &E2EMonitor::Disconnect, this, netDevice, rxNode->GetId());
 }
@@ -162,11 +155,7 @@ void E2EMonitor::updateTimeAverageIntegral(uint32_t path, Time delay, Time endTi
     lastDelay[path] = delay;
 }
 
-void E2EMonitor::RecordIpv4PacketReceived(Ptr<const Packet> packet, Ptr<Ipv4> ipv4, uint32_t interface) {
-    cout << Simulator::Now().GetNanoSeconds() << " packet received: ";
-    packet->Print(std::cout);
-    cout << endl;
-    
+void E2EMonitor::RecordIpv4PacketReceived(Ptr<const Packet> packet, Ptr<Ipv4> ipv4, uint32_t interface) {    
     PacketKey* packetKey = PacketKey::Packet2PacketKey(packet, FIRST_HEADER_IPV4);
     if(_appsKey.count(AppKey::PacketKey2AppKey(*packetKey))) {
         auto packetKeyEventPair = _recordedPackets.find(*packetKey);
@@ -229,7 +218,9 @@ void E2EMonitor::RecordIpv4PacketReceived(Ptr<const Packet> packet, Ptr<Ipv4> ip
 double E2EMonitor::calculateUnbiasedGTDrop() {
     std::vector<E2EMonitorEvent*> sortedSamples;
     for (auto &sample : _recordedPackets) {
-        sortedSamples.push_back(sample.second);
+        if (sample.second->GetSentTime() != Time(-1)) {
+            sortedSamples.push_back(sample.second);
+        }
     }
     std::sort(sortedSamples.begin(), sortedSamples.end(), [](E2EMonitorEvent* a, E2EMonitorEvent* b) {
         return a->GetSentTime() < b->GetSentTime();
