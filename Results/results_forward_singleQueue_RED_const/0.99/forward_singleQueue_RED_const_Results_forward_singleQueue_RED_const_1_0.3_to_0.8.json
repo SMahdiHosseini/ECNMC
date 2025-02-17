@@ -1,0 +1,116 @@
+{
+    "MaxEpsilonIneqDelay": {
+        "A0D0": {
+            "A0": 1
+        }
+    },
+    "MaxEpsilonIneqSuccessProb": {
+        "E2E_eventAvg": {
+            "A0D0": {
+                "A0": 0
+            }
+        },
+        "sentTime_est": {
+            "A0D0": {
+                "A0": 0
+            }
+        },
+        "enqueueTime_est": {
+            "A0D0": {
+                "A0": 1
+            }
+        },
+        "poisson_sentTime_est": {
+            "0.5": {
+                "A0D0": {
+                    "A0": 0
+                }
+            }
+        }
+    },
+    "EndToEndDelayMean": {
+        "A0D0": {
+            "A0": [
+                38577
+            ]
+        }
+    },
+    "EndToEndDelayStd": {
+        "A0D0": {
+            "A0": [
+                1632573570
+            ]
+        }
+    },
+    "EndToEndSuccessProb": {
+        "E2E_eventAvg": {
+            "A0D0": {
+                "A0": [
+                    0.9989044571296777
+                ]
+            }
+        },
+        "sentTime_est": {
+            "A0D0": {
+                "A0": [
+                    0.9986224659302355
+                ]
+            }
+        },
+        "enqueueTime_est": {
+            "A0D0": {
+                "A0": [
+                    0.9900257
+                ]
+            }
+        },
+        "poisson_sentTime_est": {
+            "0.5": {
+                "A0D0": {
+                    "A0": [
+                        0.9987437500492087
+                    ]
+                }
+            }
+        }
+    },
+    "DropRate": [
+        0.0010955428703223202
+    ],
+    "maxEpsilonDelay": {
+        "A0D0": {
+            "A0": [
+                0.04539992874495304
+            ]
+        }
+    },
+    "maxEpsilonSuccessProb": {
+        "A0D0": {
+            "A0": [
+                0.0030221111749610657
+            ]
+        }
+    },
+    "errors": {
+        "A0D0": {
+            "A0": [
+                0.022747156605424323
+            ]
+        }
+    },
+    "workLoad": {
+        "A0D0": {
+            "A0": [
+                299358720.0
+            ]
+        }
+    },
+    "AverageWorkLoad": 24946560.0,
+    "SD0Delaystd": [
+        40407.74943002889
+    ],
+    "SD0DelayMean": [
+        37719.0
+    ],
+    "experiments": 1
+}

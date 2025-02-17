@@ -163,6 +163,36 @@ def read_online_computations(__ns3_path, rate, segment, experiment, results_fold
             dfs[df_name] = df.to_dict()
     return dfs
 
+def calculate_offline_computations(__ns3_path, rate, segment, experiment, results_folder, steadyStart, steadyEnd, projectColumn, removeDrops, checkColumn="", linksRates=[], linkDelays=[]):
+    file_paths = glob.glob('{}/scratch/{}/{}/{}/*_{}.csv'.format(__ns3_path, results_folder, rate, experiment, segment))
+    dfs = {}
+    for file_path in file_paths:
+        df_res = {}
+        df_name = file_path.split('/')[-1].split('_')[0]
+        full_df = pd.read_csv(file_path)
+        if removeDrops:
+            full_df = full_df[full_df[checkColumn] == 1]
+        full_df = full_df[full_df[projectColumn] > steadyStart]
+        full_df = full_df[full_df[projectColumn] < steadyEnd]
+        full_df = full_df.sort_values(by=[projectColumn], ignore_index=True)
+        if 'EndToEnd' in segment:
+            df_res['timeAverage'] = {}
+            full_df['Delay'] = abs(full_df['ReceiveTime'] - full_df['SentTime'] - full_df['transmissionDelay'])
+            print(full_df)
+            full_df['SentTime'] = full_df['SentTime'] + linkDelays[0] + (full_df['PayloadSize'] * 8) / linksRates[0]
+            print(full_df)
+            # DelayMean is the time average of the delay over the SentTime, which is the integral of interarrival time * delay over the total time
+            for path in full_df['Path'].unique():
+                df = full_df[full_df['Path'] == path]
+                df = df.sort_values(by='SentTime').reset_index(drop=True) 
+                df['InterArrivalTime'] = df['SentTime'].diff().fillna(0)
+                df['Delay'] = df['Delay'] * df['InterArrivalTime']
+                df_res['timeAverage'][path] = df['Delay'].sum() / df['InterArrivalTime'].sum()
+        # if 'Poisson' in segment:
+        #     df_res['successProbMean'] = 1 - (len(df[df[checkColumn] == 0]) / len(df))
+        dfs[df_name] = df_res
+    return dfs
+
 def read_data(__ns3_path, steadyStart, steadyEnd, rate, segment, checkColumn, projectColumn, experiment, remove_duplicates, results_folder, removeDrops=True):
     file_paths = glob.glob('{}/scratch/{}/{}/{}/*_{}.csv'.format(__ns3_path, results_folder, rate, experiment, segment))
     dfs = {}

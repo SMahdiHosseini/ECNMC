@@ -30,6 +30,7 @@ private:
     void StopApplication() override;
     void Send(const TraceReplayItem& item);
     void ScheduleNextSend();
+    void dctcpCallBack(uint32_t bytesAcked, uint32_t bytesMarked, double alpha);
 
     Ptr<Socket> _socket;
     Address _receiverAddress;

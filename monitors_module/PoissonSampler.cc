@@ -47,7 +47,7 @@ uint32_t PoissonSampler::ComputeQueueSize() {
     uint32_t TXedBytes = (outgoingDataRate * (Simulator::Now() - lastLeftTime)) / 8;
     uint32_t remainedBytes = (lastLeftSize > TXedBytes) ? lastLeftSize - TXedBytes : 0;
     if (REDQueueDisc != nullptr) {
-        return REDQueueDisc->GetCurrentSize().GetValue() + NetDeviceQueue->GetNBytes() + (REDQueueDisc->GetNPackets() - 1) * 2 + remainedBytes - 2;
+        return REDQueueDisc->GetNBytes() + NetDeviceQueue->GetNBytes() + remainedBytes;
     }
     return NetDeviceQueue->GetNBytes() + remainedBytes;
 }

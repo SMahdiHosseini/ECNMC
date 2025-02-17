@@ -1,0 +1,25 @@
+
+Start Single Queue Simulation
+Hosts and Switches IP addresses
+Src: 0 Id:0 IP: 10.1.1.1
+Src CT: 1 Id:1 IP: 10.2.1.1
+Dst: 0 Id:2 IP: 10.3.1.1
+Total preparing time = 1045402 microsecond
+Config Parameters
+srcHostToSwitchLinkRate: 300Mbps
+ctHostToSwitchLinkRate: 300Mbps
+hostToSwitchLinkDelay: 50us
+bottleneckLinkRate: 606.0Mbps
+pctPacedBack: 0.8
+enableSwitchECN: 1
+enableECMP: 1
+sampleRate: 4500
+errorRate: 1.5e-05
+dirName: forward
+experiment: 35
+trafficStartTime: 30.6
+trafficStopTime: 31.5
+steadyStartTime: 0.3
+steadyEndTime: 0.8
+Done 
+Total execution time = 118829787 microsecond

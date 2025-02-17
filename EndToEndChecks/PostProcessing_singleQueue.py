@@ -209,6 +209,9 @@ def analyze_single_experiment(return_dict, rate, queues_names, confidenceValue, 
     paths = ['A' + str(i) for i in range(num_of_paths)]
     endToEnd_dfs = read_online_computations(__ns3_path, rate, 'EndToEnd', str(experiment), results_folder)
     samples_dfs = read_online_computations(__ns3_path, rate, 'PoissonSampler', str(experiment), results_folder)
+
+    endToEndDelays = calculate_offline_computations(__ns3_path, rate, 'EndToEnd_packets', str(experiment), results_folder, 0.3 * 1e9, 0.8 * 1e9, "SentTime", True, "IsReceived", [0.3, 0.6 * rate], [50 * 1e3, 50 * 1e3])
+    print(endToEndDelays)
     # plot_queueSize_time(__ns3_path, rate, 'PoissonSampler', str(experiment), results_folder)
     # queuing_delay = read_queuingDelay(__ns3_path, rate, 'EndToEnd_packets', str(experiment), results_folder, 50000, 0.3, 0.3 * 2 * rate)
     # # print(queuing_delay)
@@ -362,11 +365,11 @@ def __main__():
         serviceRateScales = [float(x) for x in config.get('Settings', 'sampleRateScales').split(',')]
     else:
         serviceRateScales = [float(x) for x in config.get('Settings', 'errorRateScale').split(',')]
-    # serviceRateScales = [0.79]
+    serviceRateScales = [0.99]
     # serviceRateScales = [1.0, 1.01, 1.03, 1.05]
     # serviceRateScales = [0.91, 0.93, 0.95, 0.97, 0.99, 1.01, 1.03, 1.05]
     # serviceRateScales = [float(x) for x in config.get('Settings', 'serviceRateScales').split(',')]
-    # experiments = 1
+    experiments = 1
 
     for rate in serviceRateScales:
         print("\nAnalyzing experiments for rate: ", rate)

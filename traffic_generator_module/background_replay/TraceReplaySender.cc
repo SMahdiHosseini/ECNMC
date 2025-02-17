@@ -7,8 +7,12 @@ NS_LOG_COMPONENT_DEFINE ("TraceReplaySender");
 
 NS_OBJECT_ENSURE_REGISTERED (TraceReplaySender);
 
-void dctcpCallBack(uint32_t bytesAcked, uint32_t bytesMarked, double alpha) {
-    cout << Simulator::Now().GetNanoSeconds() << " DCTCP: Bytes Acked: " << bytesAcked << " Bytes Marked: " << bytesMarked << " Alpha: " << alpha << endl;
+void TraceReplaySender::dctcpCallBack(uint32_t bytesAcked, uint32_t bytesMarked, double alpha) {
+    if (GetNodeIP(_socket->GetNode(), 1) == "10.1.1.1") {
+        if (InetSocketAddress::ConvertFrom(_receiverAddress).GetPort() == 5905 || InetSocketAddress::ConvertFrom(_receiverAddress).GetPort() == 5595) {
+            cout << Simulator::Now().GetNanoSeconds() << " RemoteAddress:" << GetNodeIP(_socket->GetNode(), 1) << "->" << InetSocketAddress::ConvertFrom(_receiverAddress).GetIpv4() << ":" << InetSocketAddress::ConvertFrom(_receiverAddress).GetPort() << " DCTCP: Bytes Acked: " << bytesAcked << " Bytes Marked: " << bytesMarked << " Alpha: " << alpha << endl;
+        }
+    }
 }
 
 TypeId TraceReplaySender::GetTypeId() {
@@ -126,7 +130,7 @@ void TraceReplaySender::PrepareSocket() {
         tcpSocket->SetPacingStatus(_enablePacing);
         // mahdi
         // Ptr<TcpDctcp> dctcp = tcpSocket->GetCongestionControlAlgorithm()->GetObject<TcpDctcp>();
-        // dctcp->TraceConnectWithoutContext("CongestionEstimate", MakeCallback(&dctcpCallBack));
+        // dctcp->TraceConnectWithoutContext("CongestionEstimate", MakeCallback(&TraceReplaySender::dctcpCallBack, this));
         // mahdi
     }
     // std::cout << "Socket prepared for " << _traceFilename << std::endl;
