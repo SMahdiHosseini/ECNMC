@@ -50,8 +50,8 @@ protected:
     ns3::Time _duration = Seconds(0);
     ns3::Time _steadyStartTime = Seconds(0);
     ns3::Time _steadyStopTime = Seconds(0);
-    std::vector<ns3::Time> sampleMean;
-    std::vector<ns3::Time> unbiasedSmapleVariance;
+    std::vector<double> sampleMean;
+    std::vector<double> unbiasedSmapleVariance;
     std::vector<uint32_t> sampleSize;
     std::string _monitorTag;
     set<AppKey> _appsKey;

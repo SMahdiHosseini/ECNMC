@@ -32,8 +32,8 @@ E2EMonitor::E2EMonitor(const Time &startTime, const Time &duration, const Time &
     torToAggLinkRate = _torToAggLinkRate;
     hostToTorLinkDelay = _hostToTorLinkDelay;
     for (int i = 0; i < numOfPaths; i++) {
-        sampleMean.push_back(Seconds(0));
-        unbiasedSmapleVariance.push_back(Seconds(0));
+        sampleMean.push_back(0);
+        unbiasedSmapleVariance.push_back(0.0);
         sampleSize.push_back(0);
         sumOfPacketSizes.push_back(0);
         sentPackets.push_back(0);
@@ -259,7 +259,7 @@ void E2EMonitor::SaveMonitorRecords(const string& filename) {
     outfile.open(filename);
     outfile << "path,sampleDelayMean,unbiasedSmapleDelayVariance,averagePacketSize,receivedPackets,sentPackets,markedPackets,timeAverage,sentPacketsOnLink,GTDropMean,UnbiasedGTDropMean,OWAQsize" << endl;
     for (int i = 0; i < numOfPaths; i++) {
-        outfile << i << "," << sampleMean[i].GetNanoSeconds() << "," << unbiasedSmapleVariance[i].GetNanoSeconds() << "," << sumOfPacketSizes[i] / sampleSize[i] << "," << sampleSize[i] << "," << sentPackets[i] << "," << markedPackets[i] 
+        outfile << i << "," << sampleMean[i] << "," << unbiasedSmapleVariance[i] << "," << sumOfPacketSizes[i] / sampleSize[i] << "," << sampleSize[i] << "," << sentPackets[i] << "," << markedPackets[i] 
         << "," << timeAverageIntegral[i].GetNanoSeconds() / (integralEndTime[i] - integralStartTime[i]).GetNanoSeconds() << "," << sentPackets_onlink[i]
         << "," << GTDropMean << "," << calculateUnbiasedGTDrop() 
         << "," << (Time(timeAverageIntegral[i].GetNanoSeconds() / (integralEndTime[i] - integralStartTime[i]).GetNanoSeconds()) * torToAggLinkRate) / 8 << endl;

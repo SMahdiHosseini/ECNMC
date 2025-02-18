@@ -204,14 +204,21 @@ def sample_endToEnd_packets(ns3_path, rate, segment, experiment, results_folder,
     return dfs
 
             
-def analyze_single_experiment(return_dict, rate, queues_names, confidenceValue, rounds_results, results_folder, experiment=0, ns3_path=__ns3_path):
+def analyze_single_experiment(return_dict, rate, queues_names, confidenceValue, rounds_results, results_folder, config, experiment=0, ns3_path=__ns3_path):
+    srcHostToSwitchLinkRate = convert_to_float(config.get('SingleQueue', 'srcHostToSwitchLinkRate')) * 1e-3
+    bottleneckLinkRate = convert_to_float(config.get('SingleQueue', 'bottleneckLinkRate')) * rate * 1e-3
+    linkDelay = convert_to_float(config.get('Settings', 'hostToTorLinkDelay')) * 1e3
+    steadyStart = convert_to_float(config.get('Settings', 'steadyStart')) * 1e9
+    steadyEnd = convert_to_float(config.get('Settings', 'steadyEnd')) * 1e9
     num_of_paths = 1
     paths = ['A' + str(i) for i in range(num_of_paths)]
     endToEnd_dfs = read_online_computations(__ns3_path, rate, 'EndToEnd', str(experiment), results_folder)
-    samples_dfs = read_online_computations(__ns3_path, rate, 'PoissonSampler', str(experiment), results_folder)
+    # samples_dfs = read_online_computations(__ns3_path, rate, 'PoissonSampler', str(experiment), results_folder)
 
-    endToEndDelays = calculate_offline_computations(__ns3_path, rate, 'EndToEnd_packets', str(experiment), results_folder, 0.3 * 1e9, 0.8 * 1e9, "SentTime", True, "IsReceived", [0.3, 0.6 * rate], [50 * 1e3, 50 * 1e3])
-    print(endToEndDelays)
+    endToEndDelays = calculate_offline_computations(__ns3_path, rate, 'EndToEnd_packets', str(experiment), results_folder, steadyStart, steadyEnd, "SentTime", True, "IsReceived", [srcHostToSwitchLinkRate, bottleneckLinkRate], [linkDelay, linkDelay])
+    # print(endToEndDelays)
+    samplesSats = calculate_offline_computations(__ns3_path, rate, 'PoissonSampler_events', str(experiment), results_folder, endToEndDelays['A0D0']['first'][0], endToEndDelays['A0D0']['last'][0], "Time")
+    # print(samplesSats)
     # plot_queueSize_time(__ns3_path, rate, 'PoissonSampler', str(experiment), results_folder)
     # queuing_delay = read_queuingDelay(__ns3_path, rate, 'EndToEnd_packets', str(experiment), results_folder, 50000, 0.3, 0.3 * 2 * rate)
     # # print(queuing_delay)
@@ -221,33 +228,33 @@ def analyze_single_experiment(return_dict, rate, queues_names, confidenceValue, 
     successProbs = read_lossProb(__ns3_path, rate, 'EndToEnd_packets', str(experiment), results_folder)
     successProbs_poisson = {}
     for sample_rate in sample_rates:
-        successProbs_poisson[sample_rate] = sample_endToEnd_packets(__ns3_path, rate, 'EndToEnd_packets', experiment, results_folder, sample_rate, endToEnd_dfs)
+        successProbs_poisson[sample_rate] = sample_endToEnd_packets(__ns3_path, rate, 'EndToEnd_packets', experiment, results_folder, sample_rate, endToEndDelays)
 
     rounds_results['DropRate'].append(calculate_drop_rate_online(endToEnd_dfs, paths))
 
     # samples_paths_statistics
     samples_paths_aggregated_statistics = {}
-    for flow in endToEnd_dfs.keys():
+    for flow in endToEndDelays.keys():
         samples_paths_aggregated_statistics[flow] = {}
         for path in paths:
             samples_paths_aggregated_statistics[flow][path] = {}
-            samples_paths_aggregated_statistics[flow][path]['DelayMean'] = samples_dfs['SD0']['DelayMean']
+            samples_paths_aggregated_statistics[flow][path]['DelayMean'] = samplesSats['SD0']['DelayMean']
             
-            samples_paths_aggregated_statistics[flow][path]['MaxEpsilonDelay'] = calc_epsilon(confidenceValue, samples_dfs['SD0'])
+            samples_paths_aggregated_statistics[flow][path]['MaxEpsilonDelay'] = calc_epsilon(confidenceValue, samplesSats['SD0'])
             # print([(key, calc_epsilon(confidenceValue, samples_df)) for key, samples_df in samples_dfs.items()])
             
-            samples_paths_aggregated_statistics[flow][path]['successProbMean'] = np.log(samples_dfs['SD0']['successProbMean'])
+            samples_paths_aggregated_statistics[flow][path]['successProbMean'] = np.log(samplesSats['SD0']['successProbMean'])
             
-            samples_paths_aggregated_statistics[flow][path]['MaxEpsilonSuccessProb'] = calc_epsilon_loss(confidenceValue, samples_dfs['SD0'])
+            samples_paths_aggregated_statistics[flow][path]['MaxEpsilonSuccessProb'] = calc_epsilon_loss(confidenceValue, samplesSats['SD0'])
 
     # endToEnd_statistics
     endToEnd_statistics = {}
     AverageWorkLoad = 0
-    for flow in endToEnd_dfs.keys():
+    for flow in endToEndDelays.keys():
         endToEnd_statistics[flow] = {}
         for path in paths:
             endToEnd_statistics[flow][path] = {}
-            endToEnd_statistics[flow][path]['DelayMean'] = endToEnd_dfs[flow]['timeAverage'][int(path[1])]
+            endToEnd_statistics[flow][path]['DelayMean'] = endToEndDelays[flow]['timeAverage'][int(path[1])]
             endToEnd_statistics[flow][path]['successProbMean'] = {}
             endToEnd_statistics[flow][path]['successProbMean']['E2E_eventAvg'] = endToEnd_dfs[flow]['successProbMean'][int(path[1])]   
             endToEnd_statistics[flow][path]['successProbMean']['sentTime_est'] = successProbs[flow]['timeAvgSuccessProb'][path]
@@ -261,8 +268,8 @@ def analyze_single_experiment(return_dict, rate, queues_names, confidenceValue, 
             rounds_results['EndToEndSuccessProb']['enqueueTime_est'][flow][path].append(endToEnd_dfs[flow]['enqueueTimeAvgSuccessProb'][int(path[1])])
             for sample_rate in sample_rates:
                 rounds_results['EndToEndSuccessProb']['poisson_sentTime_est'][sample_rate][flow][path].append(successProbs_poisson[sample_rate][flow]['timeAvgSuccessProb'][path])
-            rounds_results['EndToEndDelayMean'][flow][path].append(endToEnd_dfs[flow]['timeAverage'][int(path[1])])
-            rounds_results['EndToEndDelayStd'][flow][path].append(endToEnd_dfs[flow]['DelayStd'][int(path[1])])
+            rounds_results['EndToEndDelayMean'][flow][path].append(endToEndDelays[flow]['timeAverage'][int(path[1])])
+            rounds_results['EndToEndDelayStd'][flow][path].append(endToEndDelays[flow]['DelayStd'][int(path[1])])
             rounds_results['maxEpsilonDelay'][flow][path].append(samples_paths_aggregated_statistics[flow][path]['MaxEpsilonDelay'])
             rounds_results['maxEpsilonSuccessProb'][flow][path].append(samples_paths_aggregated_statistics[flow][path]['MaxEpsilonSuccessProb'])
             rounds_results['errors'][flow][path].append(abs((samples_paths_aggregated_statistics[flow][path]['DelayMean'] - endToEnd_statistics[flow][path]['DelayMean']) / samples_paths_aggregated_statistics[flow][path]['DelayMean']))
@@ -272,12 +279,12 @@ def analyze_single_experiment(return_dict, rate, queues_names, confidenceValue, 
     rounds_results['AverageWorkLoad'].append((AverageWorkLoad / 0.5) / 12)
     rounds_results['experiments'] += 1
     number_of_segments = 1
-    compatibility_check(rounds_results, samples_paths_aggregated_statistics, endToEnd_statistics, endToEnd_dfs.keys(), ['A' + str(i) for i in range(num_of_paths)], number_of_segments)
+    compatibility_check(rounds_results, samples_paths_aggregated_statistics, endToEnd_statistics, endToEndDelays.keys(), ['A' + str(i) for i in range(num_of_paths)], number_of_segments)
               
     for q in queues_names:
         if q[0] == 'S' and q[1] == 'D':
-            rounds_results[q+'Delaystd'].append(samples_dfs[q]['DelayStd'])
-            rounds_results[q+'DelayMean'].append(samples_dfs[q]['DelayMean'])
+            rounds_results[q+'Delaystd'].append(samplesSats[q]['DelayStd'])
+            rounds_results[q+'DelayMean'].append(samplesSats[q]['DelayMean'])
     return_dict[experiment] = rounds_results
 
 def merge_results(return_dict, merged_results, flows, queues, num_of_paths):
@@ -311,7 +318,7 @@ def merge_results(return_dict, merged_results, flows, queues, num_of_paths):
         merged_results['DropRate'] += return_dict[exp]['DropRate']
         merged_results['AverageWorkLoad'] += return_dict[exp]['AverageWorkLoad']
     
-def analyze_all_experiments(rate, steadyStart, steadyEnd, confidenceValue, dir, experiments_end=3, ns3_path=__ns3_path):
+def analyze_all_experiments(rate, steadyStart, steadyEnd, confidenceValue, dir, config, experiments_end=3, ns3_path=__ns3_path):
     results_folder = 'Results_' + dir
     num_of_paths = 1
     flows_name = read_data_flowIndicator(ns3_path, rate, results_folder)
@@ -331,7 +338,7 @@ def analyze_all_experiments(rate, steadyStart, steadyEnd, confidenceValue, dir, 
                 print(experiment)
                 continue
             print("Analyzing experiment: ", experiment)
-            ths.append(multiprocessing.Process(target=analyze_single_experiment, args=(return_dict, rate, queues_names, confidenceValue, rounds_results, results_folder, experiment, ns3_path)))
+            ths.append(multiprocessing.Process(target=analyze_single_experiment, args=(return_dict, rate, queues_names, confidenceValue, rounds_results, results_folder, config, experiment, ns3_path)))
         
         for th in ths:
             th.start()
@@ -373,7 +380,7 @@ def __main__():
 
     for rate in serviceRateScales:
         print("\nAnalyzing experiments for rate: ", rate)
-        analyze_all_experiments(rate, steadyStart, steadyEnd, confidenceValue, args.dir, experiments_end=experiments, ns3_path=__ns3_path)
+        analyze_all_experiments(rate, steadyStart, steadyEnd, confidenceValue, args.dir, config, experiments_end=experiments, ns3_path=__ns3_path)
         print("Rate {} {} done".format(rate, experiments))
 
 __main__()

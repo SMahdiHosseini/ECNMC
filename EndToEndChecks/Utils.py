@@ -163,33 +163,53 @@ def read_online_computations(__ns3_path, rate, segment, experiment, results_fold
             dfs[df_name] = df.to_dict()
     return dfs
 
-def calculate_offline_computations(__ns3_path, rate, segment, experiment, results_folder, steadyStart, steadyEnd, projectColumn, removeDrops, checkColumn="", linksRates=[], linkDelays=[]):
+def calculate_offline_computations(__ns3_path, rate, segment, experiment, results_folder, steadyStart, steadyEnd, projectColumn, removeDrops=True, checkColumn="", linksRates=[], linkDelays=[]):
     file_paths = glob.glob('{}/scratch/{}/{}/{}/*_{}.csv'.format(__ns3_path, results_folder, rate, experiment, segment))
     dfs = {}
     for file_path in file_paths:
         df_res = {}
         df_name = file_path.split('/')[-1].split('_')[0]
         full_df = pd.read_csv(file_path)
-        if removeDrops:
-            full_df = full_df[full_df[checkColumn] == 1]
-        full_df = full_df[full_df[projectColumn] > steadyStart]
-        full_df = full_df[full_df[projectColumn] < steadyEnd]
-        full_df = full_df.sort_values(by=[projectColumn], ignore_index=True)
         if 'EndToEnd' in segment:
+            df_res['DelayMean'] = {}
             df_res['timeAverage'] = {}
+            df_res['DelayStd'] = {}
+            df_res['first'] = {}
+            df_res['last'] = {}
+            df_res['sampleSize'] = {}
+            if removeDrops:
+                full_df = full_df[full_df[checkColumn] == 1]
             full_df['Delay'] = abs(full_df['ReceiveTime'] - full_df['SentTime'] - full_df['transmissionDelay'])
-            print(full_df)
             full_df['SentTime'] = full_df['SentTime'] + linkDelays[0] + (full_df['PayloadSize'] * 8) / linksRates[0]
-            print(full_df)
+            # pruning the E2E data to be align with the time they enqueued
+            full_df = full_df[full_df[projectColumn] >= steadyStart]
+            full_df = full_df[full_df[projectColumn] <= steadyEnd]
+            full_df = full_df.sort_values(by=[projectColumn], ignore_index=True)
             # DelayMean is the time average of the delay over the SentTime, which is the integral of interarrival time * delay over the total time
             for path in full_df['Path'].unique():
                 df = full_df[full_df['Path'] == path]
-                df = df.sort_values(by='SentTime').reset_index(drop=True) 
+                df = df.sort_values(by='SentTime').reset_index(drop=True)
+                df_res['DelayStd'][path] = df['Delay'].std()
+                # calculate the delay mean based on the welford algorithm
+                df_res['DelayMean'][path] = np.average(df['Delay'])
+                df_res['first'][path] = df['SentTime'].iloc[0]
+                df_res['last'][path] = df['SentTime'].iloc[-1]
                 df['InterArrivalTime'] = df['SentTime'].diff().fillna(0)
                 df['Delay'] = df['Delay'] * df['InterArrivalTime']
                 df_res['timeAverage'][path] = df['Delay'].sum() / df['InterArrivalTime'].sum()
-        # if 'Poisson' in segment:
-        #     df_res['successProbMean'] = 1 - (len(df[df[checkColumn] == 0]) / len(df))
+                df_res['sampleSize'][path] = len(df)
+        if 'Poisson' in segment:
+            full_df = full_df[full_df[projectColumn] >= steadyStart]
+            full_df = full_df[full_df[projectColumn] <= steadyEnd]
+            full_df = full_df.sort_values(by=[projectColumn], ignore_index=True)
+            df_res['DelayMean'] = np.average(full_df['QueuingDelay'])
+            df_res['DelayStd'] = full_df['QueuingDelay'].std()
+            df_res['first'] = full_df['Time'].iloc[0]
+            df_res['last'] = full_df['Time'].iloc[-1]
+            df_res['sampleSize'] = len(full_df)
+            df_res['successProbMean'] = 1 - full_df['DropProb'].mean()
+            df_res['successProbStd'] = full_df['DropProb'].std()
+            print(len(full_df))
         dfs[df_name] = df_res
     return dfs
 

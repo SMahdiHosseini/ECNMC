@@ -26,9 +26,9 @@ PoissonSampler::PoissonSampler(const Time &steadyStartTime, const Time &steadySt
     _sampleRate = sampleRate;
     zeroDelayPort = 0;
     samplesDropMean = 0;
-    samplesDropVariance = 0;
-    sampleMean.push_back(Seconds(0));
-    unbiasedSmapleVariance.push_back(Seconds(0));
+    samplesDropVariance = 0.0;
+    sampleMean.push_back(0);
+    unbiasedSmapleVariance.push_back(0.0);
     sampleSize.push_back(0);
     // packetCDF.loadCDFData("/media/experiments/ns-allinone-3.41/ns-3.41/scratch/ECNMC/Helpers/packet_size_cdf.csv");
     packetCDF.loadCDFData("/media/experiments/ns-allinone-3.41/ns-3.41/scratch/ECNMC/Helpers/packet_size_cdf_singleQueue.csv");
@@ -154,10 +154,10 @@ void PoissonSampler::updateCounters(samplingEvent* event) {
     double delta = (event->GetMarkingProb() - samplesDropMean);
     samplesDropMean = samplesDropMean + (delta / sampleSize[0]);
     if (sampleSize[0] <= 1) {
-        samplesDropVariance = 0;
+        samplesDropVariance = 0.0;
     }
     else {
-        samplesDropVariance = samplesDropVariance + ((delta* delta) / sampleSize[0]) - (samplesDropVariance / (sampleSize[0] - 1));
+        samplesDropVariance = samplesDropVariance + ((delta * delta) / (double) sampleSize[0]) - (samplesDropVariance / (double) (sampleSize[0] - 1));
     }
 }
 
@@ -211,12 +211,17 @@ void PoissonSampler::SaveMonitorRecords(const string& filename) {
     ofstream outfile;
     outfile.open(filename);
     outfile << "sampleDelayMean,unbiasedSmapleDelayVariance,sampleSize,samplesDropMean,samplesDropVariance,GTSampleSize,GTPacketSizeMean,GTDropMean,GTQueuingDelay" << endl;
-    outfile << sampleMean[0].GetNanoSeconds() << "," << unbiasedSmapleVariance[0].GetNanoSeconds() << "," << sampleSize[0] << "," << samplesDropMean << "," << samplesDropVariance << "," << numOfGTSamples << "," << GTPacketSizeMean << "," << GTDropMean << "," << GTQueuingDelay << endl;
-    outfile << "Time,QueuingDelay,DropProb" << endl;
-    for (auto &item : _recordedSamples) {
-        outfile << item.second->GetSampleTime().GetNanoSeconds() << "," << (item.second->GetDepartureTime() - item.second->GetSampleTime()).GetNanoSeconds() << "," << item.second->GetMarkingProb() << endl;
-    }
+    outfile << sampleMean[0] << "," << unbiasedSmapleVariance[0] << "," << sampleSize[0] << "," << samplesDropMean << "," << samplesDropVariance << "," << numOfGTSamples << "," << GTPacketSizeMean << "," << GTDropMean << "," << GTQueuingDelay << endl;
     outfile.close();
+
+    ofstream eventsFile;
+    eventsFile.open(filename.substr(0, filename.size() - 4) + "_events.csv");
+
+    eventsFile << "Time,QueuingDelay,DropProb" << endl;
+    for (auto &item : _recordedSamples) {
+        eventsFile << item.second->GetSampleTime().GetNanoSeconds() << "," << (item.second->GetDepartureTime() - item.second->GetSampleTime()).GetNanoSeconds() << "," << item.second->GetMarkingProb() << endl;
+    }
+    eventsFile.close();
     // if (_monitorTag == "SD0") {
     //     packetCDF.printCDF();
     // }

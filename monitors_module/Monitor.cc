@@ -31,13 +31,13 @@ void Monitor::AddAppKey(AppKey appKey) {
 
 void Monitor::updateBasicCounters(Time _sentTime, Time _receivedTime, int path) {
     sampleSize[path] += 1;
-    Time delta = (_receivedTime - _sentTime - sampleMean[path]);
-    sampleMean[path] = sampleMean[path] + Time(delta.GetNanoSeconds() / sampleSize[path]);
+    int32_t delta = (_receivedTime - _sentTime).GetNanoSeconds() - sampleMean[path];
+    sampleMean[path] = sampleMean[path] + ((double) delta / (double) sampleSize[path]);
     if (sampleSize[path] <= 1) {
-        unbiasedSmapleVariance[path] = Time(0);
+        unbiasedSmapleVariance[path] = 0.0;
     }
     else {
-        unbiasedSmapleVariance[path] = unbiasedSmapleVariance[path] + Time((delta.GetNanoSeconds() * delta.GetNanoSeconds()) / sampleSize[path]) - Time(unbiasedSmapleVariance[path].GetNanoSeconds() / (sampleSize[path] - 1));
+        unbiasedSmapleVariance[path] = unbiasedSmapleVariance[path] + (((double) delta * (double) delta) / (double) sampleSize[path]) - (unbiasedSmapleVariance[path] / (double) (sampleSize[path] - 1));
     }  
 }
 string Monitor::GetMonitorTag() const { return _monitorTag; }
