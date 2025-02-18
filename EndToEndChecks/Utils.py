@@ -198,6 +198,7 @@ def calculate_offline_computations(__ns3_path, rate, segment, experiment, result
                 df['Delay'] = df['Delay'] * df['InterArrivalTime']
                 df_res['timeAverage'][path] = df['Delay'].sum() / df['InterArrivalTime'].sum()
                 df_res['sampleSize'][path] = len(df)
+                # TODO: move prob calculation here
         if 'Poisson' in segment:
             full_df = full_df[full_df[projectColumn] >= steadyStart]
             full_df = full_df[full_df[projectColumn] <= steadyEnd]
