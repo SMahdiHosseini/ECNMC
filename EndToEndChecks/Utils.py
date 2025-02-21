@@ -9,6 +9,59 @@ from scipy.stats import anderson
 from scipy.stats import f_oneway, kruskal
 import json as js
 
+import csv
+from collections import defaultdict
+
+class PacketCDF:
+    def __init__(self):
+        self.packet_count = defaultdict(int)  # Stores count of each packet size
+        self.packet_cdf = {}  # Stores CDF values for each packet size
+        self.total_packets = 0  # Total number of packets observed
+
+    def load_cdf_data(self, filename):
+        with open(filename, 'r') as file:
+            reader = csv.reader(file)
+            next(reader)  # Skip the header
+            for row in reader:
+                if len(row) >= 2:
+                    packet_size = int(row[0])
+                    cdf_value = float(row[1])
+                    self.packet_cdf[packet_size] = cdf_value
+    
+    def add_packet(self, packet_size):
+        """ Adds a new packet size and updates the CDF."""
+        self.packet_count[packet_size] += 1
+        self.total_packets += 1
+        self._update_cdf()
+
+    def calculate_probability_greater_than(self, threshold):
+        """ Computes the probability of a packet size being greater than the given threshold."""
+        for size in sorted(self.packet_cdf.keys()):
+            if size > threshold:
+                return 1.0 - self.packet_cdf[size]
+        return 0.0
+
+    def print_cdf(self):
+        """ Prints the CDF values for debugging or verification."""
+        print("packet_size,cdf")
+        for size, cdf in self.packet_cdf.items():
+            print(f"{size},{cdf}")
+
+    def _update_cdf(self):
+        """ Updates the cumulative distribution function (CDF) after adding a packet."""
+        cumulative_probability = 0.0
+        sorted_sizes = sorted(self.packet_count.keys())
+        
+        for size in sorted_sizes:
+            count = self.packet_count[size]
+            cumulative_probability += count / self.total_packets
+            self.packet_cdf[size] = cumulative_probability
+        
+        # Ensure the last CDF value is exactly 1.0
+        if self.packet_cdf:
+            last_key = sorted_sizes[-1]
+            self.packet_cdf[last_key] = 1.0
+            
 plt.style.use('ggplot')
 plt.rcParams['figure.figsize'] = (40, 20)
 plt.rcParams.update({
@@ -57,6 +110,9 @@ def calculate_drop_rate(__ns3_path, steadyStart, steadyEnd, rate, segments, chec
     # if len([value for value in swtiches_dropRates.values() if value != 0]) == 0:
     #     return 0
     # return sum([value for value in swtiches_dropRates.values() if value != 0]) / len([value for value in swtiches_dropRates.values() if value != 0])
+
+def calculate_avgDrop_rate_offline(endToEnd_dfs, paths):
+    return 1 - sum([endToEnd_dfs[flow]['successProbMean'][p] * endToEnd_dfs[flow]['sampleSize'][p] for p in range(len(paths)) for flow in endToEnd_dfs.keys()]) / sum([endToEnd_dfs[flow]['sampleSize'][p] for p in range(len(paths)) for flow in endToEnd_dfs.keys()])
 
 def calculate_drop_rate_online(endToEnd_dfs, paths):
     loss_sum = 0
@@ -162,8 +218,61 @@ def read_online_computations(__ns3_path, rate, segment, experiment, results_fold
             df['enqueueTimeAvgSuccessProb'] = 1 - df['enqueueTimeAvgSuccessProb']
             dfs[df_name] = df.to_dict()
     return dfs
+def calculate_offline_E2E_workload(full_df, df_res, steadyStart, steadyEnd):
+    full_df_ = full_df.copy()
+    for path in full_df_['Path'].unique():
+        df = full_df_[full_df_['Path'] == path]
+        df_res['worklaod'][path] = df['PayloadSize'].sum() * 8 / (steadyEnd - steadyStart)
+    full_df_ = None
+    return df_res
 
-def calculate_offline_computations(__ns3_path, rate, segment, experiment, results_folder, steadyStart, steadyEnd, projectColumn, removeDrops=True, checkColumn="", linksRates=[], linkDelays=[]):
+def calculate_offline_E2E_lossRates(__ns3_path, full_df, df_res, checkColumn, linksRate, swtichDstREDQueueDiscMaxSize):
+    packets_cfd = PacketCDF()
+    packets_cfd.load_cdf_data('{}/scratch/ECNMC/Helpers/packet_size_cdf_singleQueue.csv'.format(__ns3_path))
+    full_df_ = full_df[full_df['SentTime'] != -1].copy()
+    for path in full_df_['Path'].unique():
+        df = full_df_[full_df_['Path'] == path]
+        df_res['successProbMean'][path] = 1 - (len(df[df[checkColumn] == 0]) / len(df))
+        df = df.sort_values(by='SentTime').reset_index(drop=True)
+        df['dropProb'] = df.apply(lambda x: packets_cfd.calculate_probability_greater_than(max(swtichDstREDQueueDiscMaxSize - (x['Delay'] * linksRate / 8), x['PayloadSize'])) if x[checkColumn] != 0 else 1.0, axis=1)
+        df['InterArrivalTime'] = df['SentTime'].diff().fillna(0)
+        df['dropProb'] = df['dropProb'] * df['InterArrivalTime']
+        df_res['enqueueTimeAvgSuccessProb'][path] = 1 - (df['dropProb'].sum() / df['InterArrivalTime'].sum())
+    full_df_ = None
+    return df_res
+
+def calculate_offline_E2E_delays(full_df, removeDrops, checkColumn, df_res):
+    full_df_ = full_df.copy()
+    if removeDrops:
+        full_df_ = full_df_[full_df_[checkColumn] == 1]
+    # DelayMean is the time average of the delay over the SentTime, which is the integral of interarrival time * delay over the total time
+    for path in full_df_['Path'].unique():
+        df = full_df_[full_df_['Path'] == path]
+        df = df.sort_values(by='SentTime').reset_index(drop=True)
+        df_res['DelayStd'][path] = df['Delay'].std()
+        # calculate the delay mean based on the welford algorithm
+        df_res['DelayMean'][path] = np.average(df['Delay'])
+        df_res['first'][path] = df['SentTime'].iloc[0]
+        df_res['last'][path] = df['SentTime'].iloc[-1]
+        df['InterArrivalTime'] = df['SentTime'].diff().fillna(0)
+        df['Delay'] = df['Delay'] * df['InterArrivalTime']
+        df_res['timeAverage'][path] = df['Delay'].sum() / df['InterArrivalTime'].sum()
+        df_res['sampleSize'][path] = len(df)
+    full_df_ = None
+    return df_res
+
+def prune_data(full_df, projectColumn, steadyStart, steadyEnd):
+    full_df = full_df[full_df[projectColumn] >= steadyStart]
+    full_df = full_df[full_df[projectColumn] <= steadyEnd]
+    full_df = full_df.sort_values(by=[projectColumn], ignore_index=True)
+    return full_df
+
+def timeShift_data(full_df, linkDelays, linksRates):
+    full_df['Delay'] = abs(full_df['ReceiveTime'] - full_df['SentTime'] - full_df['transmissionDelay'])
+    full_df['SentTime'] = full_df['SentTime'] + linkDelays[0] + (full_df['PayloadSize'] * 8) / linksRates[0]
+    return full_df
+
+def calculate_offline_computations(__ns3_path, rate, segment, experiment, results_folder, steadyStart, steadyEnd, projectColumn, removeDrops=True, checkColumn="", linksRates=[], linkDelays=[], swtichDstREDQueueDiscMaxSize=0):
     file_paths = glob.glob('{}/scratch/{}/{}/{}/*_{}.csv'.format(__ns3_path, results_folder, rate, experiment, segment))
     dfs = {}
     for file_path in file_paths:
@@ -177,32 +286,16 @@ def calculate_offline_computations(__ns3_path, rate, segment, experiment, result
             df_res['first'] = {}
             df_res['last'] = {}
             df_res['sampleSize'] = {}
-            if removeDrops:
-                full_df = full_df[full_df[checkColumn] == 1]
-            full_df['Delay'] = abs(full_df['ReceiveTime'] - full_df['SentTime'] - full_df['transmissionDelay'])
-            full_df['SentTime'] = full_df['SentTime'] + linkDelays[0] + (full_df['PayloadSize'] * 8) / linksRates[0]
-            # pruning the E2E data to be align with the time they enqueued
-            full_df = full_df[full_df[projectColumn] >= steadyStart]
-            full_df = full_df[full_df[projectColumn] <= steadyEnd]
-            full_df = full_df.sort_values(by=[projectColumn], ignore_index=True)
-            # DelayMean is the time average of the delay over the SentTime, which is the integral of interarrival time * delay over the total time
-            for path in full_df['Path'].unique():
-                df = full_df[full_df['Path'] == path]
-                df = df.sort_values(by='SentTime').reset_index(drop=True)
-                df_res['DelayStd'][path] = df['Delay'].std()
-                # calculate the delay mean based on the welford algorithm
-                df_res['DelayMean'][path] = np.average(df['Delay'])
-                df_res['first'][path] = df['SentTime'].iloc[0]
-                df_res['last'][path] = df['SentTime'].iloc[-1]
-                df['InterArrivalTime'] = df['SentTime'].diff().fillna(0)
-                df['Delay'] = df['Delay'] * df['InterArrivalTime']
-                df_res['timeAverage'][path] = df['Delay'].sum() / df['InterArrivalTime'].sum()
-                df_res['sampleSize'][path] = len(df)
-                # TODO: move prob calculation here
+            df_res['successProbMean'] = {}
+            df_res['enqueueTimeAvgSuccessProb'] = {}
+            df_res['worklaod'] = {}
+            full_df = timeShift_data(full_df, linkDelays, linksRates)
+            full_df = prune_data(full_df, projectColumn, steadyStart, steadyEnd)
+            df_res = calculate_offline_E2E_lossRates(__ns3_path, full_df, df_res, checkColumn, linksRates[1], swtichDstREDQueueDiscMaxSize)
+            df_res = calculate_offline_E2E_delays(full_df, removeDrops, checkColumn, df_res)
+            df_res = calculate_offline_E2E_workload(full_df, df_res, steadyStart, steadyEnd)
         if 'Poisson' in segment:
-            full_df = full_df[full_df[projectColumn] >= steadyStart]
-            full_df = full_df[full_df[projectColumn] <= steadyEnd]
-            full_df = full_df.sort_values(by=[projectColumn], ignore_index=True)
+            full_df = prune_data(full_df, projectColumn, steadyStart, steadyEnd)
             df_res['DelayMean'] = np.average(full_df['QueuingDelay'])
             df_res['DelayStd'] = full_df['QueuingDelay'].std()
             df_res['first'] = full_df['Time'].iloc[0]
@@ -210,7 +303,6 @@ def calculate_offline_computations(__ns3_path, rate, segment, experiment, result
             df_res['sampleSize'] = len(full_df)
             df_res['successProbMean'] = 1 - full_df['DropProb'].mean()
             df_res['successProbStd'] = full_df['DropProb'].std()
-            print(len(full_df))
         dfs[df_name] = df_res
     return dfs
 
@@ -261,6 +353,8 @@ def convert_to_float(x):
         return float(x[:-2])
     elif 'us' in x:
         return float(x[:-2]) / 1000
+    elif 'KB'in x:
+        return float(x[:-2]) * 1000
     else:
         return float(x)
 

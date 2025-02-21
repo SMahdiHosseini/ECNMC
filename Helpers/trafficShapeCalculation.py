@@ -17,13 +17,16 @@ def read_csv_files_dask(directory):
     return ddf
 
 def compute_traffic_over_time_dask(ddf, path):
-    ddf['timestamp'] = dd.to_datetime(ddf['timestamp'], unit='s')
-    # keep rows before 20s
-    ddf = ddf[ddf['timestamp'] < '1970-01-01 00:00:30']
-    # Set the timestamp as the index
-    ddf = ddf.set_index('timestamp')
+    # ddf['timestamp'] = dd.to_datetime(ddf['timestamp'], unit='s')
+    # ddf = ddf[ddf['timestamp'] < '1970-01-01 00:00:01']
+    ddf = ddf[ddf['timestamp'] < 100]
+    ddf = ddf.sort_values(by='timestamp')
     # convert to pandas dataframe
     ddf = ddf.compute()
+    ddf = ddf.reset_index(drop=True)
+    # set seqNb 
+    ddf['seqNb'] = ddf.index
+    ddf.set_index('seqNb', inplace=True)
     ddf.to_csv('traffic_over_time_{}.csv'.format(path))
 
 def read_data_ready(path):
@@ -104,10 +107,10 @@ def main(directories):
     plot_traffic(traffics_over_time)
 
 # Directory containing the CSV files
-paths = [0, 1, 2]
+paths = [0]
 # directories = ['/home/mahdi/Documents/NAL/Data/chicago_2010_traffic_10min_2paths/path{}/TCP'.format(i) for i in paths]
-# directories = ['/media/experiments/chicago_2010_traffic_10min_2paths/path{}/TCP'.format(i) for i in paths]
-directories = ['/media/experiments/flow_csv_files_2009_new/path_group_1/TCP']
+directories = ['/media/experiments/chicago_2010_traffic_10min_2paths/path{}/TCP'.format(i) for i in paths]
+# directories = ['/media/experiments/flow_csv_files_2009_new/path_group_1/TCP']
 
 if __name__ == "__main__":
     main(directories)
