@@ -18,13 +18,14 @@ Time E2EMonitorEvent::GetTxDequeueTime() const { return _TxDequeuTime; }
 
 E2EMonitor::E2EMonitor(const Time &startTime, const Time &duration, const Time &steadyStartTime, const Time &steadyStopTime, const Ptr<PointToPointNetDevice> netDevice, const Ptr<Node> &rxNode, const string &monitorTag, double errorRate,
                        const DataRate &_hostToTorLinkRate, const DataRate &_torToAggLinkRate, const Time &_hostToTorLinkDelay) 
-: E2EMonitor(startTime, duration, steadyStartTime, steadyStopTime, netDevice, rxNode, monitorTag, errorRate, _hostToTorLinkRate, _torToAggLinkRate, _hostToTorLinkDelay, 2, 3, 10000) {
+: E2EMonitor(startTime, duration, steadyStartTime, steadyStopTime, netDevice, rxNode, nullptr, monitorTag, errorRate, _hostToTorLinkRate, _torToAggLinkRate, _hostToTorLinkDelay, 2, 3, 10000) {
     
 }
 
-E2EMonitor::E2EMonitor(const Time &startTime, const Time &duration, const Time &steadyStartTime, const Time &steadyStopTime, const Ptr<PointToPointNetDevice> netDevice, const Ptr<Node> &rxNode, const string &monitorTag, double errorRate,
+E2EMonitor::E2EMonitor(const Time &startTime, const Time &duration, const Time &steadyStartTime, const Time &steadyStopTime, const Ptr<PointToPointNetDevice> netDevice, const Ptr<Node> &rxNode, const Ptr<Node> &txNode, const string &monitorTag, double errorRate,
                        const DataRate &_hostToTorLinkRate, const DataRate &_torToAggLinkRate, const Time &_hostToTorLinkDelay, const int _numOfPaths, const int _numOfSegmetns, uint32_t queueCapacity) 
 : Monitor(startTime, duration, steadyStartTime, steadyStopTime, monitorTag) {
+    _txNode = txNode;
     numOfPaths = _numOfPaths;
     numOfSegmetns = _numOfSegmetns;
     _errorRate = errorRate;
@@ -88,6 +89,11 @@ void E2EMonitor::Capture(Ptr< const Packet > packet) {
     }
     PacketKey* packetKey = PacketKey::Packet2PacketKey(packet, FIRST_HEADER_PPP);
     if(_appsKey.count(AppKey::PacketKey2AppKey(*packetKey))) {
+        // if (!_observedAppsKey.count(AppKey::PacketKey2AppKey(*packetKey))) {
+        //     _observedAppsKey.insert(AppKey::PacketKey2AppKey(*packetKey));
+            traceNewSockets();
+        // }
+
         packetKey->SetPacketSize(packet->GetSize());
         E2EMonitorEvent* packetEvent;
         auto packetKeyEventPair = _recordedPackets.find(*packetKey);
@@ -138,6 +144,27 @@ void E2EMonitor::Enqueue(Ptr<const Packet> packet) {
         pktCopy->AddHeader(pppHeader);
         packetKey->SetPath(hash % numOfPaths);
         sentPackets[hash % numOfPaths] += 1;
+    }
+}
+
+void E2EMonitor::markingProbUpdate(uint32_t bytesMarked, uint32_t bytesAcked, double alpha) {
+    double F = 0.0;
+    if (bytesAcked > 0) {
+        F = bytesMarked * 1.0 / bytesAcked;
+    }
+    // cout << "Now: " << Simulator::Now().GetNanoSeconds() << " Bytes Acked: " << bytesAcked << " Bytes Marked: " << bytesMarked << " F: " <<  F << endl;
+    markingProbProcess.push_back(std::make_tuple(Simulator::Now(), bytesAcked, F));
+}
+
+void E2EMonitor::traceNewSockets() {
+    Ptr<TcpL4Protocol> tcp = _txNode->GetObject<TcpL4Protocol>();
+    ObjectMapValue sockets;
+    tcp->GetAttribute("SocketList", sockets);
+    for (auto it = sockets.Begin(); it != sockets.End(); ++it) {
+       if (tracesSockets.find(it->first) == tracesSockets.end()) {
+            tracesSockets[it->first] = DynamicCast<TcpSocketBase>(it->second);
+            tracesSockets[it->first]->GetCongestionControlAlgorithm()->GetObject<TcpDctcp>()->TraceConnectWithoutContext("CongestionEstimate", MakeCallback(&E2EMonitor::markingProbUpdate, this));
+       }
     }
 }
 
@@ -291,4 +318,12 @@ void E2EMonitor::SaveMonitorRecords(const string& filename) {
         packetsFile << event->IsReceived() << "," << event->GetReceivedTime().GetNanoSeconds() << "," << transmissionDelay.GetNanoSeconds() << "," << event->GetEcn() << endl;
     }
     packetsFile.close();
+
+    ofstream markingsFile;
+    markingsFile.open(filename.substr(0, filename.size() - 4) + "_markings.csv");
+    markingsFile << "Time,BytesAcked,MarkingProb" << endl;
+    for (auto &item : markingProbProcess) {
+        markingsFile << std::get<0>(item).GetNanoSeconds() << "," << std::get<1>(item) << "," << std::get<2>(item) << endl;
+    }
+    markingsFile.close();
 }

@@ -241,6 +241,19 @@ def calculate_offline_E2E_lossRates(__ns3_path, full_df, df_res, checkColumn, li
     full_df_ = None
     return df_res
 
+def calculate_offline_E2E_markingProb(full_df, df_res, checkColumn):
+    full_df_ = full_df[full_df['SentTime'] != -1].copy()
+    for path in full_df_['Path'].unique():
+        df = full_df_[full_df_['Path'] == path]
+        df['ECN'] = df.apply(lambda x: x['ECN'] if x[checkColumn] != 0 else 1, axis=1)
+        df_res['nonMarkingProbMean'][path] = (len(df[df['ECN'] == 0]) / len(df))
+        df = df.sort_values(by='SentTime').reset_index(drop=True)
+        df['InterArrivalTime'] = df['SentTime'].diff().fillna(0)
+        df['ECN'] = df['ECN'] * df['InterArrivalTime']
+        df_res['enqueueTimeAvgNonMarkingProb'][path] = 1 - (df['ECN'].sum() / df['InterArrivalTime'].sum())
+    full_df_ = None
+    return df_res
+
 def calculate_offline_E2E_delays(full_df, removeDrops, checkColumn, df_res):
     full_df_ = full_df.copy()
     if removeDrops:
@@ -267,19 +280,33 @@ def prune_data(full_df, projectColumn, steadyStart, steadyEnd):
     full_df = full_df.sort_values(by=[projectColumn], ignore_index=True)
     return full_df
 
-def timeShift_data(full_df, linkDelays, linksRates):
+def addRemoveTransmission_data(full_df, linkDelays, linksRates):
     full_df['Delay'] = abs(full_df['ReceiveTime'] - full_df['SentTime'] - full_df['transmissionDelay'])
     full_df['SentTime'] = full_df['SentTime'] + linkDelays[0] + (full_df['PayloadSize'] * 8) / linksRates[0]
     return full_df
 
-def calculate_offline_computations(__ns3_path, rate, segment, experiment, results_folder, steadyStart, steadyEnd, projectColumn, removeDrops=True, checkColumn="", linksRates=[], linkDelays=[], swtichDstREDQueueDiscMaxSize=0):
+def timeShift(full_df, timeColumn, sizeColumn, linkDelays, linksRates):
+    full_df[timeColumn] = full_df[timeColumn] - (linkDelays[0] * 2 + (full_df[sizeColumn] * 8) / linksRates[0] + linkDelays[1] * 2 + (full_df[sizeColumn] * 8) / linksRates[1])
+    return full_df
+
+def calculate_offline_computations(__ns3_path, rate, segment, experiment, results_folder, steadyStart, steadyEnd, projectColumn, removeDrops=True, checkColumn="", linksRates=[], linkDelays=[], swtichDstREDQueueDiscMaxSize=0, stats=None):
     file_paths = glob.glob('{}/scratch/{}/{}/{}/*_{}.csv'.format(__ns3_path, results_folder, rate, experiment, segment))
     dfs = {}
     for file_path in file_paths:
         df_res = {}
         df_name = file_path.split('/')[-1].split('_')[0]
         full_df = pd.read_csv(file_path)
-        if 'EndToEnd' in segment:
+        if 'EndToEnd_markings' in segment:
+            df_res = stats[df_name]
+            df_res['enqueueTimeAvgNonMarkingFractionProb'] = {}
+            full_df = timeShift(full_df, 'Time', 'BytesAcked', linkDelays, linksRates)
+            full_df = prune_data(full_df, projectColumn, steadyStart, steadyEnd)
+            for path in stats[df_name]['DelayMean'].keys():
+                full_df = full_df.sort_values(by='Time').reset_index(drop=True)
+                full_df['InterArrivalTime'] = full_df['Time'].diff().fillna(0)
+                full_df['MarkingProb'] = full_df['MarkingProb'] * full_df['InterArrivalTime']
+                df_res['enqueueTimeAvgNonMarkingFractionProb'][path] = 1 - (full_df['MarkingProb'].sum() / full_df['InterArrivalTime'].sum())
+        if 'EndToEnd_packets' in segment:
             df_res['DelayMean'] = {}
             df_res['timeAverage'] = {}
             df_res['DelayStd'] = {}
@@ -288,12 +315,15 @@ def calculate_offline_computations(__ns3_path, rate, segment, experiment, result
             df_res['sampleSize'] = {}
             df_res['successProbMean'] = {}
             df_res['enqueueTimeAvgSuccessProb'] = {}
+            df_res['nonMarkingProbMean'] = {}
+            df_res['enqueueTimeAvgNonMarkingProb'] = {}
             df_res['worklaod'] = {}
-            full_df = timeShift_data(full_df, linkDelays, linksRates)
+            full_df = addRemoveTransmission_data(full_df, linkDelays, linksRates)
             full_df = prune_data(full_df, projectColumn, steadyStart, steadyEnd)
             df_res = calculate_offline_E2E_lossRates(__ns3_path, full_df, df_res, checkColumn, linksRates[1], swtichDstREDQueueDiscMaxSize)
             df_res = calculate_offline_E2E_delays(full_df, removeDrops, checkColumn, df_res)
             df_res = calculate_offline_E2E_workload(full_df, df_res, steadyStart, steadyEnd)
+            df_res = calculate_offline_E2E_markingProb(full_df, df_res, checkColumn)
         if 'Poisson' in segment:
             full_df = prune_data(full_df, projectColumn, steadyStart, steadyEnd)
             df_res['DelayMean'] = np.average(full_df['QueuingDelay'])
@@ -303,6 +333,8 @@ def calculate_offline_computations(__ns3_path, rate, segment, experiment, result
             df_res['sampleSize'] = len(full_df)
             df_res['successProbMean'] = 1 - full_df['DropProb'].mean()
             df_res['successProbStd'] = full_df['DropProb'].std()
+            df_res['nonMarkingProbMean'] = 1 - full_df['MarkingProb'].mean()
+            df_res['nonMarkingProbStd'] = full_df['MarkingProb'].std()
         dfs[df_name] = df_res
     return dfs
 
@@ -363,6 +395,9 @@ def calc_epsilon(confidenceValue, segement_statistics):
 
 def calc_epsilon_loss(confidenceValue, segement_statistics):
     return (confidenceValue * segement_statistics['successProbStd']) / (np.sqrt(segement_statistics['sampleSize']) * segement_statistics['successProbMean'])
+
+def calc_epsilon_marking(confidenceValue, segement_statistics):
+    return (confidenceValue * segement_statistics['nonMarkingProbStd']) / (np.sqrt(segement_statistics['sampleSize']) * segement_statistics['nonMarkingProbMean'])
 
 def calc_epsilon_loss_2(confidenceValue, segement_statistics):
     return (confidenceValue * segement_statistics['successProbStd_2']) / (np.sqrt(segement_statistics['sampleSize']) * segement_statistics['successProbMean_2'])

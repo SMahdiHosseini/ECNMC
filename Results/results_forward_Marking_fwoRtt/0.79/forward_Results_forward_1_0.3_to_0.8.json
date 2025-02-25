@@ -1,0 +1,169 @@
+{
+    "MaxEpsilonIneqDelay": {
+        "A0D0": {
+            "A0": 1
+        }
+    },
+    "MaxEpsilonIneqSuccessProb": {
+        "E2E_eventAvg": {
+            "A0D0": {
+                "A0": 0
+            }
+        },
+        "sentTime_est": {
+            "A0D0": {
+                "A0": 1
+            }
+        },
+        "enqueueTime_est": {
+            "A0D0": {
+                "A0": 0
+            }
+        },
+        "poisson_sentTime_est": {
+            "0.5": {
+                "A0D0": {
+                    "A0": 1
+                }
+            }
+        }
+    },
+    "MaxEpsilonIneqNonMarkingProb": {
+        "E2E_eventAvg": {
+            "A0D0": {
+                "A0": 1
+            }
+        },
+        "sentTime_est_events": {
+            "A0D0": {
+                "A0": 0
+            }
+        },
+        "sentTime_est_probs": {
+            "A0D0": {
+                "A0": 0
+            }
+        }
+    },
+    "EndToEndDelayMean": {
+        "A0D0": {
+            "A0": [
+                42355.875626749534
+            ]
+        }
+    },
+    "EndToEndDelayStd": {
+        "A0D0": {
+            "A0": [
+                52972.631656193655
+            ]
+        }
+    },
+    "EndToEndSuccessProb": {
+        "E2E_eventAvg": {
+            "A0D0": {
+                "A0": [
+                    0.9843721824848229
+                ]
+            }
+        },
+        "sentTime_est": {
+            "A0D0": {
+                "A0": [
+                    0.9813521200014718
+                ]
+            }
+        },
+        "enqueueTime_est": {
+            "A0D0": {
+                "A0": [
+                    0.9706246836788297
+                ]
+            }
+        },
+        "poisson_sentTime_est": {
+            "0.5": {
+                "A0D0": {
+                    "A0": [
+                        0.981614222303393
+                    ]
+                }
+            }
+        }
+    },
+    "EndToEndNonMarkingProb": {
+        "E2E_eventAvg": {
+            "A0D0": {
+                "A0": [
+                    0.6466310031856705
+                ]
+            }
+        },
+        "sentTime_est_events": {
+            "A0D0": {
+                "A0": [
+                    0.6761939670276473
+                ]
+            }
+        },
+        "sentTime_est_probs": {
+            "A0D0": {
+                "A0": [
+                    0.8190773129020094
+                ]
+            }
+        }
+    },
+    "DropRate": [
+        0.015627817515177056
+    ],
+    "maxEpsilonDelay": {
+        "A0D0": {
+            "A0": [
+                0.052364972117783036
+            ]
+        }
+    },
+    "maxEpsilonSuccessProb": {
+        "A0D0": {
+            "A0": [
+                0.005045463009830139
+            ]
+        }
+    },
+    "maxEpsilonNonMarkingProb": {
+        "A0D0": {
+            "A0": [
+                0.030391421448372268
+            ]
+        }
+    },
+    "errors": {
+        "A0D0": {
+            "A0": [
+                0.01603701419467302
+            ]
+        }
+    },
+    "workLoad": {
+        "A0D0": {
+            "A0": [
+                0.299978912
+            ]
+        }
+    },
+    "AverageWorkLoad": 0.299978912,
+    "SD0Delaystd": [
+        53099.28313457773
+    ],
+    "SD0DelayMean": [
+        41687.33523977123
+    ],
+    "SD0successProbMean": [
+        0.9773462908051034
+    ],
+    "SD0nonMarkingProbMean": [
+        0.6467223933128025
+    ],
+    "experiments": 1
+}

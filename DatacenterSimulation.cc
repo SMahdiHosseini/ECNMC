@@ -173,6 +173,9 @@ void run_single_queue_simulation(int argc, char* argv[]) {
     // Config::SetDefault("ns3::RedQueueDisc::MaxSize", QueueSizeValue(QueueSize("1.8MB")));
     // DCTCP tracks instantaneous queue length only; so set QW = 1
     Config::SetDefault("ns3::RedQueueDisc::QW", DoubleValue(1));
+    Config::SetDefault("ns3::RedQueueDisc::Gentle", BooleanValue(false));
+    Config::SetDefault("ns3::RedQueueDisc::Wait", BooleanValue(false));
+    Config::SetDefault("ns3::RedQueueDisc::LInterm", DoubleValue(1));
     // DCTCP uses K > 1/7(C * RTT) and minTh = maxTh = K
     maxTh = minTh = 0.15;
     // Config::SetDefault("ns3::RedQueueDisc::MinTh", DoubleValue(minTh));
@@ -296,7 +299,7 @@ void run_single_queue_simulation(int argc, char* argv[]) {
     }
     ns3::PacketMetadata::Enable();
     // Monitor the packets between src Host 0 and dst Host 0
-    auto *S0D0Monitor = new E2EMonitor(startTime, Seconds(stof(steadyStopTime)) + convergenceTime, Seconds(stof(steadyStartTime)), Seconds(stof(steadyStopTime)), DynamicCast<PointToPointNetDevice>(srcHostsToSwitchNetDevices[0].Get(0)), dstHosts.Get(0), "A0D0", errorRate, DataRate(srcHostToSwitchLinkRate), DataRate(bottleneckLinkRate), Time(hostToSwitchLinkDelay), 1, 1, QueueSize(swtichDstREDQueueDiscMaxSize).GetValue());
+    auto *S0D0Monitor = new E2EMonitor(startTime, Seconds(stof(steadyStopTime)) + convergenceTime, Seconds(stof(steadyStartTime)), Seconds(stof(steadyStopTime)), DynamicCast<PointToPointNetDevice>(srcHostsToSwitchNetDevices[0].Get(0)), dstHosts.Get(0), srcHosts.Get(0), "A0D0", errorRate, DataRate(srcHostToSwitchLinkRate), DataRate(bottleneckLinkRate), Time(hostToSwitchLinkDelay), 1, 1, QueueSize(swtichDstREDQueueDiscMaxSize).GetValue());
     S0D0Monitor->AddAppKey(AppKey(srcHostsToSwitchIps[0].GetAddress(0), dstHostsToSwitchIps.GetAddress(0), 0, 0));
 
     // Ptr<PointToPointNetDevice> hostToSwitchrNetDevice = DynamicCast<PointToPointNetDevice>(srcHostsToSwitchNetDevices[0].Get(0));

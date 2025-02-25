@@ -62,6 +62,10 @@ private:
     double GTDropMean;
     Time lastItemTime;
     Time firstItemTime;
+    set<AppKey> _observedAppsKey;
+    Ptr<Node> _txNode;
+    std::vector<std::tuple<Time, uint32_t, double>> markingProbProcess;
+    unordered_map<uint64_t, Ptr<TcpSocketBase>> tracesSockets;
     std::unordered_map<PacketKey, E2EMonitorEvent*, PacketKeyHash> _recordedPackets;
     
     void Connect(Ptr<PointToPointNetDevice> netDevice, uint32_t rxNodeId);
@@ -73,10 +77,12 @@ private:
     uint64_t GetHashValue(const Ipv4Address src, const Ipv4Address dst, const uint16_t srcPort, const uint16_t dstPort, const uint8_t protocol);
     void updateTimeAverageIntegral(uint32_t path, Time delay, Time endTime);
     double calculateUnbiasedGTDrop();
+    void traceNewSockets();
+    void markingProbUpdate(uint32_t bytesMarked, uint32_t bytesAcked, double alpha);
 public:
     E2EMonitor(const Time &startTime, const Time &duration, const Time &steadyStartTime, const Time &steadyStopTime, const Ptr<PointToPointNetDevice> netDevice, const Ptr<Node> &rxNode, const string &monitorTag, const double errorRate, 
     const DataRate &hostToTorLinkRate, const DataRate &torToAggLinkRate, const Time &hostToTorLinkDelay);
-    E2EMonitor(const Time &startTime, const Time &duration, const Time &steadyStartTime, const Time &steadyStopTime, const Ptr<PointToPointNetDevice> netDevice, const Ptr<Node> &rxNode, const string &monitorTag, const double errorRate, 
+    E2EMonitor(const Time &startTime, const Time &duration, const Time &steadyStartTime, const Time &steadyStopTime, const Ptr<PointToPointNetDevice> netDevice, const Ptr<Node> &rxNode, const Ptr<Node> &txNode, const string &monitorTag, const double errorRate, 
     const DataRate &hostToTorLinkRate, const DataRate &torToAggLinkRate, const Time &hostToTorLinkDelay, const int numOfPaths, const int numOfSegmetns, uint32_t queueCapacity);
     void SaveMonitorRecords(const string &filename);
     void RecordPacket(Ptr<const Packet> packet);

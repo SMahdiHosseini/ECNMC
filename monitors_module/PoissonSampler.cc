@@ -11,10 +11,12 @@ void samplingEvent::SetSampleTime(Time t) { SetSent(t); }
 void samplingEvent::SetDepartureTime(Time t) { SetReceived(t); }
 void samplingEvent::SetDepartureTime() { SetReceived(ns3::Simulator::Now()); }
 void samplingEvent::SetMarkingProb(double markingProb) { _markingProb = markingProb; }
+void samplingEvent::SetLossProb(double lossProb) { _lossProb = lossProb; }
 PacketKey *samplingEvent::GetPacketKey() const { return _key; }
 Time samplingEvent::GetSampleTime() const { return GetSentTime(); }
 Time samplingEvent::GetDepartureTime() const { return GetReceivedTime(); }
 double samplingEvent::GetMarkingProb() const { return _markingProb; }
+double samplingEvent::GetLossProb() const { return _lossProb; }
 bool samplingEvent::IsDeparted() const { return GetReceivedTime() != Time(-1); }
 
 PoissonSampler::PoissonSampler(const Time &steadyStartTime, const Time &steadyStopTime, Ptr<RedQueueDisc> queueDisc, Ptr<Queue<Packet>> queue, Ptr<PointToPointNetDevice>  outgoingNetDevice, const string &sampleTag, double sampleRate) 
@@ -25,8 +27,10 @@ PoissonSampler::PoissonSampler(const Time &steadyStartTime, const Time &steadySt
     m_var->SetAttribute("Mean", DoubleValue(1/sampleRate));
     _sampleRate = sampleRate;
     zeroDelayPort = 0;
-    samplesDropMean = 0;
-    samplesDropVariance = 0.0;
+    samplesMarkingProbMean = 0.0;
+    samplesMarkingProbVariance = 0.0;
+    samplesLossProbMean = 0.0;
+    samplesLossProbVariance = 0.0;
     sampleMean.push_back(0);
     unbiasedSmapleVariance.push_back(0.0);
     sampleSize.push_back(0);
@@ -125,11 +129,13 @@ void PoissonSampler::EventHandler() {
         return;
     }
     
-    double dropProbDynamicCDF = 0;
+    double dropProbDynamicCDF = 0.0;
+    double markingProbDynamic = 0.0;
     uint32_t queueSize;
     if (REDQueueDisc != nullptr) {
         queueSize = REDQueueDisc->GetNBytes() + NetDeviceQueue->GetNBytes();
         dropProbDynamicCDF = packetCDF.calculateProbabilityGreaterThan(REDQueueDisc->GetMaxSize().GetValue() - REDQueueDisc->GetNBytes());
+        markingProbDynamic = REDQueueDisc->GetMarkingProbability();
     }
     else {
         queueSize = NetDeviceQueue->GetNBytes();
@@ -142,7 +148,8 @@ void PoissonSampler::EventHandler() {
     samplingEvent* event = new samplingEvent(packetKey);
     event->SetSampleTime(Simulator::Now());
     event->SetDepartureTime(Simulator::Now() + queuingDelay);
-    event->SetMarkingProb(dropProbDynamicCDF);
+    event->SetLossProb(dropProbDynamicCDF);
+    event->SetMarkingProb(markingProbDynamic);
     _recordedSamples[*packetKey] = event;
     // cout << "### EVENT ### " << "Time: " << Simulator::Now().GetNanoSeconds() << " Queuing delay: " << queuingDelay.GetNanoSeconds() << " Queue Size: " << queueSize << " Drop Prob: " << dropProbDynamicCDF << endl;
     updateCounters(event);
@@ -151,13 +158,22 @@ void PoissonSampler::EventHandler() {
 void PoissonSampler::updateCounters(samplingEvent* event) {
     updateBasicCounters(event->GetSampleTime(), event->GetDepartureTime(), 0);
     
-    double delta = (event->GetMarkingProb() - samplesDropMean);
-    samplesDropMean = samplesDropMean + (delta / sampleSize[0]);
+    double delta = (event->GetLossProb() - samplesLossProbMean);
+    samplesLossProbMean = samplesLossProbMean + (delta / sampleSize[0]);
     if (sampleSize[0] <= 1) {
-        samplesDropVariance = 0.0;
+        samplesLossProbVariance = 0.0;
     }
     else {
-        samplesDropVariance = samplesDropVariance + ((delta * delta) / (double) sampleSize[0]) - (samplesDropVariance / (double) (sampleSize[0] - 1));
+        samplesLossProbVariance = samplesLossProbVariance + ((delta * delta) / (double) sampleSize[0]) - (samplesLossProbVariance / (double) (sampleSize[0] - 1));
+    }
+
+    delta = (event->GetMarkingProb() - samplesMarkingProbMean);
+    samplesMarkingProbMean = samplesMarkingProbMean + (delta / sampleSize[0]);
+    if (sampleSize[0] <= 1) {
+        samplesMarkingProbVariance = 0.0;
+    }
+    else {
+        samplesMarkingProbVariance = samplesMarkingProbVariance + ((delta * delta) / (double) sampleSize[0]) - (samplesMarkingProbVariance / (double) (sampleSize[0] - 1));
     }
 }
 
@@ -210,16 +226,17 @@ void PoissonSampler::RecordPacket(Ptr<const Packet> packet) {
 void PoissonSampler::SaveMonitorRecords(const string& filename) {
     ofstream outfile;
     outfile.open(filename);
-    outfile << "sampleDelayMean,unbiasedSmapleDelayVariance,sampleSize,samplesDropMean,samplesDropVariance,GTSampleSize,GTPacketSizeMean,GTDropMean,GTQueuingDelay" << endl;
-    outfile << sampleMean[0] << "," << unbiasedSmapleVariance[0] << "," << sampleSize[0] << "," << samplesDropMean << "," << samplesDropVariance << "," << numOfGTSamples << "," << GTPacketSizeMean << "," << GTDropMean << "," << GTQueuingDelay << endl;
+    outfile << "sampleDelayMean,unbiasedSmapleDelayVariance,sampleSize,samplesDropMean,samplesDropVariance,samplesMarkingProbMean,samplesMarkingProbVariance,GTSampleSize,GTPacketSizeMean,GTDropMean,GTQueuingDelay" << endl;
+    outfile << sampleMean[0] << "," << unbiasedSmapleVariance[0] << "," << sampleSize[0] << "," << samplesLossProbMean << "," << samplesLossProbVariance << "," << samplesMarkingProbMean << "," << samplesMarkingProbVariance
+    << "," << numOfGTSamples << "," << GTPacketSizeMean << "," << GTDropMean << "," << GTQueuingDelay << endl;
     outfile.close();
 
     ofstream eventsFile;
     eventsFile.open(filename.substr(0, filename.size() - 4) + "_events.csv");
 
-    eventsFile << "Time,QueuingDelay,DropProb" << endl;
+    eventsFile << "Time,QueuingDelay,DropProb,MarkingProb" << endl;
     for (auto &item : _recordedSamples) {
-        eventsFile << item.second->GetSampleTime().GetNanoSeconds() << "," << (item.second->GetDepartureTime() - item.second->GetSampleTime()).GetNanoSeconds() << "," << item.second->GetMarkingProb() << endl;
+        eventsFile << item.second->GetSampleTime().GetNanoSeconds() << "," << (item.second->GetDepartureTime() - item.second->GetSampleTime()).GetNanoSeconds() << "," << item.second->GetLossProb() << "," << item.second->GetMarkingProb() << endl;
     }
     eventsFile.close();
     // if (_monitorTag == "SD0") {
