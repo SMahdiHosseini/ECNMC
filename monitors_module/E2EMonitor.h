@@ -64,8 +64,8 @@ private:
     Time firstItemTime;
     set<AppKey> _observedAppsKey;
     Ptr<Node> _txNode;
-    std::vector<std::tuple<Time, uint32_t, double>> markingProbProcess;
-    unordered_map<uint64_t, Ptr<TcpSocketBase>> tracesSockets;
+    std::vector<std::tuple<Time, uint32_t, double, Time>> markingProbProcess;
+    std::unordered_map<uint64_t, Ptr<TcpSocketBase>, Time, Time> tracesSockets;
     std::unordered_map<PacketKey, E2EMonitorEvent*, PacketKeyHash> _recordedPackets;
     
     void Connect(Ptr<PointToPointNetDevice> netDevice, uint32_t rxNodeId);
@@ -78,7 +78,8 @@ private:
     void updateTimeAverageIntegral(uint32_t path, Time delay, Time endTime);
     double calculateUnbiasedGTDrop();
     void traceNewSockets();
-    void markingProbUpdate(uint32_t bytesMarked, uint32_t bytesAcked, double alpha);
+    void markingProbUpdate(uint32_t bytesMarked, uint32_t bytesAcked, double alpha, Time rtt);
+    // void NewAck(SequenceNumber32 sqn);
 public:
     E2EMonitor(const Time &startTime, const Time &duration, const Time &steadyStartTime, const Time &steadyStopTime, const Ptr<PointToPointNetDevice> netDevice, const Ptr<Node> &rxNode, const string &monitorTag, const double errorRate, 
     const DataRate &hostToTorLinkRate, const DataRate &torToAggLinkRate, const Time &hostToTorLinkDelay);

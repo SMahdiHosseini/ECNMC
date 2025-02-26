@@ -147,15 +147,18 @@ void E2EMonitor::Enqueue(Ptr<const Packet> packet) {
     }
 }
 
-void E2EMonitor::markingProbUpdate(uint32_t bytesMarked, uint32_t bytesAcked, double alpha) {
+void E2EMonitor::markingProbUpdate(uint32_t bytesMarked, uint32_t bytesAcked, double alpha, Time rtt) {
     double F = 0.0;
     if (bytesAcked > 0) {
         F = bytesMarked * 1.0 / bytesAcked;
     }
     // cout << "Now: " << Simulator::Now().GetNanoSeconds() << " Bytes Acked: " << bytesAcked << " Bytes Marked: " << bytesMarked << " F: " <<  F << endl;
-    markingProbProcess.push_back(std::make_tuple(Simulator::Now(), bytesAcked, F));
+    markingProbProcess.push_back(std::make_tuple(Simulator::Now(), bytesAcked, F, rtt));
 }
 
+// void E2EMonitor::NewAck(SequenceNumber32 sqn) {
+    
+// }
 void E2EMonitor::traceNewSockets() {
     Ptr<TcpL4Protocol> tcp = _txNode->GetObject<TcpL4Protocol>();
     ObjectMapValue sockets;
@@ -163,6 +166,7 @@ void E2EMonitor::traceNewSockets() {
     for (auto it = sockets.Begin(); it != sockets.End(); ++it) {
        if (tracesSockets.find(it->first) == tracesSockets.end()) {
             tracesSockets[it->first] = DynamicCast<TcpSocketBase>(it->second);
+            // tracesSockets[it->first]->TraceConnectWithoutContext("HighestRxAck", MakeCallback(&E2EMonitor::NewAck, this));
             tracesSockets[it->first]->GetCongestionControlAlgorithm()->GetObject<TcpDctcp>()->TraceConnectWithoutContext("CongestionEstimate", MakeCallback(&E2EMonitor::markingProbUpdate, this));
        }
     }
@@ -321,9 +325,9 @@ void E2EMonitor::SaveMonitorRecords(const string& filename) {
 
     ofstream markingsFile;
     markingsFile.open(filename.substr(0, filename.size() - 4) + "_markings.csv");
-    markingsFile << "Time,BytesAcked,MarkingProb" << endl;
+    markingsFile << "Time,BytesAcked,MarkingProb,rtt" << endl;
     for (auto &item : markingProbProcess) {
-        markingsFile << std::get<0>(item).GetNanoSeconds() << "," << std::get<1>(item) << "," << std::get<2>(item) << endl;
+        markingsFile << std::get<0>(item).GetNanoSeconds() << "," << std::get<1>(item) << "," << std::get<2>(item) << "," << std::get<3>(item).GetNanoSeconds() << endl;
     }
     markingsFile.close();
 }

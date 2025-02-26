@@ -75,6 +75,7 @@ def check_all_nonMarkingProbConsistency(endToEnd_statistics, samples_paths_aggre
             res['MaxEpsilonIneq'][flow][path]['E2E_eventAvg'] = check_MaxEpsilon_ineq_nonMarkingProb(np.log(endToEnd_statistics[flow][path]['nonMarkingProbMean']['E2E_eventAvg']), samples_paths_aggregated_statistics[flow][path], number_of_segments)
             res['MaxEpsilonIneq'][flow][path]['sentTime_est_events'] = check_MaxEpsilon_ineq_nonMarkingProb(np.log(endToEnd_statistics[flow][path]['nonMarkingProbMean']['sentTime_est_events']), samples_paths_aggregated_statistics[flow][path], number_of_segments)
             res['MaxEpsilonIneq'][flow][path]['sentTime_est_probs'] = check_MaxEpsilon_ineq_nonMarkingProb(np.log(endToEnd_statistics[flow][path]['nonMarkingProbMean']['sentTime_est_probs']), samples_paths_aggregated_statistics[flow][path], number_of_segments)
+            res['MaxEpsilonIneq'][flow][path]['possion_est_probs'] = check_MaxEpsilon_ineq_nonMarkingProb(np.log(endToEnd_statistics[flow][path]['nonMarkingProbMean']['possion_est_probs']), samples_paths_aggregated_statistics[flow][path], number_of_segments)
             # print(flow, path, endToEnd_statistics[flow][path]['successProbMean']['sentTime_est'], np.exp(samples_paths_aggregated_statistics[flow][path]['successProbMean']))
     return res
 
@@ -90,6 +91,7 @@ def prepare_results(flows, queues, num_of_paths):
     rounds_results['MaxEpsilonIneqNonMarkingProb']['E2E_eventAvg'] = {}
     rounds_results['MaxEpsilonIneqNonMarkingProb']['sentTime_est_events'] = {}
     rounds_results['MaxEpsilonIneqNonMarkingProb']['sentTime_est_probs'] = {}
+    rounds_results['MaxEpsilonIneqNonMarkingProb']['possion_est_probs'] = {}
     rounds_results['EndToEndDelayMean'] = {}
     rounds_results['EndToEndDelayStd'] = {}
     rounds_results['EndToEndSuccessProb'] = {}
@@ -104,6 +106,7 @@ def prepare_results(flows, queues, num_of_paths):
     rounds_results['EndToEndNonMarkingProb']['E2E_eventAvg'] = {}
     rounds_results['EndToEndNonMarkingProb']['sentTime_est_events'] = {}
     rounds_results['EndToEndNonMarkingProb']['sentTime_est_probs'] = {}
+    rounds_results['EndToEndNonMarkingProb']['possion_est_probs'] = {}
     rounds_results['DropRate'] = []
     rounds_results['maxEpsilonDelay'] = {}
     rounds_results['maxEpsilonSuccessProb'] = {}
@@ -127,9 +130,11 @@ def prepare_results(flows, queues, num_of_paths):
         rounds_results['MaxEpsilonIneqNonMarkingProb']['E2E_eventAvg'][flow] = {}
         rounds_results['MaxEpsilonIneqNonMarkingProb']['sentTime_est_events'][flow] = {}
         rounds_results['MaxEpsilonIneqNonMarkingProb']['sentTime_est_probs'][flow] = {}
+        rounds_results['MaxEpsilonIneqNonMarkingProb']['possion_est_probs'][flow] = {}
         rounds_results['EndToEndNonMarkingProb']['E2E_eventAvg'][flow] = {}
         rounds_results['EndToEndNonMarkingProb']['sentTime_est_events'][flow] = {}
         rounds_results['EndToEndNonMarkingProb']['sentTime_est_probs'][flow] = {}
+        rounds_results['EndToEndNonMarkingProb']['possion_est_probs'][flow] = {}
         rounds_results['EndToEndDelayMean'][flow] = {}
         rounds_results['EndToEndDelayStd'][flow] = {}
         rounds_results['EndToEndSuccessProb']['E2E_eventAvg'][flow] = {}
@@ -152,9 +157,11 @@ def prepare_results(flows, queues, num_of_paths):
             rounds_results['MaxEpsilonIneqNonMarkingProb']['E2E_eventAvg'][flow]['A' + str(i)] = 0
             rounds_results['MaxEpsilonIneqNonMarkingProb']['sentTime_est_events'][flow]['A' + str(i)] = 0
             rounds_results['MaxEpsilonIneqNonMarkingProb']['sentTime_est_probs'][flow]['A' + str(i)] = 0
+            rounds_results['MaxEpsilonIneqNonMarkingProb']['possion_est_probs'][flow]['A' + str(i)] = 0
             rounds_results['EndToEndNonMarkingProb']['E2E_eventAvg'][flow]['A' + str(i)] = []
             rounds_results['EndToEndNonMarkingProb']['sentTime_est_events'][flow]['A' + str(i)] = []
             rounds_results['EndToEndNonMarkingProb']['sentTime_est_probs'][flow]['A' + str(i)] = []
+            rounds_results['EndToEndNonMarkingProb']['possion_est_probs'][flow]['A' + str(i)] = []
             rounds_results['EndToEndDelayMean'][flow]['A' + str(i)] = []
             rounds_results['EndToEndDelayStd'][flow]['A' + str(i)] = []
             rounds_results['EndToEndSuccessProb']['E2E_eventAvg'][flow]['A' + str(i)] = []
@@ -197,6 +204,8 @@ def compatibility_check(rounds_results, samples_paths_aggregated_statistics, end
                 rounds_results['MaxEpsilonIneqNonMarkingProb']['sentTime_est_events'][flow][path] += 1
             if nonMarkingProb_results['MaxEpsilonIneq'][flow][path]['sentTime_est_probs']:
                 rounds_results['MaxEpsilonIneqNonMarkingProb']['sentTime_est_probs'][flow][path] += 1
+            if nonMarkingProb_results['MaxEpsilonIneq'][flow][path]['possion_est_probs']:
+                rounds_results['MaxEpsilonIneqNonMarkingProb']['possion_est_probs'][flow][path] += 1
 
 
 def sample_endToEnd_packets(ns3_path, rate, segment, experiment, results_folder, _sample_rate, e2e_delays):
@@ -317,9 +326,11 @@ def analyze_single_experiment(return_dict, rate, queues_names, confidenceValue, 
             endToEnd_statistics[flow][path]['nonMarkingProbMean']['E2E_eventAvg'] = endToEndStats[flow]['nonMarkingProbMean'][int(path[1])]
             endToEnd_statistics[flow][path]['nonMarkingProbMean']['sentTime_est_events'] = endToEndStats[flow]['enqueueTimeAvgNonMarkingProb'][int(path[1])]
             endToEnd_statistics[flow][path]['nonMarkingProbMean']['sentTime_est_probs'] = endToEndStats[flow]['enqueueTimeAvgNonMarkingFractionProb'][int(path[1])]
+            endToEnd_statistics[flow][path]['nonMarkingProbMean']['possion_est_probs'] = endToEndStats[flow]['nonMarkingProbReceiverF'][int(path[1])]
             rounds_results['EndToEndNonMarkingProb']['E2E_eventAvg'][flow][path].append(endToEndStats[flow]['nonMarkingProbMean'][int(path[1])])
             rounds_results['EndToEndNonMarkingProb']['sentTime_est_events'][flow][path].append(endToEndStats[flow]['enqueueTimeAvgNonMarkingProb'][int(path[1])])
             rounds_results['EndToEndNonMarkingProb']['sentTime_est_probs'][flow][path].append(endToEndStats[flow]['enqueueTimeAvgNonMarkingFractionProb'][int(path[1])])
+            rounds_results['EndToEndNonMarkingProb']['possion_est_probs'][flow][path].append(endToEndStats[flow]['nonMarkingProbReceiverF'][int(path[1])])
             rounds_results['EndToEndSuccessProb']['E2E_eventAvg'][flow][path].append(endToEndStats[flow]['successProbMean'][int(path[1])])
             rounds_results['EndToEndSuccessProb']['sentTime_est'][flow][path].append(successProbs[flow]['timeAvgSuccessProb'][path])
             rounds_results['EndToEndSuccessProb']['enqueueTime_est'][flow][path].append(endToEndStats[flow]['enqueueTimeAvgSuccessProb'][int(path[1])])
@@ -366,11 +377,13 @@ def merge_results(return_dict, merged_results, flows, queues, num_of_paths):
                 merged_results['MaxEpsilonIneqNonMarkingProb']['E2E_eventAvg'][flow]['A' + str(i)] += return_dict[exp]['MaxEpsilonIneqNonMarkingProb']['E2E_eventAvg'][flow]['A' + str(i)]
                 merged_results['MaxEpsilonIneqNonMarkingProb']['sentTime_est_events'][flow]['A' + str(i)] += return_dict[exp]['MaxEpsilonIneqNonMarkingProb']['sentTime_est_events'][flow]['A' + str(i)]
                 merged_results['MaxEpsilonIneqNonMarkingProb']['sentTime_est_probs'][flow]['A' + str(i)] += return_dict[exp]['MaxEpsilonIneqNonMarkingProb']['sentTime_est_probs'][flow]['A' + str(i)]
+                merged_results['MaxEpsilonIneqNonMarkingProb']['possion_est_probs'][flow]['A' + str(i)] += return_dict[exp]['MaxEpsilonIneqNonMarkingProb']['possion_est_probs'][flow]['A' + str(i)]
                 merged_results['EndToEndDelayMean'][flow]['A' + str(i)] += return_dict[exp]['EndToEndDelayMean'][flow]['A' + str(i)]
                 merged_results['EndToEndDelayStd'][flow]['A' + str(i)] += return_dict[exp]['EndToEndDelayStd'][flow]['A' + str(i)]
                 merged_results['EndToEndNonMarkingProb']['E2E_eventAvg'][flow]['A' + str(i)] += return_dict[exp]['EndToEndNonMarkingProb']['E2E_eventAvg'][flow]['A' + str(i)]
                 merged_results['EndToEndNonMarkingProb']['sentTime_est_events'][flow]['A' + str(i)] += return_dict[exp]['EndToEndNonMarkingProb']['sentTime_est_events'][flow]['A' + str(i)]
                 merged_results['EndToEndNonMarkingProb']['sentTime_est_probs'][flow]['A' + str(i)] += return_dict[exp]['EndToEndNonMarkingProb']['sentTime_est_probs'][flow]['A' + str(i)]
+                merged_results['EndToEndNonMarkingProb']['possion_est_probs'][flow]['A' + str(i)] += return_dict[exp]['EndToEndNonMarkingProb']['possion_est_probs'][flow]['A' + str(i)]
                 merged_results['EndToEndSuccessProb']['E2E_eventAvg'][flow]['A' + str(i)] += return_dict[exp]['EndToEndSuccessProb']['E2E_eventAvg'][flow]['A' + str(i)]
                 merged_results['EndToEndSuccessProb']['sentTime_est'][flow]['A' + str(i)] += return_dict[exp]['EndToEndSuccessProb']['sentTime_est'][flow]['A' + str(i)]
                 merged_results['EndToEndSuccessProb']['enqueueTime_est'][flow]['A' + str(i)] += return_dict[exp]['EndToEndSuccessProb']['enqueueTime_est'][flow]['A' + str(i)]
@@ -417,7 +430,9 @@ def analyze_all_experiments(rate, steadyStart, steadyEnd, confidenceValue, dir, 
         print("{} joind".format(i))
     merged_results['AverageWorkLoad'] = sum(merged_results['AverageWorkLoad']) / merged_results['experiments']
     print("average drop rate =", np.average(merged_results['DropRate']) * 100, "%", "average queue capacity usage = ", np.average(merged_results['SD0DelayMean']) * 0.6 * rate / 800, "%", "Delay consistency check " , merged_results['MaxEpsilonIneqDelay']['A0D0']["A0"] / merged_results['experiments'] * 100)
-    with open('../Results/results_{}/{}/{}_{}_{}_{}_to_{}.json'.format(dir, rate, dir, results_folder, experiments_end, steadyStart, steadyEnd), 'w') as f:
+    with open('../Results/results_{}/{}/receiverF_{}_{}_{}_{}_to_{}.json'.format(dir, rate, dir, results_folder, experiments_end, steadyStart, steadyEnd), 'w') as f:
+    # with open('../Results/results_{}/{}/WOtimeShift_{}_{}_{}_{}_to_{}.json'.format(dir, rate, dir, results_folder, experiments_end, steadyStart, steadyEnd), 'w') as f:
+    # with open('../Results/results_{}/{}/WtimeShift_{}_{}_{}_{}_to_{}.json'.format(dir, rate, dir, results_folder, experiments_end, steadyStart, steadyEnd), 'w') as f:
         js.dump(merged_results, f, indent=4)
 
 # main function

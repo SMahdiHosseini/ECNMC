@@ -11,6 +11,8 @@ import json as js
 
 import csv
 from collections import defaultdict
+estimation_gain = 0.0625
+init_alpha = 1
 
 class PacketCDF:
     def __init__(self):
@@ -218,6 +220,42 @@ def read_online_computations(__ns3_path, rate, segment, experiment, results_fold
             df['enqueueTimeAvgSuccessProb'] = 1 - df['enqueueTimeAvgSuccessProb']
             dfs[df_name] = df.to_dict()
     return dfs
+
+def calculate_offline_switch_congestionEstimation(full_df_, df_res):
+    full_df = full_df_.copy()
+    congestionEst = np.zeros(len(full_df))
+    congestionEst[0] = init_alpha
+    for i in range(1, len(full_df)):
+        congestionEst[i] = congestionEst[i-1] * (1 - estimation_gain) + full_df.loc[i, "MarkingProb"] * estimation_gain
+    full_df["congestionEst"] = congestionEst
+    df_res['congestionEstMean'] = full_df['congestionEst'].mean()
+    df_res['congestionEstStd'] = full_df['congestionEst'].std()
+    return df_res
+
+def calculate_offline_E2E_markingFraction(full_df_, paths, df_res):
+    full_df = full_df_.copy()
+    full_df['MarkingProb'] = full_df.apply(lambda x: x['MarkingProb'] if x['BytesAcked'] != 0 else 1, axis=1)
+    for path in paths:
+        full_df = full_df.sort_values(by='Time').reset_index(drop=True)
+        full_df['InterArrivalTime'] = full_df['Time'].diff().fillna(0)
+        full_df['MarkingProb'] = full_df['MarkingProb'] * full_df['InterArrivalTime']
+        df_res['enqueueTimeAvgNonMarkingFractionProb'][path] = 1 - (full_df['MarkingProb'].sum() / full_df['InterArrivalTime'].sum())
+    return df_res
+
+def calculate_offline_E2E_congestionEstimation(full_df_, paths, df_res):
+    full_df = full_df_.copy()
+    for path in paths:
+        congestionEst = np.zeros(len(full_df))
+        congestionEst[0] = init_alpha
+        for i in range(1, len(full_df)):
+            congestionEst[i] = congestionEst[i-1] * (1 - estimation_gain) + full_df.loc[i, "MarkingProb"] * estimation_gain
+        full_df["congestionEst"] = congestionEst
+        full_df = full_df.sort_values(by='Time').reset_index(drop=True)
+        full_df['InterArrivalTime'] = full_df['Time'].diff().fillna(0)
+        full_df['congestionEst'] = full_df['congestionEst'] * full_df['InterArrivalTime']
+        df_res['congestionEst'][path] = full_df['congestionEst'].sum() / full_df['InterArrivalTime'].sum()
+    return df_res
+
 def calculate_offline_E2E_workload(full_df, df_res, steadyStart, steadyEnd):
     full_df_ = full_df.copy()
     for path in full_df_['Path'].unique():
@@ -241,13 +279,58 @@ def calculate_offline_E2E_lossRates(__ns3_path, full_df, df_res, checkColumn, li
     full_df_ = None
     return df_res
 
-def calculate_offline_E2E_markingProb(full_df, df_res, checkColumn):
+def calculate_offline_markingProbMean_at_receiver(df, swtichDstREDQueueDiscMaxSize, linkRate):
+    T = ((swtichDstREDQueueDiscMaxSize * 8) / linkRate) * 0.30
+    df['SentTime'] = df['SentTime'] - df['SentTime'].iloc[0]
+    ecn_df = pd.DataFrame(columns=['time', 'F'])
+
+    group_id = 0
+    start_time = df.iloc[0]["SentTime"]
+    end_time = df.iloc[0]["SentTime"]
+    total = 0
+    marked = 0
+    for i in range(len(df)):
+        if df.iloc[i]["SentTime"] - start_time <= T:
+            total += 1
+            end_time = df.iloc[i]["SentTime"]
+            if df.iloc[i]["ECN"] == 1:
+                marked += 1
+        else:
+            ecn_df = pd.concat([pd.DataFrame([[end_time, marked / total]], columns=ecn_df.columns), ecn_df], ignore_index=True)
+            total = 0
+            marked = 0
+            start_time = df.iloc[i]["SentTime"]
+            end_time = df.iloc[i]["SentTime"]
+    ecn_df = ecn_df.sort_values(by='time').reset_index(drop=True)
+
+    temp = ecn_df.iloc[0]['time']
+    ecn_df['InterArrivalTime'] = ecn_df['time'].diff().fillna(temp)
+    ecn_df['F'] = ecn_df['F'] * ecn_df['InterArrivalTime']
+    return 1 - (ecn_df['F'].sum() / ecn_df['InterArrivalTime'].sum())
+
+def calculate_offline_markingProbMean_at_receiver_poisson(df, swtichDstREDQueueDiscMaxSize, linkRate):
+    df['SentTime'] = df['SentTime'] - df['SentTime'].iloc[0]
+    T = ((swtichDstREDQueueDiscMaxSize * 8) / linkRate) * 0.15
+    sample_times = np.cumsum(np.random.exponential(T, int(df['SentTime'].max() / T)))
+    markingProbs = []
+    for sample_time in sample_times:
+        if sample_time > df['SentTime'].max():
+            break
+        df_sample = df[(df['SentTime'] - sample_time).abs() <= T / 2]
+        if len(df_sample) == 0:
+            continue
+        markingProbs.append(1 - (df_sample['ECN'].sum() / len(df_sample)))
+    return np.mean(markingProbs)
+
+def calculate_offline_E2E_markingProb(full_df, df_res, checkColumn, swtichDstREDQueueDiscMaxSize, linkRate):
     full_df_ = full_df[full_df['SentTime'] != -1].copy()
     for path in full_df_['Path'].unique():
         df = full_df_[full_df_['Path'] == path]
         df['ECN'] = df.apply(lambda x: x['ECN'] if x[checkColumn] != 0 else 1, axis=1)
         df_res['nonMarkingProbMean'][path] = (len(df[df['ECN'] == 0]) / len(df))
         df = df.sort_values(by='SentTime').reset_index(drop=True)
+        # df_res['nonMarkingProbReceiverF'][path] = calculate_offline_markingProbMean_at_receiver(df.copy(), swtichDstREDQueueDiscMaxSize, linkRate)
+        df_res['nonMarkingProbReceiverF'][path] = calculate_offline_markingProbMean_at_receiver_poisson(df.copy(), swtichDstREDQueueDiscMaxSize, linkRate)
         df['InterArrivalTime'] = df['SentTime'].diff().fillna(0)
         df['ECN'] = df['ECN'] * df['InterArrivalTime']
         df_res['enqueueTimeAvgNonMarkingProb'][path] = 1 - (df['ECN'].sum() / df['InterArrivalTime'].sum())
@@ -286,7 +369,8 @@ def addRemoveTransmission_data(full_df, linkDelays, linksRates):
     return full_df
 
 def timeShift(full_df, timeColumn, sizeColumn, linkDelays, linksRates):
-    full_df[timeColumn] = full_df[timeColumn] - (linkDelays[0] * 2 + (full_df[sizeColumn] * 8) / linksRates[0] + linkDelays[1] * 2 + (full_df[sizeColumn] * 8) / linksRates[1])
+    full_df[timeColumn] = full_df[timeColumn] - full_df['rtt'] / 2
+    # full_df[timeColumn] = full_df[timeColumn] - (linkDelays[0] * 2 + (full_df[sizeColumn] * 8) / linksRates[0] + linkDelays[1] * 2 + (full_df[sizeColumn] * 8) / linksRates[1])
     return full_df
 
 def calculate_offline_computations(__ns3_path, rate, segment, experiment, results_folder, steadyStart, steadyEnd, projectColumn, removeDrops=True, checkColumn="", linksRates=[], linkDelays=[], swtichDstREDQueueDiscMaxSize=0, stats=None):
@@ -299,13 +383,11 @@ def calculate_offline_computations(__ns3_path, rate, segment, experiment, result
         if 'EndToEnd_markings' in segment:
             df_res = stats[df_name]
             df_res['enqueueTimeAvgNonMarkingFractionProb'] = {}
+            df_res['congestionEst'] = {}
             full_df = timeShift(full_df, 'Time', 'BytesAcked', linkDelays, linksRates)
             full_df = prune_data(full_df, projectColumn, steadyStart, steadyEnd)
-            for path in stats[df_name]['DelayMean'].keys():
-                full_df = full_df.sort_values(by='Time').reset_index(drop=True)
-                full_df['InterArrivalTime'] = full_df['Time'].diff().fillna(0)
-                full_df['MarkingProb'] = full_df['MarkingProb'] * full_df['InterArrivalTime']
-                df_res['enqueueTimeAvgNonMarkingFractionProb'][path] = 1 - (full_df['MarkingProb'].sum() / full_df['InterArrivalTime'].sum())
+            df_res = calculate_offline_E2E_markingFraction(full_df, stats[df_name]['DelayMean'].keys(), df_res)
+            df_res = calculate_offline_E2E_congestionEstimation(full_df, stats[df_name]['DelayMean'].keys(), df_res)
         if 'EndToEnd_packets' in segment:
             df_res['DelayMean'] = {}
             df_res['timeAverage'] = {}
@@ -317,15 +399,17 @@ def calculate_offline_computations(__ns3_path, rate, segment, experiment, result
             df_res['enqueueTimeAvgSuccessProb'] = {}
             df_res['nonMarkingProbMean'] = {}
             df_res['enqueueTimeAvgNonMarkingProb'] = {}
+            df_res['nonMarkingProbReceiverF'] = {}
             df_res['worklaod'] = {}
             full_df = addRemoveTransmission_data(full_df, linkDelays, linksRates)
             full_df = prune_data(full_df, projectColumn, steadyStart, steadyEnd)
             df_res = calculate_offline_E2E_lossRates(__ns3_path, full_df, df_res, checkColumn, linksRates[1], swtichDstREDQueueDiscMaxSize)
             df_res = calculate_offline_E2E_delays(full_df, removeDrops, checkColumn, df_res)
             df_res = calculate_offline_E2E_workload(full_df, df_res, steadyStart, steadyEnd)
-            df_res = calculate_offline_E2E_markingProb(full_df, df_res, checkColumn)
+            df_res = calculate_offline_E2E_markingProb(full_df, df_res, checkColumn, swtichDstREDQueueDiscMaxSize, linksRates[1])
         if 'Poisson' in segment:
             full_df = prune_data(full_df, projectColumn, steadyStart, steadyEnd)
+            df_res = calculate_offline_switch_congestionEstimation(full_df, df_res)
             df_res['DelayMean'] = np.average(full_df['QueuingDelay'])
             df_res['DelayStd'] = full_df['QueuingDelay'].std()
             df_res['first'] = full_df['Time'].iloc[0]
