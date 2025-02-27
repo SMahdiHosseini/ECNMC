@@ -4,26 +4,22 @@ Hosts and Switches IP addresses
 Src: 0 Id:0 IP: 10.1.1.1
 Src CT: 1 Id:1 IP: 10.2.1.1
 Dst: 0 Id:2 IP: 10.3.1.1
-Total preparing time = 982336 microsecond
+Total preparing time = 1062620 microsecond
 Config Parameters
 srcHostToSwitchLinkRate: 300Mbps
 ctHostToSwitchLinkRate: 300Mbps
 hostToSwitchLinkDelay: 50us
-bottleneckLinkRate: 474.0Mbps
+bottleneckLinkRate: 630.0Mbps
 pctPacedBack: 0.8
 enableSwitchECN: 1
 enableECMP: 1
-sampleRate: 4500
+sampleRate: 9000
 errorRate: 1.5e-05
 dirName: forward
-experiment: 1
-trafficStartTime: 0.0
-trafficStopTime: 0.9
+experiment: 25
+trafficStartTime: 21.6
+trafficStopTime: 22.5
 steadyStartTime: 0.3
 steadyEndTime: 0.8
-duration: 0.9
-swtichDstREDQueueDiscMaxSize50KB
-switchSrcREDQueueDiscMaxSize30KB
-minTh0.15
-maxTh0.15
-Process was interrupted by the user
+Done 
+Total execution time = 200316749 microsecond

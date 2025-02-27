@@ -150,8 +150,8 @@ void run_single_queue_simulation(int argc, char* argv[]) {
     cmd.AddValue("dirName", "Directory name for the output files", dirName);
     cmd.AddValue("senderTxMaxSize", "Maximum size of the sender's TX buffer", senderTxMaxSize);
     cmd.AddValue("switchTXMaxSize", "Maximum size of the switch's TX buffer", switchTXMaxSize);
-    cmd.AddValue("REDQueueDiscMaxSize", "Maximum size of the RED Queue Disc between the switch and the dst host", swtichDstREDQueueDiscMaxSize);
-    cmd.AddValue("REDQueueDiscMaxSize", "Maximum size of the RED Queue Disc between the switch and the src host", switchSrcREDQueueDiscMaxSize);
+    cmd.AddValue("swtichDstREDQueueDiscMaxSize", "Maximum size of the RED Queue Disc between the switch and the dst host", swtichDstREDQueueDiscMaxSize);
+    cmd.AddValue("switchSrcREDQueueDiscMaxSize", "Maximum size of the RED Queue Disc between the switch and the src host", switchSrcREDQueueDiscMaxSize);
     cmd.Parse(argc, argv);
 
     /*set default values*/
@@ -333,6 +333,11 @@ void run_single_queue_simulation(int argc, char* argv[]) {
     cout << "trafficStopTime: " << trafficStopTime << endl;
     cout << "steadyStartTime: " << steadyStartTime << endl;
     cout << "steadyEndTime: " << steadyStopTime << endl;
+    cout << "duration: " << duration << endl;
+    cout << "swtichDstREDQueueDiscMaxSize" << swtichDstREDQueueDiscMaxSize << endl;
+    cout << "switchSrcREDQueueDiscMaxSize" << switchSrcREDQueueDiscMaxSize << endl;
+    cout << "minTh" << minTh << endl;
+    cout << "maxTh" << maxTh << endl;
 
     // /* ########## END: Check Config ########## */
 

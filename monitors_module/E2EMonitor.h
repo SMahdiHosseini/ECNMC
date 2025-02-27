@@ -65,7 +65,7 @@ private:
     set<AppKey> _observedAppsKey;
     Ptr<Node> _txNode;
     std::vector<std::tuple<Time, uint32_t, double, Time>> markingProbProcess;
-    std::unordered_map<uint64_t, Ptr<TcpSocketBase>, Time, Time> tracesSockets;
+    std::unordered_map<uint64_t, Ptr<TcpSocketBase>> tracesSockets;
     std::unordered_map<PacketKey, E2EMonitorEvent*, PacketKeyHash> _recordedPackets;
     
     void Connect(Ptr<PointToPointNetDevice> netDevice, uint32_t rxNodeId);

@@ -25,6 +25,10 @@ class ExperimentConfig:
         self.steadyEnd="18"
         self.serviceRateScales=[]
         self.errorRateScale=[]
+        self.swtichDstREDQueueDiscMaxSize = "10KB"
+        self.switchSrcREDQueueDiscMaxSize = "6KB"
+        self.MinTh = "0.15"
+        self.MaxTh = "0.15"
 
     def read_config_file(self, config_file):
         config = configparser.ConfigParser()
@@ -50,6 +54,10 @@ class ExperimentConfig:
         self.srcHostToSwitchLinkRate = config.get('SingleQueue', 'srcHostToSwitchLinkRate')
         self.bottleneckLinkRate = config.get('SingleQueue', 'bottleneckLinkRate')
         self.ctHostToSwitchLinkRate = config.get('SingleQueue', 'ctHostToSwitchLinkRate')
+        self.swtichDstREDQueueDiscMaxSize = config.get('Settings', 'swtichDstREDQueueDiscMaxSize')
+        self.switchSrcREDQueueDiscMaxSize = config.get('Settings', 'switchSrcREDQueueDiscMaxSize')
+        self.MinTh = config.get('Settings', 'MinTh')
+        self.MaxTh = config.get('Settings', 'MaxTh')
 
 
 
@@ -88,6 +96,10 @@ def run_forward_experiment(exp, singleQueue=False):
                     '--trafficStopTime={} '.format((i + 1) * float(expConfig.duration)) +
                     '--steadyStartTime={} '.format(expConfig.steadyStart) +
                     '--steadyStopTime={} '.format(expConfig.steadyEnd) +
+                    '--swtichDstREDQueueDiscMaxSize={} '.format(expConfig.swtichDstREDQueueDiscMaxSize) +
+                    '--switchSrcREDQueueDiscMaxSize={} '.format(expConfig.switchSrcREDQueueDiscMaxSize) +
+                    '--minTh={} '.format(expConfig.MinTh) +
+                    '--maxTh={} '.format(expConfig.MaxTh) +
                     '--dirName=' + 'forward' +
                     '\' > {}/scratch/ECNMC/Results/results_forward/result_{}.txt'.format(get_ns3_path(), i)
                 )
