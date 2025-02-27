@@ -100,6 +100,12 @@ def prepare_results(flows, sample_rates):
     rounds_results['MaxEpsilonIneqSuccessProb']['E2E_eventAvg'] = {}
     rounds_results['MaxEpsilonIneqSuccessProb']['sentTime_est'] = {}
     rounds_results['MaxEpsilonIneqSuccessProb']['poisson_sentTime_est'] = {}
+
+    rounds_results['MaxEpsilonIneqNonMarkingProb'] = {}
+    rounds_results['MaxEpsilonIneqNonMarkingProb']['E2E_eventAvg'] = {}
+    rounds_results['MaxEpsilonIneqNonMarkingProb']['sentTime_est_events'] = {}
+    rounds_results['MaxEpsilonIneqNonMarkingProb']['sentTime_est_probs'] = {}
+    rounds_results['MaxEpsilonIneqNonMarkingProb']['possion_est_probs'] = {}
     for sample_rate in sample_rates:
         rounds_results['MaxEpsilonIneqSuccessProb']['poisson_sentTime_est'][sample_rate] = {}
     rounds_results['DropRate'] = []
@@ -109,6 +115,10 @@ def prepare_results(flows, sample_rates):
         rounds_results['MaxEpsilonIneqDelay'][flow] = {}
         rounds_results['MaxEpsilonIneqSuccessProb']['E2E_eventAvg'][flow] = {}
         rounds_results['MaxEpsilonIneqSuccessProb']['sentTime_est'][flow] = {}
+        rounds_results['MaxEpsilonIneqNonMarkingProb']['E2E_eventAvg'][flow] = {}
+        rounds_results['MaxEpsilonIneqNonMarkingProb']['sentTime_est_events'][flow] = {}
+        rounds_results['MaxEpsilonIneqNonMarkingProb']['sentTime_est_probs'][flow] = {}
+        rounds_results['MaxEpsilonIneqNonMarkingProb']['possion_est_probs'] [flow]= {}
         for sample_rate in sample_rates:
             rounds_results['MaxEpsilonIneqSuccessProb']['poisson_sentTime_est'][sample_rate][flow] = {}
         for i in range(num_of_paths):
@@ -117,6 +127,10 @@ def prepare_results(flows, sample_rates):
             rounds_results['MaxEpsilonIneqSuccessProb']['sentTime_est'][flow]['A' + str(i)] = 0
             for sample_rate in sample_rates:
                 rounds_results['MaxEpsilonIneqSuccessProb']['poisson_sentTime_est'][sample_rate][flow]['A' + str(i)] = 0
+        rounds_results['MaxEpsilonIneqNonMarkingProb']['E2E_eventAvg'][flow]['A' + str(i)] = 0
+        rounds_results['MaxEpsilonIneqNonMarkingProb']['sentTime_est_events'][flow]['A' + str(i)] = 0
+        rounds_results['MaxEpsilonIneqNonMarkingProb']['sentTime_est_probs'][flow]['A' + str(i)] = 0
+        rounds_results['MaxEpsilonIneqNonMarkingProb']['possion_est_probs'] [flow]['A' + str(i)] = 0
     rounds_results['experiments'] = 0
     return rounds_results
 
@@ -134,7 +148,7 @@ errorRates = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 12.0, 14.0, 16.
 # errorRates = [0.5, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 9.0, 10.0, 12.0, 14.0, 15.0]
 # errorRates = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
 # utilizationFactors = [round(6 * 300 / (r * 2 * 945), 3) for r in serviceRateScales]
-utilizationFactors = [round(2 * 1000 / (r * 2 * 1000), 3) for r in serviceRateScales]
+utilizationFactors = [round(2 * 300 / (r * 2 * 300), 3) for r in serviceRateScales]
 print("utilizationFactors: ", utilizationFactors)
 # selectedUtils = [utilizationFactors[1], utilizationFactors[3], utilizationFactors[5], utilizationFactors[7], utilizationFactors[9], utilizationFactors[11], utilizationFactors[13]]
 # print("serviceRateScales: ", serviceRateScales)
@@ -142,7 +156,7 @@ check = sys.argv[1]
 results_dir = sys.argv[2]
 # results_dir_file = 'naive'
 # results_dir_file = 'delay_Results_forward_diff_loss_est_and_pckt_CDF'
-results_dir_file = 'forward'
+results_dir_file = 'receiverF'
 results = {}
 flows = []
 congestion_utils = []
@@ -178,13 +192,17 @@ for rate in serviceRateScales:
                     results[rate]['MaxEpsilonIneqSuccessProb']['sentTime_est'][flow]['A' + str(i)] = temp['MaxEpsilonIneqSuccessProb']['sentTime_est'][flow]['A' + str(i)] / temp['experiments'] * 100
                     for sample_rate in sample_rates:
                         results[rate]['MaxEpsilonIneqSuccessProb']['poisson_sentTime_est'][sample_rate][flow]['A' + str(i)] = temp['MaxEpsilonIneqSuccessProb']['poisson_sentTime_est'][sample_rate][flow]['A' + str(i)] / temp['experiments'] * 100
+                results[rate]['MaxEpsilonIneqNonMarkingProb']['E2E_eventAvg'][flow]['A' + str(i)] = temp['MaxEpsilonIneqNonMarkingProb']['E2E_eventAvg'][flow]['A' + str(i)] / temp['experiments'] * 100
+                results[rate]['MaxEpsilonIneqNonMarkingProb']['sentTime_est_events'][flow]['A' + str(i)] = temp['MaxEpsilonIneqNonMarkingProb']['sentTime_est_events'][flow]['A' + str(i)] / temp['experiments'] * 100
+                results[rate]['MaxEpsilonIneqNonMarkingProb']['sentTime_est_probs'][flow]['A' + str(i)] = temp['MaxEpsilonIneqNonMarkingProb']['sentTime_est_probs'][flow]['A' + str(i)] / temp['experiments'] * 100
+                results[rate]['MaxEpsilonIneqNonMarkingProb']['possion_est_probs'][flow]['A' + str(i)] = temp['MaxEpsilonIneqNonMarkingProb']['possion_est_probs'][flow]['A' + str(i)] / temp['experiments'] * 100
                 # just for the reverse_loss_2
                 if flow != 'R0H0R2H0' and flow != 'R0H1R2H1':
                     dropRate += sum([1.0 - np.mean(temp['EndToEndSuccessProb']['E2E_eventAvg'][flow]['A' + str(i)]) for i in range(num_of_paths)])
             results[rate]['experiments'] = temp['experiments']
 
-            # results[rate]['DropRate'] = temp['DropRate']
-            results[rate]['DropRate'] = dropRate
+            results[rate]['DropRate'] = temp['DropRate']
+            # results[rate]['DropRate'] = dropRate
             # utilizationFactors.append(round(6 * temp['AverageWorkLoad'] / (rate * 2 * 945000000), 3))
             # congestion_utils.append([round(6 * 300 / (rate * 2 * 945), 3), round(np.mean(temp['DropRate']), 3), round(6 * temp['AverageWorkLoad'] / (rate * 2 * 945000000), 3)])
             congestion_utils.append([round(2 * 1000 / (rate * 2 * 1000), 3), round(np.mean(temp['DropRate']), 3), round(2 * temp['AverageWorkLoad'] / (rate * 2 * 100000000), 3)])
@@ -193,6 +211,17 @@ print(congestion_utils)
 # print([(a, np.mean(b)) for a,b in utils_success.items()])
 droprates_mean = [np.mean(value['DropRate']) for value in results.values()]
 droprates_xticks = [round(x, 3) for x in droprates_mean]
+
+# plot for forward experiment -- BoxPLots(loss):
+if check == 'marking':
+    for key in results[0.79]['MaxEpsilonIneqNonMarkingProb'].keys():
+        data = [[] for i in range(len(utilizationFactors))]
+        for flow in flows:
+            # if flow != 'R0H0R2H0' and flow != 'R0H1R2H1':
+            for i in range(len(utilizationFactors))[::-1]:
+                data[len(utilizationFactors) - i - 1].append(max([results[serviceRateScales[i]]['MaxEpsilonIneqNonMarkingProb'][key][flow]['A' + str(j)] for j in range(num_of_paths)]))
+        plot_boxplot_loss(utilizationFactors, droprates_xticks, data, key)
+
 
 # plot for forward experiment -- BoxPLots(loss):
 if check == 'loss':
