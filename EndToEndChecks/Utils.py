@@ -43,6 +43,28 @@ class PacketCDF:
                 return 1.0 - self.packet_cdf[size]
         return 0.0
 
+    def calculate_probability_less_equal_than(self, threshold):
+        """ Computes the probability of a packet size being less than or equal to the given threshold."""
+        for size in sorted(self.packet_cdf.keys())[::-1]:
+            if size <= threshold:
+                return self.packet_cdf[size]
+        return 0.0
+    
+    def compute_conditional_probability(self, A, B, num_samples=100000):
+        # Generate random samples from X using inverse transform sampling
+        X_samples = np.interp(np.random.rand(num_samples), list(self.packet_cdf.values()), list(self.packet_cdf.keys())).astype(int)
+        Y_samples = np.interp(np.random.rand(num_samples), list(self.packet_cdf.values()), list(self.packet_cdf.keys())).astype(int)
+        
+        # Filter samples where X >= B
+        valid_X = X_samples[X_samples >= B]
+        valid_Y = Y_samples[:len(valid_X)]  # Match the sample size
+        
+        # Compute probability P(Y > X + A | X >= B)
+        count_Y_greater = np.sum(valid_Y > (valid_X + A))
+        probability = count_Y_greater / len(valid_X) if len(valid_X) > 0 else 0
+        
+        return probability
+
     def print_cdf(self):
         """ Prints the CDF values for debugging or verification."""
         print("packet_size,cdf")
@@ -185,6 +207,7 @@ def read_lossProb(__ns3_path, rate, segment, experiment, results_folder):
             total_duration = df['sentTime'].iloc[-1] - df['sentTime'].iloc[0]
             time_average_lossProb = integral_lossProb / total_duration
             dfs[df_name]['timeAvgSuccessProb']['A' + str(path)] = 1.0 - time_average_lossProb
+            print(dfs[df_name]['timeAvgSuccessProb']['A' + str(path)])
     return dfs
             
 def plot_queueSize_time(__ns3_path, rate, segment, experiment, results_folder):
@@ -237,9 +260,10 @@ def calculate_offline_E2E_markingFraction(full_df_, paths, df_res):
     full_df['MarkingProb'] = full_df.apply(lambda x: x['MarkingProb'] if x['BytesAcked'] != 0 else 1, axis=1)
     for path in paths:
         full_df = full_df.sort_values(by='Time').reset_index(drop=True)
-        full_df['InterArrivalTime'] = full_df['Time'].diff().fillna(0)
-        full_df['MarkingProb'] = full_df['MarkingProb'] * full_df['InterArrivalTime']
-        df_res['enqueueTimeAvgNonMarkingFractionProb'][path] = 1 - (full_df['MarkingProb'].sum() / full_df['InterArrivalTime'].sum())
+        time = full_df['Time'].values
+        values = full_df['MarkingProb'].values
+        time_average_right = np.sum(values[:-1] * np.diff(time)) / (time[-1] - time[0])
+        df_res['enqueueTimeAvgNonMarkingFractionProb'][path] = 1 - (time_average_right)
     return df_res
 
 def calculate_offline_E2E_congestionEstimation(full_df_, paths, df_res):
@@ -251,31 +275,66 @@ def calculate_offline_E2E_congestionEstimation(full_df_, paths, df_res):
             congestionEst[i] = congestionEst[i-1] * (1 - estimation_gain) + full_df.loc[i, "MarkingProb"] * estimation_gain
         full_df["congestionEst"] = congestionEst
         full_df = full_df.sort_values(by='Time').reset_index(drop=True)
-        full_df['InterArrivalTime'] = full_df['Time'].diff().fillna(0)
-        full_df['congestionEst'] = full_df['congestionEst'] * full_df['InterArrivalTime']
-        df_res['congestionEst'][path] = full_df['congestionEst'].sum() / full_df['InterArrivalTime'].sum()
+        time = full_df['Time'].values
+        values = full_df['congestionEst'].values
+        time_average_right = np.sum(values[:-1] * np.diff(time)) / (time[-1] - time[0])
+        df_res['congestionEst'][path] = time_average_right
     return df_res
 
 def calculate_offline_E2E_workload(full_df, df_res, steadyStart, steadyEnd):
     full_df_ = full_df.copy()
     for path in full_df_['Path'].unique():
         df = full_df_[full_df_['Path'] == path]
-        df_res['worklaod'][path] = df['PayloadSize'].sum() * 8 / (steadyEnd - steadyStart)
+        df_res['first'][path] = df['SentTime'].iloc[0]
+        df_res['last'][path] = df['SentTime'].iloc[-1]
+        df_res['workload'][path] = df['PayloadSize'].sum() * 8 / (steadyEnd - steadyStart)
+        df = None
     full_df_ = None
     return df_res
 
 def calculate_offline_E2E_lossRates(__ns3_path, full_df, df_res, checkColumn, linksRate, swtichDstREDQueueDiscMaxSize):
+    df_res['successProb'] = {}
+    for var in ['event', 'probability']:
+        for method in ['rightCont_timeAvg', 'leftCont_timeAvg', 'linearInterp_timeAvg']:
+            df_res['successProb'][var + '_' + method] = {}
+
     packets_cfd = PacketCDF()
     packets_cfd.load_cdf_data('{}/scratch/ECNMC/Helpers/packet_size_cdf_singleQueue.csv'.format(__ns3_path))
     full_df_ = full_df[full_df['SentTime'] != -1].copy()
     for path in full_df_['Path'].unique():
         df = full_df_[full_df_['Path'] == path]
-        df_res['successProbMean'][path] = 1 - (len(df[df[checkColumn] == 0]) / len(df))
+        df_res['sampleSize'][path] = len(df)
         df = df.sort_values(by='SentTime').reset_index(drop=True)
-        df['dropProb'] = df.apply(lambda x: packets_cfd.calculate_probability_greater_than(max(swtichDstREDQueueDiscMaxSize - (x['Delay'] * linksRate / 8), x['PayloadSize'])) if x[checkColumn] != 0 else 1.0, axis=1)
-        df['InterArrivalTime'] = df['SentTime'].diff().fillna(0)
-        df['dropProb'] = df['dropProb'] * df['InterArrivalTime']
-        df_res['enqueueTimeAvgSuccessProb'][path] = 1 - (df['dropProb'].sum() / df['InterArrivalTime'].sum())
+
+        df['nonDropEvent'] = df.apply(lambda x: 1.0 if x[checkColumn] != 0 else 0.0, axis=1)
+        df_res['successProbMean'][path] = df['nonDropEvent'].mean()
+
+        time = df['SentTime'].values
+        values = df['nonDropEvent'].values
+
+        rightCont_time_average = np.sum(values[:-1] * np.diff(time)) / (time[-1] - time[0])
+        df_res['successProb']['event_rightCont_timeAvg'][path] = rightCont_time_average
+
+        leftCont_time_average = np.sum(values[1:] * np.diff(time)) / (time[-1] - time[0])
+        df_res['successProb']['event_leftCont_timeAvg'][path] = leftCont_time_average
+
+        linearInterp_time_average = np.sum(((values[:-1] + values[1:]) / 2) * np.diff(time)) / (time[-1] - time[0])
+        df_res['successProb']['event_linearInterp_timeAvg'][path] = linearInterp_time_average
+
+        df['nonDropProb'] = df.apply(lambda x: 1.0 - packets_cfd.calculate_probability_greater_than(max(swtichDstREDQueueDiscMaxSize - (x['Delay'] * linksRate / 8), x['PayloadSize'])) if x[checkColumn] != 0 else 0.0, axis=1)
+
+        time = df['SentTime'].values
+        values = df['nonDropProb'].values
+
+        rightCont_time_average = np.sum(values[:-1] * np.diff(time)) / (time[-1] - time[0])
+        df_res['successProb']['probability_rightCont_timeAvg'][path] = rightCont_time_average
+
+        leftCont_time_average = np.sum(values[1:] * np.diff(time)) / (time[-1] - time[0])
+        df_res['successProb']['probability_leftCont_timeAvg'][path] = leftCont_time_average
+
+        linearInterp_time_average = np.sum(((values[:-1] + values[1:]) / 2) * np.diff(time)) / (time[-1] - time[0])
+        df_res['successProb']['probability_linearInterp_timeAvg'][path] = linearInterp_time_average
+
     full_df_ = None
     return df_res
 
@@ -322,38 +381,61 @@ def calculate_offline_markingProbMean_at_receiver_poisson(df, swtichDstREDQueueD
         markingProbs.append(1 - (df_sample['ECN'].sum() / len(df_sample)))
     return np.mean(markingProbs)
 
-def calculate_offline_E2E_markingProb(full_df, df_res, checkColumn, swtichDstREDQueueDiscMaxSize, linkRate):
+def calculate_offline_E2E_markingProb(full_df, df_res, checkColumn, swtichDstREDQueueDiscMaxSize, linkRate, __ns3_path, tsh):
+    # timeAvg_methods = ['rightCont_timeAvg', 'leftCont_timeAvg', 'linearInterp_timeAvg']
+    # nonMarkingProb_timeAvg_vars = ['event_currentProb', 'event_lastProb']
+    df_res['nonMarkingProb'] = {}
+    for var in ['event']:
+        for method in ['rightCont_timeAvg', 'leftCont_timeAvg', 'linearInterp_timeAvg']:
+            df_res['nonMarkingProb'][var + '_' + method] = {}
+    
     full_df_ = full_df[full_df['SentTime'] != -1].copy()
     for path in full_df_['Path'].unique():
         df = full_df_[full_df_['Path'] == path]
         df['ECN'] = df.apply(lambda x: x['ECN'] if x[checkColumn] != 0 else 1, axis=1)
-        df_res['nonMarkingProbMean'][path] = (len(df[df['ECN'] == 0]) / len(df))
+        df['nonMarking'] = 1.0 - df['ECN']
         df = df.sort_values(by='SentTime').reset_index(drop=True)
-        # df_res['nonMarkingProbReceiverF'][path] = calculate_offline_markingProbMean_at_receiver(df.copy(), swtichDstREDQueueDiscMaxSize, linkRate)
-        df_res['nonMarkingProbReceiverF'][path] = calculate_offline_markingProbMean_at_receiver_poisson(df.copy(), swtichDstREDQueueDiscMaxSize, linkRate)
-        df['InterArrivalTime'] = df['SentTime'].diff().fillna(0)
-        df['ECN'] = df['ECN'] * df['InterArrivalTime']
-        df_res['enqueueTimeAvgNonMarkingProb'][path] = 1 - (df['ECN'].sum() / df['InterArrivalTime'].sum())
+
+        time = df['SentTime'].values
+        values = df['nonMarking'].values
+
+        rightCont_time_average = np.sum(values[:-1] * np.diff(time)) / (time[-1] - time[0])
+        df_res['nonMarkingProb']['event_rightCont_timeAvg'][path] = rightCont_time_average
+
+        leftCont_time_average = np.sum(values[1:] * np.diff(time)) / (time[-1] - time[0])
+        df_res['nonMarkingProb']['event_leftCont_timeAvg'][path] = leftCont_time_average
+
+        linearInterp_time_average = np.sum(((values[:-1] + values[1:]) / 2) * np.diff(time)) / (time[-1] - time[0])
+        df_res['nonMarkingProb']['event_linearInterp_timeAvg'][path] = linearInterp_time_average
+
     full_df_ = None
     return df_res
 
 def calculate_offline_E2E_delays(full_df, removeDrops, checkColumn, df_res):
+    df_res['delay'] = {}
+    for var in ['event']:
+        for method in ['rightCont_timeAvg', 'leftCont_timeAvg', 'linearInterp_timeAvg']:
+            df_res['delay'][var + '_' + method] = {}
+    
     full_df_ = full_df.copy()
     if removeDrops:
         full_df_ = full_df_[full_df_[checkColumn] == 1]
-    # DelayMean is the time average of the delay over the SentTime, which is the integral of interarrival time * delay over the total time
     for path in full_df_['Path'].unique():
         df = full_df_[full_df_['Path'] == path]
         df = df.sort_values(by='SentTime').reset_index(drop=True)
-        df_res['DelayStd'][path] = df['Delay'].std()
-        # calculate the delay mean based on the welford algorithm
-        df_res['DelayMean'][path] = np.average(df['Delay'])
-        df_res['first'][path] = df['SentTime'].iloc[0]
-        df_res['last'][path] = df['SentTime'].iloc[-1]
-        df['InterArrivalTime'] = df['SentTime'].diff().fillna(0)
-        df['Delay'] = df['Delay'] * df['InterArrivalTime']
-        df_res['timeAverage'][path] = df['Delay'].sum() / df['InterArrivalTime'].sum()
-        df_res['sampleSize'][path] = len(df)
+        time = df['SentTime'].values
+        values = df['Delay'].values
+
+        rightCont_time_average = np.sum(values[:-1] * np.diff(time)) / (time[-1] - time[0])
+        df_res['delay']['event_rightCont_timeAvg'][path] = rightCont_time_average
+
+        leftCont_time_average = np.sum(values[1:] * np.diff(time)) / (time[-1] - time[0])
+        df_res['delay']['event_leftCont_timeAvg'][path] = leftCont_time_average
+
+        linearInterp_time_average = np.sum(((values[:-1] + values[1:]) / 2) * np.diff(time)) / (time[-1] - time[0])
+        df_res['delay']['event_linearInterp_timeAvg'][path] = linearInterp_time_average
+
+        df = None
     full_df_ = None
     return df_res
 
@@ -373,7 +455,7 @@ def timeShift(full_df, timeColumn, sizeColumn, linkDelays, linksRates):
     # full_df[timeColumn] = full_df[timeColumn] - (linkDelays[0] * 2 + (full_df[sizeColumn] * 8) / linksRates[0] + linkDelays[1] * 2 + (full_df[sizeColumn] * 8) / linksRates[1])
     return full_df
 
-def calculate_offline_computations(__ns3_path, rate, segment, experiment, results_folder, steadyStart, steadyEnd, projectColumn, removeDrops=True, checkColumn="", linksRates=[], linkDelays=[], swtichDstREDQueueDiscMaxSize=0, stats=None):
+def calculate_offline_computations(__ns3_path, rate, segment, experiment, results_folder, steadyStart, steadyEnd, projectColumn, removeDrops=True, checkColumn="", linksRates=[], linkDelays=[], swtichDstREDQueueDiscMaxSize=0, stats=None, tsh=0.15):
     file_paths = glob.glob('{}/scratch/{}/{}/{}/*_{}.csv'.format(__ns3_path, results_folder, rate, experiment, segment))
     dfs = {}
     for file_path in file_paths:
@@ -389,28 +471,21 @@ def calculate_offline_computations(__ns3_path, rate, segment, experiment, result
             df_res = calculate_offline_E2E_markingFraction(full_df, stats[df_name]['DelayMean'].keys(), df_res)
             df_res = calculate_offline_E2E_congestionEstimation(full_df, stats[df_name]['DelayMean'].keys(), df_res)
         if 'EndToEnd_packets' in segment:
-            df_res['DelayMean'] = {}
-            df_res['timeAverage'] = {}
-            df_res['DelayStd'] = {}
             df_res['first'] = {}
             df_res['last'] = {}
+            df_res['workload'] = {}
             df_res['sampleSize'] = {}
             df_res['successProbMean'] = {}
-            df_res['enqueueTimeAvgSuccessProb'] = {}
-            df_res['nonMarkingProbMean'] = {}
-            df_res['enqueueTimeAvgNonMarkingProb'] = {}
-            df_res['nonMarkingProbReceiverF'] = {}
-            df_res['worklaod'] = {}
             full_df = addRemoveTransmission_data(full_df, linkDelays, linksRates)
             full_df = prune_data(full_df, projectColumn, steadyStart, steadyEnd)
             df_res = calculate_offline_E2E_lossRates(__ns3_path, full_df, df_res, checkColumn, linksRates[1], swtichDstREDQueueDiscMaxSize)
             df_res = calculate_offline_E2E_delays(full_df, removeDrops, checkColumn, df_res)
             df_res = calculate_offline_E2E_workload(full_df, df_res, steadyStart, steadyEnd)
-            df_res = calculate_offline_E2E_markingProb(full_df, df_res, checkColumn, swtichDstREDQueueDiscMaxSize, linksRates[1])
+            df_res = calculate_offline_E2E_markingProb(full_df, df_res, checkColumn, swtichDstREDQueueDiscMaxSize, linksRates[1], __ns3_path, tsh)
         if 'Poisson' in segment:
             full_df = prune_data(full_df, projectColumn, steadyStart, steadyEnd)
-            df_res = calculate_offline_switch_congestionEstimation(full_df, df_res)
-            df_res['DelayMean'] = np.average(full_df['QueuingDelay'])
+            # df_res = calculate_offline_switch_congestionEstimation(full_df, df_res)
+            df_res['DelayMean'] = full_df['QueuingDelay'].mean()
             df_res['DelayStd'] = full_df['QueuingDelay'].std()
             df_res['first'] = full_df['Time'].iloc[0]
             df_res['last'] = full_df['Time'].iloc[-1]
@@ -419,6 +494,8 @@ def calculate_offline_computations(__ns3_path, rate, segment, experiment, result
             df_res['successProbStd'] = full_df['DropProb'].std()
             df_res['nonMarkingProbMean'] = 1 - full_df['MarkingProb'].mean()
             df_res['nonMarkingProbStd'] = full_df['MarkingProb'].std()
+            df_res['lastNonMarkingProbMean'] = 1 - full_df['LastMarkingProb'].mean()
+            df_res['lastNonMarkingProbStd'] = full_df['LastMarkingProb'].std()
         dfs[df_name] = df_res
     return dfs
 
@@ -479,6 +556,9 @@ def calc_epsilon(confidenceValue, segement_statistics):
 
 def calc_epsilon_loss(confidenceValue, segement_statistics):
     return (confidenceValue * segement_statistics['successProbStd']) / (np.sqrt(segement_statistics['sampleSize']) * segement_statistics['successProbMean'])
+
+def calc_epsilon_last_marking(confidenceValue, segement_statistics):
+    return (confidenceValue * segement_statistics['lastNonMarkingProbStd']) / (np.sqrt(segement_statistics['sampleSize']) * segement_statistics['lastNonMarkingProbMean'])
 
 def calc_epsilon_marking(confidenceValue, segement_statistics):
     return (confidenceValue * segement_statistics['nonMarkingProbStd']) / (np.sqrt(segement_statistics['sampleSize']) * segement_statistics['nonMarkingProbMean'])

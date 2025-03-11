@@ -99,6 +99,7 @@ def prepare_results(flows, sample_rates):
     rounds_results['MaxEpsilonIneqSuccessProb'] = {}
     rounds_results['MaxEpsilonIneqSuccessProb']['E2E_eventAvg'] = {}
     rounds_results['MaxEpsilonIneqSuccessProb']['sentTime_est'] = {}
+    rounds_results['MaxEpsilonIneqSuccessProb']['enqueueTime_est'] = {}
     rounds_results['MaxEpsilonIneqSuccessProb']['poisson_sentTime_est'] = {}
 
     rounds_results['MaxEpsilonIneqNonMarkingProb'] = {}
@@ -115,6 +116,7 @@ def prepare_results(flows, sample_rates):
         rounds_results['MaxEpsilonIneqDelay'][flow] = {}
         rounds_results['MaxEpsilonIneqSuccessProb']['E2E_eventAvg'][flow] = {}
         rounds_results['MaxEpsilonIneqSuccessProb']['sentTime_est'][flow] = {}
+        rounds_results['MaxEpsilonIneqSuccessProb']['enqueueTime_est'][flow] = {}
         rounds_results['MaxEpsilonIneqNonMarkingProb']['E2E_eventAvg'][flow] = {}
         rounds_results['MaxEpsilonIneqNonMarkingProb']['sentTime_est_events'][flow] = {}
         rounds_results['MaxEpsilonIneqNonMarkingProb']['sentTime_est_probs'][flow] = {}
@@ -125,6 +127,7 @@ def prepare_results(flows, sample_rates):
             rounds_results['MaxEpsilonIneqDelay'][flow]['A' + str(i)] = 0
             rounds_results['MaxEpsilonIneqSuccessProb']['E2E_eventAvg'][flow]['A' + str(i)] = 0
             rounds_results['MaxEpsilonIneqSuccessProb']['sentTime_est'][flow]['A' + str(i)] = 0
+            rounds_results['MaxEpsilonIneqSuccessProb']['enqueueTime_est'][flow]['A' + str(i)] = 0
             for sample_rate in sample_rates:
                 rounds_results['MaxEpsilonIneqSuccessProb']['poisson_sentTime_est'][sample_rate][flow]['A' + str(i)] = 0
         rounds_results['MaxEpsilonIneqNonMarkingProb']['E2E_eventAvg'][flow]['A' + str(i)] = 0
@@ -190,6 +193,7 @@ for rate in serviceRateScales:
                     print(flow, rate, results[rate]['MaxEpsilonIneqDelay'][flow]['A' + str(i)])
                     results[rate]['MaxEpsilonIneqSuccessProb']['E2E_eventAvg'][flow]['A' + str(i)] = temp['MaxEpsilonIneqSuccessProb']['E2E_eventAvg'][flow]['A' + str(i)] / temp['experiments'] * 100
                     results[rate]['MaxEpsilonIneqSuccessProb']['sentTime_est'][flow]['A' + str(i)] = temp['MaxEpsilonIneqSuccessProb']['sentTime_est'][flow]['A' + str(i)] / temp['experiments'] * 100
+                    results[rate]['MaxEpsilonIneqSuccessProb']['enqueueTime_est'][flow]['A' + str(i)] = temp['MaxEpsilonIneqSuccessProb']['enqueueTime_est'][flow]['A' + str(i)] / temp['experiments'] * 100
                     for sample_rate in sample_rates:
                         results[rate]['MaxEpsilonIneqSuccessProb']['poisson_sentTime_est'][sample_rate][flow]['A' + str(i)] = temp['MaxEpsilonIneqSuccessProb']['poisson_sentTime_est'][sample_rate][flow]['A' + str(i)] / temp['experiments'] * 100
                 results[rate]['MaxEpsilonIneqNonMarkingProb']['E2E_eventAvg'][flow]['A' + str(i)] = temp['MaxEpsilonIneqNonMarkingProb']['E2E_eventAvg'][flow]['A' + str(i)] / temp['experiments'] * 100

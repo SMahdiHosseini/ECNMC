@@ -101,6 +101,22 @@ void dequeueDisc(Ptr< const QueueDiscItem > item){
     std::cout << endl;
 }
 
+static void
+CwndTracer(uint32_t oldval, uint32_t newval)
+{
+    cout << Simulator::Now().GetNanoSeconds() << "cwnd from " << oldval << " to " << newval << endl;
+}
+
+
+void
+TraceCwnd(uint32_t nodeId, uint32_t socketId)
+{
+    Config::ConnectWithoutContext("/NodeList/" + std::to_string(nodeId) +
+                                      "/$ns3::TcpL4Protocol/SocketList/" +
+                                      std::to_string(socketId) + "/CongestionWindow",
+                                  MakeBoundCallback(&CwndTracer));
+}
+
 void run_single_queue_simulation(int argc, char* argv[]) {
     auto start = std::chrono::high_resolution_clock::now();
     cout << endl<< "Start Single Queue Simulation" << endl;
@@ -115,7 +131,7 @@ void run_single_queue_simulation(int argc, char* argv[]) {
     string steadyStartTime = "3";                      // Start time of the steady state
     string steadyStopTime = "10";                      // Stop time of the steady state
     string dirName = "";                               // Directory name for the output files
-    string senderTxMaxSize = "1MB";                    // Maximum size of the sender's TX buffer
+    string senderTxMaxSize = "1p";                    // Maximum size of the sender's TX buffer
     string switchTXMaxSize = "1p";                     // Maximum size of the switch's TX buffer
     string swtichDstREDQueueDiscMaxSize = "10KB";      // Maximum size of the RED Queue Disc between the switch and the dst host
     string switchSrcREDQueueDiscMaxSize = "6KB";       // Maximum size of the RED Queue Disc between the switch and the src host
@@ -165,10 +181,10 @@ void run_single_queue_simulation(int argc, char* argv[]) {
     Config::SetDefault("ns3::RedQueueDisc::UseEcn", BooleanValue(enableSwitchECN));
     Config::SetDefault("ns3::TcpSocket::SegmentSize", UintegerValue(1448));
     Config::SetDefault("ns3::TcpSocket::DelAckCount", UintegerValue(2));
-    Config::SetDefault("ns3::TcpSocket::SndBufSize", UintegerValue(12000000));
+    Config::SetDefault("ns3::TcpSocket::SndBufSize", UintegerValue(25000000));
     GlobalValue::Bind("ChecksumEnabled", BooleanValue(false));
     Config::SetDefault("ns3::RedQueueDisc::UseHardDrop", BooleanValue(false));
-    Config::SetDefault("ns3::RedQueueDisc::MeanPktSize", UintegerValue(1500));
+    Config::SetDefault("ns3::RedQueueDisc::MeanPktSize", UintegerValue(1000));
     // Config::SetDefault("ns3::DropTailQueue<Packet>::MaxSize", QueueSizeValue(QueueSize("10KB")));
     // Config::SetDefault("ns3::RedQueueDisc::MaxSize", QueueSizeValue(QueueSize("1.8MB")));
     // DCTCP tracks instantaneous queue length only; so set QW = 1
@@ -177,7 +193,7 @@ void run_single_queue_simulation(int argc, char* argv[]) {
     Config::SetDefault("ns3::RedQueueDisc::Wait", BooleanValue(false));
     Config::SetDefault("ns3::RedQueueDisc::LInterm", DoubleValue(1));
     // DCTCP uses K > 1/7(C * RTT) and minTh = maxTh = K
-    maxTh = minTh = 0.15;
+    // maxTh = minTh = 0.15;
     // Config::SetDefault("ns3::RedQueueDisc::MinTh", DoubleValue(minTh));
     // Config::SetDefault("ns3::RedQueueDisc::MaxTh", DoubleValue(maxTh));
 
@@ -297,6 +313,31 @@ void run_single_queue_simulation(int argc, char* argv[]) {
             cout << "requested Background Directory does not exist" << endl;
         }
     }
+
+    // uint16_t portsrc = 50001;
+    // BulkSendHelper host("ns3::TcpSocketFactory", InetSocketAddress(dstHostsToSwitchIps.GetAddress(0), portsrc));
+    // host.SetAttribute("MaxBytes", UintegerValue(0));
+    // ApplicationContainer sourceApps = host.Install(srcHosts.Get(0));
+    // sourceApps.Start(startTime);
+    // sourceApps.Stop(stopTime);
+    // PacketSinkHelper sinkSrc("ns3::TcpSocketFactory", InetSocketAddress(Ipv4Address::GetAny(), portsrc));
+    // ApplicationContainer sinkSrcApps = sinkSrc.Install(dstHosts.Get(0));
+    // sinkSrcApps.Start(startTime);
+    // sinkSrcApps.Stop(stopTime);
+
+    // Simulator::Schedule(Seconds(0.3), &TraceCwnd, 0, 0);
+    // // ct
+    // uint16_t portCt = 50005;
+    // BulkSendHelper ctHost("ns3::TcpSocketFactory", InetSocketAddress(dstHostsToSwitchIps.GetAddress(0), portCt));
+    // ctHost.SetAttribute("MaxBytes", UintegerValue(0));
+    // ApplicationContainer ctApps = ctHost.Install(srcHosts.Get(1));
+    // ctApps.Start(startTime);
+    // ctApps.Stop(stopTime);
+    // PacketSinkHelper sinkCt("ns3::TcpSocketFactory", InetSocketAddress(Ipv4Address::GetAny(), portCt));
+    // ApplicationContainer sinkCtApps = sinkCt.Install(dstHosts.Get(0));
+    // sinkCtApps.Start(startTime);
+    // sinkCtApps.Stop(stopTime);
+
     ns3::PacketMetadata::Enable();
     // Monitor the packets between src Host 0 and dst Host 0
     auto *S0D0Monitor = new E2EMonitor(startTime, Seconds(stof(steadyStopTime)) + convergenceTime, Seconds(stof(steadyStartTime)), Seconds(stof(steadyStopTime)), DynamicCast<PointToPointNetDevice>(srcHostsToSwitchNetDevices[0].Get(0)), dstHosts.Get(0), srcHosts.Get(0), "A0D0", errorRate, DataRate(srcHostToSwitchLinkRate), DataRate(bottleneckLinkRate), Time(hostToSwitchLinkDelay), 1, 1, QueueSize(swtichDstREDQueueDiscMaxSize).GetValue());
@@ -306,8 +347,17 @@ void run_single_queue_simulation(int argc, char* argv[]) {
     // auto *hostToSwitchrSampler = new PoissonSampler(Seconds(stof(steadyStartTime)), Seconds(stof(steadyStopTime)), nullptr, hostToSwitchrNetDevice->GetQueue(), hostToSwitchrNetDevice, "H", sampleRate);
 
     Ptr<PointToPointNetDevice> switchToDstNetDevice = DynamicCast<PointToPointNetDevice>(dstHostsToSwitchNetDevices.Get(1));
-    auto *switchToDstSampler = new PoissonSampler(Seconds(stof(steadyStartTime)), Seconds(stof(steadyStopTime)), DynamicCast<RedQueueDisc>(switchToDstHostQueueDisc.Get(0)), switchToDstNetDevice->GetQueue(), switchToDstNetDevice, "SD0", sampleRate);
+    Ptr<PointToPointNetDevice> incomingNetDevice = DynamicCast<PointToPointNetDevice>(srcHostsToSwitchNetDevices[0].Get(1));
+    Ptr<PointToPointNetDevice> incomingNetDevice_1 = DynamicCast<PointToPointNetDevice>(ctHostsToSwitchNetDevices[0].Get(1));
+    auto *switchToDstSampler = new PoissonSampler(Seconds(stof(steadyStartTime)), Seconds(stof(steadyStopTime)), DynamicCast<RedQueueDisc>(switchToDstHostQueueDisc.Get(0)), switchToDstNetDevice->GetQueue(), switchToDstNetDevice, "SD0", sampleRate, incomingNetDevice, incomingNetDevice_1);
+    // auto *switchToDstSampler = new PoissonSampler(Seconds(stof(steadyStartTime)), Seconds(stof(steadyStopTime)), DynamicCast<RedQueueDisc>(switchToDstHostQueueDisc.Get(0)), switchToDstNetDevice->GetQueue(), switchToDstNetDevice, "SD0", sampleRate);
     // auto *switchToDstSampler = new PoissonSampler(Seconds(stof(steadyStartTime)), Seconds(stof(steadyStopTime)), nullptr, switchToDstNetDevice->GetQueue(), switchToDstNetDevice, "SD0", sampleRate);
+
+    // auto *switchMonitor = new SwitchMonitor(startTime, Seconds(stof(steadyStopTime)) + convergenceTime, Seconds(stof(steadyStartTime)), Seconds(stof(steadyStopTime)), switches.Get(0), "S0");
+    // switchMonitor->AddAppKey(AppKey(srcHostsToSwitchIps[0].GetAddress(0), dstHostsToSwitchIps.GetAddress(0), 0, 0));
+
+    cout << "Sender Tx Queue Size: " << DynamicCast<PointToPointNetDevice>(srcHostsToSwitchNetDevices[0].Get(0))->GetQueue()->GetMaxSize().GetValue() << endl;
+    cout << "Switch Tx Queue Size: " << DynamicCast<PointToPointNetDevice>(srcHostsToSwitchNetDevices[0].Get(1))->GetQueue()->GetMaxSize().GetValue() << endl;
 
     cout << "Hosts and Switches IP addresses" << endl;
     cout << "Src: " << 0 << " Id:" << srcHosts.Get(0)->GetId() << " IP: " << srcHostsToSwitchIps[0].GetAddress(0) << endl;
@@ -350,7 +400,7 @@ void run_single_queue_simulation(int argc, char* argv[]) {
 
     S0D0Monitor->SaveMonitorRecords((string) (getenv("PWD")) + "/Results/results_" + dirName + "/" + to_string(experiment)  + "/" + S0D0Monitor->GetMonitorTag() + "_EndToEnd.csv");
 
-
+    // switchMonitor->SavePacketRecords((string) (getenv("PWD")) + "/Results/results_" + dirName + "/" + to_string(experiment)  + "/" + switchMonitor->GetMonitorTag() + "_Switch.csv");
     // hostToSwitchrSampler->SaveMonitorRecords((string) (getenv("PWD")) + "/Results/results_" + dirName + "/" + to_string(experiment)  + "/" + hostToSwitchrSampler->GetMonitorTag() + "_PoissonSampler.csv");
     switchToDstSampler->SaveMonitorRecords((string) (getenv("PWD")) + "/Results/results_" + dirName + "/" + to_string(experiment)  + "/" + switchToDstSampler->GetMonitorTag() + "_PoissonSampler.csv");
     

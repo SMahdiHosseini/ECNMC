@@ -15,6 +15,14 @@ void TraceReplaySender::dctcpCallBack(uint32_t bytesAcked, uint32_t bytesMarked,
     }
 }
 
+void TraceReplaySender::cwndTrace(uint32_t oldCwnd, uint32_t newCwnd) {
+    if (GetNodeIP(_socket->GetNode(), 1) == "10.1.1.1") {
+        // if (InetSocketAddress::ConvertFrom(_receiverAddress).GetPort() == 5905 || InetSocketAddress::ConvertFrom(_receiverAddress).GetPort() == 5595) {
+            cout << Simulator::Now().GetNanoSeconds() << " RemoteAddress:" << GetNodeIP(_socket->GetNode(), 1) << "->" << InetSocketAddress::ConvertFrom(_receiverAddress).GetIpv4() << ":" << InetSocketAddress::ConvertFrom(_receiverAddress).GetPort() << " DCTCP: cwnd from: " << oldCwnd << " to: " << newCwnd << endl;
+        // }
+    }
+}
+
 TypeId TraceReplaySender::GetTypeId() {
 
     static TypeId tid = TypeId ("ns3::TraceReplaySender")
@@ -128,6 +136,7 @@ void TraceReplaySender::PrepareSocket() {
     if(_protocol == "ns3::TcpSocketFactory") {
         Ptr<TcpSocketBase> tcpSocket = _socket->GetObject<TcpSocketBase>();
         tcpSocket->SetPacingStatus(_enablePacing);
+        // tcpSocket->TraceConnectWithoutContext("CongestionWindow", MakeCallback(&TraceReplaySender::cwndTrace, this));
         // mahdi
         // Ptr<TcpDctcp> dctcp = tcpSocket->GetCongestionControlAlgorithm()->GetObject<TcpDctcp>();
         // dctcp->TraceConnectWithoutContext("CongestionEstimate", MakeCallback(&TraceReplaySender::dctcpCallBack, this));

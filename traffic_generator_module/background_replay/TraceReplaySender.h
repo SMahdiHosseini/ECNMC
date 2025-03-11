@@ -31,6 +31,7 @@ private:
     void Send(const TraceReplayItem& item);
     void ScheduleNextSend();
     void dctcpCallBack(uint32_t bytesAcked, uint32_t bytesMarked, double alpha);
+    void cwndTrace(uint32_t oldCwnd, uint32_t newCwnd);
 
     Ptr<Socket> _socket;
     Address _receiverAddress;

@@ -24,16 +24,19 @@ struct samplingEvent : MonitorEvent{
 
 private:
     double _markingProb = 0;
+    double _lastMarkingProb = 0;
     double _lossProb = 0;
-
+    uint32_t _queueSize = 0;
 public:
     explicit samplingEvent(PacketKey *key);
-
+    explicit samplingEvent();
     [[nodiscard]] PacketKey* GetPacketKey() const;
     [[nodiscard]] Time GetSampleTime() const;
     [[nodiscard]] Time GetDepartureTime() const;
     [[nodiscard]] double GetMarkingProb() const;
     [[nodiscard]] double GetLossProb() const;
+    [[nodiscard]] uint32_t GetQueueSize() const;
+    [[nodiscard]] double GetLastMarkingProb() const;
     [[nodiscard]] bool IsDeparted() const;
 
     void SetSampleTime();
@@ -42,6 +45,8 @@ public:
     void SetDepartureTime(Time t);
     void SetMarkingProb(double markingProb);
     void SetLossProb(double lossProb);
+    void SetQueueSize(uint32_t size);
+    void SetLastMarkingProb(double markingProb);
 };
 
 class PoissonSampler : public Monitor{
@@ -52,6 +57,8 @@ private:
     Ptr<RedQueueDisc> REDQueueDisc;
     Ptr<Queue<Packet>> NetDeviceQueue;
     Ptr<PointToPointNetDevice> outgoingNetDevice;
+    Ptr<PointToPointNetDevice> incomingNetDevice;
+    Ptr<PointToPointNetDevice> incomingNetDevice_1;
     double _sampleRate;
     std::unordered_map<PacketKey, samplingEvent*, PacketKeyHash> _recordedSamples;
     int zeroDelayPort;
@@ -67,7 +74,9 @@ private:
     double GTPacketSizeMean;
     double GTDropMean;
     double GTQueuingDelay;
-    std::vector<std::tuple<Time, uint32_t>> queueSizeProcess;
+    double GTMarkingProbMean;
+    std::vector<std::tuple<Time, samplingEvent>> queueSizeProcess;
+    std::vector<std::tuple<Time, samplingEvent>> queueSizeProcessByPackets;
     Time firstItemTime;
     PacketCDF packetCDF;
     Time lastLeftTime;
@@ -77,14 +86,18 @@ private:
     void Connect(Ptr<PointToPointNetDevice> outgoingNetDevice);
     void Disconnect(Ptr<PointToPointNetDevice> outgoingNetDevice);
     void EnqueueQueueDisc(Ptr<const QueueDiscItem> item);
+    void DequeueQueueDisc(Ptr<const QueueDiscItem> item);
     void EnqueueNetDeviceQueue(Ptr< const Packet > packet);
     void EventHandler();
     void RecordPacket(Ptr<const Packet> packet);
+    void RecordIncomingPacket(Ptr<const Packet> packet);
     void updateCounters(samplingEvent* event);
     void loadCDFData(const std::string& filename);
+    void updateGTCounters();
     uint32_t ComputeQueueSize();
 public:
     PoissonSampler(const Time &steadyStartTime, const Time &steadyStopTime, Ptr<RedQueueDisc> queueDisc, Ptr<Queue<Packet>> queue, Ptr<PointToPointNetDevice> outgoingNetDevice, const string &sampleTag, double sampleRate);
+    PoissonSampler(const Time &steadyStartTime, const Time &steadyStopTime, Ptr<RedQueueDisc> queueDisc, Ptr<Queue<Packet>> queue, Ptr<PointToPointNetDevice> outgoingNetDevice, const string &sampleTag, double sampleRate, Ptr<PointToPointNetDevice> incomingNetDevice, Ptr<PointToPointNetDevice> incomingNetDevice_1);
     void SaveMonitorRecords(const string &filename);
 };
 

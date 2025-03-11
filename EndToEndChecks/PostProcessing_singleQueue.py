@@ -20,9 +20,14 @@ difference = 1.30
 sample_rates = [0.5]
 confidenceValue = 1.96 # 95% confidence interval
 propagationDelay = 50000
-        
+
+timeAvg_methods = ['rightCont_timeAvg', 'leftCont_timeAvg', 'linearInterp_timeAvg']
+delay_timeAvg_vars = ['event']
+successProb_timeAvg_vars = ['event', 'probability']
+nonMarkingProb_timeAvg_vars = ['event']
+
 def check_MaxEpsilon_ineq_delay(endToEnd_statistics, samples_paths_aggregated_statistics):
-    if abs(endToEnd_statistics['DelayMean'] - samples_paths_aggregated_statistics['DelayMean']) / samples_paths_aggregated_statistics['DelayMean'] <= samples_paths_aggregated_statistics['MaxEpsilonDelay']:
+    if abs(endToEnd_statistics - samples_paths_aggregated_statistics['DelayMean']) / samples_paths_aggregated_statistics['DelayMean'] <= samples_paths_aggregated_statistics['MaxEpsilonDelay']:
         return True
     else:
         return False
@@ -38,6 +43,12 @@ def check_MaxEpsilon_ineq_nonMarkingProb(endToEnd_statistics, samples_paths_aggr
         return True
     else:
         return False
+
+def check_MaxEpsilon_ineq_lastNonMarkingProb(endToEnd_statistics, samples_paths_aggregated_statistics, number_of_segments):
+    if (endToEnd_statistics - samples_paths_aggregated_statistics['lastNonMarkingProbMean'] <= (number_of_segments * np.log(1 + samples_paths_aggregated_statistics['MaxEpsilonLastNonMarkingProb']))) and (endToEnd_statistics - samples_paths_aggregated_statistics['lastNonMarkingProbMean'] >= (number_of_segments * np.log(1 - samples_paths_aggregated_statistics['MaxEpsilonLastNonMarkingProb']))):
+        return True
+    else:
+        return False
     
 def check_all_delayConsistency(endToEnd_statistics, samples_paths_aggregated_statistics, paths):
     res = {}
@@ -45,8 +56,9 @@ def check_all_delayConsistency(endToEnd_statistics, samples_paths_aggregated_sta
     for flow in endToEnd_statistics.keys():
         res['MaxEpsilonIneq'][flow] = {}
         for path in paths:
-            res['MaxEpsilonIneq'][flow][path] = check_MaxEpsilon_ineq_delay(endToEnd_statistics[flow][path], samples_paths_aggregated_statistics[flow][path])
-            # print(flow, path, endToEnd_statistics[flow][path]['DelayMean'], samples_paths_aggregated_statistics[flow][path]['DelayMean'], abs(endToEnd_statistics[flow][path]['DelayMean'] - samples_paths_aggregated_statistics[flow][path]['DelayMean']) / samples_paths_aggregated_statistics[flow][path]['DelayMean'], samples_paths_aggregated_statistics[flow][path]['MaxEpsilonDelay'])
+            res['MaxEpsilonIneq'][flow][path] = {}
+            for var_method in endToEnd_statistics[flow]['delay'].keys():
+                res['MaxEpsilonIneq'][flow][path][var_method] = check_MaxEpsilon_ineq_delay(endToEnd_statistics[flow]['delay'][var_method][path], samples_paths_aggregated_statistics[flow][path])
     return res
 
 def check_all_successProbConsistency(endToEnd_statistics, samples_paths_aggregated_statistics, paths, number_of_segments):
@@ -56,13 +68,8 @@ def check_all_successProbConsistency(endToEnd_statistics, samples_paths_aggregat
         res['MaxEpsilonIneq'][flow] = {}
         for path in paths:
             res['MaxEpsilonIneq'][flow][path] = {}
-            res['MaxEpsilonIneq'][flow][path]['E2E_eventAvg'] = check_MaxEpsilon_ineq_successProb(np.log(endToEnd_statistics[flow][path]['successProbMean']['E2E_eventAvg']), samples_paths_aggregated_statistics[flow][path], number_of_segments)
-            res['MaxEpsilonIneq'][flow][path]['sentTime_est'] = check_MaxEpsilon_ineq_successProb(np.log(endToEnd_statistics[flow][path]['successProbMean']['sentTime_est']), samples_paths_aggregated_statistics[flow][path], number_of_segments)
-            res['MaxEpsilonIneq'][flow][path]['enqueueTime_est'] = check_MaxEpsilon_ineq_successProb(np.log(endToEnd_statistics[flow][path]['successProbMean']['enqueueTime_est']), samples_paths_aggregated_statistics[flow][path], number_of_segments)
-            res['MaxEpsilonIneq'][flow][path]['poisson_sentTime_est'] = {}
-            for sample_rate in sample_rates:
-                res['MaxEpsilonIneq'][flow][path]['poisson_sentTime_est'][sample_rate] = check_MaxEpsilon_ineq_successProb(np.log(endToEnd_statistics[flow][path]['successProbMean']['poisson_sentTime_est'][sample_rate]), samples_paths_aggregated_statistics[flow][path], number_of_segments)
-            # print(flow, path, endToEnd_statistics[flow][path]['successProbMean']['sentTime_est'], np.exp(samples_paths_aggregated_statistics[flow][path]['successProbMean']))
+            for var_method in endToEnd_statistics[flow]['successProb'].keys():
+                res['MaxEpsilonIneq'][flow][path][var_method] = check_MaxEpsilon_ineq_successProb(np.log(endToEnd_statistics[flow]['successProb'][var_method][path]), samples_paths_aggregated_statistics[flow][path], number_of_segments)
     return res
 
 def check_all_nonMarkingProbConsistency(endToEnd_statistics, samples_paths_aggregated_statistics, paths, number_of_segments):
@@ -72,111 +79,109 @@ def check_all_nonMarkingProbConsistency(endToEnd_statistics, samples_paths_aggre
         res['MaxEpsilonIneq'][flow] = {}
         for path in paths:
             res['MaxEpsilonIneq'][flow][path] = {}
-            res['MaxEpsilonIneq'][flow][path]['E2E_eventAvg'] = check_MaxEpsilon_ineq_nonMarkingProb(np.log(endToEnd_statistics[flow][path]['nonMarkingProbMean']['E2E_eventAvg']), samples_paths_aggregated_statistics[flow][path], number_of_segments)
-            res['MaxEpsilonIneq'][flow][path]['sentTime_est_events'] = check_MaxEpsilon_ineq_nonMarkingProb(np.log(endToEnd_statistics[flow][path]['nonMarkingProbMean']['sentTime_est_events']), samples_paths_aggregated_statistics[flow][path], number_of_segments)
-            res['MaxEpsilonIneq'][flow][path]['sentTime_est_probs'] = check_MaxEpsilon_ineq_nonMarkingProb(np.log(endToEnd_statistics[flow][path]['nonMarkingProbMean']['sentTime_est_probs']), samples_paths_aggregated_statistics[flow][path], number_of_segments)
-            res['MaxEpsilonIneq'][flow][path]['possion_est_probs'] = check_MaxEpsilon_ineq_nonMarkingProb(np.log(endToEnd_statistics[flow][path]['nonMarkingProbMean']['possion_est_probs']), samples_paths_aggregated_statistics[flow][path], number_of_segments)
-            # print(flow, path, endToEnd_statistics[flow][path]['successProbMean']['sentTime_est'], np.exp(samples_paths_aggregated_statistics[flow][path]['successProbMean']))
+            for var_method in endToEnd_statistics[flow]['nonMarkingProb'].keys():
+                res['MaxEpsilonIneq'][flow][path][var_method] = check_MaxEpsilon_ineq_nonMarkingProb(np.log(endToEnd_statistics[flow]['nonMarkingProb'][var_method][path]), samples_paths_aggregated_statistics[flow][path], number_of_segments)
+    return res
+
+def check_all_lastNonMarkingProbConsistency(endToEnd_statistics, samples_paths_aggregated_statistics, paths, number_of_segments):
+    res = {}
+    res['MaxEpsilonIneq'] = {}
+    for flow in endToEnd_statistics.keys():
+        res['MaxEpsilonIneq'][flow] = {}
+        for path in paths:
+            res['MaxEpsilonIneq'][flow][path] = {}
+            for var_method in endToEnd_statistics[flow]['nonMarkingProb'].keys():
+                res['MaxEpsilonIneq'][flow][path][var_method] = check_MaxEpsilon_ineq_lastNonMarkingProb(np.log(endToEnd_statistics[flow]['nonMarkingProb'][var_method][path]), samples_paths_aggregated_statistics[flow][path], number_of_segments)
     return res
 
 def prepare_results(flows, queues, num_of_paths):
     rounds_results = {}
     rounds_results['MaxEpsilonIneqDelay'] = {}
     rounds_results['MaxEpsilonIneqSuccessProb'] = {}
-    rounds_results['MaxEpsilonIneqSuccessProb']['E2E_eventAvg'] = {}
-    rounds_results['MaxEpsilonIneqSuccessProb']['sentTime_est'] = {}
-    rounds_results['MaxEpsilonIneqSuccessProb']['enqueueTime_est'] = {}
-    rounds_results['MaxEpsilonIneqSuccessProb']['poisson_sentTime_est'] = {}
     rounds_results['MaxEpsilonIneqNonMarkingProb'] = {}
-    rounds_results['MaxEpsilonIneqNonMarkingProb']['E2E_eventAvg'] = {}
-    rounds_results['MaxEpsilonIneqNonMarkingProb']['sentTime_est_events'] = {}
-    rounds_results['MaxEpsilonIneqNonMarkingProb']['sentTime_est_probs'] = {}
-    rounds_results['MaxEpsilonIneqNonMarkingProb']['possion_est_probs'] = {}
+    rounds_results['MaxEpsilonIneqLastNonMarkingProb'] = {}
     rounds_results['EndToEndDelayMean'] = {}
-    rounds_results['EndToEndDelayStd'] = {}
     rounds_results['EndToEndSuccessProb'] = {}
-    rounds_results['EndToEndSuccessProb']['E2E_eventAvg'] = {}
-    rounds_results['EndToEndSuccessProb']['sentTime_est'] = {}
-    rounds_results['EndToEndSuccessProb']['enqueueTime_est'] = {}
-    rounds_results['EndToEndSuccessProb']['poisson_sentTime_est'] = {}
-    for sample_rate in sample_rates:
-        rounds_results['MaxEpsilonIneqSuccessProb']['poisson_sentTime_est'][sample_rate] = {}
-        rounds_results['EndToEndSuccessProb']['poisson_sentTime_est'][sample_rate] = {}
     rounds_results['EndToEndNonMarkingProb'] = {}
-    rounds_results['EndToEndNonMarkingProb']['E2E_eventAvg'] = {}
-    rounds_results['EndToEndNonMarkingProb']['sentTime_est_events'] = {}
-    rounds_results['EndToEndNonMarkingProb']['sentTime_est_probs'] = {}
-    rounds_results['EndToEndNonMarkingProb']['possion_est_probs'] = {}
     rounds_results['DropRate'] = []
     rounds_results['maxEpsilonDelay'] = {}
     rounds_results['maxEpsilonSuccessProb'] = {}
     rounds_results['maxEpsilonNonMarkingProb'] = {}
-    rounds_results['errors'] = {}
+    rounds_results['maxEpsilonLastNonMarkingProb'] = {}
     rounds_results['workLoad'] = {}
     rounds_results['AverageWorkLoad'] = []
+    rounds_results['experiments'] = 0
+
+    for var in delay_timeAvg_vars:
+        for method in timeAvg_methods:
+            rounds_results['MaxEpsilonIneqDelay'][var + '_' + method] = {}
+            rounds_results['EndToEndDelayMean'][var + '_' + method] = {}
+
+    for var in successProb_timeAvg_vars:
+        for method in timeAvg_methods:
+            rounds_results['MaxEpsilonIneqSuccessProb'][var + '_' + method] = {}
+            rounds_results['EndToEndSuccessProb'][var + '_' + method] = {}
+
+    for var in nonMarkingProb_timeAvg_vars:
+        for method in timeAvg_methods:
+            rounds_results['MaxEpsilonIneqNonMarkingProb'][var + '_' + method] = {}
+            rounds_results['EndToEndNonMarkingProb'][var + '_' + method] = {}
+
+    for var in nonMarkingProb_timeAvg_vars:
+        for method in timeAvg_methods:
+            rounds_results['MaxEpsilonIneqLastNonMarkingProb'][var + '_' + method] = {}
 
     for q in queues:
         if q[0] == 'S' and q[1] == 'D':
             rounds_results[q+'Delaystd'] = []
             rounds_results[q+'DelayMean'] = []
+            rounds_results[q+'successProbStd'] = []
             rounds_results[q+'successProbMean'] = []
+            rounds_results[q+'nonMarkingProbStd'] = []
             rounds_results[q+'nonMarkingProbMean'] = []
+            rounds_results[q+'lastNonMarkingProbStd'] = []
+            rounds_results[q+'lastNonMarkingProbMean'] = []
 
     for flow in flows:
-        rounds_results['MaxEpsilonIneqDelay'][flow] = {}
-        rounds_results['MaxEpsilonIneqSuccessProb']['E2E_eventAvg'][flow] = {}
-        rounds_results['MaxEpsilonIneqSuccessProb']['sentTime_est'][flow] = {}
-        rounds_results['MaxEpsilonIneqSuccessProb']['enqueueTime_est'][flow] = {}
-        rounds_results['MaxEpsilonIneqNonMarkingProb']['E2E_eventAvg'][flow] = {}
-        rounds_results['MaxEpsilonIneqNonMarkingProb']['sentTime_est_events'][flow] = {}
-        rounds_results['MaxEpsilonIneqNonMarkingProb']['sentTime_est_probs'][flow] = {}
-        rounds_results['MaxEpsilonIneqNonMarkingProb']['possion_est_probs'][flow] = {}
-        rounds_results['EndToEndNonMarkingProb']['E2E_eventAvg'][flow] = {}
-        rounds_results['EndToEndNonMarkingProb']['sentTime_est_events'][flow] = {}
-        rounds_results['EndToEndNonMarkingProb']['sentTime_est_probs'][flow] = {}
-        rounds_results['EndToEndNonMarkingProb']['possion_est_probs'][flow] = {}
-        rounds_results['EndToEndDelayMean'][flow] = {}
-        rounds_results['EndToEndDelayStd'][flow] = {}
-        rounds_results['EndToEndSuccessProb']['E2E_eventAvg'][flow] = {}
-        rounds_results['EndToEndSuccessProb']['sentTime_est'][flow] = {}
-        rounds_results['EndToEndSuccessProb']['enqueueTime_est'][flow] = {}
-        for sample_rate in sample_rates:
-            rounds_results['MaxEpsilonIneqSuccessProb']['poisson_sentTime_est'][sample_rate][flow] = {}
-            rounds_results['EndToEndSuccessProb']['poisson_sentTime_est'][sample_rate][flow] = {}
+        for var_method in rounds_results['MaxEpsilonIneqDelay'].keys():
+            rounds_results['MaxEpsilonIneqDelay'][var_method][flow] = {}
+            rounds_results['EndToEndDelayMean'][var_method][flow] = {}
+
+        for var_method in rounds_results['MaxEpsilonIneqSuccessProb'].keys():
+            rounds_results['MaxEpsilonIneqSuccessProb'][var_method][flow] = {}
+            rounds_results['EndToEndSuccessProb'][var_method][flow] = {}
+
+        for var_method in rounds_results['MaxEpsilonIneqNonMarkingProb'].keys():
+            rounds_results['MaxEpsilonIneqNonMarkingProb'][var_method][flow] = {}
+            rounds_results['MaxEpsilonIneqLastNonMarkingProb'][var_method][flow] = {}
+            rounds_results['EndToEndNonMarkingProb'][var_method][flow] = {}
+
+        rounds_results['workLoad'][flow] = {}
         rounds_results['maxEpsilonDelay'][flow] = {}
         rounds_results['maxEpsilonSuccessProb'][flow] = {}
         rounds_results['maxEpsilonNonMarkingProb'][flow] = {}
-        rounds_results['errors'][flow] = {}
-        rounds_results['workLoad'][flow] = {}
+        rounds_results['maxEpsilonLastNonMarkingProb'][flow] = {}
 
         for i in range(num_of_paths):
-            rounds_results['MaxEpsilonIneqDelay'][flow]['A' + str(i)] = 0
-            rounds_results['MaxEpsilonIneqSuccessProb']['E2E_eventAvg'][flow]['A' + str(i)] = 0
-            rounds_results['MaxEpsilonIneqSuccessProb']['sentTime_est'][flow]['A' + str(i)] = 0
-            rounds_results['MaxEpsilonIneqSuccessProb']['enqueueTime_est'][flow]['A' + str(i)] = 0
-            rounds_results['MaxEpsilonIneqNonMarkingProb']['E2E_eventAvg'][flow]['A' + str(i)] = 0
-            rounds_results['MaxEpsilonIneqNonMarkingProb']['sentTime_est_events'][flow]['A' + str(i)] = 0
-            rounds_results['MaxEpsilonIneqNonMarkingProb']['sentTime_est_probs'][flow]['A' + str(i)] = 0
-            rounds_results['MaxEpsilonIneqNonMarkingProb']['possion_est_probs'][flow]['A' + str(i)] = 0
-            rounds_results['EndToEndNonMarkingProb']['E2E_eventAvg'][flow]['A' + str(i)] = []
-            rounds_results['EndToEndNonMarkingProb']['sentTime_est_events'][flow]['A' + str(i)] = []
-            rounds_results['EndToEndNonMarkingProb']['sentTime_est_probs'][flow]['A' + str(i)] = []
-            rounds_results['EndToEndNonMarkingProb']['possion_est_probs'][flow]['A' + str(i)] = []
-            rounds_results['EndToEndDelayMean'][flow]['A' + str(i)] = []
-            rounds_results['EndToEndDelayStd'][flow]['A' + str(i)] = []
-            rounds_results['EndToEndSuccessProb']['E2E_eventAvg'][flow]['A' + str(i)] = []
-            rounds_results['EndToEndSuccessProb']['sentTime_est'][flow]['A' + str(i)] = []
-            rounds_results['EndToEndSuccessProb']['enqueueTime_est'][flow]['A' + str(i)] = []
-            for sample_rate in sample_rates:
-                rounds_results['MaxEpsilonIneqSuccessProb']['poisson_sentTime_est'][sample_rate][flow]['A' + str(i)] = 0
-                rounds_results['EndToEndSuccessProb']['poisson_sentTime_est'][sample_rate][flow]['A' + str(i)] = []
-            rounds_results['maxEpsilonDelay'][flow]['A' + str(i)] = []
-            rounds_results['maxEpsilonSuccessProb'][flow]['A' + str(i)] = []
-            rounds_results['maxEpsilonNonMarkingProb'][flow]['A' + str(i)] = []
-            rounds_results['errors'][flow]['A' + str(i)] = []
-            rounds_results['workLoad'][flow]['A' + str(i)] = []
+            for var_method in rounds_results['MaxEpsilonIneqDelay'].keys():
+                rounds_results['MaxEpsilonIneqDelay'][var_method][flow][i] = 0
+                rounds_results['EndToEndDelayMean'][var_method][flow][i] = []
 
-    rounds_results['experiments'] = 0
+            for var_method in rounds_results['MaxEpsilonIneqSuccessProb'].keys():
+                rounds_results['MaxEpsilonIneqSuccessProb'][var_method][flow][i] = 0
+                rounds_results['EndToEndSuccessProb'][var_method][flow][i] = []
+            
+            for var_method in rounds_results['MaxEpsilonIneqNonMarkingProb'].keys():
+                rounds_results['MaxEpsilonIneqNonMarkingProb'][var_method][flow][i] = 0
+                rounds_results['MaxEpsilonIneqLastNonMarkingProb'][var_method][flow][i] = 0
+                rounds_results['EndToEndNonMarkingProb'][var_method][flow][i] = []
+            
+            rounds_results['workLoad'][flow][i] = []
+            rounds_results['maxEpsilonDelay'][flow][i] = []
+            rounds_results['maxEpsilonSuccessProb'][flow][i] = []
+            rounds_results['maxEpsilonNonMarkingProb'][flow][i] = []
+            rounds_results['maxEpsilonLastNonMarkingProb'][flow][i] = []
+
     return rounds_results
 
 def compatibility_check(rounds_results, samples_paths_aggregated_statistics, endToEnd_statistics, flows_name, paths, number_of_segments):
@@ -184,28 +189,23 @@ def compatibility_check(rounds_results, samples_paths_aggregated_statistics, end
     delay_results = check_all_delayConsistency(endToEnd_statistics, samples_paths_aggregated_statistics, paths)
     successProb_results = check_all_successProbConsistency(endToEnd_statistics, samples_paths_aggregated_statistics, paths, number_of_segments)
     nonMarkingProb_results = check_all_nonMarkingProbConsistency(endToEnd_statistics, samples_paths_aggregated_statistics, paths, number_of_segments)
+    lastNonMarkingProb_results = check_all_lastNonMarkingProbConsistency(endToEnd_statistics, samples_paths_aggregated_statistics, paths, number_of_segments)
 
     for flow in flows_name:
         for path in paths:
-            if delay_results['MaxEpsilonIneq'][flow][path]:
-                rounds_results['MaxEpsilonIneqDelay'][flow][path] += 1
-            if successProb_results['MaxEpsilonIneq'][flow][path]['E2E_eventAvg']:
-                rounds_results['MaxEpsilonIneqSuccessProb']['E2E_eventAvg'][flow][path] += 1
-            if successProb_results['MaxEpsilonIneq'][flow][path]['sentTime_est']:
-                rounds_results['MaxEpsilonIneqSuccessProb']['sentTime_est'][flow][path] += 1
-            if successProb_results['MaxEpsilonIneq'][flow][path]['enqueueTime_est']:
-                rounds_results['MaxEpsilonIneqSuccessProb']['enqueueTime_est'][flow][path] += 1
-            for sample_rate in sample_rates:
-                if successProb_results['MaxEpsilonIneq'][flow][path]['poisson_sentTime_est'][sample_rate]:
-                    rounds_results['MaxEpsilonIneqSuccessProb']['poisson_sentTime_est'][sample_rate][flow][path] += 1
-            if nonMarkingProb_results['MaxEpsilonIneq'][flow][path]['E2E_eventAvg']:
-                rounds_results['MaxEpsilonIneqNonMarkingProb']['E2E_eventAvg'][flow][path] += 1
-            if nonMarkingProb_results['MaxEpsilonIneq'][flow][path]['sentTime_est_events']:
-                rounds_results['MaxEpsilonIneqNonMarkingProb']['sentTime_est_events'][flow][path] += 1
-            if nonMarkingProb_results['MaxEpsilonIneq'][flow][path]['sentTime_est_probs']:
-                rounds_results['MaxEpsilonIneqNonMarkingProb']['sentTime_est_probs'][flow][path] += 1
-            if nonMarkingProb_results['MaxEpsilonIneq'][flow][path]['possion_est_probs']:
-                rounds_results['MaxEpsilonIneqNonMarkingProb']['possion_est_probs'][flow][path] += 1
+            for var_method in rounds_results['MaxEpsilonIneqDelay'].keys():
+                if delay_results['MaxEpsilonIneq'][flow][path][var_method]:
+                    rounds_results['MaxEpsilonIneqDelay'][var_method][flow][path] += 1
+
+            for var_method in rounds_results['MaxEpsilonIneqSuccessProb'].keys():
+                if successProb_results['MaxEpsilonIneq'][flow][path][var_method]:
+                    rounds_results['MaxEpsilonIneqSuccessProb'][var_method][flow][path] += 1
+
+            for var_method in rounds_results['MaxEpsilonIneqNonMarkingProb'].keys():
+                if nonMarkingProb_results['MaxEpsilonIneq'][flow][path][var_method]:
+                    rounds_results['MaxEpsilonIneqNonMarkingProb'][var_method][flow][path] += 1
+                if lastNonMarkingProb_results['MaxEpsilonIneq'][flow][path][var_method]:
+                    rounds_results['MaxEpsilonIneqLastNonMarkingProb'][var_method][flow][path] += 1
 
 
 def sample_endToEnd_packets(ns3_path, rate, segment, experiment, results_folder, _sample_rate, e2e_delays):
@@ -272,21 +272,16 @@ def analyze_single_experiment(return_dict, rate, queues_names, confidenceValue, 
     steadyEnd = convert_to_float(config.get('Settings', 'steadyEnd')) * 1e9
     swtichDstREDQueueDiscMaxSize = convert_to_float(config.get('Settings', 'swtichDstREDQueueDiscMaxSize'))
     num_of_paths = 1
-    paths = ['A' + str(i) for i in range(num_of_paths)]
+    paths = range(num_of_paths)
     # endToEnd_dfs = read_online_computations(__ns3_path, rate, 'EndToEnd', str(experiment), results_folder)
     # samples_dfs = read_online_computations(__ns3_path, rate, 'PoissonSampler', str(experiment), results_folder)
 
     endToEndStats = calculate_offline_computations(__ns3_path, rate, 'EndToEnd_packets', str(experiment), results_folder, steadyStart, steadyEnd, "SentTime", True, "IsReceived", [srcHostToSwitchLinkRate, bottleneckLinkRate], [linkDelay, linkDelay], swtichDstREDQueueDiscMaxSize)
     # print(endToEndStats)
-    calculate_offline_computations(__ns3_path, rate, 'EndToEnd_markings', str(experiment), results_folder, endToEndStats['A0D0']['first'][0], endToEndStats['A0D0']['last'][0], "Time", linksRates=[srcHostToSwitchLinkRate, bottleneckLinkRate], linkDelays=[linkDelay, linkDelay], stats=endToEndStats)
+    # calculate_offline_computations(__ns3_path, rate, 'EndToEnd_markings', str(experiment), results_folder, endToEndStats['A0D0']['first'][0], endToEndStats['A0D0']['last'][0], "Time", linksRates=[srcHostToSwitchLinkRate, bottleneckLinkRate], linkDelays=[linkDelay, linkDelay], stats=endToEndStats)
     # print(endToEndStats)
     samplesSats = calculate_offline_computations(__ns3_path, rate, 'PoissonSampler_events', str(experiment), results_folder, endToEndStats['A0D0']['first'][0], endToEndStats['A0D0']['last'][0], "Time")
     # print(samplesSats)
-
-    successProbs = read_lossProb(__ns3_path, rate, 'EndToEnd_packets', str(experiment), results_folder)
-    successProbs_poisson = {}
-    for sample_rate in sample_rates:
-        successProbs_poisson[sample_rate] = sample_endToEnd_packets(__ns3_path, rate, 'EndToEnd_packets', experiment, results_folder, sample_rate, endToEndStats)
 
     rounds_results['DropRate'].append(calculate_avgDrop_rate_offline(endToEndStats, paths))
     # samples_paths_statistics
@@ -306,56 +301,43 @@ def analyze_single_experiment(return_dict, rate, queues_names, confidenceValue, 
             samples_paths_aggregated_statistics[flow][path]['nonMarkingProbMean'] = np.log(samplesSats['SD0']['nonMarkingProbMean'])
             samples_paths_aggregated_statistics[flow][path]['MaxEpsilonNonMarkingProb'] = calc_epsilon_marking(confidenceValue, samplesSats['SD0'])
 
+            samples_paths_aggregated_statistics[flow][path]['lastNonMarkingProbMean'] = np.log(samplesSats['SD0']['lastNonMarkingProbMean'])
+            samples_paths_aggregated_statistics[flow][path]['MaxEpsilonLastNonMarkingProb'] = calc_epsilon_last_marking(confidenceValue, samplesSats['SD0'])
+
     # endToEnd_statistics
-    endToEnd_statistics = {}
     AverageWorkLoad = 0
     for flow in endToEndStats.keys():
-        endToEnd_statistics[flow] = {}
         for path in paths:
-            endToEnd_statistics[flow][path] = {}
-            endToEnd_statistics[flow][path]['DelayMean'] = endToEndStats[flow]['timeAverage'][int(path[1])]
-            endToEnd_statistics[flow][path]['successProbMean'] = {}
-            endToEnd_statistics[flow][path]['successProbMean']['E2E_eventAvg'] = endToEndStats[flow]['successProbMean'][int(path[1])]   
-            endToEnd_statistics[flow][path]['successProbMean']['sentTime_est'] = successProbs[flow]['timeAvgSuccessProb'][path]
-            endToEnd_statistics[flow][path]['successProbMean']['enqueueTime_est'] = endToEndStats[flow]['enqueueTimeAvgSuccessProb'][int(path[1])]       
-            endToEnd_statistics[flow][path]['successProbMean']['poisson_sentTime_est'] = {}
-            for sample_rate in sample_rates:
-                endToEnd_statistics[flow][path]['successProbMean']['poisson_sentTime_est'][sample_rate] = successProbs_poisson[sample_rate][flow]['timeAvgSuccessProb'][path]
-            # print(flow, path, (samples_paths_aggregated_statistics[flow][path]['DelayMean'] * rate * 0.6 / 8) / 100, "%")
-            endToEnd_statistics[flow][path]['nonMarkingProbMean'] = {}
-            endToEnd_statistics[flow][path]['nonMarkingProbMean']['E2E_eventAvg'] = endToEndStats[flow]['nonMarkingProbMean'][int(path[1])]
-            endToEnd_statistics[flow][path]['nonMarkingProbMean']['sentTime_est_events'] = endToEndStats[flow]['enqueueTimeAvgNonMarkingProb'][int(path[1])]
-            endToEnd_statistics[flow][path]['nonMarkingProbMean']['sentTime_est_probs'] = endToEndStats[flow]['enqueueTimeAvgNonMarkingFractionProb'][int(path[1])]
-            endToEnd_statistics[flow][path]['nonMarkingProbMean']['possion_est_probs'] = endToEndStats[flow]['nonMarkingProbReceiverF'][int(path[1])]
-            rounds_results['EndToEndNonMarkingProb']['E2E_eventAvg'][flow][path].append(endToEndStats[flow]['nonMarkingProbMean'][int(path[1])])
-            rounds_results['EndToEndNonMarkingProb']['sentTime_est_events'][flow][path].append(endToEndStats[flow]['enqueueTimeAvgNonMarkingProb'][int(path[1])])
-            rounds_results['EndToEndNonMarkingProb']['sentTime_est_probs'][flow][path].append(endToEndStats[flow]['enqueueTimeAvgNonMarkingFractionProb'][int(path[1])])
-            rounds_results['EndToEndNonMarkingProb']['possion_est_probs'][flow][path].append(endToEndStats[flow]['nonMarkingProbReceiverF'][int(path[1])])
-            rounds_results['EndToEndSuccessProb']['E2E_eventAvg'][flow][path].append(endToEndStats[flow]['successProbMean'][int(path[1])])
-            rounds_results['EndToEndSuccessProb']['sentTime_est'][flow][path].append(successProbs[flow]['timeAvgSuccessProb'][path])
-            rounds_results['EndToEndSuccessProb']['enqueueTime_est'][flow][path].append(endToEndStats[flow]['enqueueTimeAvgSuccessProb'][int(path[1])])
-            for sample_rate in sample_rates:
-                rounds_results['EndToEndSuccessProb']['poisson_sentTime_est'][sample_rate][flow][path].append(successProbs_poisson[sample_rate][flow]['timeAvgSuccessProb'][path])
-            rounds_results['EndToEndDelayMean'][flow][path].append(endToEndStats[flow]['timeAverage'][int(path[1])])
-            rounds_results['EndToEndDelayStd'][flow][path].append(endToEndStats[flow]['DelayStd'][int(path[1])])
+            for var_method in rounds_results['EndToEndDelayMean'].keys():
+                rounds_results['EndToEndDelayMean'][var_method][flow][path].append(endToEndStats[flow]['delay'][var_method][path])
+            for var_method in rounds_results['EndToEndSuccessProb'].keys():
+                rounds_results['EndToEndSuccessProb'][var_method][flow][path].append(endToEndStats[flow]['successProb'][var_method][path])
+            for var_method in rounds_results['EndToEndNonMarkingProb'].keys():
+                rounds_results['EndToEndNonMarkingProb'][var_method][flow][path].append(endToEndStats[flow]['nonMarkingProb'][var_method][path])
+
             rounds_results['maxEpsilonDelay'][flow][path].append(samples_paths_aggregated_statistics[flow][path]['MaxEpsilonDelay'])
             rounds_results['maxEpsilonSuccessProb'][flow][path].append(samples_paths_aggregated_statistics[flow][path]['MaxEpsilonSuccessProb'])
             rounds_results['maxEpsilonNonMarkingProb'][flow][path].append(samples_paths_aggregated_statistics[flow][path]['MaxEpsilonNonMarkingProb'])
-            rounds_results['errors'][flow][path].append(abs((samples_paths_aggregated_statistics[flow][path]['DelayMean'] - endToEnd_statistics[flow][path]['DelayMean']) / samples_paths_aggregated_statistics[flow][path]['DelayMean']))
-            AverageWorkLoad += (endToEndStats[flow]['worklaod'][int(path[1])])
+            rounds_results['maxEpsilonLastNonMarkingProb'][flow][path].append(samples_paths_aggregated_statistics[flow][path]['MaxEpsilonLastNonMarkingProb'])
+
+            AverageWorkLoad += (endToEndStats[flow]['workload'][path])
     
-        rounds_results['workLoad'][flow][path].append(endToEndStats[flow]['worklaod'][int(path[1])])
+        rounds_results['workLoad'][flow][path].append(endToEndStats[flow]['workload'][path])
     rounds_results['AverageWorkLoad'].append(AverageWorkLoad / len(endToEndStats.keys()))
     rounds_results['experiments'] += 1
     number_of_segments = 1
-    compatibility_check(rounds_results, samples_paths_aggregated_statistics, endToEnd_statistics, endToEndStats.keys(), ['A' + str(i) for i in range(num_of_paths)], number_of_segments)
+    compatibility_check(rounds_results, samples_paths_aggregated_statistics, endToEndStats, endToEndStats.keys(), range(num_of_paths), number_of_segments)
               
     for q in queues_names:
         if q[0] == 'S' and q[1] == 'D':
             rounds_results[q+'Delaystd'].append(samplesSats[q]['DelayStd'])
             rounds_results[q+'DelayMean'].append(samplesSats[q]['DelayMean'])
+            rounds_results[q+'successProbStd'].append(samplesSats[q]['successProbStd'])
             rounds_results[q+'successProbMean'].append(samplesSats[q]['successProbMean'])
+            rounds_results[q+'nonMarkingProbStd'].append(samplesSats[q]['nonMarkingProbStd'])
             rounds_results[q+'nonMarkingProbMean'].append(samplesSats[q]['nonMarkingProbMean'])
+            rounds_results[q+'lastNonMarkingProbStd'].append(samplesSats[q]['lastNonMarkingProbStd'])
+            rounds_results[q+'lastNonMarkingProbMean'].append(samplesSats[q]['lastNonMarkingProbMean'])
     return_dict[experiment] = rounds_results
 
 def merge_results(return_dict, merged_results, flows, queues, num_of_paths):
@@ -364,37 +346,35 @@ def merge_results(return_dict, merged_results, flows, queues, num_of_paths):
             if q[0] == 'S' and q[1] == 'D':
                 merged_results[q+'Delaystd'] += return_dict[exp][q+'Delaystd']
                 merged_results[q+'DelayMean'] += return_dict[exp][q+'DelayMean']
+                merged_results[q+'successProbStd'] += return_dict[exp][q+'successProbStd']
                 merged_results[q+'successProbMean'] += return_dict[exp][q+'successProbMean']
+                merged_results[q+'nonMarkingProbStd'] += return_dict[exp][q+'nonMarkingProbStd']
                 merged_results[q+'nonMarkingProbMean'] += return_dict[exp][q+'nonMarkingProbMean']
+                merged_results[q+'lastNonMarkingProbStd'] += return_dict[exp][q+'lastNonMarkingProbStd']
+                merged_results[q+'lastNonMarkingProbMean'] += return_dict[exp][q+'lastNonMarkingProbMean']
 
     for flow in flows:
         for i in range(num_of_paths):
             for exp in return_dict.keys():
-                merged_results['MaxEpsilonIneqDelay'][flow]['A' + str(i)] += return_dict[exp]['MaxEpsilonIneqDelay'][flow]['A' + str(i)]
-                merged_results['MaxEpsilonIneqSuccessProb']['E2E_eventAvg'][flow]['A' + str(i)] += return_dict[exp]['MaxEpsilonIneqSuccessProb']['E2E_eventAvg'][flow]['A' + str(i)]
-                merged_results['MaxEpsilonIneqSuccessProb']['sentTime_est'][flow]['A' + str(i)] += return_dict[exp]['MaxEpsilonIneqSuccessProb']['sentTime_est'][flow]['A' + str(i)]
-                merged_results['MaxEpsilonIneqSuccessProb']['enqueueTime_est'][flow]['A' + str(i)] += return_dict[exp]['MaxEpsilonIneqSuccessProb']['enqueueTime_est'][flow]['A' + str(i)]
-                merged_results['MaxEpsilonIneqNonMarkingProb']['E2E_eventAvg'][flow]['A' + str(i)] += return_dict[exp]['MaxEpsilonIneqNonMarkingProb']['E2E_eventAvg'][flow]['A' + str(i)]
-                merged_results['MaxEpsilonIneqNonMarkingProb']['sentTime_est_events'][flow]['A' + str(i)] += return_dict[exp]['MaxEpsilonIneqNonMarkingProb']['sentTime_est_events'][flow]['A' + str(i)]
-                merged_results['MaxEpsilonIneqNonMarkingProb']['sentTime_est_probs'][flow]['A' + str(i)] += return_dict[exp]['MaxEpsilonIneqNonMarkingProb']['sentTime_est_probs'][flow]['A' + str(i)]
-                merged_results['MaxEpsilonIneqNonMarkingProb']['possion_est_probs'][flow]['A' + str(i)] += return_dict[exp]['MaxEpsilonIneqNonMarkingProb']['possion_est_probs'][flow]['A' + str(i)]
-                merged_results['EndToEndDelayMean'][flow]['A' + str(i)] += return_dict[exp]['EndToEndDelayMean'][flow]['A' + str(i)]
-                merged_results['EndToEndDelayStd'][flow]['A' + str(i)] += return_dict[exp]['EndToEndDelayStd'][flow]['A' + str(i)]
-                merged_results['EndToEndNonMarkingProb']['E2E_eventAvg'][flow]['A' + str(i)] += return_dict[exp]['EndToEndNonMarkingProb']['E2E_eventAvg'][flow]['A' + str(i)]
-                merged_results['EndToEndNonMarkingProb']['sentTime_est_events'][flow]['A' + str(i)] += return_dict[exp]['EndToEndNonMarkingProb']['sentTime_est_events'][flow]['A' + str(i)]
-                merged_results['EndToEndNonMarkingProb']['sentTime_est_probs'][flow]['A' + str(i)] += return_dict[exp]['EndToEndNonMarkingProb']['sentTime_est_probs'][flow]['A' + str(i)]
-                merged_results['EndToEndNonMarkingProb']['possion_est_probs'][flow]['A' + str(i)] += return_dict[exp]['EndToEndNonMarkingProb']['possion_est_probs'][flow]['A' + str(i)]
-                merged_results['EndToEndSuccessProb']['E2E_eventAvg'][flow]['A' + str(i)] += return_dict[exp]['EndToEndSuccessProb']['E2E_eventAvg'][flow]['A' + str(i)]
-                merged_results['EndToEndSuccessProb']['sentTime_est'][flow]['A' + str(i)] += return_dict[exp]['EndToEndSuccessProb']['sentTime_est'][flow]['A' + str(i)]
-                merged_results['EndToEndSuccessProb']['enqueueTime_est'][flow]['A' + str(i)] += return_dict[exp]['EndToEndSuccessProb']['enqueueTime_est'][flow]['A' + str(i)]
-                for sample_rate in sample_rates:
-                    merged_results['MaxEpsilonIneqSuccessProb']['poisson_sentTime_est'][sample_rate][flow]['A' + str(i)] += return_dict[exp]['MaxEpsilonIneqSuccessProb']['poisson_sentTime_est'][sample_rate][flow]['A' + str(i)]
-                    merged_results['EndToEndSuccessProb']['poisson_sentTime_est'][sample_rate][flow]['A' + str(i)] += return_dict[exp]['EndToEndSuccessProb']['poisson_sentTime_est'][sample_rate][flow]['A' + str(i)]
-                merged_results['maxEpsilonDelay'][flow]['A' + str(i)] += return_dict[exp]['maxEpsilonDelay'][flow]['A' + str(i)]
-                merged_results['maxEpsilonSuccessProb'][flow]['A' + str(i)] += return_dict[exp]['maxEpsilonSuccessProb'][flow]['A' + str(i)]
-                merged_results['maxEpsilonNonMarkingProb'][flow]['A' + str(i)] += return_dict[exp]['maxEpsilonNonMarkingProb'][flow]['A' + str(i)]
-                merged_results['errors'][flow]['A' + str(i)] += return_dict[exp]['errors'][flow]['A' + str(i)]
-                merged_results['workLoad'][flow]['A' + str(i)] += return_dict[exp]['workLoad'][flow]['A' + str(i)]
+                for var_method in merged_results['MaxEpsilonIneqDelay'].keys():
+                    merged_results['MaxEpsilonIneqDelay'][var_method][flow][i] += return_dict[exp]['MaxEpsilonIneqDelay'][var_method][flow][i]
+                    merged_results['EndToEndDelayMean'][var_method][flow][i] += return_dict[exp]['EndToEndDelayMean'][var_method][flow][i]
+
+                for var_method in merged_results['MaxEpsilonIneqSuccessProb'].keys():
+                    merged_results['MaxEpsilonIneqSuccessProb'][var_method][flow][i] += return_dict[exp]['MaxEpsilonIneqSuccessProb'][var_method][flow][i]
+                    merged_results['EndToEndSuccessProb'][var_method][flow][i] += return_dict[exp]['EndToEndSuccessProb'][var_method][flow][i]
+
+                for var_method in merged_results['MaxEpsilonIneqNonMarkingProb'].keys():
+                    merged_results['MaxEpsilonIneqNonMarkingProb'][var_method][flow][i] += return_dict[exp]['MaxEpsilonIneqNonMarkingProb'][var_method][flow][i]
+                    merged_results['MaxEpsilonIneqLastNonMarkingProb'][var_method][flow][i] += return_dict[exp]['MaxEpsilonIneqLastNonMarkingProb'][var_method][flow][i]
+                    merged_results['EndToEndNonMarkingProb'][var_method][flow][i] += return_dict[exp]['EndToEndNonMarkingProb'][var_method][flow][i]
+
+
+                merged_results['maxEpsilonDelay'][flow][i] += return_dict[exp]['maxEpsilonDelay'][flow][i]
+                merged_results['maxEpsilonSuccessProb'][flow][i] += return_dict[exp]['maxEpsilonSuccessProb'][flow][i]
+                merged_results['maxEpsilonNonMarkingProb'][flow][i] += return_dict[exp]['maxEpsilonNonMarkingProb'][flow][i]
+                merged_results['maxEpsilonLastNonMarkingProb'][flow][i] += return_dict[exp]['maxEpsilonLastNonMarkingProb'][flow][i]
+                merged_results['workLoad'][flow][i] += return_dict[exp]['workLoad'][flow][i]
     for exp in return_dict.keys():
         merged_results['experiments'] += return_dict[exp]['experiments']
         merged_results['DropRate'] += return_dict[exp]['DropRate']
@@ -429,10 +409,7 @@ def analyze_all_experiments(rate, steadyStart, steadyEnd, confidenceValue, dir, 
         merge_results(return_dict, merged_results, flows_name, queues_names, num_of_paths)
         print("{} joind".format(i))
     merged_results['AverageWorkLoad'] = sum(merged_results['AverageWorkLoad']) / merged_results['experiments']
-    print("average drop rate =", np.average(merged_results['DropRate']) * 100, "%", "average queue capacity usage = ", np.average(merged_results['SD0DelayMean']) * 0.6 * rate / 800, "%", "Delay consistency check " , merged_results['MaxEpsilonIneqDelay']['A0D0']["A0"] / merged_results['experiments'] * 100)
     with open('../Results/results_{}/{}/receiverF_{}_{}_{}_{}_to_{}.json'.format(dir, rate, dir, results_folder, experiments_end, steadyStart, steadyEnd), 'w') as f:
-    # with open('../Results/results_{}/{}/WOtimeShift_{}_{}_{}_{}_to_{}.json'.format(dir, rate, dir, results_folder, experiments_end, steadyStart, steadyEnd), 'w') as f:
-    # with open('../Results/results_{}/{}/WtimeShift_{}_{}_{}_{}_to_{}.json'.format(dir, rate, dir, results_folder, experiments_end, steadyStart, steadyEnd), 'w') as f:
         js.dump(merged_results, f, indent=4)
 
 # main function
@@ -446,7 +423,7 @@ def __main__():
 
     args = parser.parse_args()
     config = configparser.ConfigParser()
-    config.read('../Parameters.config')
+    config.read('../Results/results_{}/Parameters.config'.format(args.dir))
     steadyStart = convert_to_float(config.get('Settings', 'steadyStart'))
     steadyEnd = convert_to_float(config.get('Settings', 'steadyEnd'))
     experiments = int(config.get('Settings', 'experiments'))
@@ -456,7 +433,7 @@ def __main__():
         serviceRateScales = [float(x) for x in config.get('Settings', 'sampleRateScales').split(',')]
     else:
         serviceRateScales = [float(x) for x in config.get('Settings', 'errorRateScale').split(',')]
-    # serviceRateScales = [0.99]
+    # serviceRateScales = [0.79]
     # serviceRateScales = [1.0, 1.01, 1.03, 1.05]
     # serviceRateScales = [0.91, 0.93, 0.95, 0.97, 0.99, 1.01, 1.03, 1.05]
     # serviceRateScales = [float(x) for x in config.get('Settings', 'serviceRateScales').split(',')]
