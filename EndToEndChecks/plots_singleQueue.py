@@ -5,6 +5,7 @@ import json as js
 import matplotlib.pyplot as plt
 import numpy as np
 
+colors = ['b', 'g', 'r', 'c', 'm', 'y', 'k', 'w']
 def readResults(results_dir, serviceRateScales, results_dir_file):
     results = {}
     flows = ['A0D0']
@@ -44,10 +45,12 @@ def plot_success_per_rate(results, flows, paths, rates, results_dir, results_dir
         plt.figure(figsize=(8, 6))
         
         sub_keys = set(k for r in results.values() if metric in r for k in r[metric].keys())
-        
+        sub_keys = sorted(sub_keys)
+        i = 0
         for sub_key in sub_keys:
             y_values = [results[rate].get(metric, {}).get(sub_key, np.nan) for rate in rates]
-            plt.plot(rates, y_values, marker='o', label=sub_key)
+            plt.plot(rates, y_values, marker='o', label=sub_key, color=colors[i])
+            i += 1
         
         plt.xlabel("Rate (from high to low congestion)")
         plt.ylabel("Success Rate (%)")
@@ -73,7 +76,7 @@ def __main__():
     args = parser.parse_args()
     results_dir = args.dir
     # results_dir_file = args.file
-    results_dir_file = "Q_m"
+    results_dir_file = "Q_total"
     config = configparser.ConfigParser()
     config.read('../Results/results_{}/Parameters.config'.format(args.dir))
     serviceRateScales = [float(x) for x in config.get('Settings', 'serviceRateScales').split(',')]
