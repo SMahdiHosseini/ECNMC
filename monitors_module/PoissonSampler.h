@@ -27,6 +27,8 @@ private:
     double _lastMarkingProb = 0;
     double _lossProb = 0;
     uint32_t _queueSize = 0;
+    uint32_t _totalQueueSize = 0;
+    string _label;
 public:
     explicit samplingEvent(PacketKey *key);
     explicit samplingEvent();
@@ -36,7 +38,9 @@ public:
     [[nodiscard]] double GetMarkingProb() const;
     [[nodiscard]] double GetLossProb() const;
     [[nodiscard]] uint32_t GetQueueSize() const;
+    [[nodiscard]] uint32_t GetTotalQueueSize() const;
     [[nodiscard]] double GetLastMarkingProb() const;
+    [[nodiscard]] string GetLabel() const;
     [[nodiscard]] bool IsDeparted() const;
 
     void SetSampleTime();
@@ -46,7 +50,9 @@ public:
     void SetMarkingProb(double markingProb);
     void SetLossProb(double lossProb);
     void SetQueueSize(uint32_t size);
+    void SetTotalQueueSize(uint32_t size);
     void SetLastMarkingProb(double markingProb);
+    void SetLabel(const string label);
 };
 
 class PoissonSampler : public Monitor{

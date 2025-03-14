@@ -455,6 +455,78 @@ def timeShift(full_df, timeColumn, sizeColumn, linkDelays, linksRates):
     # full_df[timeColumn] = full_df[timeColumn] - (linkDelays[0] * 2 + (full_df[sizeColumn] * 8) / linksRates[0] + linkDelays[1] * 2 + (full_df[sizeColumn] * 8) / linksRates[1])
     return full_df
 
+def calculate_offline_computations_on_switch(__ns3_path, results_folder, rate, experiment, segment, steadyStart, steadyEnd, paths, linkRate):
+    file_paths = glob.glob('{}/scratch/{}/{}/{}/*_{}.csv'.format(__ns3_path, results_folder, rate, experiment, segment))
+    dfs = {}
+    for file_path in file_paths:
+        df_res = {}
+        df_name = 'A0D0'
+        full_df = pd.read_csv(file_path)
+        df_res['first'] = {}
+        df_res['last'] = {}
+        df_res['workload'] = {}
+        df_res['sampleSize'] = {}
+        df_res['successProbMean'] = {}
+        full_df = prune_data(full_df, 'Time', steadyStart, steadyEnd)
+        full_df = full_df[full_df['Label'].str.contains('10.1.1.1', na=False)]
+        full_df = full_df.sort_values(by='Time').reset_index(drop=True)
+
+        df_res['delay'] = {}
+        for var in ['event']:
+            for method in ['rightCont_timeAvg', 'leftCont_timeAvg', 'linearInterp_timeAvg']:
+                df_res['delay'][var + '_' + method] = {}
+
+        df_res['successProb'] = {}
+        for var in ['probability']:
+            for method in ['rightCont_timeAvg', 'leftCont_timeAvg', 'linearInterp_timeAvg']:
+                df_res['successProb'][var + '_' + method] = {}
+
+        df_res['nonMarkingProb'] = {}
+        for var in ['event']:
+            for method in ['rightCont_timeAvg', 'leftCont_timeAvg', 'linearInterp_timeAvg']:
+                df_res['nonMarkingProb'][var + '_' + method] = {}
+        
+        for path in paths:
+            df_res['sampleSize'][path] = len(full_df)
+            
+            full_df['nonDropProb'] = 1.0 - full_df['DropProb']
+            time = full_df['Time'].values
+            values = full_df['nonDropProb'].values
+            rightCont_time_average = np.sum(values[:-1] * np.diff(time)) / (time[-1] - time[0])
+            df_res['successProb']['probability_rightCont_timeAvg'][path] = rightCont_time_average
+            leftCont_time_average = np.sum(values[1:] * np.diff(time)) / (time[-1] - time[0])
+            df_res['successProb']['probability_leftCont_timeAvg'][path] = leftCont_time_average
+            linearInterp_time_average = np.sum(((values[:-1] + values[1:]) / 2) * np.diff(time)) / (time[-1] - time[0])
+            df_res['successProb']['probability_linearInterp_timeAvg'][path] = linearInterp_time_average
+            df_res['successProbMean'][path] = full_df['nonDropProb'].mean()
+
+            # full_df['Delay'] = (full_df['TotalQueueSize'] * 8) / linkRate
+            time = full_df['Time'].values
+            values = full_df['QueuingDelay'].values
+            # values = full_df['Delay'].values
+            rightCont_time_average = np.sum(values[:-1] * np.diff(time)) / (time[-1] - time[0])
+            df_res['delay']['event_rightCont_timeAvg'][path] = rightCont_time_average
+            leftCont_time_average = np.sum(values[1:] * np.diff(time)) / (time[-1] - time[0])
+            df_res['delay']['event_leftCont_timeAvg'][path] = leftCont_time_average
+            linearInterp_time_average = np.sum(((values[:-1] + values[1:]) / 2) * np.diff(time)) / (time[-1] - time[0])
+            df_res['delay']['event_linearInterp_timeAvg'][path] = linearInterp_time_average
+
+            df_res['first'][path] = full_df['Time'].iloc[0]
+            df_res['last'][path] = full_df['Time'].iloc[-1]
+            df_res['workload'][path] = 0
+
+            full_df['nonMarkingProb'] = 1.0 - full_df['MarkingProb']
+            time = full_df['Time'].values
+            values = full_df['nonMarkingProb'].values
+            rightCont_time_average = np.sum(values[:-1] * np.diff(time)) / (time[-1] - time[0])
+            df_res['nonMarkingProb']['event_rightCont_timeAvg'][path] = rightCont_time_average
+            leftCont_time_average = np.sum(values[1:] * np.diff(time)) / (time[-1] - time[0])
+            df_res['nonMarkingProb']['event_leftCont_timeAvg'][path] = leftCont_time_average
+            linearInterp_time_average = np.sum(((values[:-1] + values[1:]) / 2) * np.diff(time)) / (time[-1] - time[0])
+            df_res['nonMarkingProb']['event_linearInterp_timeAvg'][path] = linearInterp_time_average
+
+        dfs[df_name] = df_res
+    return dfs
 def calculate_offline_computations(__ns3_path, rate, segment, experiment, results_folder, steadyStart, steadyEnd, projectColumn, removeDrops=True, checkColumn="", linksRates=[], linkDelays=[], swtichDstREDQueueDiscMaxSize=0, stats=None, tsh=0.15):
     file_paths = glob.glob('{}/scratch/{}/{}/{}/*_{}.csv'.format(__ns3_path, results_folder, rate, experiment, segment))
     dfs = {}
@@ -485,6 +557,9 @@ def calculate_offline_computations(__ns3_path, rate, segment, experiment, result
         if 'Poisson' in segment:
             full_df = prune_data(full_df, projectColumn, steadyStart, steadyEnd)
             # df_res = calculate_offline_switch_congestionEstimation(full_df, df_res)
+            # full_df['Delay'] = (full_df['TotalQueueSize'] * 8) / linksRates[0]
+            # df_res['DelayMean'] = full_df['Delay'].mean()
+            # df_res['DelayStd'] = full_df['Delay'].std()
             df_res['DelayMean'] = full_df['QueuingDelay'].mean()
             df_res['DelayStd'] = full_df['QueuingDelay'].std()
             df_res['first'] = full_df['Time'].iloc[0]
