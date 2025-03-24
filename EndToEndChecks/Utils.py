@@ -1,13 +1,10 @@
 import pandas as pd
 import glob
-import configparser
-import os
 import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
 from scipy.stats import anderson
 from scipy.stats import f_oneway, kruskal
-import json as js
 
 import csv
 from collections import defaultdict
@@ -455,6 +452,98 @@ def timeShift(full_df, timeColumn, sizeColumn, linkDelays, linksRates):
     # full_df[timeColumn] = full_df[timeColumn] - (linkDelays[0] * 2 + (full_df[sizeColumn] * 8) / linksRates[0] + linkDelays[1] * 2 + (full_df[sizeColumn] * 8) / linksRates[1])
     return full_df
 
+def compare_with_poison(full_df, linkRate, experiment, rate, results_folder, __ns3_path):
+    poisson_df = pd.read_csv('{}/scratch/{}/{}/{}/SD0_PoissonSampler_events.csv'.format(__ns3_path, results_folder, rate, experiment))
+    poisson_df['Label'] = 'Poisson'
+    full_df = pd.concat([full_df, poisson_df], ignore_index=True)
+    full_df = full_df.sort_values(by=['Time', 'TotalQueueSize'], ascending=[True, True]).reset_index(drop=True)
+    changed_rows = full_df[(full_df['Label'] == 'Poisson') & (full_df['QueuingDelay'] != full_df['QueuingDelay'].shift(1))]
+    previous_rows = full_df.loc[changed_rows.index - 1]
+    # print(pd.concat([previous_rows, changed_rows]).sort_index())
+    print(full_df[(full_df['Action'] == 'I') & (full_df['Time'] <= 300993713)])
+    print(changed_rows)
+    print("**********")
+    print(previous_rows)
+    
+
+def manipulate_for_delay_Q(full_df, linkRate):
+    mask = (full_df['Action'] == 'D') & (full_df['Action'].shift(-1) == 'E') & (full_df['Time'] != full_df['Time'].shift(-1)) & (full_df['TotalQueueSize'] != 0)
+    time_diff = ((full_df['Time'].shift(-1) - full_df['Time']) * linkRate) / 8
+    
+    # Filter rows where the condition is met
+    insert_rows = full_df[mask & (time_diff > full_df['TotalQueueSize'])].copy()
+    if not insert_rows.empty:
+        insert_rows['Time'] = insert_rows['Time'] + (insert_rows['TotalQueueSize']  * 8 / linkRate).astype(int)
+        insert_rows['TotalQueueSize'] = 0
+        insert_rows['QueuingDelay'] = 0
+        insert_rows['MarkingProb'] = 0
+        insert_rows['DropProb'] = 0
+        insert_rows['Action'] = 'I'  # Marking as 'I' for intermediate
+        
+        full_df = pd.concat([full_df, insert_rows], ignore_index=True).sort_values(by='Time').reset_index(drop=True)
+    full_df = full_df.sort_values(by=['Time', 'TotalQueueSize'], ascending=[True, True]).reset_index(drop=True)
+    
+    full_df['Delay'] = ((full_df['TotalQueueSize'] * 8) / linkRate).astype(int)
+    time = full_df['Time'].values
+    actions = full_df['Action'].values
+    # values = full_df['QueuingDelay'].values
+    values = full_df['Delay'].values
+
+    linear_sum = 0
+    for i in range(len(values[:-1])):
+        x_1 = values[i]
+        dt = time[i + 1] - time[i]
+        if actions[i + 1] == 'E':
+            if x_1 > 0:
+                x_2 = x_1 - dt
+            else:
+                x_2 = 0
+        else:
+            x_2 = values[i + 1]
+        linear_sum += (x_1 + x_2) / 2 * dt
+    linearInterp_time_average = linear_sum / (time[-1] - time[0])
+    return full_df, linearInterp_time_average
+
+def manipulate_for_delay_Q_m(full_df, linkRate):
+    mask = (full_df['Time'] != full_df['Time'].shift(-1)) & (full_df['TotalQueueSize'] != 0)
+    time_diff = ((full_df['Time'].shift(-1) - full_df['Time']) * linkRate) / 8
+    
+    # Filter rows where the condition is met
+    insert_rows = full_df[mask & (time_diff > full_df['TotalQueueSize'])].copy()
+    if not insert_rows.empty:
+        insert_rows['Time'] = insert_rows['Time'] + (insert_rows['TotalQueueSize']  * 8 / linkRate).astype(int)
+        insert_rows['TotalQueueSize'] = 0
+        insert_rows['QueuingDelay'] = 0
+        insert_rows['MarkingProb'] = 0
+        insert_rows['DropProb'] = 0
+        insert_rows['Action'] = 'I'  # Marking as 'I' for intermediate
+        
+        full_df = pd.concat([full_df, insert_rows], ignore_index=True).sort_values(by='Time').reset_index(drop=True)
+    full_df = full_df.sort_values(by=['Time', 'TotalQueueSize'], ascending=[True, True]).reset_index(drop=True)
+
+
+    full_df['Delay'] = ((full_df['TotalQueueSize'] * 8) / linkRate).astype(int)
+    time = full_df['Time'].values
+    actions = full_df['Action'].values
+    # values = full_df['QueuingDelay'].values
+    values = full_df['Delay'].values
+
+    linear_sum = 0
+    for i in range(len(values[:-1])):
+        x_1 = values[i]
+        dt = time[i + 1] - time[i]
+        if actions[i + 1] == 'D':
+            x_2 = values[i + 1]
+        elif (actions[i + 1] == 'E' or actions[i + 1] == 'I'):
+            if actions[i] == 'I':
+                x_2 = values[i + 1]
+                # continue
+            else:
+                x_2 = x_1 - dt
+        linear_sum += (x_1 + x_2) / 2 * dt
+    linearInterp_time_average = linear_sum / (time[-1] - time[0])
+    return full_df, linearInterp_time_average  
+
 def calculate_offline_computations_on_switch(__ns3_path, results_folder, rate, experiment, segment, steadyStart, steadyEnd, paths, linkRate):
     file_paths = glob.glob('{}/scratch/{}/{}/{}/*_{}.csv'.format(__ns3_path, results_folder, rate, experiment, segment))
     dfs = {}
@@ -469,8 +558,10 @@ def calculate_offline_computations_on_switch(__ns3_path, results_folder, rate, e
         df_res['successProbMean'] = {}
         full_df = prune_data(full_df, 'Time', steadyStart, steadyEnd)
         full_df = full_df[full_df['Label'].str.contains('10.1.1.1', na=False)]
-        full_df = full_df.sort_values(by='Time').reset_index(drop=True)
-
+        full_df = full_df.sort_values(by=['Time', 'TotalQueueSize'], ascending=[True, True]).reset_index(drop=True)
+        full_df, delay_linearInterp_time_average = manipulate_for_delay_Q_m(full_df, linkRate)
+        # full_df, delay_linearInterp_time_average = manipulate_for_delay_Q(full_df, linkRate)
+        # compare_with_poison(full_df.copy(), linkRate, experiment, rate, results_folder, __ns3_path)
         df_res['delay'] = {}
         for var in ['event']:
             for method in ['rightCont_timeAvg', 'leftCont_timeAvg', 'linearInterp_timeAvg']:
@@ -500,16 +591,15 @@ def calculate_offline_computations_on_switch(__ns3_path, results_folder, rate, e
             df_res['successProb']['probability_linearInterp_timeAvg'][path] = linearInterp_time_average
             df_res['successProbMean'][path] = full_df['nonDropProb'].mean()
 
-            # full_df['Delay'] = (full_df['TotalQueueSize'] * 8) / linkRate
+            values = full_df['Delay'].values
+            # values = full_df['QueuingDelay'].values
             time = full_df['Time'].values
-            values = full_df['QueuingDelay'].values
-            # values = full_df['Delay'].values
             rightCont_time_average = np.sum(values[:-1] * np.diff(time)) / (time[-1] - time[0])
             df_res['delay']['event_rightCont_timeAvg'][path] = rightCont_time_average
             leftCont_time_average = np.sum(values[1:] * np.diff(time)) / (time[-1] - time[0])
             df_res['delay']['event_leftCont_timeAvg'][path] = leftCont_time_average
-            linearInterp_time_average = np.sum(((values[:-1] + values[1:]) / 2) * np.diff(time)) / (time[-1] - time[0])
-            df_res['delay']['event_linearInterp_timeAvg'][path] = linearInterp_time_average
+            # df_res['delay']['event_linearInterp_timeAvg'][path] = np.sum((values[:-1] * np.diff(time)) - ((np.diff(time) * np.diff(time)) / 2)) / (time[-1] - time[0])
+            df_res['delay']['event_linearInterp_timeAvg'][path] = delay_linearInterp_time_average
 
             df_res['first'][path] = full_df['Time'].iloc[0]
             df_res['last'][path] = full_df['Time'].iloc[-1]
@@ -557,11 +647,11 @@ def calculate_offline_computations(__ns3_path, rate, segment, experiment, result
         if 'Poisson' in segment:
             full_df = prune_data(full_df, projectColumn, steadyStart, steadyEnd)
             # df_res = calculate_offline_switch_congestionEstimation(full_df, df_res)
-            # full_df['Delay'] = (full_df['TotalQueueSize'] * 8) / linksRates[0]
-            # df_res['DelayMean'] = full_df['Delay'].mean()
-            # df_res['DelayStd'] = full_df['Delay'].std()
-            df_res['DelayMean'] = full_df['QueuingDelay'].mean()
-            df_res['DelayStd'] = full_df['QueuingDelay'].std()
+            full_df['Delay'] = (full_df['TotalQueueSize'] * 8) / linksRates[0]
+            df_res['DelayMean'] = full_df['Delay'].mean()
+            df_res['DelayStd'] = full_df['Delay'].std()
+            # df_res['DelayMean'] = full_df['QueuingDelay'].mean()
+            # df_res['DelayStd'] = full_df['QueuingDelay'].std()
             df_res['first'] = full_df['Time'].iloc[0]
             df_res['last'] = full_df['Time'].iloc[-1]
             df_res['sampleSize'] = len(full_df)
@@ -626,14 +716,26 @@ def convert_to_float(x):
     else:
         return float(x)
 
+def calc_epsilon_with_bias(confidenceValue, segement_statistics, bias):
+    return ((confidenceValue / segement_statistics['DelayMean']) * np.sqrt(bias ** 2 + (segement_statistics['DelayStd'] ** 2 / segement_statistics['sampleSize'])))
+
 def calc_epsilon(confidenceValue, segement_statistics):
     return (confidenceValue * segement_statistics['DelayStd']) / (np.sqrt(segement_statistics['sampleSize']) * segement_statistics['DelayMean'])
+
+def calc_epsilon_loss_with_bias(confidenceValue, segement_statistics, bias):
+    return ((confidenceValue / segement_statistics['successProbMean']) * np.sqrt(bias ** 2 + (segement_statistics['successProbStd'] ** 2 / segement_statistics['sampleSize'])))
 
 def calc_epsilon_loss(confidenceValue, segement_statistics):
     return (confidenceValue * segement_statistics['successProbStd']) / (np.sqrt(segement_statistics['sampleSize']) * segement_statistics['successProbMean'])
 
 def calc_epsilon_last_marking(confidenceValue, segement_statistics):
     return (confidenceValue * segement_statistics['lastNonMarkingProbStd']) / (np.sqrt(segement_statistics['sampleSize']) * segement_statistics['lastNonMarkingProbMean'])
+
+def calc_epsilon_last_marking_with_bias(confidenceValue, segement_statistics, bias):
+    return ((confidenceValue / segement_statistics['lastNonMarkingProbMean']) * np.sqrt(bias ** 2 + (segement_statistics['lastNonMarkingProbStd'] ** 2 / segement_statistics['sampleSize'])))
+
+def calc_epsilon_marking_with_bias(confidenceValue, segement_statistics, bias):
+    return ((confidenceValue / segement_statistics['nonMarkingProbMean']) * np.sqrt(bias ** 2 + (segement_statistics['nonMarkingProbStd'] ** 2 / segement_statistics['sampleSize'])))
 
 def calc_epsilon_marking(confidenceValue, segement_statistics):
     return (confidenceValue * segement_statistics['nonMarkingProbStd']) / (np.sqrt(segement_statistics['sampleSize']) * segement_statistics['nonMarkingProbMean'])
