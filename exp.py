@@ -27,6 +27,7 @@ class ExperimentConfig:
         self.errorRateScale=[]
         self.swtichDstREDQueueDiscMaxSize = "10KB"
         self.switchSrcREDQueueDiscMaxSize = "6KB"
+        self.switchTXMaxSize = "1p"
         self.MinTh = "0.15"
         self.MaxTh = "0.15"
 
@@ -56,6 +57,7 @@ class ExperimentConfig:
         self.ctHostToSwitchLinkRate = config.get('SingleQueue', 'ctHostToSwitchLinkRate')
         self.swtichDstREDQueueDiscMaxSize = config.get('Settings', 'swtichDstREDQueueDiscMaxSize')
         self.switchSrcREDQueueDiscMaxSize = config.get('Settings', 'switchSrcREDQueueDiscMaxSize')
+        self.switchTXMaxSize = config.get('Settings', 'switchTXMaxSize')
         self.MinTh = config.get('Settings', 'MinTh')
         self.MaxTh = config.get('Settings', 'MaxTh')
 
@@ -98,6 +100,7 @@ def run_forward_experiment(exp, singleQueue=False):
                     '--steadyStopTime={} '.format(expConfig.steadyEnd) +
                     '--swtichDstREDQueueDiscMaxSize={} '.format(expConfig.swtichDstREDQueueDiscMaxSize) +
                     '--switchSrcREDQueueDiscMaxSize={} '.format(expConfig.switchSrcREDQueueDiscMaxSize) +
+                    '--switchTXMaxSize={} '.format(expConfig.switchTXMaxSize) +
                     '--minTh={} '.format(expConfig.MinTh) +
                     '--maxTh={} '.format(expConfig.MaxTh) +
                     '--dirName=' + 'forward' +
