@@ -10,10 +10,12 @@ void E2EMonitorEvent::SetEcn(bool ecn) { _key->SetEcn(ecn); }
 void E2EMonitorEvent::SetPath(int path) { _key->SetPath(path);  }
 void E2EMonitorEvent::SetTxEnqueueTime(Time time) { _TxEnqueueTime = time; }
 void E2EMonitorEvent::SetTxDequeueTime(Time time) { _TxDequeuTime = time; }
+void E2EMonitorEvent::SetTxIpTime(Time time) { _TxIpTime = time; }
 bool E2EMonitorEvent::GetEcn() const { return _key->GetEcn(); } 
 int E2EMonitorEvent::GetPath() const { return _key->GetPath(); }
 Time E2EMonitorEvent::GetTxEnqueueTime() const { return _TxEnqueueTime; }
 Time E2EMonitorEvent::GetTxDequeueTime() const { return _TxDequeuTime; }
+Time E2EMonitorEvent::GetTxIpTime() const { return _TxIpTime; }
 
 
 E2EMonitor::E2EMonitor(const Time &startTime, const Time &duration, const Time &steadyStartTime, const Time &steadyStopTime, const Ptr<PointToPointNetDevice> netDevice, const Ptr<Node> &rxNode, const string &monitorTag, double errorRate,
@@ -52,8 +54,8 @@ E2EMonitor::E2EMonitor(const Time &startTime, const Time &duration, const Time &
     hasher = Hasher();
     rand = CreateObject<UniformRandomVariable>();
     QueueCapacity = queueCapacity;
-    Simulator::Schedule(_startTime, &E2EMonitor::Connect, this, netDevice, rxNode->GetId());
-    Simulator::Schedule(_startTime + _duration, &E2EMonitor::Disconnect, this, netDevice, rxNode->GetId());
+    Simulator::Schedule(_startTime, &E2EMonitor::Connect, this, netDevice, rxNode->GetId(), txNode->GetId());
+    Simulator::Schedule(_startTime + _duration, &E2EMonitor::Disconnect, this, netDevice, rxNode->GetId(), txNode->GetId());
 }
 
 uint64_t E2EMonitor::GetHashValue(const Ipv4Address src, const Ipv4Address dst, const uint16_t srcPort, const uint16_t dstPort, const uint8_t protocol) {
@@ -70,17 +72,21 @@ uint64_t E2EMonitor::GetHashValue(const Ipv4Address src, const Ipv4Address dst, 
     return hash;
 }
 
-void E2EMonitor::Connect(const Ptr<PointToPointNetDevice> netDevice, uint32_t rxNodeId) {
+void E2EMonitor::Connect(const Ptr<PointToPointNetDevice> netDevice, uint32_t rxNodeId, uint32_t txNodeId) {
     netDevice->GetQueue()->TraceConnectWithoutContext("Enqueue", MakeCallback(&E2EMonitor::Enqueue, this));
     netDevice->TraceConnectWithoutContext("PromiscSniffer", MakeCallback(&E2EMonitor::Capture, this));
     Config::ConnectWithoutContext("/NodeList/" + to_string(rxNodeId) + "/$ns3::Ipv4L3Protocol/Rx", MakeCallback(
             &E2EMonitor::RecordIpv4PacketReceived, this));
+    // Config::ConnectWithoutContext("/NodeList/" + to_string(txNodeId) + "/$ns3::Ipv4L3Protocol/Tx", MakeCallback(
+    //         &E2EMonitor::RecordIpv4PacketSent, this));
 }
 
-void E2EMonitor::Disconnect(const Ptr<PointToPointNetDevice> netDevice, uint32_t rxNodeId) {
+void E2EMonitor::Disconnect(const Ptr<PointToPointNetDevice> netDevice, uint32_t rxNodeId, uint32_t txNodeId) {
     netDevice->GetQueue()->TraceDisconnectWithoutContext("Enqueue", MakeCallback(&E2EMonitor::Enqueue, this));
     Config::DisconnectWithoutContext("/NodeList/" + to_string(rxNodeId) + "/$ns3::Ipv4L3Protocol/Rx", MakeCallback(
             &E2EMonitor::RecordIpv4PacketReceived, this));
+    // Config::DisconnectWithoutContext("/NodeList/" + to_string(txNodeId) + "/$ns3::Ipv4L3Protocol/Tx", MakeCallback(
+    //         &E2EMonitor::RecordIpv4PacketSent, this));
 }
 
 void E2EMonitor::Capture(Ptr< const Packet > packet) {
@@ -91,7 +97,7 @@ void E2EMonitor::Capture(Ptr< const Packet > packet) {
     if(_appsKey.count(AppKey::PacketKey2AppKey(*packetKey))) {
         // if (!_observedAppsKey.count(AppKey::PacketKey2AppKey(*packetKey))) {
         //     _observedAppsKey.insert(AppKey::PacketKey2AppKey(*packetKey));
-            traceNewSockets();
+            // traceNewSockets();
         // }
 
         packetKey->SetPacketSize(packet->GetSize());
@@ -128,6 +134,15 @@ void E2EMonitor::Enqueue(Ptr<const Packet> packet) {
     }
     PacketKey* packetKey = PacketKey::Packet2PacketKey(packet, FIRST_HEADER_PPP);
     if(_appsKey.count(AppKey::PacketKey2AppKey(*packetKey))) {
+        // E2EMonitorEvent* packetEvent;
+        // auto packetKeyEventPair = _recordedPackets.find(*packetKey);
+        // if (packetKeyEventPair == _recordedPackets.end()) {
+        //     packetEvent = new E2EMonitorEvent(packetKey);
+        //     _recordedPackets[*packetKey] = packetEvent;
+        // }
+        // else {
+        //     packetEvent = packetKeyEventPair->second;
+        // }
         packetKey->SetPacketSize(packet->GetSize());
         auto *packetEvent = new E2EMonitorEvent(packetKey);
         packetEvent->SetTxEnqueueTime(Simulator::Now());
@@ -184,6 +199,19 @@ void E2EMonitor::updateTimeAverageIntegral(uint32_t path, Time delay, Time endTi
     }
     integralEndTime[path] = endTime;
     lastDelay[path] = delay;
+}
+
+void E2EMonitor::RecordIpv4PacketSent(Ptr<const Packet> packet, Ptr<Ipv4> ipv4, uint32_t interface) {   
+    if (Simulator::Now() < _steadyStartTime || Simulator::Now() > _steadyStopTime) {
+        return;
+    } 
+    PacketKey* packetKey = PacketKey::Packet2PacketKey(packet, FIRST_HEADER_IPV4);
+    if(_appsKey.count(AppKey::PacketKey2AppKey(*packetKey))) {
+        auto *packetEvent = new E2EMonitorEvent(packetKey);
+        packetEvent->SetTxIpTime(Simulator::Now());
+        _recordedPackets[*packetKey] = packetEvent;
+    }
+    
 }
 
 void E2EMonitor::RecordIpv4PacketReceived(Ptr<const Packet> packet, Ptr<Ipv4> ipv4, uint32_t interface) {    
@@ -300,7 +328,7 @@ void E2EMonitor::SaveMonitorRecords(const string& filename) {
 
     ofstream packetsFile;
     packetsFile.open(filename.substr(0, filename.size() - 4) + "_packets.csv");
-    packetsFile << "SourceIp,SourcePort,DestinationIp,DestinationPort,SequenceNb,Id,PayloadSize,Path,TxEnqueueTime,TxDequeueTime,SentTime,IsReceived,ReceiveTime,transmissionDelay,ECN" << endl;
+    packetsFile << "SourceIp,SourcePort,DestinationIp,DestinationPort,SequenceNb,Id,PayloadSize,Path,IPTxTime,TxEnqueueTime,TxDequeueTime,SentTime,IsReceived,ReceiveTime,transmissionDelay,ECN" << endl;
     for (auto& packetKeyEventPair: _recordedPackets) {
         PacketKey key = packetKeyEventPair.first;
         E2EMonitorEvent* event = packetKeyEventPair.second;

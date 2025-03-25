@@ -29,13 +29,16 @@ public:
     [[nodiscard]] int GetPath() const;
     [[nodiscard]] Time GetTxEnqueueTime() const;
     [[nodiscard]] Time GetTxDequeueTime() const;
+    [[nodiscard]] Time GetTxIpTime() const;
     void SetEcn(bool ecn);
     void SetPath(int path);
     void SetTxEnqueueTime(Time time);
     void SetTxDequeueTime(Time time);
+    void SetTxIpTime(Time time);
 private:
     ns3::Time _TxEnqueueTime = Time(-1);
     ns3::Time _TxDequeuTime = Time(-1);
+    ns3::Time _TxIpTime = Time(-1);
 };
 
 class E2EMonitor : public Monitor {
@@ -68,12 +71,13 @@ private:
     std::unordered_map<uint64_t, Ptr<TcpSocketBase>> tracesSockets;
     std::unordered_map<PacketKey, E2EMonitorEvent*, PacketKeyHash> _recordedPackets;
     
-    void Connect(Ptr<PointToPointNetDevice> netDevice, uint32_t rxNodeId);
-    void Disconnect(Ptr<PointToPointNetDevice> netDevice, uint32_t rxNodeId);
+    void Connect(Ptr<PointToPointNetDevice> netDevice, uint32_t rxNodeId, uint32_t txNodeId);
+    void Disconnect(Ptr<PointToPointNetDevice> netDevice, uint32_t rxNodeId, uint32_t txNodeId);
 
     void Enqueue(Ptr< const Packet > packet);
     void Capture(Ptr< const Packet > packet);
     void RecordIpv4PacketReceived(Ptr<const Packet> packet, Ptr<Ipv4> ipv4, uint32_t interface);
+    void RecordIpv4PacketSent(Ptr<const Packet> packet, Ptr<Ipv4> ipv4, uint32_t interface);
     uint64_t GetHashValue(const Ipv4Address src, const Ipv4Address dst, const uint16_t srcPort, const uint16_t dstPort, const uint8_t protocol);
     void updateTimeAverageIntegral(uint32_t path, Time delay, Time endTime);
     double calculateUnbiasedGTDrop();
