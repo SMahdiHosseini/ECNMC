@@ -135,7 +135,8 @@ void run_single_queue_simulation(int argc, char* argv[]) {
     string switchTXMaxSize = "1p";                     // Maximum size of the switch's TX buffer
     string swtichDstREDQueueDiscMaxSize = "10KB";      // Maximum size of the RED Queue Disc between the switch and the dst host
     string switchSrcREDQueueDiscMaxSize = "6KB";       // Maximum size of the RED Queue Disc between the switch and the src host
-    double pctPacedBack = 0.8;                         // the percentage of tcp flows of the CAIDA trace to be paced
+    // TODO: remove pacing
+    double pctPacedBack = 0.0;                         // the percentage of tcp flows of the CAIDA trace to be paced
     bool enableSwitchECN = true;                       // Enable ECN on the switches
     bool enableECMP = true;                            // Enable ECMP on the switches
     double sampleRate = 10;                            // Sample rate for the PoissonSampler

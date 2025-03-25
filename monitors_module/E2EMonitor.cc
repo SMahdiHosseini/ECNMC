@@ -241,7 +241,7 @@ void E2EMonitor::RecordIpv4PacketReceived(Ptr<const Packet> packet, Ptr<Ipv4> ip
             double dropProbDynamicCDF = packetCDF.calculateProbabilityGreaterThan(availableCapacity);
             
             GTDropMean = (GTDropMean * (prev - firstItemTime).GetNanoSeconds() + dropProbDynamicCDF * (lastItemTime - prev).GetNanoSeconds()) / (lastItemTime - firstItemTime).GetNanoSeconds();
-            // cout << "### E2E ### Enqueue Time: " << lastItemTime.GetNanoSeconds() << " Queuing delay: " << (packetKeyEventPair->second->GetReceivedTime() + additionalDeprioritizationDelay - transmissionDelay - packetKeyEventPair->second->GetSentTime()).GetNanoSeconds() << " Queue Size: " << (((packetKeyEventPair->second->GetReceivedTime() - transmissionDelay - packetKeyEventPair->second->GetSentTime()) * torToAggLinkRate) / 8) << " Drop Prob: " << dropProbDynamicCDF << " queuingDelay: " << (packetKeyEventPair->second->GetReceivedTime() - transmissionDelay - packetKeyEventPair->second->GetSentTime()).GetNanoSeconds() << " EECN >>> " << packetKeyEventPair->second->GetEcn() << endl;
+            // cout << "### E2E ### Enqueue Time: " << lastItemTime.GetNanoSeconds() << " Queue Size: " << (((packetKeyEventPair->second->GetReceivedTime() - transmissionDelay - packetKeyEventPair->second->GetSentTime()) * torToAggLinkRate) / 8) << endl;
         }
     }
 }

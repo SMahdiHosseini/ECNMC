@@ -16,6 +16,7 @@ void samplingEvent::SetQueueSize(uint32_t size) { _queueSize = size; }
 void samplingEvent::SetTotalQueueSize(uint32_t size) { _totalQueueSize = size; }
 void samplingEvent::SetLastMarkingProb(double markingProb) { _lastMarkingProb = markingProb; }
 void samplingEvent::SetLabel(const string label) { _label = label; }
+void samplingEvent::SetEventAction(const string action) { _eventAction = action; }
 PacketKey *samplingEvent::GetPacketKey() const { return _key; }
 Time samplingEvent::GetSampleTime() const { return GetSentTime(); }
 Time samplingEvent::GetDepartureTime() const { return GetReceivedTime(); }
@@ -26,7 +27,7 @@ uint32_t samplingEvent::GetQueueSize() const { return _queueSize; }
 uint32_t samplingEvent::GetTotalQueueSize() const { return _totalQueueSize; }
 double samplingEvent::GetLastMarkingProb() const { return _lastMarkingProb; }
 string samplingEvent::GetLabel() const { return _label; }
-
+string samplingEvent::GetEventAction() const { return _eventAction; }
 PoissonSampler::PoissonSampler(const Time &steadyStartTime, const Time &steadyStopTime, Ptr<RedQueueDisc> queueDisc, Ptr<Queue<Packet>> queue, Ptr<PointToPointNetDevice>  outgoingNetDevice, const string &sampleTag, double sampleRate) 
 : PoissonSampler(steadyStartTime, steadyStopTime, queueDisc, queue, outgoingNetDevice, sampleTag, sampleRate, nullptr, nullptr) {
 
@@ -170,7 +171,9 @@ void PoissonSampler::EnqueueQueueDisc(Ptr<const QueueDiscItem> item) {
     std::string headerString = oss.str();
     string label = headerString + ":" + to_string(tcpHeader.GetSourcePort()); 
     event.SetLabel(label);
+    event.SetEventAction("E");
     queueSizeProcess.push_back(std::make_tuple(Simulator::Now(), event));
+    // cout << "### POISSON ### Time: " << Simulator::Now().GetNanoSeconds() << " *** Enqueue *** " << " Queue Size: " << REDQueueDisc->GetNBytes() + NetDeviceQueue->GetNBytes() << " Total Queue Size: " << ComputeQueueSize() << " Queuing Delay: " << queuingDelay.GetNanoSeconds() << " packet size: " << item->GetSize() << endl;
     updateGTCounters();
 }
 
@@ -179,7 +182,14 @@ void PoissonSampler::DequeueQueueDisc(Ptr<const QueueDiscItem> item) {
         return;
     }
     // Time queuingDelay = outgoingDataRate.CalculateBytesTxTime(ComputeQueueSize());
-    Time queuingDelay = outgoingDataRate.CalculateBytesTxTime(REDQueueDisc->GetNBytes() + NetDeviceQueue->GetNBytes());
+    uint32_t queueSize;
+    if (ComputeQueueSize() == 0) {
+        queueSize = 0;
+    }
+    else {
+        queueSize = REDQueueDisc->GetNBytes() + NetDeviceQueue->GetNBytes() + item->GetSize() + 2;
+    }
+    Time queuingDelay = outgoingDataRate.CalculateBytesTxTime(queueSize);
     double dropProbDynamicCDF = packetCDF.calculateProbabilityGreaterThan(REDQueueDisc->GetMaxSize().GetValue() - REDQueueDisc->GetNBytes());
     double markingProbDynamic = REDQueueDisc->GetMarkingProbability();
 
@@ -189,7 +199,7 @@ void PoissonSampler::DequeueQueueDisc(Ptr<const QueueDiscItem> item) {
     event.SetLossProb(dropProbDynamicCDF);
     event.SetMarkingProb(markingProbDynamic);
     event.SetQueueSize(REDQueueDisc->GetNBytes());
-    event.SetTotalQueueSize(ComputeQueueSize());
+    event.SetTotalQueueSize(ComputeQueueSize() + item->GetSize() + 2);
     event.SetLastMarkingProb(REDQueueDisc->_lastMarkingProb);
     TcpHeader tcpHeader;
     item->GetPacket()->PeekHeader(tcpHeader);
@@ -198,7 +208,9 @@ void PoissonSampler::DequeueQueueDisc(Ptr<const QueueDiscItem> item) {
     std::string headerString = oss.str();
     string label = headerString + ":" + to_string(tcpHeader.GetSourcePort()); 
     event.SetLabel(label);
+    event.SetEventAction("D");
     queueSizeProcess.push_back(std::make_tuple(Simulator::Now(), event));
+    // cout << "### POISSON ### Time: " << Simulator::Now().GetNanoSeconds() << " *** Dequeue *** " << " Queue Size: " << queueSize << " Total Queue Size: " << ComputeQueueSize() + item->GetSize() + 2 << " Queuing Delay: " << queuingDelay.GetNanoSeconds() << " packet size: " << item->GetSize() << endl;
     updateGTCounters();
 }
 
@@ -302,7 +314,7 @@ void PoissonSampler::EventHandler() {
     event->SetTotalQueueSize(ComputeQueueSize());
     event->SetLastMarkingProb(REDQueueDisc->_lastMarkingProb);
     _recordedSamples[*packetKey] = event;
-    // cout << "### EVENT ### " << "Time: " << Simulator::Now().GetNanoSeconds() << " Queuing delay: " << queuingDelay.GetNanoSeconds() << " REDQueue Size: " << REDQueueDisc->GetNBytes() << " Drop Prob: " << dropProbDynamicCDF << " Marking Prob: " << markingProbDynamic << endl;
+    // cout << "### EVENT ### " << "Time: " << Simulator::Now().GetNanoSeconds() << " Queue Size: " << queueSize << " Total Queue Size: " << ComputeQueueSize() << " Queuing Delay: " << queuingDelay.GetNanoSeconds() << endl;
     updateCounters(event);
 }
 
@@ -394,21 +406,21 @@ void PoissonSampler::SaveMonitorRecords(const string& filename) {
 
     ofstream queueSizeFile;
     queueSizeFile.open(filename.substr(0, filename.size() - 4) + "_queueSize.csv");
-    queueSizeFile << "Time,QueuingDelay,DropProb,MarkingProb,QueueSize,TotalQueueSize,LastMarkingProb,Label" << endl;
+    queueSizeFile << "Time,QueuingDelay,DropProb,MarkingProb,QueueSize,TotalQueueSize,LastMarkingProb,Label,Action" << endl;
     for (auto &item : queueSizeProcess) {
         samplingEvent event = std::get<1>(item);
         queueSizeFile << std::get<0>(item).GetNanoSeconds() << "," << (event.GetDepartureTime() - event.GetSampleTime()).GetNanoSeconds() << "," << event.GetLossProb() << "," << event.GetMarkingProb() << "," << event.GetQueueSize() << 
-        "," << event.GetTotalQueueSize() << "," << event.GetLastMarkingProb() << "," << event.GetLabel() << endl;
+        "," << event.GetTotalQueueSize() << "," << event.GetLastMarkingProb() << "," << event.GetLabel() << "," << event.GetEventAction() << endl;
     }
     queueSizeFile.close();
 
     ofstream queueSizeByPacketsFile;
     queueSizeByPacketsFile.open(filename.substr(0, filename.size() - 4) + "_queueSizeByPackets.csv");
-    queueSizeByPacketsFile << "Time,QueuingDelay,DropProb,MarkingProb,QueueSize,TotalQueueSize,LastMarkingProb,Label" << endl;
+    queueSizeByPacketsFile << "Time,QueuingDelay,DropProb,MarkingProb,QueueSize,TotalQueueSize,LastMarkingProb,Label,Action" << endl;
     for (auto &item : queueSizeProcessByPackets) {
         samplingEvent event = std::get<1>(item);
         queueSizeByPacketsFile << std::get<0>(item).GetNanoSeconds() << "," << (event.GetDepartureTime() - event.GetSampleTime()).GetNanoSeconds() << "," << event.GetLossProb() << "," << event.GetMarkingProb() << "," << event.GetQueueSize() << 
-        "," << event.GetTotalQueueSize() << "," << event.GetLastMarkingProb() << "," << event.GetLabel() << endl;
+        "," << event.GetTotalQueueSize() << "," << event.GetLastMarkingProb() << "," << event.GetLabel() << "," << event.GetEventAction() << endl;
     }
     queueSizeByPacketsFile.close();
 

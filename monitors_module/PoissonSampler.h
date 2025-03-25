@@ -29,6 +29,7 @@ private:
     uint32_t _queueSize = 0;
     uint32_t _totalQueueSize = 0;
     string _label;
+    string _eventAction;
 public:
     explicit samplingEvent(PacketKey *key);
     explicit samplingEvent();
@@ -41,6 +42,7 @@ public:
     [[nodiscard]] uint32_t GetTotalQueueSize() const;
     [[nodiscard]] double GetLastMarkingProb() const;
     [[nodiscard]] string GetLabel() const;
+    [[nodiscard]] string GetEventAction() const; 
     [[nodiscard]] bool IsDeparted() const;
 
     void SetSampleTime();
@@ -53,6 +55,7 @@ public:
     void SetTotalQueueSize(uint32_t size);
     void SetLastMarkingProb(double markingProb);
     void SetLabel(const string label);
+    void SetEventAction(const string action);
 };
 
 class PoissonSampler : public Monitor{
