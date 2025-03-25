@@ -24,6 +24,7 @@ add_library(
   traffic_generator_module/background_replay/TraceReplayReceiverHelper.cc
   traffic_generator_module/background_replay/TraceReplaySender.cc
   traffic_generator_module/background_replay/TraceReplaySenderHelper.cc
+  traffic_generator_module/background_replay/PoissonReplaySender.cc
 )
 
 # Link the custom library to the scratch executable
