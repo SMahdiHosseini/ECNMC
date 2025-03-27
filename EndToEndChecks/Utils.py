@@ -292,7 +292,7 @@ def calculate_offline_E2E_workload(full_df, df_res, steadyStart, steadyEnd):
 def calculate_offline_E2E_lossRates(__ns3_path, full_df, df_res, checkColumn, linksRate, swtichDstREDQueueDiscMaxSize):
     df_res['successProb'] = {}
     for var in ['event', 'probability']:
-        for method in ['rightCont_timeAvg', 'leftCont_timeAvg', 'linearInterp_timeAvg']:
+        for method in ['rightCont_timeAvg', 'leftCont_timeAvg', 'linearInterp_timeAvg', 'poisson_eventAvg']:
             df_res['successProb'][var + '_' + method] = {}
 
     packets_cfd = PacketCDF()
@@ -318,8 +318,8 @@ def calculate_offline_E2E_lossRates(__ns3_path, full_df, df_res, checkColumn, li
         linearInterp_time_average = np.sum(((values[:-1] + values[1:]) / 2) * np.diff(time)) / (time[-1] - time[0])
         df_res['successProb']['event_linearInterp_timeAvg'][path] = linearInterp_time_average
 
-        # avg, std = e2e_poisson_sampling(time, values)
-        # df_res['successProb']['event_poisson_eventAvg'][path] = (avg, std)
+        avg, std = e2e_poisson_sampling(time, values)
+        df_res['successProb']['event_poisson_eventAvg'][path] = (avg, std)
 
         df['nonDropProb'] = df.apply(lambda x: 1.0 - packets_cfd.calculate_probability_greater_than(max(swtichDstREDQueueDiscMaxSize - (x['Delay'] * linksRate / 8), x['PayloadSize'])) if x[checkColumn] != 0 else 0.0, axis=1)
 
@@ -335,8 +335,8 @@ def calculate_offline_E2E_lossRates(__ns3_path, full_df, df_res, checkColumn, li
         linearInterp_time_average = np.sum(((values[:-1] + values[1:]) / 2) * np.diff(time)) / (time[-1] - time[0])
         df_res['successProb']['probability_linearInterp_timeAvg'][path] = linearInterp_time_average
 
-        # avg, std = e2e_poisson_sampling(time, values)
-        # df_res['successProb']['probability_poisson_eventAvg'][path] = (avg, std)
+        avg, std = e2e_poisson_sampling(time, values)
+        df_res['successProb']['probability_poisson_eventAvg'][path] = (avg, std)
 
     full_df_ = None
     return df_res
@@ -370,7 +370,7 @@ def calculate_offline_markingProbMean_at_receiver(df, swtichDstREDQueueDiscMaxSi
     ecn_df['F'] = ecn_df['F'] * ecn_df['InterArrivalTime']
     return 1 - (ecn_df['F'].sum() / ecn_df['InterArrivalTime'].sum())
 
-def e2e_poisson_sampling(time, values):
+def e2e_poisson_sampling(time, values, delay=False, sizes=None):
     rate = 12 * 1e-6
     duration = time[-1] - time[0]
     bound = 1080
@@ -399,11 +399,13 @@ def e2e_poisson_sampling(time, values):
                 min_diff = diff
 
         if closest is not None:
-            selected.append(values[closest])
-            # if time[closest] <= t:
-            #     selected.append(values[closest] + sizes[closest] - (t - time[closest]))
-            # else:
-            #     selected.append(values[closest] + (time[closest] - t))
+            if delay is False:
+                selected.append(values[closest])
+            else:
+                if time[closest] <= t:
+                    selected.append(values[closest] + sizes[closest] - (t - time[closest]))
+                else:
+                    selected.append(values[closest] + (time[closest] - t))
 
     if selected:
         avg = np.mean(selected)
@@ -432,7 +434,7 @@ def calculate_offline_E2E_markingProb(full_df, df_res, checkColumn, swtichDstRED
     # nonMarkingProb_timeAvg_vars = ['event_currentProb', 'event_lastProb']
     df_res['nonMarkingProb'] = {}
     for var in ['event']:
-        for method in ['rightCont_timeAvg', 'leftCont_timeAvg', 'linearInterp_timeAvg']:
+        for method in ['rightCont_timeAvg', 'leftCont_timeAvg', 'linearInterp_timeAvg', 'poisson_eventAvg']:
             df_res['nonMarkingProb'][var + '_' + method] = {}
     
     full_df_ = full_df[full_df['SentTime'] != -1].copy()
@@ -454,8 +456,8 @@ def calculate_offline_E2E_markingProb(full_df, df_res, checkColumn, swtichDstRED
         linearInterp_time_average = np.sum(((values[:-1] + values[1:]) / 2) * np.diff(time)) / (time[-1] - time[0])
         df_res['nonMarkingProb']['event_linearInterp_timeAvg'][path] = linearInterp_time_average
 
-        # avg, std = e2e_poisson_sampling(time, values)
-        # df_res['nonMarkingProb']['event_poisson_eventAvg'][path] = (avg, std)
+        avg, std = e2e_poisson_sampling(time, values)
+        df_res['nonMarkingProb']['event_poisson_eventAvg'][path] = (avg, std)
 
     full_df_ = None
     return df_res
@@ -463,7 +465,7 @@ def calculate_offline_E2E_markingProb(full_df, df_res, checkColumn, swtichDstRED
 def calculate_offline_E2E_delays(full_df, removeDrops, checkColumn, df_res):
     df_res['delay'] = {}
     for var in ['event']:
-        for method in ['rightCont_timeAvg', 'leftCont_timeAvg', 'linearInterp_timeAvg', ]:
+        for method in ['rightCont_timeAvg', 'leftCont_timeAvg', 'linearInterp_timeAvg', 'poisson_eventAvg']:
             df_res['delay'][var + '_' + method] = {}
     
     full_df_ = full_df.copy()
@@ -484,8 +486,8 @@ def calculate_offline_E2E_delays(full_df, removeDrops, checkColumn, df_res):
         linearInterp_time_average = np.sum(((values[:-1] + values[1:]) / 2) * np.diff(time)) / (time[-1] - time[0])
         df_res['delay']['event_linearInterp_timeAvg'][path] = linearInterp_time_average
 
-        # avg, std = e2e_poisson_sampling(time, values)
-        # df_res['delay']['event_poisson_eventAvg'][path] = (avg, std)
+        avg, std = e2e_poisson_sampling(time, values, delay=True, sizes=df['PayloadSize'].values)
+        df_res['delay']['event_poisson_eventAvg'][path] = (avg, std)
 
         df = None
     full_df_ = None
@@ -700,7 +702,10 @@ def calculate_offline_computations(__ns3_path, rate, segment, experiment, result
             df_res = calculate_offline_E2E_workload(full_df, df_res, steadyStart, steadyEnd)
             df_res = calculate_offline_E2E_markingProb(full_df, df_res, checkColumn, swtichDstREDQueueDiscMaxSize, linksRates[1], __ns3_path, tsh)
         if 'Poisson' in segment:
+            packets_cfd = PacketCDF()
+            packets_cfd.load_cdf_data('{}/scratch/ECNMC/Helpers/packet_size_cdf_singleQueue.csv'.format(__ns3_path))
             full_df = prune_data(full_df, projectColumn, steadyStart, steadyEnd)
+            full_df['MarkingProb'] = full_df.apply(lambda x: packets_cfd.calculate_probability_greater_than(swtichDstREDQueueDiscMaxSize * 0.15 - x['QueueSize']) if x['MarkingProb'] != 1.0 else 1.0, axis=1)
             # df_res = calculate_offline_switch_congestionEstimation(full_df, df_res)
             full_df['Delay'] = (full_df['TotalQueueSize'] * 8) / linksRates[0]
             df_res['DelayMean'] = full_df['Delay'].mean()

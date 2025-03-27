@@ -22,10 +22,10 @@ sample_rates = [0.5]
 confidenceValue = 1.96 # 95% confidence interval
 propagationDelay = 50000
 
-timeAvg_methods = ['rightCont_timeAvg', 'leftCont_timeAvg', 'linearInterp_timeAvg']
+timeAvg_methods = ['rightCont_timeAvg', 'leftCont_timeAvg', 'linearInterp_timeAvg', 'poisson_eventAvg']
 delay_timeAvg_vars = ['event']
-# successProb_timeAvg_vars = ['event', 'probability']
-successProb_timeAvg_vars = ['probability']
+successProb_timeAvg_vars = ['event', 'probability']
+# successProb_timeAvg_vars = ['event']
 nonMarkingProb_timeAvg_vars = ['event']
 
 def check_MaxEpsilon_ineq_delay(endToEnd_statistics, samples_paths_aggregated_statistics):
@@ -62,9 +62,9 @@ def check_all_delayConsistency(endToEnd_statistics, samples_paths_aggregated_sta
             for var_method in endToEnd_statistics[flow]['delay'].keys():
                 if var_method != 'event_poisson_eventAvg':
                     res['MaxEpsilonIneq'][flow][path][var_method] = check_MaxEpsilon_ineq_delay(endToEnd_statistics[flow]['delay'][var_method][path], samples_paths_aggregated_statistics[flow][path])
-                # else:
-                #     e = (samples_paths_aggregated_statistics[flow][path]['DelayMean'] * samples_paths_aggregated_statistics[flow][path]['MaxEpsilonDelay']) + endToEnd_statistics[flow]['delay'][var_method][path][1] * confidenceValue
-                #     res['MaxEpsilonIneq'][flow][path][var_method] = (abs(endToEnd_statistics[flow]['delay'][var_method][path][0] - samples_paths_aggregated_statistics[flow][path]['DelayMean']) <= e)
+                else:
+                    e = (samples_paths_aggregated_statistics[flow][path]['DelayMean'] * samples_paths_aggregated_statistics[flow][path]['MaxEpsilonDelay']) + endToEnd_statistics[flow]['delay'][var_method][path][1] * confidenceValue
+                    res['MaxEpsilonIneq'][flow][path][var_method] = (abs(endToEnd_statistics[flow]['delay'][var_method][path][0] - samples_paths_aggregated_statistics[flow][path]['DelayMean']) <= e)
     return res
 
 def check_all_successProbConsistency(endToEnd_statistics, samples_paths_aggregated_statistics, paths, number_of_segments):
@@ -75,10 +75,13 @@ def check_all_successProbConsistency(endToEnd_statistics, samples_paths_aggregat
         for path in paths:
             res['MaxEpsilonIneq'][flow][path] = {}
             for var_method in endToEnd_statistics[flow]['successProb'].keys():
-                if var_method != 'event_poisson_eventAvg':
+                if var_method != 'event_poisson_eventAvg' and var_method != 'probability_poisson_eventAvg':
                     res['MaxEpsilonIneq'][flow][path][var_method] = check_MaxEpsilon_ineq_successProb(np.log(endToEnd_statistics[flow]['successProb'][var_method][path]), samples_paths_aggregated_statistics[flow][path], number_of_segments)
-                # else:
-                #     e = 
+                else:
+                    epsp = (endToEnd_statistics[flow]['successProb'][var_method][path][1] * confidenceValue) / endToEnd_statistics[flow]['successProb'][var_method][path][0]
+                    eps = samples_paths_aggregated_statistics[flow][path]['MaxEpsilonSuccessProb']
+                    e = samples_paths_aggregated_statistics[flow][path]['successProbMean'] - np.log(endToEnd_statistics[flow]['successProb'][var_method][path][0])
+                    res['MaxEpsilonIneq'][flow][path][var_method] = ((e <= (np.log(1+epsp) - np.log(1-eps))) and (e >= (np.log(1-epsp) - np.log(1+eps))))
     return res
 
 def check_all_nonMarkingProbConsistency(endToEnd_statistics, samples_paths_aggregated_statistics, paths, number_of_segments):
@@ -91,8 +94,11 @@ def check_all_nonMarkingProbConsistency(endToEnd_statistics, samples_paths_aggre
             for var_method in endToEnd_statistics[flow]['nonMarkingProb'].keys():
                 if var_method != 'event_poisson_eventAvg':
                     res['MaxEpsilonIneq'][flow][path][var_method] = check_MaxEpsilon_ineq_nonMarkingProb(np.log(endToEnd_statistics[flow]['nonMarkingProb'][var_method][path]), samples_paths_aggregated_statistics[flow][path], number_of_segments)
-                # else:
-                #     res['MaxEpsilonIneq'][flow][path][var_method] = ()
+                else:
+                    epsp = (endToEnd_statistics[flow]['nonMarkingProb'][var_method][path][1] * confidenceValue) / endToEnd_statistics[flow]['nonMarkingProb'][var_method][path][0]
+                    eps = samples_paths_aggregated_statistics[flow][path]['MaxEpsilonNonMarkingProb']
+                    e = samples_paths_aggregated_statistics[flow][path]['nonMarkingProbMean'] - np.log(endToEnd_statistics[flow]['nonMarkingProb'][var_method][path][0])
+                    res['MaxEpsilonIneq'][flow][path][var_method] = ((e <= (np.log(1+epsp) - np.log(1-eps))) and (e >= (np.log(1-epsp) - np.log(1+eps))))
     return res
 
 def check_all_lastNonMarkingProbConsistency(endToEnd_statistics, samples_paths_aggregated_statistics, paths, number_of_segments):
@@ -103,7 +109,13 @@ def check_all_lastNonMarkingProbConsistency(endToEnd_statistics, samples_paths_a
         for path in paths:
             res['MaxEpsilonIneq'][flow][path] = {}
             for var_method in endToEnd_statistics[flow]['nonMarkingProb'].keys():
-                res['MaxEpsilonIneq'][flow][path][var_method] = check_MaxEpsilon_ineq_lastNonMarkingProb(np.log(endToEnd_statistics[flow]['nonMarkingProb'][var_method][path]), samples_paths_aggregated_statistics[flow][path], number_of_segments)
+                if var_method != 'event_poisson_eventAvg':
+                    res['MaxEpsilonIneq'][flow][path][var_method] = check_MaxEpsilon_ineq_lastNonMarkingProb(np.log(endToEnd_statistics[flow]['nonMarkingProb'][var_method][path]), samples_paths_aggregated_statistics[flow][path], number_of_segments)
+                else:
+                    epsp = (endToEnd_statistics[flow]['nonMarkingProb'][var_method][path][1] * confidenceValue) / endToEnd_statistics[flow]['nonMarkingProb'][var_method][path][0]
+                    eps = samples_paths_aggregated_statistics[flow][path]['MaxEpsilonLastNonMarkingProb']
+                    e = samples_paths_aggregated_statistics[flow][path]['lastNonMarkingProbMean'] - np.log(endToEnd_statistics[flow]['nonMarkingProb'][var_method][path][0])
+                    res['MaxEpsilonIneq'][flow][path][var_method] = ((e <= (np.log(1+epsp) - np.log(1-eps))) and (e >= (np.log(1-epsp) - np.log(1+eps))))
     return res
 
 def prepare_results(flows, queues, num_of_paths):
@@ -287,14 +299,14 @@ def analyze_single_experiment(return_dict, rate, queues_names, confidenceValue, 
     paths = range(num_of_paths)
     # endToEnd_dfs = read_online_computations(__ns3_path, rate, 'EndToEnd', str(experiment), results_folder)
     # samples_dfs = read_online_computations(__ns3_path, rate, 'PoissonSampler', str(experiment), results_folder)
-    biasCalculator = BiasCalculator(results_folder, rate, [experiment], steadyStart, steadyEnd, rounds_results, bottleneckLinkRate)
-    biasCalculator.calculateBias(['MarkingProb', 'DropProb', 'QueuingDelay', 'LastMarkingProb'])
+    # biasCalculator = BiasCalculator(results_folder, rate, [experiment], steadyStart, steadyEnd, rounds_results, bottleneckLinkRate)
+    # biasCalculator.calculateBias(['MarkingProb', 'DropProb', 'QueuingDelay', 'LastMarkingProb'])
     endToEndStats = calculate_offline_computations(__ns3_path, rate, 'EndToEnd_packets', str(experiment), results_folder, steadyStart, steadyEnd, "SentTime", True, "IsReceived", [srcHostToSwitchLinkRate, bottleneckLinkRate], [linkDelay, linkDelay], swtichDstREDQueueDiscMaxSize)
     # endToEndStats = calculate_offline_computations_on_switch(__ns3_path, results_folder, rate, experiment, 'PoissonSampler_queueSize', steadyStart, steadyEnd, paths, bottleneckLinkRate)
     # print(endToEndStats)
     # calculate_offline_computations(__ns3_path, rate, 'EndToEnd_markings', str(experiment), results_folder, endToEndStats['A0D0']['first'][0], endToEndStats['A0D0']['last'][0], "Time", linksRates=[srcHostToSwitchLinkRate, bottleneckLinkRate], linkDelays=[linkDelay, linkDelay], stats=endToEndStats)
     # print(endToEndStats)
-    samplesSats = calculate_offline_computations(__ns3_path, rate, 'PoissonSampler_events', str(experiment), results_folder, endToEndStats['A0D0']['first'][0], endToEndStats['A0D0']['last'][0], "Time", linksRates=[bottleneckLinkRate])
+    samplesSats = calculate_offline_computations(__ns3_path, rate, 'PoissonSampler_events', str(experiment), results_folder, endToEndStats['A0D0']['first'][0], endToEndStats['A0D0']['last'][0], "Time", linksRates=[bottleneckLinkRate], swtichDstREDQueueDiscMaxSize=swtichDstREDQueueDiscMaxSize)
     # print(samplesSats)
 
     rounds_results['DropRate'].append(calculate_avgDrop_rate_offline(endToEndStats, paths))
@@ -306,22 +318,22 @@ def analyze_single_experiment(return_dict, rate, queues_names, confidenceValue, 
             samples_paths_aggregated_statistics[flow][path] = {}
             samples_paths_aggregated_statistics[flow][path]['DelayMean'] = samplesSats['SD0']['DelayMean']
             
-            # samples_paths_aggregated_statistics[flow][path]['MaxEpsilonDelay'] = calc_epsilon(confidenceValue, samplesSats['SD0'])
-            samples_paths_aggregated_statistics[flow][path]['MaxEpsilonDelay'] = calc_epsilon_with_bias(confidenceValue, samplesSats['SD0'], biasCalculator.GTBias['QueuingDelay'][1.0][0])
+            samples_paths_aggregated_statistics[flow][path]['MaxEpsilonDelay'] = calc_epsilon(confidenceValue, samplesSats['SD0'])
+            # samples_paths_aggregated_statistics[flow][path]['MaxEpsilonDelay'] = calc_epsilon_with_bias(confidenceValue, samplesSats['SD0'], biasCalculator.GTBias['QueuingDelay'][1.0][0])
             
             # print([(key, calc_epsilon(confidenceValue, samples_df)) for key, samples_df in samples_dfs.items()])
             
             samples_paths_aggregated_statistics[flow][path]['successProbMean'] = np.log(samplesSats['SD0']['successProbMean'])
-            # samples_paths_aggregated_statistics[flow][path]['MaxEpsilonSuccessProb'] = calc_epsilon_loss(confidenceValue, samplesSats['SD0'])
-            samples_paths_aggregated_statistics[flow][path]['MaxEpsilonSuccessProb'] = calc_epsilon_loss_with_bias(confidenceValue, samplesSats['SD0'], biasCalculator.GTBias['DropProb'][1.0][0])
+            samples_paths_aggregated_statistics[flow][path]['MaxEpsilonSuccessProb'] = calc_epsilon_loss(confidenceValue, samplesSats['SD0'])
+            # samples_paths_aggregated_statistics[flow][path]['MaxEpsilonSuccessProb'] = calc_epsilon_loss_with_bias(confidenceValue, samplesSats['SD0'], biasCalculator.GTBias['DropProb'][1.0][0])
 
             samples_paths_aggregated_statistics[flow][path]['nonMarkingProbMean'] = np.log(samplesSats['SD0']['nonMarkingProbMean'])
-            # samples_paths_aggregated_statistics[flow][path]['MaxEpsilonNonMarkingProb'] = calc_epsilon_marking(confidenceValue, samplesSats['SD0'])
-            samples_paths_aggregated_statistics[flow][path]['MaxEpsilonNonMarkingProb'] = calc_epsilon_marking_with_bias(confidenceValue, samplesSats['SD0'], biasCalculator.GTBias['MarkingProb'][1.0][0])
+            samples_paths_aggregated_statistics[flow][path]['MaxEpsilonNonMarkingProb'] = calc_epsilon_marking(confidenceValue, samplesSats['SD0'])
+            # samples_paths_aggregated_statistics[flow][path]['MaxEpsilonNonMarkingProb'] = calc_epsilon_marking_with_bias(confidenceValue, samplesSats['SD0'], biasCalculator.GTBias['MarkingProb'][1.0][0])
 
             samples_paths_aggregated_statistics[flow][path]['lastNonMarkingProbMean'] = np.log(samplesSats['SD0']['lastNonMarkingProbMean'])
-            # samples_paths_aggregated_statistics[flow][path]['MaxEpsilonLastNonMarkingProb'] = calc_epsilon_last_marking(confidenceValue, samplesSats['SD0'])
-            samples_paths_aggregated_statistics[flow][path]['MaxEpsilonLastNonMarkingProb'] = calc_epsilon_last_marking_with_bias(confidenceValue, samplesSats['SD0'], biasCalculator.GTBias['LastMarkingProb'][1.0][0])
+            samples_paths_aggregated_statistics[flow][path]['MaxEpsilonLastNonMarkingProb'] = calc_epsilon_last_marking(confidenceValue, samplesSats['SD0'])
+            # samples_paths_aggregated_statistics[flow][path]['MaxEpsilonLastNonMarkingProb'] = calc_epsilon_last_marking_with_bias(confidenceValue, samplesSats['SD0'], biasCalculator.GTBias['LastMarkingProb'][1.0][0])
 
     # endToEnd_statistics
     AverageWorkLoad = 0
@@ -428,7 +440,7 @@ def analyze_all_experiments(rate, steadyStart, steadyEnd, confidenceValue, dir, 
         merge_results(return_dict, merged_results, flows_name, queues_names, num_of_paths)
         print("{} joind".format(i))
     merged_results['AverageWorkLoad'] = sum(merged_results['AverageWorkLoad']) / merged_results['experiments']
-    with open('../Results/results_{}/{}/Q_e_m_WBias_forward_Results_forward_{}_{}_to_{}.json'.format(dir, rate, experiments_end, steadyStart, steadyEnd), 'w') as f:
+    with open('../Results/results_{}/{}/Q_e_m_poisson_forward_Results_forward_{}_{}_to_{}.json'.format(dir, rate, experiments_end, steadyStart, steadyEnd), 'w') as f:
         js.dump(merged_results, f, indent=4)
 
 # main function
