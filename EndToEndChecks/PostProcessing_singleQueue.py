@@ -60,7 +60,11 @@ def check_all_delayConsistency(endToEnd_statistics, samples_paths_aggregated_sta
         for path in paths:
             res['MaxEpsilonIneq'][flow][path] = {}
             for var_method in endToEnd_statistics[flow]['delay'].keys():
-                res['MaxEpsilonIneq'][flow][path][var_method] = check_MaxEpsilon_ineq_delay(endToEnd_statistics[flow]['delay'][var_method][path], samples_paths_aggregated_statistics[flow][path])
+                if var_method != 'event_poisson_eventAvg':
+                    res['MaxEpsilonIneq'][flow][path][var_method] = check_MaxEpsilon_ineq_delay(endToEnd_statistics[flow]['delay'][var_method][path], samples_paths_aggregated_statistics[flow][path])
+                # else:
+                #     e = (samples_paths_aggregated_statistics[flow][path]['DelayMean'] * samples_paths_aggregated_statistics[flow][path]['MaxEpsilonDelay']) + endToEnd_statistics[flow]['delay'][var_method][path][1] * confidenceValue
+                #     res['MaxEpsilonIneq'][flow][path][var_method] = (abs(endToEnd_statistics[flow]['delay'][var_method][path][0] - samples_paths_aggregated_statistics[flow][path]['DelayMean']) <= e)
     return res
 
 def check_all_successProbConsistency(endToEnd_statistics, samples_paths_aggregated_statistics, paths, number_of_segments):
@@ -71,7 +75,10 @@ def check_all_successProbConsistency(endToEnd_statistics, samples_paths_aggregat
         for path in paths:
             res['MaxEpsilonIneq'][flow][path] = {}
             for var_method in endToEnd_statistics[flow]['successProb'].keys():
-                res['MaxEpsilonIneq'][flow][path][var_method] = check_MaxEpsilon_ineq_successProb(np.log(endToEnd_statistics[flow]['successProb'][var_method][path]), samples_paths_aggregated_statistics[flow][path], number_of_segments)
+                if var_method != 'event_poisson_eventAvg':
+                    res['MaxEpsilonIneq'][flow][path][var_method] = check_MaxEpsilon_ineq_successProb(np.log(endToEnd_statistics[flow]['successProb'][var_method][path]), samples_paths_aggregated_statistics[flow][path], number_of_segments)
+                # else:
+                #     e = 
     return res
 
 def check_all_nonMarkingProbConsistency(endToEnd_statistics, samples_paths_aggregated_statistics, paths, number_of_segments):
@@ -82,7 +89,10 @@ def check_all_nonMarkingProbConsistency(endToEnd_statistics, samples_paths_aggre
         for path in paths:
             res['MaxEpsilonIneq'][flow][path] = {}
             for var_method in endToEnd_statistics[flow]['nonMarkingProb'].keys():
-                res['MaxEpsilonIneq'][flow][path][var_method] = check_MaxEpsilon_ineq_nonMarkingProb(np.log(endToEnd_statistics[flow]['nonMarkingProb'][var_method][path]), samples_paths_aggregated_statistics[flow][path], number_of_segments)
+                if var_method != 'event_poisson_eventAvg':
+                    res['MaxEpsilonIneq'][flow][path][var_method] = check_MaxEpsilon_ineq_nonMarkingProb(np.log(endToEnd_statistics[flow]['nonMarkingProb'][var_method][path]), samples_paths_aggregated_statistics[flow][path], number_of_segments)
+                # else:
+                #     res['MaxEpsilonIneq'][flow][path][var_method] = ()
     return res
 
 def check_all_lastNonMarkingProbConsistency(endToEnd_statistics, samples_paths_aggregated_statistics, paths, number_of_segments):
@@ -418,7 +428,7 @@ def analyze_all_experiments(rate, steadyStart, steadyEnd, confidenceValue, dir, 
         merge_results(return_dict, merged_results, flows_name, queues_names, num_of_paths)
         print("{} joind".format(i))
     merged_results['AverageWorkLoad'] = sum(merged_results['AverageWorkLoad']) / merged_results['experiments']
-    with open('../Results/results_{}/{}/Q_e_m_WBias_{}_{}_{}_{}_to_{}.json'.format(dir, rate, dir, results_folder, experiments_end, steadyStart, steadyEnd), 'w') as f:
+    with open('../Results/results_{}/{}/Q_e_m_WBias_forward_Results_forward_{}_{}_to_{}.json'.format(dir, rate, experiments_end, steadyStart, steadyEnd), 'w') as f:
         js.dump(merged_results, f, indent=4)
 
 # main function

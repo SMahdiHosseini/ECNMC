@@ -318,6 +318,9 @@ def calculate_offline_E2E_lossRates(__ns3_path, full_df, df_res, checkColumn, li
         linearInterp_time_average = np.sum(((values[:-1] + values[1:]) / 2) * np.diff(time)) / (time[-1] - time[0])
         df_res['successProb']['event_linearInterp_timeAvg'][path] = linearInterp_time_average
 
+        # avg, std = e2e_poisson_sampling(time, values)
+        # df_res['successProb']['event_poisson_eventAvg'][path] = (avg, std)
+
         df['nonDropProb'] = df.apply(lambda x: 1.0 - packets_cfd.calculate_probability_greater_than(max(swtichDstREDQueueDiscMaxSize - (x['Delay'] * linksRate / 8), x['PayloadSize'])) if x[checkColumn] != 0 else 0.0, axis=1)
 
         time = df['SentTime'].values
@@ -331,6 +334,9 @@ def calculate_offline_E2E_lossRates(__ns3_path, full_df, df_res, checkColumn, li
 
         linearInterp_time_average = np.sum(((values[:-1] + values[1:]) / 2) * np.diff(time)) / (time[-1] - time[0])
         df_res['successProb']['probability_linearInterp_timeAvg'][path] = linearInterp_time_average
+
+        # avg, std = e2e_poisson_sampling(time, values)
+        # df_res['successProb']['probability_poisson_eventAvg'][path] = (avg, std)
 
     full_df_ = None
     return df_res
@@ -363,6 +369,49 @@ def calculate_offline_markingProbMean_at_receiver(df, swtichDstREDQueueDiscMaxSi
     ecn_df['InterArrivalTime'] = ecn_df['time'].diff().fillna(temp)
     ecn_df['F'] = ecn_df['F'] * ecn_df['InterArrivalTime']
     return 1 - (ecn_df['F'].sum() / ecn_df['InterArrivalTime'].sum())
+
+def e2e_poisson_sampling(time, values):
+    rate = 12 * 1e-6
+    duration = time[-1] - time[0]
+    bound = 1080
+
+    inter_arrival_times = np.random.exponential(scale=1/rate, size=int(duration * rate))
+    poisson_times = 3 * 1e8 + np.cumsum(inter_arrival_times)
+    
+    poisson_times = poisson_times[poisson_times <= time[-1]]
+
+    selected = []
+    for t in poisson_times:
+        idx = np.searchsorted(time, t)
+        candidates = []
+        if idx > 0:
+            candidates.append(idx - 1)
+        if idx < len(time):
+            candidates.append(idx)
+
+        # Find the closest valid one
+        closest = None
+        min_diff = float('inf')
+        for i in candidates:
+            diff = abs(time[i] - t)
+            if diff <= bound and diff < min_diff:
+                closest = i
+                min_diff = diff
+
+        if closest is not None:
+            selected.append(values[closest])
+            # if time[closest] <= t:
+            #     selected.append(values[closest] + sizes[closest] - (t - time[closest]))
+            # else:
+            #     selected.append(values[closest] + (time[closest] - t))
+
+    if selected:
+        avg = np.mean(selected)
+        return avg, np.std(selected) / np.sqrt(len(selected))
+        # print(f"Average Delay from Poisson-sampled SentTimes (within {bound}): {avg} and std/Rn:{np.std(selected) / np.sqrt(len(selected)) + 0.01201685}")
+    else:
+        print("No matches found within the specified bound.")
+        return 0, 0
 
 def calculate_offline_markingProbMean_at_receiver_poisson(df, swtichDstREDQueueDiscMaxSize, linkRate):
     df['SentTime'] = df['SentTime'] - df['SentTime'].iloc[0]
@@ -405,13 +454,16 @@ def calculate_offline_E2E_markingProb(full_df, df_res, checkColumn, swtichDstRED
         linearInterp_time_average = np.sum(((values[:-1] + values[1:]) / 2) * np.diff(time)) / (time[-1] - time[0])
         df_res['nonMarkingProb']['event_linearInterp_timeAvg'][path] = linearInterp_time_average
 
+        # avg, std = e2e_poisson_sampling(time, values)
+        # df_res['nonMarkingProb']['event_poisson_eventAvg'][path] = (avg, std)
+
     full_df_ = None
     return df_res
 
 def calculate_offline_E2E_delays(full_df, removeDrops, checkColumn, df_res):
     df_res['delay'] = {}
     for var in ['event']:
-        for method in ['rightCont_timeAvg', 'leftCont_timeAvg', 'linearInterp_timeAvg']:
+        for method in ['rightCont_timeAvg', 'leftCont_timeAvg', 'linearInterp_timeAvg', ]:
             df_res['delay'][var + '_' + method] = {}
     
     full_df_ = full_df.copy()
@@ -431,6 +483,9 @@ def calculate_offline_E2E_delays(full_df, removeDrops, checkColumn, df_res):
 
         linearInterp_time_average = np.sum(((values[:-1] + values[1:]) / 2) * np.diff(time)) / (time[-1] - time[0])
         df_res['delay']['event_linearInterp_timeAvg'][path] = linearInterp_time_average
+
+        # avg, std = e2e_poisson_sampling(time, values)
+        # df_res['delay']['event_poisson_eventAvg'][path] = (avg, std)
 
         df = None
     full_df_ = None
@@ -717,13 +772,13 @@ def convert_to_float(x):
         return float(x)
 
 def calc_epsilon_with_bias(confidenceValue, segement_statistics, bias):
-    return ((confidenceValue / segement_statistics['DelayMean']) * np.sqrt(bias ** 2 + (segement_statistics['DelayStd'] ** 2 / segement_statistics['sampleSize'])))
+    return (calc_epsilon(confidenceValue, segement_statistics) + (bias / segement_statistics['DelayMean']))
 
 def calc_epsilon(confidenceValue, segement_statistics):
     return (confidenceValue * segement_statistics['DelayStd']) / (np.sqrt(segement_statistics['sampleSize']) * segement_statistics['DelayMean'])
 
 def calc_epsilon_loss_with_bias(confidenceValue, segement_statistics, bias):
-    return ((confidenceValue / segement_statistics['successProbMean']) * np.sqrt(bias ** 2 + (segement_statistics['successProbStd'] ** 2 / segement_statistics['sampleSize'])))
+    return (calc_epsilon_loss(confidenceValue, segement_statistics) + (bias / segement_statistics['successProbMean']))
 
 def calc_epsilon_loss(confidenceValue, segement_statistics):
     return (confidenceValue * segement_statistics['successProbStd']) / (np.sqrt(segement_statistics['sampleSize']) * segement_statistics['successProbMean'])
@@ -732,10 +787,10 @@ def calc_epsilon_last_marking(confidenceValue, segement_statistics):
     return (confidenceValue * segement_statistics['lastNonMarkingProbStd']) / (np.sqrt(segement_statistics['sampleSize']) * segement_statistics['lastNonMarkingProbMean'])
 
 def calc_epsilon_last_marking_with_bias(confidenceValue, segement_statistics, bias):
-    return ((confidenceValue / segement_statistics['lastNonMarkingProbMean']) * np.sqrt(bias ** 2 + (segement_statistics['lastNonMarkingProbStd'] ** 2 / segement_statistics['sampleSize'])))
+    return (calc_epsilon_last_marking(confidenceValue, segement_statistics) + (bias / segement_statistics['lastNonMarkingProbMean']))
 
 def calc_epsilon_marking_with_bias(confidenceValue, segement_statistics, bias):
-    return ((confidenceValue / segement_statistics['nonMarkingProbMean']) * np.sqrt(bias ** 2 + (segement_statistics['nonMarkingProbStd'] ** 2 / segement_statistics['sampleSize'])))
+    return (calc_epsilon_marking(confidenceValue, segement_statistics) + (bias / segement_statistics['nonMarkingProbMean']))
 
 def calc_epsilon_marking(confidenceValue, segement_statistics):
     return (confidenceValue * segement_statistics['nonMarkingProbStd']) / (np.sqrt(segement_statistics['sampleSize']) * segement_statistics['nonMarkingProbMean'])
