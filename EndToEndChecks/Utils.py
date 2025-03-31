@@ -710,17 +710,22 @@ def calculate_offline_computations(__ns3_path, rate, segment, experiment, result
             full_df['Delay'] = (full_df['TotalQueueSize'] * 8) / linksRates[0]
             df_res['DelayMean'] = full_df['Delay'].mean()
             df_res['DelayStd'] = full_df['Delay'].std()
+            full_df['LastDelay'] = (full_df['LastTotalQueueSize'] * 8) / linksRates[0]
+            df_res['LastDelayMean'] = full_df['LastDelay'].mean()
+            df_res['LastDelayStd'] = full_df['LastDelay'].std()
             # df_res['DelayMean'] = full_df['QueuingDelay'].mean()
             # df_res['DelayStd'] = full_df['QueuingDelay'].std()
             df_res['first'] = full_df['Time'].iloc[0]
             df_res['last'] = full_df['Time'].iloc[-1]
             df_res['sampleSize'] = len(full_df)
-            df_res['successProbMean'] = 1 - full_df['DropProb'].mean()
-            df_res['successProbStd'] = full_df['DropProb'].std()
-            df_res['nonMarkingProbMean'] = 1 - full_df['MarkingProb'].mean()
-            df_res['nonMarkingProbStd'] = full_df['MarkingProb'].std()
-            df_res['lastNonMarkingProbMean'] = 1 - full_df['LastMarkingProb'].mean()
-            df_res['lastNonMarkingProbStd'] = full_df['LastMarkingProb'].std()
+            df_res['SuccessProbMean'] = 1 - full_df['DropProb'].mean()
+            df_res['SuccessProbStd'] = full_df['DropProb'].std()
+            df_res['LastSuccessProbMean'] = 1 - full_df['LastDropProb'].mean()
+            df_res['LastSuccessProbStd'] = full_df['LastDropProb'].std()
+            df_res['NonMarkingProbMean'] = 1 - full_df['MarkingProb'].mean()
+            df_res['NonMarkingProbStd'] = full_df['MarkingProb'].std()
+            df_res['LastNonMarkingProbMean'] = 1 - full_df['LastMarkingProb'].mean()
+            df_res['LastNonMarkingProbStd'] = full_df['LastMarkingProb'].std()
         dfs[df_name] = df_res
     return dfs
 
@@ -779,17 +784,14 @@ def convert_to_float(x):
 def calc_epsilon_with_bias(confidenceValue, segement_statistics, bias):
     return (calc_epsilon(confidenceValue, segement_statistics) + (bias / segement_statistics['DelayMean']))
 
-def calc_epsilon(confidenceValue, segement_statistics):
-    return (confidenceValue * segement_statistics['DelayStd']) / (np.sqrt(segement_statistics['sampleSize']) * segement_statistics['DelayMean'])
+def calc_epsilon(confidenceValue, segement_statistics, last=""):
+    return (confidenceValue * segement_statistics[last + 'DelayStd']) / (np.sqrt(segement_statistics['sampleSize']) * segement_statistics[last + 'DelayMean'])
 
 def calc_epsilon_loss_with_bias(confidenceValue, segement_statistics, bias):
     return (calc_epsilon_loss(confidenceValue, segement_statistics) + (bias / segement_statistics['successProbMean']))
 
-def calc_epsilon_loss(confidenceValue, segement_statistics):
-    return (confidenceValue * segement_statistics['successProbStd']) / (np.sqrt(segement_statistics['sampleSize']) * segement_statistics['successProbMean'])
-
-def calc_epsilon_last_marking(confidenceValue, segement_statistics):
-    return (confidenceValue * segement_statistics['lastNonMarkingProbStd']) / (np.sqrt(segement_statistics['sampleSize']) * segement_statistics['lastNonMarkingProbMean'])
+def calc_epsilon_loss(confidenceValue, segement_statistics, last=""):
+    return (confidenceValue * segement_statistics[last + 'SuccessProbStd']) / (np.sqrt(segement_statistics['sampleSize']) * segement_statistics[last + 'SuccessProbMean'])
 
 def calc_epsilon_last_marking_with_bias(confidenceValue, segement_statistics, bias):
     return (calc_epsilon_last_marking(confidenceValue, segement_statistics) + (bias / segement_statistics['lastNonMarkingProbMean']))
@@ -797,8 +799,8 @@ def calc_epsilon_last_marking_with_bias(confidenceValue, segement_statistics, bi
 def calc_epsilon_marking_with_bias(confidenceValue, segement_statistics, bias):
     return (calc_epsilon_marking(confidenceValue, segement_statistics) + (bias / segement_statistics['nonMarkingProbMean']))
 
-def calc_epsilon_marking(confidenceValue, segement_statistics):
-    return (confidenceValue * segement_statistics['nonMarkingProbStd']) / (np.sqrt(segement_statistics['sampleSize']) * segement_statistics['nonMarkingProbMean'])
+def calc_epsilon_marking(confidenceValue, segement_statistics, last=""):
+    return (confidenceValue * segement_statistics[last + 'NonMarkingProbStd']) / (np.sqrt(segement_statistics['sampleSize']) * segement_statistics[last + 'NonMarkingProbMean'])
 
 def calc_epsilon_loss_2(confidenceValue, segement_statistics):
     return (confidenceValue * segement_statistics['successProbStd_2']) / (np.sqrt(segement_statistics['sampleSize']) * segement_statistics['successProbMean_2'])

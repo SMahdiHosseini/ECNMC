@@ -22,24 +22,28 @@ def readResults(results_dir, serviceRateScales, results_dir_file):
                     continue
                 for flow in flows:
                     for path in paths:
-                        results[rate]['MaxEpsilonIneqDelay'] = {}
-                        results[rate]['MaxEpsilonIneqSuccessProb'] = {}
-                        results[rate]['MaxEpsilonIneqNonMarkingProb'] = {}
-                        results[rate]['MaxEpsilonIneqLastNonMarkingProb'] = {}
+                        results[rate]['Delay'] = {}
+                        results[rate]['LastDelay'] = {}
+                        results[rate]['SuccessProb'] = {}
+                        results[rate]['LastSuccessProb'] = {}
+                        results[rate]['NonMarkingProb'] = {}
+                        results[rate]['LastNonMarkingProb'] = {}
                         # results[rate]['SD0Delaystd'] = temp['SD0Delaystd']
                         # results[rate]['SD0DelayMean'] = temp['SD0DelayMean']
 
                         for var_method in temp['MaxEpsilonIneqDelay'].keys():
-                            results[rate]['MaxEpsilonIneqDelay'][var_method] = temp['MaxEpsilonIneqDelay'][var_method][flow][path] / temp['experiments'] * 100
+                            results[rate]['Delay'][var_method] = temp['MaxEpsilonIneqDelay'][var_method][flow][path] / temp['experiments'] * 100
+                            results[rate]['LastDelay'][var_method] = temp['MaxEpsilonIneqLastDelay'][var_method][flow][path] / temp['experiments'] * 100
                         
                         for var_method in temp['MaxEpsilonIneqSuccessProb'].keys():
-                            results[rate]['MaxEpsilonIneqSuccessProb'][var_method] = temp['MaxEpsilonIneqSuccessProb'][var_method][flow][path] / temp['experiments'] * 100
-                        
+                            results[rate]['SuccessProb'][var_method] = temp['MaxEpsilonIneqSuccessProb'][var_method][flow][path] / temp['experiments'] * 100
+                            results[rate]['LastSuccessProb'][var_method] = temp['MaxEpsilonIneqLastSuccessProb'][var_method][flow][path] / temp['experiments'] * 100
+                            
                         for var_method in temp['MaxEpsilonIneqNonMarkingProb'].keys():
-                            results[rate]['MaxEpsilonIneqNonMarkingProb'][var_method] = temp['MaxEpsilonIneqNonMarkingProb'][var_method][flow][path] / temp['experiments'] * 100
+                            results[rate]['NonMarkingProb'][var_method] = temp['MaxEpsilonIneqNonMarkingProb'][var_method][flow][path] / temp['experiments'] * 100
 
                         for var_method in temp['MaxEpsilonIneqLastNonMarkingProb'].keys():
-                            results[rate]['MaxEpsilonIneqLastNonMarkingProb'][var_method] = temp['MaxEpsilonIneqLastNonMarkingProb'][var_method][flow][path] / temp['experiments'] * 100
+                            results[rate]['LastNonMarkingProb'][var_method] = temp['MaxEpsilonIneqLastNonMarkingProb'][var_method][flow][path] / temp['experiments'] * 100
     return results, flows, paths
 
 def plot_boxplot(results, serviceRateScales, results_dir, results_dir_file, metric):

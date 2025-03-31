@@ -26,8 +26,11 @@ private:
     double _markingProb = 0;
     double _lastMarkingProb = 0;
     double _lossProb = 0;
+    double _lastLossProb = 0;
     uint32_t _queueSize = 0;
+    uint32_t _lastQueueSize = 0;
     uint32_t _totalQueueSize = 0;
+    uint32_t _lastTotalQueueSize = 0;
     string _label;
     string _eventAction;
 public:
@@ -44,6 +47,9 @@ public:
     [[nodiscard]] string GetLabel() const;
     [[nodiscard]] string GetEventAction() const; 
     [[nodiscard]] bool IsDeparted() const;
+    [[nodiscard]] double GetLastDropProb() const;
+    [[nodiscard]] uint32_t GetLastQueueSize() const;
+    [[nodiscard]] uint32_t GetLastTotalQueueSize() const;
 
     void SetSampleTime();
     void SetSampleTime(Time t);
@@ -56,6 +62,9 @@ public:
     void SetLastMarkingProb(double markingProb);
     void SetLabel(const string label);
     void SetEventAction(const string action);
+    void SetLastDropProb(double lossProb);
+    void SetLastQueueSize(uint32_t size);
+    void SetLastTotalQueueSize(uint32_t size);
 };
 
 class PoissonSampler : public Monitor{
@@ -91,6 +100,9 @@ private:
     Time lastLeftTime;
     uint32_t lastLeftSize;
     DataRate outgoingDataRate;
+    double _lastDropProb;
+    uint32_t _lastQueueSize;
+    uint32_t _lastTotalQueueSize;
     
     void Connect(Ptr<PointToPointNetDevice> outgoingNetDevice);
     void Disconnect(Ptr<PointToPointNetDevice> outgoingNetDevice);

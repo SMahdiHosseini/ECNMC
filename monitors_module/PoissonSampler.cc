@@ -17,6 +17,9 @@ void samplingEvent::SetTotalQueueSize(uint32_t size) { _totalQueueSize = size; }
 void samplingEvent::SetLastMarkingProb(double markingProb) { _lastMarkingProb = markingProb; }
 void samplingEvent::SetLabel(const string label) { _label = label; }
 void samplingEvent::SetEventAction(const string action) { _eventAction = action; }
+void samplingEvent::SetLastDropProb(double lossProb) { _lastLossProb = lossProb; }
+void samplingEvent::SetLastQueueSize(uint32_t size) { _lastQueueSize = size; }
+void samplingEvent::SetLastTotalQueueSize(uint32_t size) { _lastTotalQueueSize = size; }
 PacketKey *samplingEvent::GetPacketKey() const { return _key; }
 Time samplingEvent::GetSampleTime() const { return GetSentTime(); }
 Time samplingEvent::GetDepartureTime() const { return GetReceivedTime(); }
@@ -28,6 +31,9 @@ uint32_t samplingEvent::GetTotalQueueSize() const { return _totalQueueSize; }
 double samplingEvent::GetLastMarkingProb() const { return _lastMarkingProb; }
 string samplingEvent::GetLabel() const { return _label; }
 string samplingEvent::GetEventAction() const { return _eventAction; }
+double samplingEvent::GetLastDropProb() const { return _lastLossProb; }
+uint32_t samplingEvent::GetLastQueueSize() const { return _lastQueueSize; }
+uint32_t samplingEvent::GetLastTotalQueueSize() const { return _lastTotalQueueSize; }
 PoissonSampler::PoissonSampler(const Time &steadyStartTime, const Time &steadyStopTime, Ptr<RedQueueDisc> queueDisc, Ptr<Queue<Packet>> queue, Ptr<PointToPointNetDevice>  outgoingNetDevice, const string &sampleTag, double sampleRate) 
 : PoissonSampler(steadyStartTime, steadyStopTime, queueDisc, queue, outgoingNetDevice, sampleTag, sampleRate, nullptr, nullptr) {
 
@@ -117,6 +123,9 @@ void PoissonSampler::RecordIncomingPacket(Ptr<const Packet> packet) {
     event.SetLabel(label);
     queueSizeProcessByPackets.push_back(std::make_tuple(Simulator::Now(), event));
 
+    _lastDropProb = dropProbDynamicCDF;
+    _lastQueueSize = REDQueueDisc->GetNBytes();
+    _lastTotalQueueSize = ComputeQueueSize();
     // updateGTCounters();
     // cout << "### POISSON ### Enqueue Time: " << Simulator::Now().GetNanoSeconds() << " Queueing Delay: " << queuingDelay.GetNanoSeconds() << " REDQueue Size: " << REDQueueDisc->GetNBytes() << " GTQueuingDelay: " << GTQueuingDelay << " ECN >>> " << markingProbDynamic << endl;
 }
@@ -313,6 +322,9 @@ void PoissonSampler::EventHandler() {
     event->SetQueueSize(REDQueueDisc->GetNBytes());
     event->SetTotalQueueSize(ComputeQueueSize());
     event->SetLastMarkingProb(REDQueueDisc->_lastMarkingProb);
+    event->SetLastDropProb(_lastDropProb);
+    event->SetLastQueueSize(_lastQueueSize);
+    event->SetLastTotalQueueSize(_lastTotalQueueSize);
     _recordedSamples[*packetKey] = event;
     // cout << "### EVENT ### " << "Time: " << Simulator::Now().GetNanoSeconds() << " Queue Size: " << queueSize << " Total Queue Size: " << ComputeQueueSize() << " Queuing Delay: " << queuingDelay.GetNanoSeconds() << endl;
     updateCounters(event);
@@ -397,10 +409,10 @@ void PoissonSampler::SaveMonitorRecords(const string& filename) {
     ofstream eventsFile;
     eventsFile.open(filename.substr(0, filename.size() - 4) + "_events.csv");
 
-    eventsFile << "Time,QueuingDelay,DropProb,MarkingProb,QueueSize,TotalQueueSize,LastMarkingProb" << endl;
+    eventsFile << "Time,QueuingDelay,DropProb,MarkingProb,QueueSize,TotalQueueSize,LastMarkingProb,LastDropProb,LastQueueSize,LastTotalQueueSize" << endl;
     for (auto &item : _recordedSamples) {
         eventsFile << item.second->GetSampleTime().GetNanoSeconds() << "," << (item.second->GetDepartureTime() - item.second->GetSampleTime()).GetNanoSeconds() << "," << item.second->GetLossProb() << "," << item.second->GetMarkingProb() << "," << item.second->GetQueueSize() << 
-        "," << item.second->GetTotalQueueSize() << "," << item.second->GetLastMarkingProb() << endl;
+        "," << item.second->GetTotalQueueSize() << "," << item.second->GetLastMarkingProb() << "," << item.second->GetLastDropProb() << "," << item.second->GetLastQueueSize() << "," << item.second->GetLastTotalQueueSize() << endl;
     }
     eventsFile.close();
 
