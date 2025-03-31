@@ -162,19 +162,19 @@ def prepare_results(flows, queues, num_of_paths):
             rounds_results['MaxEpsilonIneqLastNonMarkingProb'][var + '_' + method] = {}
 
     for q in queues:
-        if q[0] == 'S' and q[1] == 'D':
-            rounds_results[q+'Delaystd'] = []
-            rounds_results[q+'DelayMean'] = []
-            rounds_results[q+'LastDelaystd'] = []
-            rounds_results[q+'LastDelayMean'] = []
-            rounds_results[q+'SuccessProbStd'] = []
-            rounds_results[q+'SuccessProbMean'] = []
-            rounds_results[q+'LastSuccessProbStd'] = []
-            rounds_results[q+'LastSuccessProbMean'] = []
-            rounds_results[q+'NonMarkingProbStd'] = []
-            rounds_results[q+'NonMarkingProbMean'] = []
-            rounds_results[q+'LastNonMarkingProbStd'] = []
-            rounds_results[q+'LastNonMarkingProbMean'] = []
+        # if q[0] == 'S' and q[1] == 'D':
+        rounds_results[q+'Delaystd'] = []
+        rounds_results[q+'DelayMean'] = []
+        rounds_results[q+'LastDelaystd'] = []
+        rounds_results[q+'LastDelayMean'] = []
+        rounds_results[q+'SuccessProbStd'] = []
+        rounds_results[q+'SuccessProbMean'] = []
+        rounds_results[q+'LastSuccessProbStd'] = []
+        rounds_results[q+'LastSuccessProbMean'] = []
+        rounds_results[q+'NonMarkingProbStd'] = []
+        rounds_results[q+'NonMarkingProbMean'] = []
+        rounds_results[q+'LastNonMarkingProbStd'] = []
+        rounds_results[q+'LastNonMarkingProbMean'] = []
 
     for flow in flows:
         for var_method in rounds_results['MaxEpsilonIneqDelay'].keys():
@@ -340,8 +340,8 @@ def analyze_single_experiment(return_dict, rate, queues_names, confidenceValue, 
         samples_paths_aggregated_statistics[flow] = {}
         for path in paths:
             samples_paths_aggregated_statistics[flow][path] = {}
-            samples_paths_aggregated_statistics[flow][path]['DelayMean'] = samplesSats['SD0']['DelayMean']
-            samples_paths_aggregated_statistics[flow][path]['MaxEpsilonDelay'] = calc_epsilon(confidenceValue, samplesSats['SD0'])
+            samples_paths_aggregated_statistics[flow][path]['DelayMean'] = samplesSats['SD0']['DelayMean'] + samplesSats['H']['DelayMean']
+            samples_paths_aggregated_statistics[flow][path]['MaxEpsilonDelay'] = max(calc_epsilon(confidenceValue, samplesSats['SD0']), calc_epsilon(confidenceValue, samplesSats['H']))
             # samples_paths_aggregated_statistics[flow][path]['MaxEpsilonDelay'] = calc_epsilon_with_bias(confidenceValue, samplesSats['SD0'], biasCalculator.GTBias['QueuingDelay'][1.0][0])
             
             samples_paths_aggregated_statistics[flow][path]['LastDelayMean'] = samplesSats['SD0']['LastDelayMean']
@@ -390,37 +390,37 @@ def analyze_single_experiment(return_dict, rate, queues_names, confidenceValue, 
     compatibility_check(rounds_results, samples_paths_aggregated_statistics, endToEndStats, endToEndStats.keys(), range(num_of_paths), number_of_segments)
               
     for q in queues_names:
-        if q[0] == 'S' and q[1] == 'D':
-            rounds_results[q+'Delaystd'].append(samplesSats[q]['DelayStd'])
-            rounds_results[q+'DelayMean'].append(samplesSats[q]['DelayMean'])
-            rounds_results[q+'LastDelaystd'].append(samplesSats[q]['LastDelayStd'])
-            rounds_results[q+'LastDelayMean'].append(samplesSats[q]['LastDelayMean'])
-            rounds_results[q+'SuccessProbStd'].append(samplesSats[q]['SuccessProbStd'])
-            rounds_results[q+'SuccessProbMean'].append(samplesSats[q]['SuccessProbMean'])
-            rounds_results[q+'LastSuccessProbStd'].append(samplesSats[q]['LastSuccessProbStd'])
-            rounds_results[q+'LastSuccessProbMean'].append(samplesSats[q]['LastSuccessProbMean'])
-            rounds_results[q+'NonMarkingProbStd'].append(samplesSats[q]['NonMarkingProbStd'])
-            rounds_results[q+'NonMarkingProbMean'].append(samplesSats[q]['NonMarkingProbMean'])
-            rounds_results[q+'LastNonMarkingProbStd'].append(samplesSats[q]['LastNonMarkingProbStd'])
-            rounds_results[q+'LastNonMarkingProbMean'].append(samplesSats[q]['LastNonMarkingProbMean'])
+        # if q[0] == 'S' and q[1] == 'D':
+        rounds_results[q+'Delaystd'].append(samplesSats[q]['DelayStd'])
+        rounds_results[q+'DelayMean'].append(samplesSats[q]['DelayMean'])
+        rounds_results[q+'LastDelaystd'].append(samplesSats[q]['LastDelayStd'])
+        rounds_results[q+'LastDelayMean'].append(samplesSats[q]['LastDelayMean'])
+        rounds_results[q+'SuccessProbStd'].append(samplesSats[q]['SuccessProbStd'])
+        rounds_results[q+'SuccessProbMean'].append(samplesSats[q]['SuccessProbMean'])
+        rounds_results[q+'LastSuccessProbStd'].append(samplesSats[q]['LastSuccessProbStd'])
+        rounds_results[q+'LastSuccessProbMean'].append(samplesSats[q]['LastSuccessProbMean'])
+        rounds_results[q+'NonMarkingProbStd'].append(samplesSats[q]['NonMarkingProbStd'])
+        rounds_results[q+'NonMarkingProbMean'].append(samplesSats[q]['NonMarkingProbMean'])
+        rounds_results[q+'LastNonMarkingProbStd'].append(samplesSats[q]['LastNonMarkingProbStd'])
+        rounds_results[q+'LastNonMarkingProbMean'].append(samplesSats[q]['LastNonMarkingProbMean'])
     return_dict[experiment] = rounds_results
 
 def merge_results(return_dict, merged_results, flows, queues, num_of_paths):
     for exp in return_dict.keys():
         for q in queues:
-            if q[0] == 'S' and q[1] == 'D':
-                merged_results[q+'Delaystd'] += return_dict[exp][q+'Delaystd']
-                merged_results[q+'DelayMean'] += return_dict[exp][q+'DelayMean']
-                merged_results[q+'LastDelaystd'] += return_dict[exp][q+'LastDelaystd']
-                merged_results[q+'LastDelayMean'] += return_dict[exp][q+'LastDelayMean']
-                merged_results[q+'SuccessProbStd'] += return_dict[exp][q+'SuccessProbStd']
-                merged_results[q+'SuccessProbMean'] += return_dict[exp][q+'SuccessProbMean']
-                merged_results[q+'LastSuccessProbStd'] += return_dict[exp][q+'LastSuccessProbStd']
-                merged_results[q+'LastSuccessProbMean'] += return_dict[exp][q+'LastSuccessProbMean']
-                merged_results[q+'NonMarkingProbStd'] += return_dict[exp][q+'NonMarkingProbStd']
-                merged_results[q+'NonMarkingProbMean'] += return_dict[exp][q+'NonMarkingProbMean']
-                merged_results[q+'LastNonMarkingProbStd'] += return_dict[exp][q+'LastNonMarkingProbStd']
-                merged_results[q+'LastNonMarkingProbMean'] += return_dict[exp][q+'LastNonMarkingProbMean']
+            # if q[0] == 'S' and q[1] == 'D':
+            merged_results[q+'Delaystd'] += return_dict[exp][q+'Delaystd']
+            merged_results[q+'DelayMean'] += return_dict[exp][q+'DelayMean']
+            merged_results[q+'LastDelaystd'] += return_dict[exp][q+'LastDelaystd']
+            merged_results[q+'LastDelayMean'] += return_dict[exp][q+'LastDelayMean']
+            merged_results[q+'SuccessProbStd'] += return_dict[exp][q+'SuccessProbStd']
+            merged_results[q+'SuccessProbMean'] += return_dict[exp][q+'SuccessProbMean']
+            merged_results[q+'LastSuccessProbStd'] += return_dict[exp][q+'LastSuccessProbStd']
+            merged_results[q+'LastSuccessProbMean'] += return_dict[exp][q+'LastSuccessProbMean']
+            merged_results[q+'NonMarkingProbStd'] += return_dict[exp][q+'NonMarkingProbStd']
+            merged_results[q+'NonMarkingProbMean'] += return_dict[exp][q+'NonMarkingProbMean']
+            merged_results[q+'LastNonMarkingProbStd'] += return_dict[exp][q+'LastNonMarkingProbStd']
+            merged_results[q+'LastNonMarkingProbMean'] += return_dict[exp][q+'LastNonMarkingProbMean']
 
     for flow in flows:
         for i in range(num_of_paths):

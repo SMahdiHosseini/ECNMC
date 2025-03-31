@@ -257,6 +257,7 @@ void run_single_queue_simulation(int argc, char* argv[]) {
                                   "MaxTh", DoubleValue(maxTh * QueueSize(switchSrcREDQueueDiscMaxSize).GetValue()));
     vector<QueueDiscContainer> switchToSrcHostQueueDiscs;
     switchToSrcHostQueueDiscs.push_back(switchToSrcHostTCH.Install(srcHostsToSwitchNetDevices[0].Get(1)));
+    // switchToSrcHostQueueDiscs.push_back(switchToSrcHostTCH.Install(srcHostsToSwitchNetDevices[0]));
 
     // //Install RED Queue Discs on the switches to cross traffic hosts links
     TrafficControlHelper switchToCtHostTCH;
@@ -268,6 +269,7 @@ void run_single_queue_simulation(int argc, char* argv[]) {
                                   "MaxTh", DoubleValue(maxTh * QueueSize(switchSrcREDQueueDiscMaxSize).GetValue()));
     vector<QueueDiscContainer> switchToCtHostQueueDiscs;
     switchToCtHostQueueDiscs.push_back(switchToCtHostTCH.Install(ctHostsToSwitchNetDevices[0].Get(1)));
+    // switchToCtHostQueueDiscs.push_back(switchToCtHostTCH.Install(ctHostsToSwitchNetDevices[0]));
 
     // Install RED Queue Discs on the switches to dst hosts links
     TrafficControlHelper switchToDstHostTCH;
@@ -278,6 +280,7 @@ void run_single_queue_simulation(int argc, char* argv[]) {
                                   "MinTh", DoubleValue(minTh * QueueSize(swtichDstREDQueueDiscMaxSize).GetValue()),
                                   "MaxTh", DoubleValue(maxTh * QueueSize(swtichDstREDQueueDiscMaxSize).GetValue()));
     QueueDiscContainer switchToDstHostQueueDisc = switchToDstHostTCH.Install(dstHostsToSwitchNetDevices.Get(1));
+    // QueueDiscContainer switchToDstHostQueueDisc = switchToDstHostTCH.Install(dstHostsToSwitchNetDevices);
 
     // Assign IP addresses
     uint16_t nbSubnet = 0;
@@ -344,8 +347,8 @@ void run_single_queue_simulation(int argc, char* argv[]) {
     auto *S0D0Monitor = new E2EMonitor(startTime, Seconds(stof(steadyStopTime)) + convergenceTime, Seconds(stof(steadyStartTime)), Seconds(stof(steadyStopTime)), DynamicCast<PointToPointNetDevice>(srcHostsToSwitchNetDevices[0].Get(0)), dstHosts.Get(0), srcHosts.Get(0), "A0D0", errorRate, DataRate(srcHostToSwitchLinkRate), DataRate(bottleneckLinkRate), Time(hostToSwitchLinkDelay), 1, 1, QueueSize(swtichDstREDQueueDiscMaxSize).GetValue());
     S0D0Monitor->AddAppKey(AppKey(srcHostsToSwitchIps[0].GetAddress(0), dstHostsToSwitchIps.GetAddress(0), 0, 0));
 
-    // Ptr<PointToPointNetDevice> hostToSwitchrNetDevice = DynamicCast<PointToPointNetDevice>(srcHostsToSwitchNetDevices[0].Get(0));
-    // auto *hostToSwitchrSampler = new PoissonSampler(Seconds(stof(steadyStartTime)), Seconds(stof(steadyStopTime)), nullptr, hostToSwitchrNetDevice->GetQueue(), hostToSwitchrNetDevice, "H", sampleRate);
+    Ptr<PointToPointNetDevice> hostToSwitchrNetDevice = DynamicCast<PointToPointNetDevice>(srcHostsToSwitchNetDevices[0].Get(0));
+    auto *hostToSwitchrSampler = new PoissonSampler(Seconds(stof(steadyStartTime)), Seconds(stof(steadyStopTime)), nullptr, hostToSwitchrNetDevice->GetQueue(), hostToSwitchrNetDevice, "H", sampleRate);
 
     Ptr<PointToPointNetDevice> switchToDstNetDevice = DynamicCast<PointToPointNetDevice>(dstHostsToSwitchNetDevices.Get(1));
     Ptr<PointToPointNetDevice> incomingNetDevice = DynamicCast<PointToPointNetDevice>(srcHostsToSwitchNetDevices[0].Get(1));
@@ -403,7 +406,7 @@ void run_single_queue_simulation(int argc, char* argv[]) {
     S0D0Monitor->SaveMonitorRecords((string) (getenv("PWD")) + "/Results/results_" + dirName + "/" + to_string(experiment)  + "/" + S0D0Monitor->GetMonitorTag() + "_EndToEnd.csv");
 
     switchMonitor->SavePacketRecords((string) (getenv("PWD")) + "/Results/results_" + dirName + "/" + to_string(experiment)  + "/" + switchMonitor->GetMonitorTag() + "_Switch.csv");
-    // hostToSwitchrSampler->SaveMonitorRecords((string) (getenv("PWD")) + "/Results/results_" + dirName + "/" + to_string(experiment)  + "/" + hostToSwitchrSampler->GetMonitorTag() + "_PoissonSampler.csv");
+    hostToSwitchrSampler->SaveMonitorRecords((string) (getenv("PWD")) + "/Results/results_" + dirName + "/" + to_string(experiment)  + "/" + hostToSwitchrSampler->GetMonitorTag() + "_PoissonSampler.csv");
     switchToDstSampler->SaveMonitorRecords((string) (getenv("PWD")) + "/Results/results_" + dirName + "/" + to_string(experiment)  + "/" + switchToDstSampler->GetMonitorTag() + "_PoissonSampler.csv");
     
     /* ########## END: Scheduling and  Running ########## */

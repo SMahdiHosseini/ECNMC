@@ -266,10 +266,10 @@ void PoissonSampler::Connect(Ptr<PointToPointNetDevice> outgoingNetDevice) {
     if (REDQueueDisc != nullptr) {
         REDQueueDisc->TraceConnectWithoutContext("Enqueue", MakeCallback(&PoissonSampler::EnqueueQueueDisc, this));
         REDQueueDisc->TraceConnectWithoutContext("Dequeue", MakeCallback(&PoissonSampler::DequeueQueueDisc, this));
+        incomingNetDevice->TraceConnectWithoutContext("PromiscSniffer", MakeCallback(&PoissonSampler::RecordIncomingPacket, this));
+        incomingNetDevice_1->TraceConnectWithoutContext("PromiscSniffer", MakeCallback(&PoissonSampler::RecordIncomingPacket, this));
     }
-    NetDeviceQueue->TraceConnectWithoutContext("Enqueue", MakeCallback(&PoissonSampler::EnqueueNetDeviceQueue, this));
-    incomingNetDevice->TraceConnectWithoutContext("PromiscSniffer", MakeCallback(&PoissonSampler::RecordIncomingPacket, this));
-    incomingNetDevice_1->TraceConnectWithoutContext("PromiscSniffer", MakeCallback(&PoissonSampler::RecordIncomingPacket, this));
+    // NetDeviceQueue->TraceConnectWithoutContext("Enqueue", MakeCallback(&PoissonSampler::EnqueueNetDeviceQueue, this));
     outgoingNetDevice->TraceConnectWithoutContext("PromiscSniffer", MakeCallback(&PoissonSampler::RecordPacket, this));
     // generate the first event
     double nextEvent = m_var->GetValue();
@@ -278,13 +278,13 @@ void PoissonSampler::Connect(Ptr<PointToPointNetDevice> outgoingNetDevice) {
 
 void PoissonSampler::Disconnect(Ptr<PointToPointNetDevice> outgoingNetDevice) {
     outgoingNetDevice->TraceDisconnectWithoutContext("PromiscSniffer", MakeCallback(&PoissonSampler::RecordPacket, this));
-    incomingNetDevice->TraceDisconnectWithoutContext("PromiscSniffer", MakeCallback(&PoissonSampler::RecordIncomingPacket, this));
-    incomingNetDevice_1->TraceDisconnectWithoutContext("PromiscSniffer", MakeCallback(&PoissonSampler::RecordIncomingPacket, this));
     if (REDQueueDisc != nullptr) {
         REDQueueDisc->TraceDisconnectWithoutContext("Enqueue", MakeCallback(&PoissonSampler::EnqueueQueueDisc, this));
         REDQueueDisc->TraceDisconnectWithoutContext("Dequeue", MakeCallback(&PoissonSampler::DequeueQueueDisc, this));
+        incomingNetDevice->TraceDisconnectWithoutContext("PromiscSniffer", MakeCallback(&PoissonSampler::RecordIncomingPacket, this));
+        incomingNetDevice_1->TraceDisconnectWithoutContext("PromiscSniffer", MakeCallback(&PoissonSampler::RecordIncomingPacket, this));
     }
-    NetDeviceQueue->TraceDisconnectWithoutContext("Enqueue", MakeCallback(&PoissonSampler::EnqueueNetDeviceQueue, this));
+    // NetDeviceQueue->TraceDisconnectWithoutContext("Enqueue", MakeCallback(&PoissonSampler::EnqueueNetDeviceQueue, this));
 }
 
 void PoissonSampler::EventHandler() {
@@ -310,7 +310,7 @@ void PoissonSampler::EventHandler() {
     else {
         queueSize = NetDeviceQueue->GetNBytes();
         //TODO: the following line has to be fixed. It is not correct if the queue max size is in packets
-        dropProbDynamicCDF = packetCDF.calculateProbabilityGreaterThan(NetDeviceQueue->GetMaxSize().GetValue() - NetDeviceQueue->GetCurrentSize().GetValue());
+        // dropProbDynamicCDF = packetCDF.calculateProbabilityGreaterThan(NetDeviceQueue->GetMaxSize().GetValue() - NetDeviceQueue->GetCurrentSize().GetValue());        
     }
     PacketKey* packetKey = new PacketKey(ns3::Ipv4Address("0.0.0.0"), ns3::Ipv4Address("0.0.0.1"), 0, zeroDelayPort++, zeroDelayPort++, ns3::SequenceNumber32(0), ns3::SequenceNumber32(0), 0, 0);
     Time queuingDelay = outgoingDataRate.CalculateBytesTxTime(queueSize);
@@ -319,9 +319,15 @@ void PoissonSampler::EventHandler() {
     event->SetDepartureTime(Simulator::Now() + queuingDelay);
     event->SetLossProb(dropProbDynamicCDF);
     event->SetMarkingProb(markingProbDynamic);
-    event->SetQueueSize(REDQueueDisc->GetNBytes());
+    if (REDQueueDisc != nullptr) {
+        event->SetQueueSize(REDQueueDisc->GetNBytes());
+        event->SetLastMarkingProb(REDQueueDisc->_lastMarkingProb);
+    }
+    else {
+        event->SetQueueSize(NetDeviceQueue->GetNBytes());
+        event->SetLastMarkingProb(0.0);
+    }
     event->SetTotalQueueSize(ComputeQueueSize());
-    event->SetLastMarkingProb(REDQueueDisc->_lastMarkingProb);
     event->SetLastDropProb(_lastDropProb);
     event->SetLastQueueSize(_lastQueueSize);
     event->SetLastTotalQueueSize(_lastTotalQueueSize);
