@@ -96,7 +96,7 @@ def __main__():
     args = parser.parse_args()
     results_dir = args.dir
     # results_dir_file = args.file
-    results_dir_file = "Q_e_m_poisson"
+    results_dir_file = "Q_e_m_WOTx"
     config = configparser.ConfigParser()
     config.read('../Results/results_{}/Parameters.config'.format(args.dir))
     serviceRateScales = [float(x) for x in config.get('Settings', 'serviceRateScales').split(',')]

@@ -500,10 +500,10 @@ def prune_data(full_df, projectColumn, steadyStart, steadyEnd):
     return full_df
 
 def addRemoveTransmission_data(full_df, linkDelays, linksRates):
-    # full_df['Delay'] = abs(full_df['ReceiveTime'] - full_df['SentTime'] - full_df['transmissionDelay'])
-    full_df['Delay'] = abs(full_df['ReceiveTime'] - full_df['TxEnqueueTime'] - full_df['transmissionDelay'])
-    # full_df['SentTime'] = full_df['SentTime'] + linkDelays[0] + (full_df['PayloadSize'] * 8) / linksRates[0]
-    full_df['SentTime'] = full_df['TxEnqueueTime']
+    full_df['Delay'] = abs(full_df['ReceiveTime'] - full_df['SentTime'] - full_df['transmissionDelay'])
+    # full_df['Delay'] = abs(full_df['ReceiveTime'] - full_df['TxEnqueueTime'] - full_df['transmissionDelay'])
+    full_df['SentTime'] = full_df['SentTime'] + linkDelays[0] + (full_df['PayloadSize'] * 8) / linksRates[0]
+    # full_df['SentTime'] = full_df['TxEnqueueTime']
     return full_df
 
 def timeShift(full_df, timeColumn, sizeColumn, linkDelays, linksRates):

@@ -340,8 +340,10 @@ def analyze_single_experiment(return_dict, rate, queues_names, confidenceValue, 
         samples_paths_aggregated_statistics[flow] = {}
         for path in paths:
             samples_paths_aggregated_statistics[flow][path] = {}
-            samples_paths_aggregated_statistics[flow][path]['DelayMean'] = samplesSats['SD0']['DelayMean'] + samplesSats['H']['DelayMean']
-            samples_paths_aggregated_statistics[flow][path]['MaxEpsilonDelay'] = max(calc_epsilon(confidenceValue, samplesSats['SD0']), calc_epsilon(confidenceValue, samplesSats['H']))
+            samples_paths_aggregated_statistics[flow][path]['DelayMean'] = samplesSats['SD0']['DelayMean']
+            samples_paths_aggregated_statistics[flow][path]['MaxEpsilonDelay'] = calc_epsilon(confidenceValue, samplesSats['SD0'])
+            # samples_paths_aggregated_statistics[flow][path]['DelayMean'] = samplesSats['SD0']['DelayMean'] + samplesSats['H']['DelayMean']
+            # samples_paths_aggregated_statistics[flow][path]['MaxEpsilonDelay'] = max(calc_epsilon(confidenceValue, samplesSats['SD0']), calc_epsilon(confidenceValue, samplesSats['H']))
             # samples_paths_aggregated_statistics[flow][path]['MaxEpsilonDelay'] = calc_epsilon_with_bias(confidenceValue, samplesSats['SD0'], biasCalculator.GTBias['QueuingDelay'][1.0][0])
             
             samples_paths_aggregated_statistics[flow][path]['LastDelayMean'] = samplesSats['SD0']['LastDelayMean']
@@ -482,7 +484,7 @@ def analyze_all_experiments(rate, steadyStart, steadyEnd, confidenceValue, dir, 
         merge_results(return_dict, merged_results, flows_name, queues_names, num_of_paths)
         print("{} joind".format(i))
     merged_results['AverageWorkLoad'] = sum(merged_results['AverageWorkLoad']) / merged_results['experiments']
-    with open('../Results/results_{}/{}/Q_e_m_poisson_forward_Results_forward_{}_{}_to_{}.json'.format(dir, rate, experiments_end, steadyStart, steadyEnd), 'w') as f:
+    with open('../Results/results_{}/{}/Q_e_m_WOTx_forward_Results_forward_{}_{}_to_{}.json'.format(dir, rate, experiments_end, steadyStart, steadyEnd), 'w') as f:
         js.dump(merged_results, f, indent=4)
 
 # main function
