@@ -5,6 +5,7 @@ import seaborn as sns
 import numpy as np
 from scipy.stats import anderson
 from scipy.stats import f_oneway, kruskal
+from scipy.stats import expon, kstest, bernoulli
 
 import csv
 from collections import defaultdict
@@ -292,7 +293,7 @@ def calculate_offline_E2E_workload(full_df, df_res, steadyStart, steadyEnd):
 def calculate_offline_E2E_lossRates(__ns3_path, full_df, df_res, checkColumn, linksRate, swtichDstREDQueueDiscMaxSize):
     df_res['successProb'] = {}
     for var in ['event', 'probability']:
-        for method in ['rightCont_timeAvg', 'leftCont_timeAvg', 'linearInterp_timeAvg', 'poisson_eventAvg']:
+        for method in ['rightCont_timeAvg', 'leftCont_timeAvg', 'linearInterp_timeAvg', 'poisson_eventAvg', 'eventAvg']:
             df_res['successProb'][var + '_' + method] = {}
 
     packets_cfd = PacketCDF()
@@ -318,6 +319,8 @@ def calculate_offline_E2E_lossRates(__ns3_path, full_df, df_res, checkColumn, li
         linearInterp_time_average = np.sum(((values[:-1] + values[1:]) / 2) * np.diff(time)) / (time[-1] - time[0])
         df_res['successProb']['event_linearInterp_timeAvg'][path] = linearInterp_time_average
 
+        df_res['successProb']['event_eventAvg'][path] = (np.mean(values), np.std(values) / np.sqrt(len(values)))
+   
         avg, std = e2e_poisson_sampling(time, values)
         df_res['successProb']['event_poisson_eventAvg'][path] = (avg, std)
 
@@ -334,6 +337,8 @@ def calculate_offline_E2E_lossRates(__ns3_path, full_df, df_res, checkColumn, li
 
         linearInterp_time_average = np.sum(((values[:-1] + values[1:]) / 2) * np.diff(time)) / (time[-1] - time[0])
         df_res['successProb']['probability_linearInterp_timeAvg'][path] = linearInterp_time_average
+
+        df_res['successProb']['probability_eventAvg'][path] = (np.mean(values), np.std(values) / np.sqrt(len(values)))
 
         avg, std = e2e_poisson_sampling(time, values)
         df_res['successProb']['probability_poisson_eventAvg'][path] = (avg, std)
@@ -370,10 +375,52 @@ def calculate_offline_markingProbMean_at_receiver(df, swtichDstREDQueueDiscMaxSi
     ecn_df['F'] = ecn_df['F'] * ecn_df['InterArrivalTime']
     return 1 - (ecn_df['F'].sum() / ecn_df['InterArrivalTime'].sum())
 
+def e2e_poisson_sampling_new(time, values):
+    # Step 1: Compute interarrival times
+    interarrival = np.diff(time)
+
+    # Step 2: Check if interarrivals follow an exponential distribution
+    _, p_val = kstest(interarrival, 'expon', args=(np.min(interarrival), np.mean(interarrival)))
+    if p_val > 0.05:
+        # Interarrival is exponential: return all
+        return np.mean(values), np.std(values) / np.sqrt(len(values))
+
+    # Step 3: Divide into chunks of average interarrival time
+    avg_interarrival = np.mean(interarrival)
+    start_time = time[0]
+    end_time = time[-1]
+    bins = np.arange(start_time, end_time, avg_interarrival)
+
+    selected_indices = []
+    for i in range(len(bins) - 1):
+        # Get indices in the current chunk
+        mask = (time >= bins[i]) & (time < bins[i+1])
+        indices = np.where(mask)[0]
+        if len(indices) > 0:
+            # Randomly pick one index from the chunk
+            selected_indices.append(np.random.choice(indices))
+
+    selected_indices = np.array(selected_indices)
+    selected_times = time[selected_indices]
+    selected_values = values[selected_indices]
+
+    # Step 4: Check if interarrival of selected packets is exponential
+    selected_interarrival = np.diff(selected_times)
+    _, p_val = kstest(selected_interarrival, 'expon', args=(np.min(selected_interarrival), np.mean(selected_interarrival)))
+    if p_val > 0.05:
+        return np.mean(selected_values), np.std(selected_values) / np.sqrt(len(selected_values))
+
+    # Step 5: Use Bernoulli sampling on selected packets
+    keep_mask = bernoulli.rvs(0.5, size=len(selected_times))  # 0.5 is an arbitrary probability
+    final_times = selected_times[keep_mask == 1]
+    final_values = selected_values[keep_mask == 1]
+ 
+    return np.mean(final_values), np.std(final_values) / np.sqrt(len(final_values))
+
 def e2e_poisson_sampling(time, values, delay=False, sizes=None):
     rate = 12 * 1e-6
     duration = time[-1] - time[0]
-    bound = 1080
+    bound = 1000
 
     inter_arrival_times = np.random.exponential(scale=1/rate, size=int(duration * rate))
     poisson_times = 3 * 1e8 + np.cumsum(inter_arrival_times)
@@ -403,7 +450,7 @@ def e2e_poisson_sampling(time, values, delay=False, sizes=None):
                 selected.append(values[closest])
             else:
                 if time[closest] <= t:
-                    selected.append(values[closest] + sizes[closest] - (t - time[closest]))
+                    selected.append(max(values[closest] + sizes[closest] - (t - time[closest]), 0))
                 else:
                     selected.append(values[closest] + (time[closest] - t))
 
@@ -434,7 +481,7 @@ def calculate_offline_E2E_markingProb(full_df, df_res, checkColumn, swtichDstRED
     # nonMarkingProb_timeAvg_vars = ['event_currentProb', 'event_lastProb']
     df_res['nonMarkingProb'] = {}
     for var in ['event']:
-        for method in ['rightCont_timeAvg', 'leftCont_timeAvg', 'linearInterp_timeAvg', 'poisson_eventAvg']:
+        for method in ['rightCont_timeAvg', 'leftCont_timeAvg', 'linearInterp_timeAvg', 'poisson_eventAvg', 'eventAvg']:
             df_res['nonMarkingProb'][var + '_' + method] = {}
     
     full_df_ = full_df[full_df['SentTime'] != -1].copy()
@@ -459,13 +506,14 @@ def calculate_offline_E2E_markingProb(full_df, df_res, checkColumn, swtichDstRED
         avg, std = e2e_poisson_sampling(time, values)
         df_res['nonMarkingProb']['event_poisson_eventAvg'][path] = (avg, std)
 
+        df_res['nonMarkingProb']['event_eventAvg'][path] = (np.mean(values), np.std(values) / np.sqrt(len(values)))
     full_df_ = None
     return df_res
 
 def calculate_offline_E2E_delays(full_df, removeDrops, checkColumn, df_res):
     df_res['delay'] = {}
     for var in ['event']:
-        for method in ['rightCont_timeAvg', 'leftCont_timeAvg', 'linearInterp_timeAvg', 'poisson_eventAvg']:
+        for method in ['rightCont_timeAvg', 'leftCont_timeAvg', 'linearInterp_timeAvg', 'poisson_eventAvg', 'eventAvg']:
             df_res['delay'][var + '_' + method] = {}
     
     full_df_ = full_df.copy()
@@ -489,6 +537,7 @@ def calculate_offline_E2E_delays(full_df, removeDrops, checkColumn, df_res):
         avg, std = e2e_poisson_sampling(time, values, delay=True, sizes=df['PayloadSize'].values)
         df_res['delay']['event_poisson_eventAvg'][path] = (avg, std)
 
+        df_res['delay']['event_eventAvg'][path] = (np.mean(values), np.std(values) / np.sqrt(len(values)))
         df = None
     full_df_ = None
     return df_res
@@ -616,10 +665,11 @@ def calculate_offline_computations_on_switch(__ns3_path, results_folder, rate, e
         df_res['sampleSize'] = {}
         df_res['successProbMean'] = {}
         full_df = prune_data(full_df, 'Time', steadyStart, steadyEnd)
-        full_df = full_df[full_df['Label'].str.contains('10.1.1.1', na=False)]
+        # full_df = full_df[full_df['Label'].str.contains('10.1.1.1', na=False)]
         full_df = full_df.sort_values(by=['Time', 'TotalQueueSize'], ascending=[True, True]).reset_index(drop=True)
-        full_df, delay_linearInterp_time_average = manipulate_for_delay_Q_m(full_df, linkRate)
-        # full_df, delay_linearInterp_time_average = manipulate_for_delay_Q(full_df, linkRate)
+        # full_df, delay_linearInterp_time_average = manipulate_for_delay_Q_m(full_df, linkRate)
+        full_df, delay_linearInterp_time_average = manipulate_for_delay_Q(full_df, linkRate)
+        full_df
         # compare_with_poison(full_df.copy(), linkRate, experiment, rate, results_folder, __ns3_path)
         df_res['delay'] = {}
         for var in ['event']:
@@ -707,7 +757,7 @@ def calculate_offline_computations(__ns3_path, rate, segment, experiment, result
             packets_cfd = PacketCDF()
             packets_cfd.load_cdf_data('{}/scratch/ECNMC/Helpers/packet_size_cdf_singleQueue.csv'.format(__ns3_path))
             full_df = prune_data(full_df, projectColumn, steadyStart, steadyEnd)
-            full_df['MarkingProb'] = full_df.apply(lambda x: packets_cfd.calculate_probability_greater_than(swtichDstREDQueueDiscMaxSize * 0.15 - x['QueueSize']) if x['MarkingProb'] != 1.0 else 1.0, axis=1)
+            # full_df['MarkingProb'] = full_df.apply(lambda x: packets_cfd.calculate_probability_greater_than(swtichDstREDQueueDiscMaxSize * 0.15 - x['QueueSize']) if x['MarkingProb'] != 1.0 else 1.0, axis=1)
             # df_res = calculate_offline_switch_congestionEstimation(full_df, df_res)
             full_df['Delay'] = (full_df['TotalQueueSize'] * 8) / linksRates[0]
             df_res['DelayMean'] = full_df['Delay'].mean()
@@ -715,8 +765,8 @@ def calculate_offline_computations(__ns3_path, rate, segment, experiment, result
             full_df['LastDelay'] = (full_df['LastTotalQueueSize'] * 8) / linksRates[0]
             df_res['LastDelayMean'] = full_df['LastDelay'].mean()
             df_res['LastDelayStd'] = full_df['LastDelay'].std()
-            # df_res['DelayMean'] = full_df['QueuingDelay'].mean()
-            # df_res['DelayStd'] = full_df['QueuingDelay'].std()
+            # df_res['DelayMeanDisc'] = full_df['QueuingDelay'].mean()
+            # df_res['DelayStdDisc'] = full_df['QueuingDelay'].std()
             df_res['first'] = full_df['Time'].iloc[0]
             df_res['last'] = full_df['Time'].iloc[-1]
             df_res['sampleSize'] = len(full_df)

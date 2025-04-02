@@ -117,6 +117,14 @@ TraceCwnd(uint32_t nodeId, uint32_t socketId)
                                   MakeBoundCallback(&CwndTracer));
 }
 
+void QueueSizeTracer(Ptr<RedQueueDisc> redQueue, Ptr<PointToPointNetDevice> netDevice, string name) {
+    Simulator::Schedule(Seconds(0.00002), &QueueSizeTracer, redQueue, netDevice, name);
+    if (Simulator::Now().GetSeconds() < 0.3) {
+        return;
+    }
+    cout << Simulator::Now().GetNanoSeconds() << " " << name << " redQueue Size + NetDevice Queue Size: " << redQueue->GetNBytes() << " + " << netDevice->GetQueue()->GetNBytes() << " = " << redQueue->GetNBytes() + netDevice->GetQueue()->GetNBytes() << endl;
+}
+
 void run_single_queue_simulation(int argc, char* argv[]) {
     auto start = std::chrono::high_resolution_clock::now();
     cout << endl<< "Start Single Queue Simulation" << endl;
@@ -180,6 +188,8 @@ void run_single_queue_simulation(int argc, char* argv[]) {
     Config::SetDefault("ns3::TcpL4Protocol::SocketType", StringValue("ns3::TcpDctcp"));
     Config::SetDefault("ns3::Ipv4GlobalRouting::RandomEcmpRouting", BooleanValue(enableECMP));
     Config::SetDefault("ns3::RedQueueDisc::UseEcn", BooleanValue(enableSwitchECN));
+    Config::SetDefault("ns3::CoDelQueueDisc::UseEcn", BooleanValue(false));
+    Config::SetDefault("ns3::FqCoDelQueueDisc::UseEcn", BooleanValue(false));
     Config::SetDefault("ns3::TcpSocket::SegmentSize", UintegerValue(1448));
     Config::SetDefault("ns3::TcpSocket::DelAckCount", UintegerValue(2));
     Config::SetDefault("ns3::TcpSocket::SndBufSize", UintegerValue(25000000));
@@ -347,8 +357,8 @@ void run_single_queue_simulation(int argc, char* argv[]) {
     auto *S0D0Monitor = new E2EMonitor(startTime, Seconds(stof(steadyStopTime)) + convergenceTime, Seconds(stof(steadyStartTime)), Seconds(stof(steadyStopTime)), DynamicCast<PointToPointNetDevice>(srcHostsToSwitchNetDevices[0].Get(0)), dstHosts.Get(0), srcHosts.Get(0), "A0D0", errorRate, DataRate(srcHostToSwitchLinkRate), DataRate(bottleneckLinkRate), Time(hostToSwitchLinkDelay), 1, 1, QueueSize(swtichDstREDQueueDiscMaxSize).GetValue());
     S0D0Monitor->AddAppKey(AppKey(srcHostsToSwitchIps[0].GetAddress(0), dstHostsToSwitchIps.GetAddress(0), 0, 0));
 
-    Ptr<PointToPointNetDevice> hostToSwitchrNetDevice = DynamicCast<PointToPointNetDevice>(srcHostsToSwitchNetDevices[0].Get(0));
-    auto *hostToSwitchrSampler = new PoissonSampler(Seconds(stof(steadyStartTime)), Seconds(stof(steadyStopTime)), nullptr, hostToSwitchrNetDevice->GetQueue(), hostToSwitchrNetDevice, "H", sampleRate);
+    // Ptr<PointToPointNetDevice> hostToSwitchrNetDevice = DynamicCast<PointToPointNetDevice>(srcHostsToSwitchNetDevices[0].Get(0));
+    // auto *hostToSwitchrSampler = new PoissonSampler(Seconds(stof(steadyStartTime)), Seconds(stof(steadyStopTime)), nullptr, hostToSwitchrNetDevice->GetQueue(), hostToSwitchrNetDevice, "H", sampleRate);
 
     Ptr<PointToPointNetDevice> switchToDstNetDevice = DynamicCast<PointToPointNetDevice>(dstHostsToSwitchNetDevices.Get(1));
     Ptr<PointToPointNetDevice> incomingNetDevice = DynamicCast<PointToPointNetDevice>(srcHostsToSwitchNetDevices[0].Get(1));
@@ -357,10 +367,12 @@ void run_single_queue_simulation(int argc, char* argv[]) {
     // auto *switchToDstSampler = new PoissonSampler(Seconds(stof(steadyStartTime)), Seconds(stof(steadyStopTime)), DynamicCast<RedQueueDisc>(switchToDstHostQueueDisc.Get(0)), switchToDstNetDevice->GetQueue(), switchToDstNetDevice, "SD0", sampleRate);
     // auto *switchToDstSampler = new PoissonSampler(Seconds(stof(steadyStartTime)), Seconds(stof(steadyStopTime)), nullptr, switchToDstNetDevice->GetQueue(), switchToDstNetDevice, "SD0", sampleRate);
 
-    auto *switchMonitor = new SwitchMonitor(startTime, Seconds(stof(steadyStopTime)) + convergenceTime, Seconds(stof(steadyStartTime)), Seconds(stof(steadyStopTime)), switches.Get(0), "S0");
-    switchMonitor->AddAppKey(AppKey(srcHostsToSwitchIps[0].GetAddress(0), dstHostsToSwitchIps.GetAddress(0), 0, 0));
-    switchMonitor->AddAppKey(AppKey(ctHostsToSwitchIps[0].GetAddress(0), dstHostsToSwitchIps.GetAddress(0), 0, 0));
+    // auto *switchMonitor = new SwitchMonitor(startTime, Seconds(stof(steadyStopTime)) + convergenceTime, Seconds(stof(steadyStartTime)), Seconds(stof(steadyStopTime)), switches.Get(0), "S0");
+    // switchMonitor->AddAppKey(AppKey(srcHostsToSwitchIps[0].GetAddress(0), dstHostsToSwitchIps.GetAddress(0), 0, 0));
+    // switchMonitor->AddAppKey(AppKey(ctHostsToSwitchIps[0].GetAddress(0), dstHostsToSwitchIps.GetAddress(0), 0, 0));
 
+    // Simulator::Schedule(Seconds(0.00002), &QueueSizeTracer, DynamicCast<RedQueueDisc>(switchToDstHostQueueDisc.Get(0)), switchToDstNetDevice, "Switch");
+    // Simulator::Schedule(Seconds(0.00002), &QueueSizeTracer, DynamicCast<RedQueueDisc>(switchToSrcHostQueueDiscs[0].Get(0)), DynamicCast<PointToPointNetDevice>(srcHostsToSwitchNetDevices[0].Get(0)), "Sender");
     cout << "Sender Tx Queue Size: " << DynamicCast<PointToPointNetDevice>(srcHostsToSwitchNetDevices[0].Get(0))->GetQueue()->GetMaxSize().GetValue() << endl;
     cout << "Switch Tx Queue Size: " << DynamicCast<PointToPointNetDevice>(srcHostsToSwitchNetDevices[0].Get(1))->GetQueue()->GetMaxSize().GetValue() << endl;
 
@@ -405,8 +417,8 @@ void run_single_queue_simulation(int argc, char* argv[]) {
 
     S0D0Monitor->SaveMonitorRecords((string) (getenv("PWD")) + "/Results/results_" + dirName + "/" + to_string(experiment)  + "/" + S0D0Monitor->GetMonitorTag() + "_EndToEnd.csv");
 
-    switchMonitor->SavePacketRecords((string) (getenv("PWD")) + "/Results/results_" + dirName + "/" + to_string(experiment)  + "/" + switchMonitor->GetMonitorTag() + "_Switch.csv");
-    hostToSwitchrSampler->SaveMonitorRecords((string) (getenv("PWD")) + "/Results/results_" + dirName + "/" + to_string(experiment)  + "/" + hostToSwitchrSampler->GetMonitorTag() + "_PoissonSampler.csv");
+    // switchMonitor->SavePacketRecords((string) (getenv("PWD")) + "/Results/results_" + dirName + "/" + to_string(experiment)  + "/" + switchMonitor->GetMonitorTag() + "_Switch.csv");
+    // hostToSwitchrSampler->SaveMonitorRecords((string) (getenv("PWD")) + "/Results/results_" + dirName + "/" + to_string(experiment)  + "/" + hostToSwitchrSampler->GetMonitorTag() + "_PoissonSampler.csv");
     switchToDstSampler->SaveMonitorRecords((string) (getenv("PWD")) + "/Results/results_" + dirName + "/" + to_string(experiment)  + "/" + switchToDstSampler->GetMonitorTag() + "_PoissonSampler.csv");
     
     /* ########## END: Scheduling and  Running ########## */

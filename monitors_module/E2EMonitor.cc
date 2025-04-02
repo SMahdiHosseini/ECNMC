@@ -328,7 +328,7 @@ void E2EMonitor::SaveMonitorRecords(const string& filename) {
 
     ofstream packetsFile;
     packetsFile.open(filename.substr(0, filename.size() - 4) + "_packets.csv");
-    packetsFile << "SourceIp,SourcePort,DestinationIp,DestinationPort,SequenceNb,Id,PayloadSize,Path,IPTxTime,TxEnqueueTime,TxDequeueTime,SentTime,IsReceived,ReceiveTime,transmissionDelay,ECN" << endl;
+    packetsFile << "SourceIp,SourcePort,DestinationIp,DestinationPort,SequenceNb,Id,PayloadSize,Path,TxEnqueueTime,TxDequeueTime,SentTime,IsReceived,ReceiveTime,transmissionDelay,ECN" << endl;
     for (auto& packetKeyEventPair: _recordedPackets) {
         PacketKey key = packetKeyEventPair.first;
         E2EMonitorEvent* event = packetKeyEventPair.second;

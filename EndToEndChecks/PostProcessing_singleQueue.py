@@ -22,10 +22,10 @@ sample_rates = [0.5]
 confidenceValue = 1.96 # 95% confidence interval
 propagationDelay = 50000
 
-timeAvg_methods = ['rightCont_timeAvg', 'leftCont_timeAvg', 'linearInterp_timeAvg', 'poisson_eventAvg']
+timeAvg_methods = ['rightCont_timeAvg', 'leftCont_timeAvg', 'linearInterp_timeAvg', 'poisson_eventAvg', 'eventAvg']
 delay_timeAvg_vars = ['event']
 successProb_timeAvg_vars = ['event', 'probability']
-# successProb_timeAvg_vars = ['event']
+# successProb_timeAvg_vars = ['probability']
 nonMarkingProb_timeAvg_vars = ['event']
 
 def check_MaxEpsilon_ineq_delay(endToEnd_statistics, samples_paths_aggregated_statistics, last=""):
@@ -60,7 +60,7 @@ def check_all_delayConsistency(endToEnd_statistics, samples_paths_aggregated_sta
         for path in paths:
             res['MaxEpsilonIneq'][flow][path] = {}
             for var_method in endToEnd_statistics[flow]['delay'].keys():
-                if var_method != 'event_poisson_eventAvg':
+                if var_method != 'event_poisson_eventAvg' and var_method != 'event_eventAvg':
                     res['MaxEpsilonIneq'][flow][path][var_method] = check_MaxEpsilon_ineq_delay(endToEnd_statistics[flow]['delay'][var_method][path], samples_paths_aggregated_statistics[flow][path], last)
                 else:
                     e = (samples_paths_aggregated_statistics[flow][path][last + 'DelayMean'] * samples_paths_aggregated_statistics[flow][path]['MaxEpsilon' + last + 'Delay']) + endToEnd_statistics[flow]['delay'][var_method][path][1] * confidenceValue
@@ -75,7 +75,7 @@ def check_all_successProbConsistency(endToEnd_statistics, samples_paths_aggregat
         for path in paths:
             res['MaxEpsilonIneq'][flow][path] = {}
             for var_method in endToEnd_statistics[flow]['successProb'].keys():
-                if var_method != 'event_poisson_eventAvg' and var_method != 'probability_poisson_eventAvg':
+                if var_method != 'event_poisson_eventAvg' and var_method != 'probability_poisson_eventAvg' and var_method != 'event_eventAvg' and var_method != 'probability_eventAvg':
                     res['MaxEpsilonIneq'][flow][path][var_method] = check_MaxEpsilon_ineq_successProb(np.log(endToEnd_statistics[flow]['successProb'][var_method][path]), samples_paths_aggregated_statistics[flow][path], number_of_segments, last)
                 else:
                     epsp = (endToEnd_statistics[flow]['successProb'][var_method][path][1] * confidenceValue) / endToEnd_statistics[flow]['successProb'][var_method][path][0]
@@ -92,7 +92,7 @@ def check_all_nonMarkingProbConsistency(endToEnd_statistics, samples_paths_aggre
         for path in paths:
             res['MaxEpsilonIneq'][flow][path] = {}
             for var_method in endToEnd_statistics[flow]['nonMarkingProb'].keys():
-                if var_method != 'event_poisson_eventAvg':
+                if var_method != 'event_poisson_eventAvg' and var_method != 'event_eventAvg':
                     res['MaxEpsilonIneq'][flow][path][var_method] = check_MaxEpsilon_ineq_nonMarkingProb(np.log(endToEnd_statistics[flow]['nonMarkingProb'][var_method][path]), samples_paths_aggregated_statistics[flow][path], number_of_segments)
                 else:
                     epsp = (endToEnd_statistics[flow]['nonMarkingProb'][var_method][path][1] * confidenceValue) / endToEnd_statistics[flow]['nonMarkingProb'][var_method][path][0]
@@ -109,7 +109,7 @@ def check_all_lastNonMarkingProbConsistency(endToEnd_statistics, samples_paths_a
         for path in paths:
             res['MaxEpsilonIneq'][flow][path] = {}
             for var_method in endToEnd_statistics[flow]['nonMarkingProb'].keys():
-                if var_method != 'event_poisson_eventAvg':
+                if var_method != 'event_poisson_eventAvg' and var_method != 'event_eventAvg':
                     res['MaxEpsilonIneq'][flow][path][var_method] = check_MaxEpsilon_ineq_lastNonMarkingProb(np.log(endToEnd_statistics[flow]['nonMarkingProb'][var_method][path]), samples_paths_aggregated_statistics[flow][path], number_of_segments)
                 else:
                     epsp = (endToEnd_statistics[flow]['nonMarkingProb'][var_method][path][1] * confidenceValue) / endToEnd_statistics[flow]['nonMarkingProb'][var_method][path][0]
@@ -484,7 +484,7 @@ def analyze_all_experiments(rate, steadyStart, steadyEnd, confidenceValue, dir, 
         merge_results(return_dict, merged_results, flows_name, queues_names, num_of_paths)
         print("{} joind".format(i))
     merged_results['AverageWorkLoad'] = sum(merged_results['AverageWorkLoad']) / merged_results['experiments']
-    with open('../Results/results_{}/{}/Q_e_m_WOTx_forward_Results_forward_{}_{}_to_{}.json'.format(dir, rate, experiments_end, steadyStart, steadyEnd), 'w') as f:
+    with open('../Results/results_{}/{}/Q_e_m_forward_Results_forward_{}_{}_to_{}.json'.format(dir, rate, experiments_end, steadyStart, steadyEnd), 'w') as f:
         js.dump(merged_results, f, indent=4)
 
 # main function
@@ -508,7 +508,7 @@ def __main__():
         serviceRateScales = [float(x) for x in config.get('Settings', 'sampleRateScales').split(',')]
     else:
         serviceRateScales = [float(x) for x in config.get('Settings', 'errorRateScale').split(',')]
-    # serviceRateScales = [0.79]
+    # serviceRateScales = [0.75]
     # serviceRateScales = [1.0, 1.01, 1.03, 1.05]
     # serviceRateScales = [0.91, 0.93, 0.95, 0.97, 0.99, 1.01, 1.03, 1.05]
     # serviceRateScales = [float(x) for x in config.get('Settings', 'serviceRateScales').split(',')]
