@@ -8,10 +8,12 @@ import numpy as np
 colors = ['b', 'g', 'r', 'c', 'm', 'y', 'k', 'b', 'g', 'r', 'c', 'm', 'y', 'k']
 def readResults(results_dir, serviceRateScales, results_dir_file):
     results = {}
+    dropRate = {}
     flows = ['A0D0']
     paths = ["0"]
     for rate in serviceRateScales:
         results[rate] = {}
+        dropRate[rate] = {}
         for file in os.listdir('../Results/results_' + results_dir + '/'+str(rate)+'/'):
             if file.find(results_dir_file) != -1:
                 temp = {}
@@ -20,6 +22,7 @@ def readResults(results_dir, serviceRateScales, results_dir_file):
                         temp = js.load(f)
                 else:   
                     continue
+                dropRate[rate] = np.mean(temp['DropRate'])
                 for flow in flows:
                     for path in paths:
                         results[rate]['Delay'] = {}
@@ -56,7 +59,7 @@ def readResults(results_dir, serviceRateScales, results_dir_file):
                             if var_method == 'event_eventAvg':
                                 continue
                             results[rate]['LastNonMarkingProb'][var_method] = temp['MaxEpsilonIneqLastNonMarkingProb'][var_method][flow][path] / temp['experiments'] * 100
-    return results, flows, paths
+    return results, flows, paths, dropRate
 
 def plot_CV_perRate(results, serviceRateScales, results_dir, results_dir_file, metric='Delay'):
     plt.figure(figsize=(8, 6)) 
@@ -103,6 +106,31 @@ def plot_success_per_rate(results, flows, paths, rates, results_dir, results_dir
         plt.savefig(f"../Results/results_{results_dir}/{results_dir_file}_{metric}_vs_Rate.png")
         plt.close()
 
+def plot_success_per_dropRates(results, flows, paths, rates, results_dir, results_dir_file, DropRates):
+    for metric in set(k for r in results.values() for k in r.keys()):
+        plt.figure(figsize=(10, 9))
+        
+        sub_keys = set(k for r in results.values() if metric in r for k in r[metric].keys())
+        sub_keys = sorted(sub_keys)
+        i = 0
+        for sub_key in sub_keys:
+            y_values = [results[rate].get(metric, {}).get(sub_key, np.nan) for rate in rates]
+            plt.plot(rates, y_values, marker='o', label=sub_key, color=colors[i], linewidth=1, markersize=4)
+            i += 1
+
+        xtick_labels = [f"{rate:.2f} ({drop:.3f})" for rate, drop in zip(rates, DropRates)]
+        plt.xticks(rates, labels=xtick_labels, rotation=45, size=10)
+
+        plt.ylim(-5, 110)
+        plt.yticks(np.arange(0, 101, 10))
+        plt.xlabel("Rate (from high to low congestion)(Drop Rate)")
+        plt.ylabel("Success Rate (%)")
+        plt.title(f"{metric}")
+        plt.legend(loc='upper center', bbox_to_anchor=(0.5, 1.0), ncol=3, fancybox=True, shadow=True, prop={'size': 6})
+        plt.grid(True, which='both', linestyle='--', linewidth=0.5)
+        plt.savefig(f"../Results/results_{results_dir}/{results_dir_file}_{metric}_vs_DropRate.png")
+        plt.close()
+
 def __main__():
     parser=argparse.ArgumentParser()
     parser.add_argument("--dir",
@@ -119,13 +147,14 @@ def __main__():
     args = parser.parse_args()
     results_dir = args.dir
     # results_dir_file = args.file
-    results_dir_file = "Q_t_forward"
+    results_dir_file = "Q_e_m_forward"
     config = configparser.ConfigParser()
     config.read('../Results/results_{}/Parameters.config'.format(args.dir))
     serviceRateScales = [float(x) for x in config.get('Settings', 'serviceRateScales').split(',')]
     # serviceRateScales = [0.75, 0.80, 0.85, 0.90, 0.95, 1.0, 1.05]
-    results, flows, paths = readResults(results_dir, serviceRateScales, results_dir_file)
-    plot_success_per_rate(results, flows, paths, serviceRateScales, results_dir, results_dir_file)
+    results, flows, paths, DropRates = readResults(results_dir, serviceRateScales, results_dir_file)
+    # plot_success_per_rate(results, flows, paths, serviceRateScales, results_dir, results_dir_file)
+    plot_success_per_dropRates(results, flows, paths, serviceRateScales, results_dir, results_dir_file, DropRates.values())
     # plot_CV_perRate(results, serviceRateScales, results_dir, results_dir_file, metric='Delay')
     # plot_CV_perRate(results, serviceRateScales, results_dir, results_dir_file, metric='SuccessProb')
     # plot_CV_perRate(results, serviceRateScales, results_dir, results_dir_file, metric='NonMarkingProb')
