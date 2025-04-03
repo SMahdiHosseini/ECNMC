@@ -1,5 +1,5 @@
-import numpy as np
-from Utils import *
+# import numpy as np
+# from Utils import *
 
 # list =[
 #         58726.0,
@@ -34,54 +34,55 @@ from Utils import *
 #         52512.0
 #     ]
 # print(np.average(list))
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt
+# import numpy as np
+# import seaborn as sns
+
+# # Example data
+# import matplotlib.pyplot as plt
 import numpy as np
-import seaborn as sns
+print(np.random.binomial(n=1, p=0.99, size=100))
 
 # Example data
-import matplotlib.pyplot as plt
-import numpy as np
+# f = [1, 2, 3, 4]  # List of f values
+# Bias = {
+#     1: np.random.normal(0, 1, 20).tolist(),
+#     2: np.random.normal(1, 1, 20).tolist(),
+#     3: np.random.normal(2, 1, 20).tolist(),
+#     4: np.random.normal(3, 1, 20).tolist()
+# }
+# Traffic = {
+#     1: np.random.normal(10, 2, 20).tolist(),
+#     2: np.random.normal(20, 2, 20).tolist(),
+#     3: np.random.normal(30, 2, 20).tolist(),
+#     4: np.random.normal(40, 2, 20).tolist()
+# }
 
-# Example data
-f = [1, 2, 3, 4]  # List of f values
-Bias = {
-    1: np.random.normal(0, 1, 20).tolist(),
-    2: np.random.normal(1, 1, 20).tolist(),
-    3: np.random.normal(2, 1, 20).tolist(),
-    4: np.random.normal(3, 1, 20).tolist()
-}
-Traffic = {
-    1: np.random.normal(10, 2, 20).tolist(),
-    2: np.random.normal(20, 2, 20).tolist(),
-    3: np.random.normal(30, 2, 20).tolist(),
-    4: np.random.normal(40, 2, 20).tolist()
-}
+# # Convert data into lists for plotting
+# traffic_values = []
+# bias_values = []
+# f_labels = []
+# f_positions = []
 
-# Convert data into lists for plotting
-traffic_values = []
-bias_values = []
-f_labels = []
-f_positions = []
+# for i, key in enumerate(f):
+#     traffic_values.append(Traffic[key])
+#     bias_values.append(Bias[key])
+#     f_labels.append(str(key))
+#     f_positions.append(np.mean(Traffic[key]))
 
-for i, key in enumerate(f):
-    traffic_values.append(Traffic[key])
-    bias_values.append(Bias[key])
-    f_labels.append(str(key))
-    f_positions.append(np.mean(Traffic[key]))
+# # Create the boxplot
+# fig, ax1 = plt.subplots(figsize=(10, 6))
+# ax1.boxplot(bias_values, positions=f_positions, widths=5, patch_artist=True)
+# ax1.set_xlabel("Traffic")
+# ax1.set_ylabel("Bias")
+# ax1.set_title("Bias vs Traffic with f on Top X Axis")
 
-# Create the boxplot
-fig, ax1 = plt.subplots(figsize=(10, 6))
-ax1.boxplot(bias_values, positions=f_positions, widths=5, patch_artist=True)
-ax1.set_xlabel("Traffic")
-ax1.set_ylabel("Bias")
-ax1.set_title("Bias vs Traffic with f on Top X Axis")
+# # Create secondary x-axis for f values
+# ax2 = ax1.twiny()
+# ax2.set_xlim(ax1.get_xlim())
+# ax2.set_xticks(f_positions)
+# ax2.set_xticklabels(f_labels)
+# ax2.set_xlabel("f values")
 
-# Create secondary x-axis for f values
-ax2 = ax1.twiny()
-ax2.set_xlim(ax1.get_xlim())
-ax2.set_xticks(f_positions)
-ax2.set_xticklabels(f_labels)
-ax2.set_xlabel("f values")
-
-plt.grid(True, linestyle='--', alpha=0.5)
-plt.show()
+# plt.grid(True, linestyle='--', alpha=0.5)
+# plt.show()

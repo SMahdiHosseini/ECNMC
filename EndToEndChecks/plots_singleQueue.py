@@ -28,12 +28,12 @@ def readResults(results_dir, serviceRateScales, results_dir_file):
                         results[rate]['LastSuccessProb'] = {}
                         results[rate]['NonMarkingProb'] = {}
                         results[rate]['LastNonMarkingProb'] = {}
-                        results[rate]['SD0DelayStd'] = temp['SD0Delaystd']
-                        results[rate]['SD0DelayMean'] = temp['SD0DelayMean']
-                        results[rate]['SD0SuccessProbStd'] = temp['SD0SuccessProbStd']
-                        results[rate]['SD0SuccessProbMean'] = temp['SD0SuccessProbMean']
-                        results[rate]['SD0NonMarkingProbStd'] = temp['SD0NonMarkingProbStd']
-                        results[rate]['SD0NonMarkingProbMean'] = temp['SD0NonMarkingProbMean']
+                        # results[rate]['SD0DelayStd'] = temp['SD0Delaystd']
+                        # results[rate]['SD0DelayMean'] = temp['SD0DelayMean']
+                        # results[rate]['SD0SuccessProbStd'] = temp['SD0SuccessProbStd']
+                        # results[rate]['SD0SuccessProbMean'] = temp['SD0SuccessProbMean']
+                        # results[rate]['SD0NonMarkingProbStd'] = temp['SD0NonMarkingProbStd']
+                        # results[rate]['SD0NonMarkingProbMean'] = temp['SD0NonMarkingProbMean']
 
                         for var_method in temp['MaxEpsilonIneqDelay'].keys():
                             if var_method == 'event_eventAvg':
@@ -62,6 +62,7 @@ def plot_CV_perRate(results, serviceRateScales, results_dir, results_dir_file, m
     plt.figure(figsize=(8, 6)) 
     data = [np.mean(np.array(results[rate]['SD0' + metric + 'Std']) / np.array(results[rate]['SD0' + metric + 'Mean'])) for rate in serviceRateScales]
     plt.scatter(serviceRateScales, data, marker='o', label=metric, color='b', linewidth=1)
+    plt.ylim(-0.05, max(data) * (1.05))
     plt.xlabel("Rate (from high to low congestion)")
     plt.ylabel("CV of {}".format(metric))
     plt.title("CV of {} vs Rate".format(metric))
@@ -118,16 +119,16 @@ def __main__():
     args = parser.parse_args()
     results_dir = args.dir
     # results_dir_file = args.file
-    results_dir_file = "Q_e_m_forward"
+    results_dir_file = "Q_t_forward"
     config = configparser.ConfigParser()
     config.read('../Results/results_{}/Parameters.config'.format(args.dir))
     serviceRateScales = [float(x) for x in config.get('Settings', 'serviceRateScales').split(',')]
     # serviceRateScales = [0.75, 0.80, 0.85, 0.90, 0.95, 1.0, 1.05]
     results, flows, paths = readResults(results_dir, serviceRateScales, results_dir_file)
-    # plot_success_per_rate(results, flows, paths, serviceRateScales, results_dir, results_dir_file)
-    plot_CV_perRate(results, serviceRateScales, results_dir, results_dir_file, metric='Delay')
-    plot_CV_perRate(results, serviceRateScales, results_dir, results_dir_file, metric='SuccessProb')
-    plot_CV_perRate(results, serviceRateScales, results_dir, results_dir_file, metric='NonMarkingProb')
+    plot_success_per_rate(results, flows, paths, serviceRateScales, results_dir, results_dir_file)
+    # plot_CV_perRate(results, serviceRateScales, results_dir, results_dir_file, metric='Delay')
+    # plot_CV_perRate(results, serviceRateScales, results_dir, results_dir_file, metric='SuccessProb')
+    # plot_CV_perRate(results, serviceRateScales, results_dir, results_dir_file, metric='NonMarkingProb')
     # plot_boxplot(results, serviceRateScales, results_dir, results_dir_file, metric='SD0Delaystd')
     # plot_boxplot(results, serviceRateScales, results_dir, results_dir_file, metric='SD0DelayMean')
 __main__()
