@@ -20,13 +20,14 @@ Time E2EMonitorEvent::GetTxIpTime() const { return _TxIpTime; }
 
 E2EMonitor::E2EMonitor(const Time &startTime, const Time &duration, const Time &steadyStartTime, const Time &steadyStopTime, const Ptr<PointToPointNetDevice> netDevice, const Ptr<Node> &rxNode, const string &monitorTag, double errorRate,
                        const DataRate &_hostToTorLinkRate, const DataRate &_torToAggLinkRate, const Time &_hostToTorLinkDelay) 
-: E2EMonitor(startTime, duration, steadyStartTime, steadyStopTime, netDevice, rxNode, nullptr, monitorTag, errorRate, _hostToTorLinkRate, _torToAggLinkRate, _hostToTorLinkDelay, 2, 3, 10000) {
+: E2EMonitor(startTime, duration, steadyStartTime, steadyStopTime, netDevice, rxNode, nullptr, monitorTag, errorRate, _hostToTorLinkRate, _torToAggLinkRate, _hostToTorLinkDelay, 2, 3, 10000, false) {
     
 }
 
 E2EMonitor::E2EMonitor(const Time &startTime, const Time &duration, const Time &steadyStartTime, const Time &steadyStopTime, const Ptr<PointToPointNetDevice> netDevice, const Ptr<Node> &rxNode, const Ptr<Node> &txNode, const string &monitorTag, double errorRate,
-                       const DataRate &_hostToTorLinkRate, const DataRate &_torToAggLinkRate, const Time &_hostToTorLinkDelay, const int _numOfPaths, const int _numOfSegmetns, uint32_t queueCapacity) 
+                       const DataRate &_hostToTorLinkRate, const DataRate &_torToAggLinkRate, const Time &_hostToTorLinkDelay, const int _numOfPaths, const int _numOfSegmetns, uint32_t queueCapacity, const bool isDifferentiate) 
 : Monitor(startTime, duration, steadyStartTime, steadyStopTime, monitorTag) {
+    _isDifferentiate = isDifferentiate;
     _txNode = txNode;
     numOfPaths = _numOfPaths;
     numOfSegmetns = _numOfSegmetns;
@@ -246,11 +247,13 @@ void E2EMonitor::RecordIpv4PacketReceived(Ptr<const Packet> packet, Ptr<Ipv4> ip
             }
             // Implementation of delay de-prioritization
             Time additionalDeprioritizationDelay = Seconds(0);
-            // uint32_t temp = rand->GetInteger(0, 1 / _errorRate);
-            // if (temp == 0 && (_monitorTag == "R0H0R2H0" || _monitorTag == "R0H1R2H1")) {
-            //     additionalDeprioritizationDelay = packetKeyEventPair->second->GetReceivedTime() - transmissionDelay - packetKeyEventPair->second->GetSentTime();
-            //     additionalDeprioritizationDelay = Time(additionalDeprioritizationDelay.GetNanoSeconds() * 0.35);
-            // }
+            if (_isDifferentiate){
+                uint32_t temp = rand->GetInteger(1, 1 / _errorRate);
+                if (temp == 0){
+                    additionalDeprioritizationDelay = packetKeyEventPair->second->GetReceivedTime() - transmissionDelay - packetKeyEventPair->second->GetSentTime();
+                    additionalDeprioritizationDelay = Time(additionalDeprioritizationDelay.GetNanoSeconds() * 0.35);
+                }
+            }
 
             // updateBasicCounters(packetKeyEventPair->second->GetTxEnqueueTime(), packetKeyEventPair->second->GetReceivedTime() + additionalDeprioritizationDelay - transmissionDelay, path);
             // updateTimeAverageIntegral(path, packetKeyEventPair->second->GetReceivedTime() + additionalDeprioritizationDelay - transmissionDelay - packetKeyEventPair->second->GetTxEnqueueTime(), packetKeyEventPair->second->GetTxEnqueueTime());
@@ -270,6 +273,10 @@ void E2EMonitor::RecordIpv4PacketReceived(Ptr<const Packet> packet, Ptr<Ipv4> ip
             
             GTDropMean = (GTDropMean * (prev - firstItemTime).GetNanoSeconds() + dropProbDynamicCDF * (lastItemTime - prev).GetNanoSeconds()) / (lastItemTime - firstItemTime).GetNanoSeconds();
             // cout << "### E2E ### Enqueue Time: " << lastItemTime.GetNanoSeconds() << " Queue Size: " << (((packetKeyEventPair->second->GetReceivedTime() - transmissionDelay - packetKeyEventPair->second->GetSentTime()) * torToAggLinkRate) / 8) << endl;
+
+            if (_isDifferentiate){
+                packetKeyEventPair->second->SetReceived(packetKeyEventPair->second->GetReceivedTime() + additionalDeprioritizationDelay);
+            }
         }
     }
 }

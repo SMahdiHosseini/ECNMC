@@ -138,11 +138,12 @@ def __main__():
                     dest="dir",
                     help="The directory of the results",
                    default="")
-    # parser.add_argument("--file",
-    #                 required=True,
-    #                 dest="file",
-    #                 help="The file of the results",
-    #                default="")
+    parser.add_argument("--IsForward",
+                    required=True, 
+                    dest="IsForward",
+                    help="If the experiment is the straitforward experiment or the reverse experiment!", 
+                    type=int,
+                    default=1)
     
     args = parser.parse_args()
     results_dir = args.dir
@@ -150,11 +151,15 @@ def __main__():
     results_dir_file = "Q_e_m_forward"
     config = configparser.ConfigParser()
     config.read('../Results/results_{}/Parameters.config'.format(args.dir))
-    serviceRateScales = [float(x) for x in config.get('Settings', 'serviceRateScales').split(',')]
+    if args.IsForward == 1:
+        RateScales = [float(x) for x in config.get('Settings', 'serviceRateScales').split(',')]
+    else:
+        RateScales = [float(x) for x in config.get('Settings', 'errorRateScale').split(',')]
+    # print(RateScales)
     # serviceRateScales = [0.75, 0.80, 0.85, 0.90, 0.95, 1.0, 1.05]
-    results, flows, paths, DropRates = readResults(results_dir, serviceRateScales, results_dir_file)
-    # plot_success_per_rate(results, flows, paths, serviceRateScales, results_dir, results_dir_file)
-    plot_success_per_dropRates(results, flows, paths, serviceRateScales, results_dir, results_dir_file, DropRates.values())
+    results, flows, paths, DropRates = readResults(results_dir, RateScales, results_dir_file)
+    plot_success_per_rate(results, flows, paths, RateScales, results_dir, results_dir_file)
+    plot_success_per_dropRates(results, flows, paths, RateScales, results_dir, results_dir_file, DropRates.values())
     # plot_CV_perRate(results, serviceRateScales, results_dir, results_dir_file, metric='Delay')
     # plot_CV_perRate(results, serviceRateScales, results_dir, results_dir_file, metric='SuccessProb')
     # plot_CV_perRate(results, serviceRateScales, results_dir, results_dir_file, metric='NonMarkingProb')

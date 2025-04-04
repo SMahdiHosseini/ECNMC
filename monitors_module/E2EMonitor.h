@@ -67,6 +67,7 @@ private:
     Time firstItemTime;
     set<AppKey> _observedAppsKey;
     Ptr<Node> _txNode;
+    bool _isDifferentiate;
     std::vector<std::tuple<Time, uint32_t, double, Time>> markingProbProcess;
     std::unordered_map<uint64_t, Ptr<TcpSocketBase>> tracesSockets;
     std::unordered_map<PacketKey, E2EMonitorEvent*, PacketKeyHash> _recordedPackets;
@@ -88,7 +89,7 @@ public:
     E2EMonitor(const Time &startTime, const Time &duration, const Time &steadyStartTime, const Time &steadyStopTime, const Ptr<PointToPointNetDevice> netDevice, const Ptr<Node> &rxNode, const string &monitorTag, const double errorRate, 
     const DataRate &hostToTorLinkRate, const DataRate &torToAggLinkRate, const Time &hostToTorLinkDelay);
     E2EMonitor(const Time &startTime, const Time &duration, const Time &steadyStartTime, const Time &steadyStopTime, const Ptr<PointToPointNetDevice> netDevice, const Ptr<Node> &rxNode, const Ptr<Node> &txNode, const string &monitorTag, const double errorRate, 
-    const DataRate &hostToTorLinkRate, const DataRate &torToAggLinkRate, const Time &hostToTorLinkDelay, const int numOfPaths, const int numOfSegmetns, uint32_t queueCapacity);
+    const DataRate &hostToTorLinkRate, const DataRate &torToAggLinkRate, const Time &hostToTorLinkDelay, const int numOfPaths, const int numOfSegmetns, uint32_t queueCapacity, const bool isDifferentiate);
     void SaveMonitorRecords(const string &filename);
     void RecordPacket(Ptr<const Packet> packet);
 };
