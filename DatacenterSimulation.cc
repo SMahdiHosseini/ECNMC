@@ -102,19 +102,19 @@ void dequeueDisc(Ptr< const QueueDiscItem > item){
 }
 
 static void
-CwndTracer(uint32_t oldval, uint32_t newval)
+CwndTracer(Ptr<OutputStreamWrapper> stream, uint32_t oldval, uint32_t newval)
 {
-    cout << Simulator::Now().GetNanoSeconds() << "cwnd from " << oldval << " to " << newval << endl;
+    *stream->GetStream() << Simulator::Now().GetNanoSeconds() << "," << newval << endl;
 }
 
 
 void
-TraceCwnd(uint32_t nodeId, uint32_t socketId)
+TraceCwnd(uint32_t nodeId, uint32_t socketId, Ptr<OutputStreamWrapper> stream)
 {
     Config::ConnectWithoutContext("/NodeList/" + std::to_string(nodeId) +
                                       "/$ns3::TcpL4Protocol/SocketList/" +
                                       std::to_string(socketId) + "/CongestionWindow",
-                                  MakeBoundCallback(&CwndTracer));
+                                  MakeBoundCallback(&CwndTracer, stream));
 }
 
 void QueueSizeTracer(Ptr<RedQueueDisc> redQueue, Ptr<PointToPointNetDevice> netDevice, string name) {
@@ -143,7 +143,7 @@ void run_single_queue_simulation(int argc, char* argv[]) {
     string switchTXMaxSize = "1p";                     // Maximum size of the switch's TX buffer
     string swtichDstREDQueueDiscMaxSize = "10KB";      // Maximum size of the RED Queue Disc between the switch and the dst host
     string switchSrcREDQueueDiscMaxSize = "6KB";       // Maximum size of the RED Queue Disc between the switch and the src host
-    // TODO: remove pacing
+    string traffic = "chicago_2010_traffic_10min_2paths/path";  // If the is CAIDA, Merged CAIDA or BulkSend                            
     double pctPacedBack = 0.0;                         // the percentage of tcp flows of the CAIDA trace to be paced
     bool enableSwitchECN = true;                       // Enable ECN on the switches
     bool enableECMP = true;                            // Enable ECMP on the switches
@@ -152,6 +152,8 @@ void run_single_queue_simulation(int argc, char* argv[]) {
     double maxTh = 0.45;                               // RED Queue Disc MaxTh in % of maxSize
     int experiment = 1;                                // Experiment number
     double errorRate = 0.005;                          // Silent Packet Drop Error rate
+    bool isDifferentating = false;                     // If the simulation is differentating
+    double differentiationDelay = 0.35;                 // Extra delay for the differentiation
 
     /*command line input*/
     CommandLine cmd;
@@ -177,6 +179,9 @@ void run_single_queue_simulation(int argc, char* argv[]) {
     cmd.AddValue("switchTXMaxSize", "Maximum size of the switch's TX buffer", switchTXMaxSize);
     cmd.AddValue("swtichDstREDQueueDiscMaxSize", "Maximum size of the RED Queue Disc between the switch and the dst host", swtichDstREDQueueDiscMaxSize);
     cmd.AddValue("switchSrcREDQueueDiscMaxSize", "Maximum size of the RED Queue Disc between the switch and the src host", switchSrcREDQueueDiscMaxSize);
+    cmd.AddValue("traffic", "If the is CAIDA, Merged CAIDA or BulkSend", traffic);
+    cmd.AddValue("isDifferentating", "If the simulation is differentating", isDifferentating);
+    cmd.AddValue("differentiationDelay", "Extra delay for the differentiation", differentiationDelay); 
     cmd.Parse(argc, argv);
 
     /*set default values*/
@@ -320,7 +325,7 @@ void run_single_queue_simulation(int argc, char* argv[]) {
     for (int i = 0; i < nSrcHosts; i++) {
         auto* caidaTrafficGenerator = new BackgroundReplay(srcHosts.Get(i), dstHosts.Get(0), Seconds(stof(trafficStartTime)), Seconds(stof(trafficStopTime)));
         caidaTrafficGenerator->SetPctOfPacedTcps(pctPacedBack);
-        string tracesPath = "/media/experiments/chicago_2010_traffic_10min_2paths/path" + to_string(i % 2);
+        string tracesPath = "/media/experiments/" + traffic + to_string(i % 2);
         if (std::filesystem::exists(tracesPath)) {
             caidaTrafficGenerator->RunAllTCPTraces(tracesPath, 0);
         } else {
@@ -338,8 +343,11 @@ void run_single_queue_simulation(int argc, char* argv[]) {
     // ApplicationContainer sinkSrcApps = sinkSrc.Install(dstHosts.Get(0));
     // sinkSrcApps.Start(startTime);
     // sinkSrcApps.Stop(stopTime);
-
-    // Simulator::Schedule(Seconds(0.3), &TraceCwnd, 0, 0);
+    
+    // AsciiTraceHelper asciiTraceHelper;
+    // Ptr<OutputStreamWrapper> stream = asciiTraceHelper.CreateFileStream("/media/experiments/ns-allinone-3.41/ns-3.41/scratch/ECNMC/Results/50001_cwnd.csv");
+    
+    // Simulator::Schedule(Seconds(0.3), &TraceCwnd, 0, 0, stream);
     // // ct
     // uint16_t portCt = 50005;
     // BulkSendHelper ctHost("ns3::TcpSocketFactory", InetSocketAddress(dstHostsToSwitchIps.GetAddress(0), portCt));
@@ -354,7 +362,7 @@ void run_single_queue_simulation(int argc, char* argv[]) {
 
     ns3::PacketMetadata::Enable();
     // Monitor the packets between src Host 0 and dst Host 0
-    auto *S0D0Monitor = new E2EMonitor(startTime, Seconds(stof(steadyStopTime)) + convergenceTime, Seconds(stof(steadyStartTime)), Seconds(stof(steadyStopTime)), DynamicCast<PointToPointNetDevice>(srcHostsToSwitchNetDevices[0].Get(0)), dstHosts.Get(0), srcHosts.Get(0), "A0D0", errorRate, DataRate(srcHostToSwitchLinkRate), DataRate(bottleneckLinkRate), Time(hostToSwitchLinkDelay), 1, 1, QueueSize(swtichDstREDQueueDiscMaxSize).GetValue(), false);
+    auto *S0D0Monitor = new E2EMonitor(startTime, Seconds(stof(steadyStopTime)) + convergenceTime, Seconds(stof(steadyStartTime)), Seconds(stof(steadyStopTime)), DynamicCast<PointToPointNetDevice>(srcHostsToSwitchNetDevices[0].Get(0)), dstHosts.Get(0), srcHosts.Get(0), "A0D0", errorRate, DataRate(srcHostToSwitchLinkRate), DataRate(bottleneckLinkRate), Time(hostToSwitchLinkDelay), 1, 1, QueueSize(swtichDstREDQueueDiscMaxSize).GetValue(), isDifferentating, differentiationDelay);
     S0D0Monitor->AddAppKey(AppKey(srcHostsToSwitchIps[0].GetAddress(0), dstHostsToSwitchIps.GetAddress(0), 0, 0));
 
     // Ptr<PointToPointNetDevice> hostToSwitchrNetDevice = DynamicCast<PointToPointNetDevice>(srcHostsToSwitchNetDevices[0].Get(0));
@@ -401,10 +409,13 @@ void run_single_queue_simulation(int argc, char* argv[]) {
     cout << "steadyStartTime: " << steadyStartTime << endl;
     cout << "steadyEndTime: " << steadyStopTime << endl;
     cout << "duration: " << duration << endl;
-    cout << "swtichDstREDQueueDiscMaxSize" << swtichDstREDQueueDiscMaxSize << endl;
-    cout << "switchSrcREDQueueDiscMaxSize" << switchSrcREDQueueDiscMaxSize << endl;
-    cout << "minTh" << minTh << endl;
-    cout << "maxTh" << maxTh << endl;
+    cout << "swtichDstREDQueueDiscMaxSize: " << swtichDstREDQueueDiscMaxSize << endl;
+    cout << "switchSrcREDQueueDiscMaxSize: " << switchSrcREDQueueDiscMaxSize << endl;
+    cout << "minTh: " << minTh << endl;
+    cout << "maxTh: " << maxTh << endl;
+    cout << "traffic: " << traffic << endl;
+    cout << "isDifferentating: " << isDifferentating << endl;
+    cout << "differentiationDelay: " << differentiationDelay << endl;
 
     // /* ########## END: Check Config ########## */
 
