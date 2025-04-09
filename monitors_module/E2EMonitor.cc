@@ -20,14 +20,15 @@ Time E2EMonitorEvent::GetTxIpTime() const { return _TxIpTime; }
 
 E2EMonitor::E2EMonitor(const Time &startTime, const Time &duration, const Time &steadyStartTime, const Time &steadyStopTime, const Ptr<PointToPointNetDevice> netDevice, const Ptr<Node> &rxNode, const string &monitorTag, double errorRate,
                        const DataRate &_hostToTorLinkRate, const DataRate &_torToAggLinkRate, const Time &_hostToTorLinkDelay) 
-: E2EMonitor(startTime, duration, steadyStartTime, steadyStopTime, netDevice, rxNode, nullptr, monitorTag, errorRate, _hostToTorLinkRate, _torToAggLinkRate, _hostToTorLinkDelay, 2, 3, 10000, false) {
+: E2EMonitor(startTime, duration, steadyStartTime, steadyStopTime, netDevice, rxNode, nullptr, monitorTag, errorRate, _hostToTorLinkRate, _torToAggLinkRate, _hostToTorLinkDelay, 2, 3, 10000, false, 0.0) {
     
 }
 
 E2EMonitor::E2EMonitor(const Time &startTime, const Time &duration, const Time &steadyStartTime, const Time &steadyStopTime, const Ptr<PointToPointNetDevice> netDevice, const Ptr<Node> &rxNode, const Ptr<Node> &txNode, const string &monitorTag, double errorRate,
-                       const DataRate &_hostToTorLinkRate, const DataRate &_torToAggLinkRate, const Time &_hostToTorLinkDelay, const int _numOfPaths, const int _numOfSegmetns, uint32_t queueCapacity, const bool isDifferentiate) 
+                       const DataRate &_hostToTorLinkRate, const DataRate &_torToAggLinkRate, const Time &_hostToTorLinkDelay, const int _numOfPaths, const int _numOfSegmetns, uint32_t queueCapacity, const bool isDifferentiate, const double differentiationDelay)
 : Monitor(startTime, duration, steadyStartTime, steadyStopTime, monitorTag) {
     _isDifferentiate = isDifferentiate;
+    _differentiationDelay = differentiationDelay;
     _txNode = txNode;
     numOfPaths = _numOfPaths;
     numOfSegmetns = _numOfSegmetns;
@@ -251,7 +252,7 @@ void E2EMonitor::RecordIpv4PacketReceived(Ptr<const Packet> packet, Ptr<Ipv4> ip
                 uint32_t temp = rand->GetInteger(1, 1 / _errorRate);
                 if (temp == 0){
                     additionalDeprioritizationDelay = packetKeyEventPair->second->GetReceivedTime() - transmissionDelay - packetKeyEventPair->second->GetSentTime();
-                    additionalDeprioritizationDelay = Time(additionalDeprioritizationDelay.GetNanoSeconds() * 0.35);
+                    additionalDeprioritizationDelay = Time(additionalDeprioritizationDelay.GetNanoSeconds() * _differentiationDelay);
                 }
             }
 

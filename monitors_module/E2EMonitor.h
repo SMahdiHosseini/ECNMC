@@ -63,6 +63,7 @@ private:
     int numOfSegmetns = 3;
     PacketCDF packetCDF;
     double GTDropMean;
+    double _differentiationDelay;
     Time lastItemTime;
     Time firstItemTime;
     set<AppKey> _observedAppsKey;
@@ -89,7 +90,7 @@ public:
     E2EMonitor(const Time &startTime, const Time &duration, const Time &steadyStartTime, const Time &steadyStopTime, const Ptr<PointToPointNetDevice> netDevice, const Ptr<Node> &rxNode, const string &monitorTag, const double errorRate, 
     const DataRate &hostToTorLinkRate, const DataRate &torToAggLinkRate, const Time &hostToTorLinkDelay);
     E2EMonitor(const Time &startTime, const Time &duration, const Time &steadyStartTime, const Time &steadyStopTime, const Ptr<PointToPointNetDevice> netDevice, const Ptr<Node> &rxNode, const Ptr<Node> &txNode, const string &monitorTag, const double errorRate, 
-    const DataRate &hostToTorLinkRate, const DataRate &torToAggLinkRate, const Time &hostToTorLinkDelay, const int numOfPaths, const int numOfSegmetns, uint32_t queueCapacity, const bool isDifferentiate);
+    const DataRate &hostToTorLinkRate, const DataRate &torToAggLinkRate, const Time &hostToTorLinkDelay, const int numOfPaths, const int numOfSegmetns, uint32_t queueCapacity, const bool isDifferentiate, const double differentiationDelay);
     void SaveMonitorRecords(const string &filename);
     void RecordPacket(Ptr<const Packet> packet);
 };
