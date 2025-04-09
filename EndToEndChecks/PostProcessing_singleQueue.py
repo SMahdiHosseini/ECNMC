@@ -314,6 +314,7 @@ def sample_endToEnd_packets(ns3_path, rate, segment, experiment, results_folder,
             
 def analyze_single_experiment(return_dict, rate, queues_names, confidenceValue, rounds_results, results_folder, config, experiment=0, ns3_path=__ns3_path):
     srcHostToSwitchLinkRate = convert_to_float(config.get('SingleQueue', 'srcHostToSwitchLinkRate')) * 1e-3
+    ## TODO: FIx the next line for the reverse experiments
     bottleneckLinkRate = convert_to_float(config.get('SingleQueue', 'bottleneckLinkRate')) * rate * 1e-3
     linkDelay = convert_to_float(config.get('Settings', 'hostToTorLinkDelay')) * 1e3
     steadyStart = convert_to_float(config.get('Settings', 'steadyStart')) * 1e9
@@ -327,6 +328,7 @@ def analyze_single_experiment(return_dict, rate, queues_names, confidenceValue, 
     # biasCalculator.calculateBias(['MarkingProb', 'DropProb', 'QueuingDelay', 'LastMarkingProb'])
     endToEndStats = calculate_offline_computations(__ns3_path, rate, 'EndToEnd_packets', str(experiment), results_folder, steadyStart, steadyEnd, "SentTime", True, "IsReceived", [srcHostToSwitchLinkRate, bottleneckLinkRate], [linkDelay, linkDelay], swtichDstREDQueueDiscMaxSize)
     # endToEndStats = calculate_offline_computations_on_switch(__ns3_path, results_folder, rate, experiment, 'PoissonSampler_queueSize', steadyStart, steadyEnd, paths, bottleneckLinkRate)
+    # plot_queuingDelay_distribution(__ns3_path, results_folder, rate, experiment, 'PoissonSampler_queueSize', steadyStart, steadyEnd, paths, bottleneckLinkRate)
     # print(endToEndStats)
     # calculate_offline_computations(__ns3_path, rate, 'EndToEnd_markings', str(experiment), results_folder, endToEndStats['A0D0']['first'][0], endToEndStats['A0D0']['last'][0], "Time", linksRates=[srcHostToSwitchLinkRate, bottleneckLinkRate], linkDelays=[linkDelay, linkDelay], stats=endToEndStats)
     # print(endToEndStats)
@@ -484,7 +486,7 @@ def analyze_all_experiments(rate, steadyStart, steadyEnd, confidenceValue, dir, 
         merge_results(return_dict, merged_results, flows_name, queues_names, num_of_paths)
         print("{} joind".format(i))
     merged_results['AverageWorkLoad'] = sum(merged_results['AverageWorkLoad']) / merged_results['experiments']
-    with open('../Results/results_{}/{}/Q_e_m_forward_Results_forward_{}_{}_to_{}.json'.format(dir, rate, experiments_end, steadyStart, steadyEnd), 'w') as f:
+    with open('../Results/results_{}/{}/Q_e_m_newPoisson_forward_Results_forward_{}_{}_to_{}.json'.format(dir, rate, experiments_end, steadyStart, steadyEnd), 'w') as f:
         js.dump(merged_results, f, indent=4)
 
 # main function
@@ -508,7 +510,7 @@ def __main__():
         serviceRateScales = [float(x) for x in config.get('Settings', 'sampleRateScales').split(',')]
     else:
         serviceRateScales = [float(x) for x in config.get('Settings', 'errorRateScale').split(',')]
-    # serviceRateScales = [0.77]
+    # serviceRateScales = [0.51]
     # serviceRateScales = [1.0, 1.01, 1.03, 1.05]
     # serviceRateScales = [0.91, 0.93, 0.95, 0.97, 0.99, 1.01, 1.03, 1.05]
     # serviceRateScales = [float(x) for x in config.get('Settings', 'serviceRateScales').split(',')]
