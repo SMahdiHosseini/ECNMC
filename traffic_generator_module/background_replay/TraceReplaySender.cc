@@ -15,11 +15,12 @@ void TraceReplaySender::dctcpCallBack(uint32_t bytesAcked, uint32_t bytesMarked,
     }
 }
 
-void TraceReplaySender::cwndTrace(uint32_t oldCwnd, uint32_t newCwnd) {
+void TraceReplaySender::cwndTrace(Ptr<OutputStreamWrapper> stream, uint32_t oldCwnd, uint32_t newCwnd) {
     if (GetNodeIP(_socket->GetNode(), 1) == "10.1.1.1") {
         // if (InetSocketAddress::ConvertFrom(_receiverAddress).GetPort() == 5905 || InetSocketAddress::ConvertFrom(_receiverAddress).GetPort() == 5595) {
-            cout << Simulator::Now().GetNanoSeconds() << " RemoteAddress:" << GetNodeIP(_socket->GetNode(), 1) << "->" << InetSocketAddress::ConvertFrom(_receiverAddress).GetIpv4() << ":" << InetSocketAddress::ConvertFrom(_receiverAddress).GetPort() << " DCTCP: cwnd from: " << oldCwnd << " to: " << newCwnd << endl;
+            // cout << Simulator::Now().GetNanoSeconds() << " RemoteAddress:" << GetNodeIP(_socket->GetNode(), 1) << "->" << InetSocketAddress::ConvertFrom(_receiverAddress).GetIpv4() << ":" << InetSocketAddress::ConvertFrom(_receiverAddress).GetPort() << " DCTCP: cwnd from: " << oldCwnd << " to: " << newCwnd << endl;
         // }
+        *stream->GetStream() << Simulator::Now().GetNanoSeconds() << "," << newCwnd << endl;
     }
 }
 
@@ -131,12 +132,16 @@ void TraceReplaySender::PrepareSocket() {
     // part to change starts from here
     _socket->SetRecvCallback (MakeNullCallback<void, Ptr<Socket> > ());
     _socket->SetAllowBroadcast (true);
-
+    // AsciiTraceHelper asciiTraceHelper;
+    // if (GetNodeIP(_socket->GetNode(), 1) == "10.1.1.1") {
+    //     stream = asciiTraceHelper.CreateFileStream("/media/experiments/ns-allinone-3.41/ns-3.41/scratch/ECNMC/Results/" + to_string(InetSocketAddress::ConvertFrom(_receiverAddress).GetPort()) + "_cwnd.csv");
+    // }
+    // cout << _traceFilename << " >> " << to_string(InetSocketAddress::ConvertFrom(_receiverAddress).GetPort()) + "_cwnd.csv" << endl;
     // to enable/disable pacing for the measurement traffic
     if(_protocol == "ns3::TcpSocketFactory") {
         Ptr<TcpSocketBase> tcpSocket = _socket->GetObject<TcpSocketBase>();
         tcpSocket->SetPacingStatus(_enablePacing);
-        // tcpSocket->TraceConnectWithoutContext("CongestionWindow", MakeCallback(&TraceReplaySender::cwndTrace, this));
+        // tcpSocket->TraceConnectWithoutContext("CongestionWindow", MakeCallback(&TraceReplaySender::cwndTrace, this, stream));
         // mahdi
         // Ptr<TcpDctcp> dctcp = tcpSocket->GetCongestionControlAlgorithm()->GetObject<TcpDctcp>();
         // dctcp->TraceConnectWithoutContext("CongestionEstimate", MakeCallback(&TraceReplaySender::dctcpCallBack, this));
@@ -180,7 +185,7 @@ void TraceReplaySender::ScheduleNextSend() {
         // return;
         _traceItemIdx = 0;
     }
-
+    // cout << "Sending packet of " << _traceFilename << " with id: "<< _traceItemIdx << " at: " << Simulator::Now().GetNanoSeconds() << endl;
     Send(_traceItems[_traceItemIdx]);
     _traceItemIdx++;
     if(_traceItemIdx >= _traceItems.size()) {
@@ -193,7 +198,8 @@ void TraceReplaySender::ScheduleNextSend() {
     // Time currTime = Simulator::Now();
     // Time remainingTime = (nextItem.timestamp > currTime) ? nextItem.timestamp - currTime : Seconds(0);
     // remainingTime += MicroSeconds(helper_methods::GetRandomNumber(0, 100)); // to add randomness
-    Time remainingTime = nextItem.timestamp + MicroSeconds(helper_methods::GetRandomNumber(0, 7)); // to add randomness
+    // Time remainingTime = nextItem.timestamp + MicroSeconds(helper_methods::GetRandomNumber(0, 7)); // to add randomness
+    Time remainingTime = nextItem.timestamp + NanoSeconds(helper_methods::GetRandomNumber(0, 7)); // to add randomness
     _sendEvent = Simulator::Schedule(remainingTime, &TraceReplaySender::ScheduleNextSend, this);
 }
 
