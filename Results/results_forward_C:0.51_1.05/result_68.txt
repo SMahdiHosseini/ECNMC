@@ -1,0 +1,35 @@
+
+Start Single Queue Simulation
+Sender Tx Queue Size: 1
+Switch Tx Queue Size: 1
+Hosts and Switches IP addresses
+Src: 0 Id:0 IP: 10.1.1.1
+Src CT: 1 Id:1 IP: 10.2.1.1
+Dst: 0 Id:2 IP: 10.3.1.1
+Total preparing time = 1188150 microsecond
+Config Parameters
+srcHostToSwitchLinkRate: 300Mbps
+ctHostToSwitchLinkRate: 300Mbps
+hostToSwitchLinkDelay: 50us
+bottleneckLinkRate: 462.0Mbps
+pctPacedBack: 0
+enableSwitchECN: 1
+enableECMP: 1
+sampleRate: 12000
+errorRate: 1.5e-05
+dirName: forward
+experiment: 69
+trafficStartTime: 61.2
+trafficStopTime: 62.1
+steadyStartTime: 0.3
+steadyEndTime: 0.8
+duration: 0.9
+swtichDstREDQueueDiscMaxSize: 18KB
+switchSrcREDQueueDiscMaxSize: 18KB
+minTh: 0.15
+maxTh: 0.15
+traffic: chicago_2010_traffic_10min_2paths/path
+isDifferentating: 0
+differentiationDelay: 0.35
+Done 
+Total execution time = 110620053 microsecond
