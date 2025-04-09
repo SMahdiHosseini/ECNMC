@@ -380,53 +380,63 @@ def e2e_poisson_sampling_new(time, values):
     interarrival = np.diff(time)
 
     # Step 2: Check if interarrivals follow an exponential distribution
-    _, p_val = kstest(interarrival, 'expon', args=(np.min(interarrival), np.mean(interarrival)))
-    if p_val > 0.05:
-        # Interarrival is exponential: return all
+    anderson_statistic, anderson_critical_values, _ = anderson(interarrival, 'expon')
+    if anderson_statistic <= anderson_critical_values[2]:
+        print("Interarrival times are exponentially distributed.")
         return np.mean(values), np.std(values) / np.sqrt(len(values))
 
     # Step 3: Divide into chunks of average interarrival time
-    avg_interarrival = np.mean(interarrival)
+    avg_interarrival = np.mean(interarrival) * 10
+    # print("Average interarrival time:", avg_interarrival, "Average Delay:", np.mean(values))
     start_time = time[0]
     end_time = time[-1]
     bins = np.arange(start_time, end_time, avg_interarrival)
 
-    selected_indices = []
-    for i in range(len(bins) - 1):
-        # Get indices in the current chunk
-        mask = (time >= bins[i]) & (time < bins[i+1])
-        indices = np.where(mask)[0]
-        if len(indices) > 0:
-            # Randomly pick one index from the chunk
-            selected_indices.append(np.random.choice(indices))
+    tries = 10
+    final_values = []
+    while tries > 0 :
+        selected_indices = []
+        for i in range(len(bins) - 1):
+            # Get indices in the current chunk
+            mask = (time >= bins[i]) & (time < bins[i+1])
+            indices = np.where(mask)[0]
+            if len(indices) > 0:
+                # Randomly pick one index from the chunk
+                selected_indices.append(np.random.choice(indices))
 
-    selected_indices = np.array(selected_indices)
-    selected_times = time[selected_indices]
-    selected_values = values[selected_indices]
+        selected_indices = np.array(selected_indices)
+        selected_times = time[selected_indices]
+        selected_values = values[selected_indices]
 
-    # Step 4: Check if interarrival of selected packets is exponential
-    selected_interarrival = np.diff(selected_times)
-    _, p_val = kstest(selected_interarrival, 'expon', args=(np.min(selected_interarrival), np.mean(selected_interarrival)))
-    if p_val > 0.05:
-        return np.mean(selected_values), np.std(selected_values) / np.sqrt(len(selected_values))
+        # Step 4: Check if interarrival of selected packets is exponential
+        selected_interarrival = np.diff(selected_times)
+        anderson_statistic, anderson_critical_values, _ = anderson(selected_interarrival, 'expon')
+        if anderson_statistic <= anderson_critical_values[2]:
+            # print("Selected First interarrival times are exponentially distributed.")
+            return np.mean(selected_values), np.std(selected_values) / np.sqrt(len(selected_values))
 
-    # Step 5: Use Bernoulli sampling on selected packets
-    keep_mask = bernoulli.rvs(0.5, size=len(selected_times))  # 0.5 is an arbitrary probability
-    final_times = selected_times[keep_mask == 1]
-    final_values = selected_values[keep_mask == 1]
- 
-    return np.mean(final_values), np.std(final_values) / np.sqrt(len(final_values))
+        # Step 5: Use Bernoulli sampling on selected packets
+        keep_mask = bernoulli.rvs(0.1, size=len(selected_times))
+        final_times = selected_times[keep_mask == 1]
+        final_values = selected_values[keep_mask == 1]
+        anderson_statistic, anderson_critical_values, _ = anderson(np.diff(final_times), 'expon')
+        if anderson_statistic <= anderson_critical_values[2]:
+            return np.mean(final_values), np.std(final_values) / np.sqrt(len(final_values))
+        tries -= 1
+    print("Failed to find exponentially distributed interarrival times after 10 tries.")
+    return np.mean(final_values), np.std(final_values) / np.sqrt(len(final_values)), -1
 
 def e2e_poisson_sampling(time, values, delay=False, sizes=None):
-    rate = 12 * 1e-6
+    return e2e_poisson_sampling_new(time, values)
     duration = time[-1] - time[0]
-    bound = 1000
-
+    rate = len(values) / duration
+    bound = 500
+    
     inter_arrival_times = np.random.exponential(scale=1/rate, size=int(duration * rate))
     poisson_times = 3 * 1e8 + np.cumsum(inter_arrival_times)
     
     poisson_times = poisson_times[poisson_times <= time[-1]]
-
+    poisson_times = poisson_times[poisson_times >= time[0]]
     selected = []
     for t in poisson_times:
         idx = np.searchsorted(time, t)
@@ -651,6 +661,26 @@ def manipulate_for_delay_Q_m(full_df, linkRate):
         linear_sum += (x_1 + x_2) / 2 * dt
     linearInterp_time_average = linear_sum / (time[-1] - time[0])
     return full_df, linearInterp_time_average  
+
+def plot_queuingDelay_distribution(__ns3_path, results_folder, rate, experiment, segment, steadyStart, steadyEnd, paths, linkRate):
+    file_paths = glob.glob('{}/scratch/{}/{}/{}/*_{}.csv'.format(__ns3_path, results_folder, rate, experiment, segment))
+    dfs = {}
+    for file_path in file_paths:
+        full_df = pd.read_csv(file_path)
+        full_df = prune_data(full_df, 'Time', steadyStart, steadyEnd)
+        full_df = full_df.sort_values(by=['Time', 'TotalQueueSize'], ascending=[True, True]).reset_index(drop=True)
+        full_df['Delay'] = ((full_df['TotalQueueSize'] * 8) / linkRate).astype(int)
+        # plot the distribution of the queuing delay
+        plt.figure(figsize=(10, 6))
+        plt.hist(full_df['Delay'], bins=200, density=True, color='g')
+        plt.title('Queuing Delay Distribution', fontsize=16)
+        plt.xlabel('Delay (ns)', fontsize=16)
+        plt.ylabel('Density', fontsize=16)
+        plt.xticks(fontsize=14)
+        plt.yticks(fontsize=14)
+        plt.grid()
+        plt.savefig('{}/scratch/{}/{}/{}/queuingDelay_distribution.png'.format(__ns3_path, results_folder, rate, experiment, segment))
+
 
 def calculate_offline_computations_on_switch(__ns3_path, results_folder, rate, experiment, segment, steadyStart, steadyEnd, paths, linkRate):
     file_paths = glob.glob('{}/scratch/{}/{}/{}/*_{}.csv'.format(__ns3_path, results_folder, rate, experiment, segment))
