@@ -134,7 +134,7 @@ def calculate_drop_rate(__ns3_path, steadyStart, steadyEnd, rate, segments, chec
     # return sum([value for value in swtiches_dropRates.values() if value != 0]) / len([value for value in swtiches_dropRates.values() if value != 0])
 
 def calculate_avgDrop_rate_offline(endToEnd_dfs, paths):
-    return 1 - sum([endToEnd_dfs[flow]['successProbMean'][p] * endToEnd_dfs[flow]['sampleSize'][p] for p in range(len(paths)) for flow in endToEnd_dfs.keys()]) / sum([endToEnd_dfs[flow]['sampleSize'][p] for p in range(len(paths)) for flow in endToEnd_dfs.keys()])
+    return 1 - np.average([endToEnd_dfs[flow]['successProbMean'][p] for p in range(len(paths)) for flow in endToEnd_dfs.keys()])
 
 def calculate_drop_rate_online(endToEnd_dfs, paths):
     loss_sum = 0
@@ -298,10 +298,10 @@ def calculate_offline_E2E_lossRates(__ns3_path, full_df, df_res, checkColumn, li
 
     packets_cfd = PacketCDF()
     packets_cfd.load_cdf_data('{}/scratch/ECNMC/Helpers/packet_size_cdf_singleQueue.csv'.format(__ns3_path))
+    df_res['sampleSize']['successProb'] = {}
     full_df_ = full_df[full_df['SentTime'] != -1].copy()
     for path in full_df_['Path'].unique():
         df = full_df_[full_df_['Path'] == path]
-        df_res['sampleSize'][path] = len(df)
         df = df.sort_values(by='SentTime').reset_index(drop=True)
 
         df['nonDropEvent'] = df.apply(lambda x: 1.0 if x[checkColumn] != 0 else 0.0, axis=1)
@@ -321,7 +321,10 @@ def calculate_offline_E2E_lossRates(__ns3_path, full_df, df_res, checkColumn, li
 
         df_res['successProb']['event_eventAvg'][path] = (np.mean(values), np.std(values) / np.sqrt(len(values)))
    
-        avg, std = e2e_poisson_sampling(time, values)
+        samples_times = find_samples_path(time)
+        df_res['sampleSize']['successProb'][path] = len(samples_times)
+        samples_values = df[df['SentTime'].isin(samples_times)]['nonDropEvent'].values
+        avg, std = np.mean(samples_values), np.std(samples_values) / np.sqrt(len(samples_values))
         df_res['successProb']['event_poisson_eventAvg'][path] = (avg, std)
 
         df['nonDropProb'] = df.apply(lambda x: 1.0 - packets_cfd.calculate_probability_greater_than(max(swtichDstREDQueueDiscMaxSize - (x['Delay'] * linksRate / 8), x['PayloadSize'])) if x[checkColumn] != 0 else 0.0, axis=1)
@@ -340,7 +343,8 @@ def calculate_offline_E2E_lossRates(__ns3_path, full_df, df_res, checkColumn, li
 
         df_res['successProb']['probability_eventAvg'][path] = (np.mean(values), np.std(values) / np.sqrt(len(values)))
 
-        avg, std = e2e_poisson_sampling(time, values)
+        samples_values = df[df['SentTime'].isin(samples_times)]['nonDropProb'].values
+        avg, std = np.mean(samples_values), np.std(samples_values) / np.sqrt(len(samples_values))
         df_res['successProb']['probability_poisson_eventAvg'][path] = (avg, std)
 
     full_df_ = None
@@ -375,7 +379,7 @@ def calculate_offline_markingProbMean_at_receiver(df, swtichDstREDQueueDiscMaxSi
     ecn_df['F'] = ecn_df['F'] * ecn_df['InterArrivalTime']
     return 1 - (ecn_df['F'].sum() / ecn_df['InterArrivalTime'].sum())
 
-def e2e_poisson_sampling_new(time, values):
+def find_samples_path(time):
     # Step 1: Compute interarrival times
     interarrival = np.diff(time)
 
@@ -383,7 +387,7 @@ def e2e_poisson_sampling_new(time, values):
     anderson_statistic, anderson_critical_values, _ = anderson(interarrival, 'expon')
     if anderson_statistic <= anderson_critical_values[2]:
         print("Interarrival times are exponentially distributed.")
-        return np.mean(values), np.std(values) / np.sqrt(len(values))
+        return time
 
     # Step 3: Divide into chunks of average interarrival time
     avg_interarrival = np.mean(interarrival) * 10
@@ -406,28 +410,26 @@ def e2e_poisson_sampling_new(time, values):
 
         selected_indices = np.array(selected_indices)
         selected_times = time[selected_indices]
-        selected_values = values[selected_indices]
 
         # Step 4: Check if interarrival of selected packets is exponential
         selected_interarrival = np.diff(selected_times)
         anderson_statistic, anderson_critical_values, _ = anderson(selected_interarrival, 'expon')
         if anderson_statistic <= anderson_critical_values[2]:
             # print("Selected First interarrival times are exponentially distributed.")
-            return np.mean(selected_values), np.std(selected_values) / np.sqrt(len(selected_values))
+            return selected_times
 
         # Step 5: Use Bernoulli sampling on selected packets
         keep_mask = bernoulli.rvs(0.1, size=len(selected_times))
         final_times = selected_times[keep_mask == 1]
-        final_values = selected_values[keep_mask == 1]
         anderson_statistic, anderson_critical_values, _ = anderson(np.diff(final_times), 'expon')
         if anderson_statistic <= anderson_critical_values[2]:
-            return np.mean(final_values), np.std(final_values) / np.sqrt(len(final_values))
+            # print("Selected Second interarrival times are exponentially distributed.")
+            return final_times
         tries -= 1
     print("Failed to find exponentially distributed interarrival times after 10 tries.")
-    return np.mean(final_values), np.std(final_values) / np.sqrt(len(final_values)), -1
+    return []
 
 def e2e_poisson_sampling(time, values, delay=False, sizes=None):
-    return e2e_poisson_sampling_new(time, values)
     duration = time[-1] - time[0]
     rate = len(values) / duration
     bound = 500
@@ -495,6 +497,7 @@ def calculate_offline_E2E_markingProb(full_df, df_res, checkColumn, swtichDstRED
             df_res['nonMarkingProb'][var + '_' + method] = {}
     
     full_df_ = full_df[full_df['SentTime'] != -1].copy()
+    df_res['sampleSize']['nonMarkingProb'] = {}
     for path in full_df_['Path'].unique():
         df = full_df_[full_df_['Path'] == path]
         df['ECN'] = df.apply(lambda x: x['ECN'] if x[checkColumn] != 0 else 1, axis=1)
@@ -513,7 +516,10 @@ def calculate_offline_E2E_markingProb(full_df, df_res, checkColumn, swtichDstRED
         linearInterp_time_average = np.sum(((values[:-1] + values[1:]) / 2) * np.diff(time)) / (time[-1] - time[0])
         df_res['nonMarkingProb']['event_linearInterp_timeAvg'][path] = linearInterp_time_average
 
-        avg, std = e2e_poisson_sampling(time, values)
+        samples_times = find_samples_path(time)
+        df_res['sampleSize']['nonMarkingProb'][path] = len(samples_times)
+        samples_values = df[df['SentTime'].isin(samples_times)]['nonMarking'].values
+        avg, std = np.mean(samples_values), np.std(samples_values) / np.sqrt(len(samples_values))
         df_res['nonMarkingProb']['event_poisson_eventAvg'][path] = (avg, std)
 
         df_res['nonMarkingProb']['event_eventAvg'][path] = (np.mean(values), np.std(values) / np.sqrt(len(values)))
@@ -529,6 +535,7 @@ def calculate_offline_E2E_delays(full_df, removeDrops, checkColumn, df_res):
     full_df_ = full_df.copy()
     if removeDrops:
         full_df_ = full_df_[full_df_[checkColumn] == 1]
+    df_res['sampleSize']['delay'] = {}
     for path in full_df_['Path'].unique():
         df = full_df_[full_df_['Path'] == path]
         df = df.sort_values(by='SentTime').reset_index(drop=True)
@@ -544,7 +551,10 @@ def calculate_offline_E2E_delays(full_df, removeDrops, checkColumn, df_res):
         linearInterp_time_average = np.sum(((values[:-1] + values[1:]) / 2) * np.diff(time)) / (time[-1] - time[0])
         df_res['delay']['event_linearInterp_timeAvg'][path] = linearInterp_time_average
 
-        avg, std = e2e_poisson_sampling(time, values, delay=True, sizes=df['PayloadSize'].values)
+        samples_times = find_samples_path(time)
+        df_res['sampleSize']['delay'][path] = len(samples_times)
+        samples_values = df[df['SentTime'].isin(samples_times)]['Delay'].values        
+        avg, std = np.mean(samples_values), np.std(samples_values) / np.sqrt(len(samples_values))
         df_res['delay']['event_poisson_eventAvg'][path] = (avg, std)
 
         df_res['delay']['event_eventAvg'][path] = (np.mean(values), np.std(values) / np.sqrt(len(values)))
@@ -777,6 +787,7 @@ def calculate_offline_computations(__ns3_path, rate, segment, experiment, result
             df_res['workload'] = {}
             df_res['sampleSize'] = {}
             df_res['successProbMean'] = {}
+            df_res['sampleSize'] = {}
             full_df = addRemoveTransmission_data(full_df, linkDelays, linksRates)
             full_df = prune_data(full_df, projectColumn, steadyStart, steadyEnd)
             df_res = calculate_offline_E2E_lossRates(__ns3_path, full_df, df_res, checkColumn, linksRates[1], swtichDstREDQueueDiscMaxSize)

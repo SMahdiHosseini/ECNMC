@@ -6,14 +6,18 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 colors = ['b', 'g', 'r', 'c', 'm', 'y', 'k', 'b', 'g', 'r', 'c', 'm', 'y', 'k']
-def readResults(results_dir, serviceRateScales, results_dir_file):
+def readResults(results_dir, serviceRateScales, results_dir_file, selectedVarMethods):
     results = {}
     dropRate = {}
+    sampleSizes = {}
+    CVS = {}
     flows = ['A0D0']
     paths = ["0"]
     for rate in serviceRateScales:
         results[rate] = {}
         dropRate[rate] = {}
+        sampleSizes[rate] = {}
+        CVS[rate] = {}
         for file in os.listdir('../Results/results_' + results_dir + '/'+str(rate)+'/'):
             if file.find(results_dir_file) != -1:
                 temp = {}
@@ -31,46 +35,96 @@ def readResults(results_dir, serviceRateScales, results_dir_file):
                         results[rate]['LastSuccessProb'] = {}
                         results[rate]['NonMarkingProb'] = {}
                         results[rate]['LastNonMarkingProb'] = {}
-                        # results[rate]['SD0DelayStd'] = temp['SD0Delaystd']
-                        # results[rate]['SD0DelayMean'] = temp['SD0DelayMean']
-                        # results[rate]['SD0SuccessProbStd'] = temp['SD0SuccessProbStd']
-                        # results[rate]['SD0SuccessProbMean'] = temp['SD0SuccessProbMean']
-                        # results[rate]['SD0NonMarkingProbStd'] = temp['SD0NonMarkingProbStd']
-                        # results[rate]['SD0NonMarkingProbMean'] = temp['SD0NonMarkingProbMean']
+                        CVS[rate]['DelayCV'] = np.mean([temp['SD0Delaystd'][i] / temp['SD0DelayMean'][i] for i in range(temp['experiments'])])
+                        # CVS[rate]['LastDelayCV'] = np.mean([temp['SD0LastDelaystd'][i] / temp['SD0LastDelayMean'][i] for i in range(temp['experiments'])])
+                        CVS[rate]['SuccessProbCV'] = np.mean([temp['SD0SuccessProbStd'][i] / temp['SD0SuccessProbMean'][i] for i in range(temp['experiments'])])
+                        # CVS[rate]['LastSuccessProbCV'] = np.mean([temp['SD0LastSuccessProbStd'][i] / temp['SD0LastSuccessProbMean'][i] for i in range(temp['experiments'])])
+                        CVS[rate]['NonMarkingProbCV'] = np.mean([temp['SD0NonMarkingProbStd'][i] / temp['SD0NonMarkingProbMean'][i] for i in range(temp['experiments'])])
+                        # CVS[rate]['LastNonMarkingProbCV'] = np.mean([temp['SD0LastNonMarkingProbStd'][i] / temp['SD0LastNonMarkingProbMean'][i] for i in range(temp['experiments'])])
+                        CVS[rate]['SubSamplesDelayCV'] = np.mean([temp['EndToEndDelayMean']['event_poisson_eventAvg'][flow][path][i][1] / temp['EndToEndDelayMean']['event_poisson_eventAvg'][flow][path][i][0] * np.sqrt(temp['EndToEndSampleSizeDelay'][flow][path][i]) for i in range(temp['experiments'])])
+                        CVS[rate]['SubSamplesSuccessProbCV'] = np.mean([temp['EndToEndSuccessProb']['event_poisson_eventAvg'][flow][path][i][1] / temp['EndToEndSuccessProb']['event_poisson_eventAvg'][flow][path][i][0] * np.sqrt(temp['EndToEndSampleSizeSuccess'][flow][path][i]) for i in range(temp['experiments'])])
+                        CVS[rate]['SubSamplesNonMarkingProbCV'] = np.mean([temp['EndToEndNonMarkingProb']['event_poisson_eventAvg'][flow][path][i][1] / temp['EndToEndNonMarkingProb']['event_poisson_eventAvg'][flow][path][i][0] * np.sqrt(temp['EndToEndSampleSizeMarking'][flow][path][i]) for i in range(temp['experiments'])])
+                        sampleSizes[rate]['SampleSizeDelay'] = np.mean([temp['EndToEndSampleSizeDelay'][flow][path][i] for i in range(temp['experiments'])])
+
 
                         for var_method in temp['MaxEpsilonIneqDelay'].keys():
-                            if var_method == 'event_eventAvg':
+                            if var_method not in selectedVarMethods:
                                 continue
                             results[rate]['Delay'][var_method] = temp['MaxEpsilonIneqDelay'][var_method][flow][path] / temp['experiments'] * 100
                             results[rate]['LastDelay'][var_method] = temp['MaxEpsilonIneqLastDelay'][var_method][flow][path] / temp['experiments'] * 100
                         
                         for var_method in temp['MaxEpsilonIneqSuccessProb'].keys():
-                            if var_method == 'event_eventAvg' or var_method == 'probability_eventAvg':
+                            if var_method not in selectedVarMethods:
                                 continue
                             results[rate]['SuccessProb'][var_method] = temp['MaxEpsilonIneqSuccessProb'][var_method][flow][path] / temp['experiments'] * 100
                             results[rate]['LastSuccessProb'][var_method] = temp['MaxEpsilonIneqLastSuccessProb'][var_method][flow][path] / temp['experiments'] * 100
                             
                         for var_method in temp['MaxEpsilonIneqNonMarkingProb'].keys():
-                            if var_method == 'event_eventAvg':
+                            if var_method not in selectedVarMethods:
                                 continue
                             results[rate]['NonMarkingProb'][var_method] = temp['MaxEpsilonIneqNonMarkingProb'][var_method][flow][path] / temp['experiments'] * 100
 
                         for var_method in temp['MaxEpsilonIneqLastNonMarkingProb'].keys():
-                            if var_method == 'event_eventAvg':
+                            if var_method not in selectedVarMethods:
                                 continue
                             results[rate]['LastNonMarkingProb'][var_method] = temp['MaxEpsilonIneqLastNonMarkingProb'][var_method][flow][path] / temp['experiments'] * 100
-    return results, flows, paths, dropRate
+    return results, flows, paths, dropRate, CVS, sampleSizes
 
-def plot_CV_perRate(results, serviceRateScales, results_dir, results_dir_file, metric='Delay'):
-    plt.figure(figsize=(8, 6)) 
-    data = [np.mean(np.array(results[rate]['SD0' + metric + 'Std']) / np.array(results[rate]['SD0' + metric + 'Mean'])) for rate in serviceRateScales]
-    plt.scatter(serviceRateScales, data, marker='o', label=metric, color='b', linewidth=1)
-    plt.ylim(-0.05, max(data) * (1.05))
-    plt.xlabel("Rate (from high to low congestion)")
-    plt.ylabel("CV of {}".format(metric))
-    plt.title("CV of {} vs Rate".format(metric))
-    plt.grid(True, which='both', linestyle='--', linewidth=0.5)
-    plt.savefig(f"../Results/results_{results_dir}/CV_{results_dir_file}_{metric}_vs_Rate.png")
+def plot_CV_perRate(serviceRateScales, results_dir, results_dir_file, CVS, DropRates):
+    oversub_ratios = [1 / r if r != 0 else np.nan for r in serviceRateScales]
+    for metric in set(k for r in CVS.values() for k in r.keys()):
+        print(f"Plotting {metric}...")
+        plt.figure(figsize=(20, 14))
+        ax = plt.gca()
+        data = [CVS[rate][metric] for rate in serviceRateScales]
+        plt.scatter(oversub_ratios, data, marker='o', label=metric, color='b', linewidth=1)
+        # Primary x-axis: Oversubscription ratios
+        ax.set_xticks(oversub_ratios)
+        ax.set_xticklabels([f"{alpha:.2f}" for alpha in oversub_ratios], rotation=45, fontsize=15)
+        ax.set_xlabel("Oversubscription Ratio (α)", fontsize=20)
+
+        # Y-axis
+        plt.ylim(-0.05, max(data) * (1.05))
+        ax.set_yticks(np.arange(-0.05, max(data) * (1.05), 0.05))
+        ax.set_ylabel(f"{metric}", fontsize=20)
+
+        # Secondary x-axis (top): Drop rates
+        ax_top = ax.secondary_xaxis('top')
+        ax_top.set_xticks(oversub_ratios)
+        ax_top.set_xticklabels([f"{drop*100:.4f}%" for drop in DropRates], rotation=90, fontsize=15)
+        ax_top.set_xlabel("Drop Rate", fontsize=20)
+
+        plt.title("{} vs Rate".format(metric))
+        plt.grid(True, which='both', linestyle='--', linewidth=0.5)
+        plt.savefig(f"../Results/results_{results_dir}/{results_dir_file}_{metric}_vs_Rate.png")
+
+def plot_SampleSize_perRate(serviceRateScales, results_dir, results_dir_file, sampleSizes, DropRates):
+    oversub_ratios = [1 / r if r != 0 else np.nan for r in serviceRateScales]
+    for metric in set(k for r in sampleSizes.values() for k in r.keys()):
+        print(f"Plotting {metric}...")
+        plt.figure(figsize=(20, 14))
+        ax = plt.gca()
+        data = [sampleSizes[rate][metric] for rate in serviceRateScales]
+        plt.scatter(oversub_ratios, data, marker='o', label=metric, color='b', linewidth=1)
+        # Primary x-axis: Oversubscription ratios
+        ax.set_xticks(oversub_ratios)
+        ax.set_xticklabels([f"{alpha:.2f}" for alpha in oversub_ratios], rotation=45, fontsize=15)
+        ax.set_xlabel("Oversubscription Ratio (α)", fontsize=20)
+
+        # Y-axis
+        plt.ylim(min(data) * 0.95, max(data) * (1.05))
+        ax.set_yticks(np.arange(min(data) * 0.95, max(data) * (1.05), 5))
+        ax.set_ylabel(f"{metric}", fontsize=20)
+
+        # Secondary x-axis (top): Drop rates
+        ax_top = ax.secondary_xaxis('top')
+        ax_top.set_xticks(oversub_ratios)
+        ax_top.set_xticklabels([f"{drop*100:.4f}%" for drop in DropRates], rotation=90, fontsize=15)
+        ax_top.set_xlabel("Drop Rate", fontsize=20)
+
+        plt.title("{} vs Rate".format(metric))
+        plt.grid(True, which='both', linestyle='--', linewidth=0.5)
+        plt.savefig(f"../Results/results_{results_dir}/{results_dir_file}_{metric}_vs_Rate.png")
 
 def plot_boxplot(results, serviceRateScales, results_dir, results_dir_file, metric):
     plt.figure(figsize=(8, 6))
@@ -106,28 +160,43 @@ def plot_success_per_rate(results, flows, paths, rates, results_dir, results_dir
         plt.savefig(f"../Results/results_{results_dir}/{results_dir_file}_{metric}_vs_Rate.png")
         plt.close()
 
-def plot_success_per_dropRates(results, flows, paths, rates, results_dir, results_dir_file, DropRates):
+def plot_success_per_dropRates(results, rates, results_dir, results_dir_file, DropRates):
+    oversub_ratios = [1 / r if r != 0 else np.nan for r in rates]
     for metric in set(k for r in results.values() for k in r.keys()):
-        plt.figure(figsize=(10, 9))
-        
+        print(f"Plotting {metric}...")
+        plt.figure(figsize=(20, 14))
+        ax = plt.gca()
+        # Prepare and sort sub_keys
         sub_keys = set(k for r in results.values() if metric in r for k in r[metric].keys())
         sub_keys = sorted(sub_keys)
         i = 0
         for sub_key in sub_keys:
             y_values = [results[rate].get(metric, {}).get(sub_key, np.nan) for rate in rates]
-            plt.plot(rates, y_values, marker='o', label=sub_key, color=colors[i], linewidth=1, markersize=4)
+            plt.plot(oversub_ratios, y_values, marker='o', label=sub_key,
+                    color=colors[i], linewidth=1, markersize=4)
             i += 1
 
-        xtick_labels = [f"{rate:.2f} ({drop:.3f})" for rate, drop in zip(rates, DropRates)]
-        plt.xticks(rates, labels=xtick_labels, rotation=45, size=10)
+        # Primary x-axis: Oversubscription ratios
+        ax.set_xticks(oversub_ratios)
+        ax.set_xticklabels([f"{alpha:.2f}" for alpha in oversub_ratios], rotation=45, fontsize=15)
+        ax.set_xlabel("Oversubscription Ratio (α)", fontsize=20)
 
-        plt.ylim(-5, 110)
-        plt.yticks(np.arange(0, 101, 10))
-        plt.xlabel("Rate (from high to low congestion)(Drop Rate)")
-        plt.ylabel("Success Rate (%)")
-        plt.title(f"{metric}")
-        plt.legend(loc='upper center', bbox_to_anchor=(0.5, 1.0), ncol=3, fancybox=True, shadow=True, prop={'size': 6})
+        # Y-axis
+        ax.set_ylim(-5, 110)
+        ax.set_yticks(np.arange(0, 101, 10))
+        ax.set_ylabel("Success Rate (%)", fontsize=20)
+
+        # Secondary x-axis (top): Drop rates
+        ax_top = ax.secondary_xaxis('top')
+        ax_top.set_xticks(oversub_ratios)
+        ax_top.set_xticklabels([f"{drop*100:.4f}%" for drop in DropRates], rotation=90, fontsize=15)
+        ax_top.set_xlabel("Drop Rate", fontsize=20)
+
+        # Plot title and legend
+        plt.title(f"{metric} success rate vs Oversubscription", fontsize=20)
+        plt.legend(loc='upper center', bbox_to_anchor=(0.5, 1.1), ncol=4, fancybox=True, shadow=True, prop={'size': 10})
         plt.grid(True, which='both', linestyle='--', linewidth=0.5)
+        plt.subplots_adjust(left=0.05, right=0.95)
         plt.savefig(f"../Results/results_{results_dir}/{results_dir_file}_{metric}_vs_DropRate.png")
         plt.close()
 
@@ -148,19 +217,21 @@ def __main__():
     args = parser.parse_args()
     results_dir = args.dir
     # results_dir_file = args.file
-    results_dir_file = "Q_e_m_forward"
+    results_dir_file = "Q_e_m_subsampling"
     config = configparser.ConfigParser()
     config.read('../Results/results_{}/Parameters.config'.format(args.dir))
     if args.IsForward == 1:
         RateScales = [float(x) for x in config.get('Settings', 'serviceRateScales').split(',')]
     else:
         RateScales = [float(x) for x in config.get('Settings', 'errorRateScale').split(',')]
+    selectedVarMethods = ['event_poisson_eventAvg']
     # print(RateScales)
     # serviceRateScales = [0.75, 0.80, 0.85, 0.90, 0.95, 1.0, 1.05]
-    results, flows, paths, DropRates = readResults(results_dir, RateScales, results_dir_file)
-    plot_success_per_rate(results, flows, paths, RateScales, results_dir, results_dir_file)
-    plot_success_per_dropRates(results, flows, paths, RateScales, results_dir, results_dir_file, DropRates.values())
-    # plot_CV_perRate(results, serviceRateScales, results_dir, results_dir_file, metric='Delay')
+    results, flows, paths, DropRates, CVS, sampleSizes = readResults(results_dir, RateScales, results_dir_file, selectedVarMethods)
+    # plot_success_per_rate(results, flows, paths, RateScales, results_dir, results_dir_file)
+    # plot_success_per_dropRates(results, RateScales, results_dir, results_dir_file, DropRates.values())
+    plot_CV_perRate(RateScales, results_dir, results_dir_file, CVS, DropRates.values())
+    plot_SampleSize_perRate(RateScales, results_dir, results_dir_file, sampleSizes, DropRates.values())
     # plot_CV_perRate(results, serviceRateScales, results_dir, results_dir_file, metric='SuccessProb')
     # plot_CV_perRate(results, serviceRateScales, results_dir, results_dir_file, metric='NonMarkingProb')
     # plot_boxplot(results, serviceRateScales, results_dir, results_dir_file, metric='SD0Delaystd')

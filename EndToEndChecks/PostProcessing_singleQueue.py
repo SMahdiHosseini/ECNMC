@@ -22,11 +22,11 @@ sample_rates = [0.5]
 confidenceValue = 1.96 # 95% confidence interval
 propagationDelay = 50000
 
-# timeAvg_methods = ['rightCont_timeAvg', 'leftCont_timeAvg', 'linearInterp_timeAvg', 'poisson_eventAvg', 'eventAvg']
-timeAvg_methods = ['rightCont_timeAvg', 'leftCont_timeAvg', 'linearInterp_timeAvg']
+timeAvg_methods = ['rightCont_timeAvg', 'leftCont_timeAvg', 'linearInterp_timeAvg', 'poisson_eventAvg', 'eventAvg']
+# timeAvg_methods = ['rightCont_timeAvg', 'leftCont_timeAvg', 'linearInterp_timeAvg']
 delay_timeAvg_vars = ['event']
-# successProb_timeAvg_vars = ['event', 'probability']
-successProb_timeAvg_vars = ['probability']
+successProb_timeAvg_vars = ['event', 'probability']
+# successProb_timeAvg_vars = ['probability']
 nonMarkingProb_timeAvg_vars = ['event']
 
 def check_MaxEpsilon_ineq_delay(endToEnd_statistics, samples_paths_aggregated_statistics, last=""):
@@ -127,7 +127,9 @@ def prepare_results(flows, queues, num_of_paths):
     rounds_results['MaxEpsilonIneqLastSuccessProb'] = {}
     rounds_results['MaxEpsilonIneqNonMarkingProb'] = {}
     rounds_results['MaxEpsilonIneqLastNonMarkingProb'] = {}
-    rounds_results['EndToEndSampleSize'] = {}
+    rounds_results['EndToEndSampleSizeDelay'] = {}
+    rounds_results['EndToEndSampleSizeSuccess'] = {}
+    rounds_results['EndToEndSampleSizeMarking'] = {}
     rounds_results['EndToEndDelayMean'] = {}
     rounds_results['EndToEndSuccessProb'] = {}
     rounds_results['EndToEndNonMarkingProb'] = {}
@@ -202,7 +204,9 @@ def prepare_results(flows, queues, num_of_paths):
         rounds_results['maxEpsilonLastSuccessProb'][flow] = {}
         rounds_results['maxEpsilonNonMarkingProb'][flow] = {}
         rounds_results['maxEpsilonLastNonMarkingProb'][flow] = {}
-        rounds_results['EndToEndSampleSize'][flow] = {}
+        rounds_results['EndToEndSampleSizeDelay'][flow] = {}
+        rounds_results['EndToEndSampleSizeSuccess'][flow] = {}
+        rounds_results['EndToEndSampleSizeMarking'][flow] = {}
         for i in range(num_of_paths):
             for var_method in rounds_results['MaxEpsilonIneqDelay'].keys():
                 rounds_results['MaxEpsilonIneqDelay'][var_method][flow][i] = 0
@@ -226,7 +230,9 @@ def prepare_results(flows, queues, num_of_paths):
             rounds_results['maxEpsilonLastSuccessProb'][flow][i] = []
             rounds_results['maxEpsilonNonMarkingProb'][flow][i] = []
             rounds_results['maxEpsilonLastNonMarkingProb'][flow][i] = []
-            rounds_results['EndToEndSampleSize'][flow][i] = []
+            rounds_results['EndToEndSampleSizeDelay'][flow][i] = []
+            rounds_results['EndToEndSampleSizeSuccess'][flow][i] = []
+            rounds_results['EndToEndSampleSizeMarking'][flow][i] = []
 
     return rounds_results
 
@@ -330,30 +336,14 @@ def analyze_single_experiment(return_dict, rate, queues_names, confidenceValue, 
     # samples_dfs = read_online_computations(__ns3_path, rate, 'PoissonSampler', str(experiment), results_folder)
     # biasCalculator = BiasCalculator(results_folder, rate, [experiment], steadyStart, steadyEnd, rounds_results, bottleneckLinkRate)
     # biasCalculator.calculateBias(['MarkingProb', 'DropProb', 'QueuingDelay', 'LastMarkingProb'])
-    # endToEndStats = calculate_offline_computations(__ns3_path, rate, 'EndToEnd_packets', str(experiment), results_folder, steadyStart, steadyEnd, "SentTime", True, "IsReceived", [srcHostToSwitchLinkRate, bottleneckLinkRate], [linkDelay, linkDelay], swtichDstREDQueueDiscMaxSize)
-    endToEndStats = calculate_offline_computations_on_switch(__ns3_path, results_folder, rate, experiment, 'PoissonSampler_queueSize', steadyStart, steadyEnd, paths, bottleneckLinkRate)
+    endToEndStats = calculate_offline_computations(__ns3_path, rate, 'EndToEnd_packets', str(experiment), results_folder, steadyStart, steadyEnd, "SentTime", True, "IsReceived", [srcHostToSwitchLinkRate, bottleneckLinkRate], [linkDelay, linkDelay], swtichDstREDQueueDiscMaxSize)
+    # endToEndStats = calculate_offline_computations_on_switch(__ns3_path, results_folder, rate, experiment, 'PoissonSampler_queueSize', steadyStart, steadyEnd, paths, bottleneckLinkRate)
     # plot_queuingDelay_distribution(__ns3_path, results_folder, rate, experiment, 'PoissonSampler_queueSize', steadyStart, steadyEnd, paths, bottleneckLinkRate)
     # print(endToEndStats)
     # calculate_offline_computations(__ns3_path, rate, 'EndToEnd_markings', str(experiment), results_folder, endToEndStats['A0D0']['first'][0], endToEndStats['A0D0']['last'][0], "Time", linksRates=[srcHostToSwitchLinkRate, bottleneckLinkRate], linkDelays=[linkDelay, linkDelay], stats=endToEndStats)
     # print(endToEndStats)
-    temp = calculate_offline_computations(__ns3_path, rate, 'EndToEnd_packets', str(experiment), results_folder, steadyStart, steadyEnd, "SentTime", True, "IsReceived", [srcHostToSwitchLinkRate, bottleneckLinkRate], [linkDelay, linkDelay], swtichDstREDQueueDiscMaxSize)
-    # samplesSats = calculate_offline_computations(__ns3_path, rate, 'PoissonSampler_events', str(experiment), results_folder, endToEndStats['A0D0']['first'][0], endToEndStats['A0D0']['last'][0], "Time", linksRates=[bottleneckLinkRate], swtichDstREDQueueDiscMaxSize=swtichDstREDQueueDiscMaxSize)
+    samplesSats = calculate_offline_computations(__ns3_path, rate, 'PoissonSampler_events', str(experiment), results_folder, endToEndStats['A0D0']['first'][0], endToEndStats['A0D0']['last'][0], "Time", linksRates=[bottleneckLinkRate], swtichDstREDQueueDiscMaxSize=swtichDstREDQueueDiscMaxSize)
     # print(samplesSats)
-    samplesSats = {}
-    samplesSats['SD0'] = {}
-    samplesSats['SD0']['DelayMean'] = temp['A0D0']['delay']['event_poisson_eventAvg'][0][0]
-    samplesSats['SD0']['DelayStd'] = temp['A0D0']['delay']['event_poisson_eventAvg'][0][1] * np.sqrt(temp['A0D0']['sampleSize'][0])
-    samplesSats['SD0']['LastDelayMean'] = temp['A0D0']['delay']['event_poisson_eventAvg'][0][0]
-    samplesSats['SD0']['LastDelayStd'] = temp['A0D0']['delay']['event_poisson_eventAvg'][0][1] * np.sqrt(temp['A0D0']['sampleSize'][0])
-    samplesSats['SD0']['SuccessProbMean'] = temp['A0D0']['successProb']['event_poisson_eventAvg'][0][0]
-    samplesSats['SD0']['SuccessProbStd'] = temp['A0D0']['successProb']['event_poisson_eventAvg'][0][1] * np.sqrt(temp['A0D0']['sampleSize'][0])
-    samplesSats['SD0']['LastSuccessProbMean'] = temp['A0D0']['successProb']['event_poisson_eventAvg'][0][0]
-    samplesSats['SD0']['LastSuccessProbStd'] = temp['A0D0']['successProb']['event_poisson_eventAvg'][0][1] * np.sqrt(temp['A0D0']['sampleSize'][0])
-    samplesSats['SD0']['NonMarkingProbMean'] = temp['A0D0']['nonMarkingProb']['event_poisson_eventAvg'][0][0]
-    samplesSats['SD0']['NonMarkingProbStd'] = temp['A0D0']['nonMarkingProb']['event_poisson_eventAvg'][0][1] * np.sqrt(temp['A0D0']['sampleSize'][0])
-    samplesSats['SD0']['LastNonMarkingProbMean'] = temp['A0D0']['nonMarkingProb']['event_poisson_eventAvg'][0][0]
-    samplesSats['SD0']['LastNonMarkingProbStd'] = temp['A0D0']['nonMarkingProb']['event_poisson_eventAvg'][0][1] * np.sqrt(temp['A0D0']['sampleSize'][0])
-    samplesSats['SD0']['sampleSize'] = temp['A0D0']['sampleSize'][0]
     # print(samplesSats['SD0']['DelayMean'], endToEndStats['A0D0']['delay']['event_linearInterp_timeAvg'][0], samplesSats['SD0']['DelayStd'] / np.sqrt(samplesSats['SD0']['sampleSize']) * confidenceValue, abs(samplesSats['SD0']['DelayMean'] - endToEndStats['A0D0']['delay']['event_linearInterp_timeAvg'][0]) <= samplesSats['SD0']['DelayStd'] / np.sqrt(samplesSats['SD0']['sampleSize']) * confidenceValue)
     rounds_results['DropRate'].append(calculate_avgDrop_rate_offline(endToEndStats, paths))
     # samples_paths_statistics
@@ -404,7 +394,9 @@ def analyze_single_experiment(return_dict, rate, queues_names, confidenceValue, 
             rounds_results['maxEpsilonLastSuccessProb'][flow][path].append(samples_paths_aggregated_statistics[flow][path]['MaxEpsilonLastSuccessProb'])
             rounds_results['maxEpsilonNonMarkingProb'][flow][path].append(samples_paths_aggregated_statistics[flow][path]['MaxEpsilonNonMarkingProb'])
             rounds_results['maxEpsilonLastNonMarkingProb'][flow][path].append(samples_paths_aggregated_statistics[flow][path]['MaxEpsilonLastNonMarkingProb'])
-            rounds_results['EndToEndSampleSize'][flow][path].append(endToEndStats[flow]['sampleSize'][path])
+            rounds_results['EndToEndSampleSizeDelay'][flow][path].append(endToEndStats[flow]['sampleSize']['delay'][path])
+            rounds_results['EndToEndSampleSizeSuccess'][flow][path].append(endToEndStats[flow]['sampleSize']['successProb'][path])
+            rounds_results['EndToEndSampleSizeMarking'][flow][path].append(endToEndStats[flow]['sampleSize']['nonMarkingProb'][path])
             AverageWorkLoad += (endToEndStats[flow]['workload'][path])
     
         rounds_results['workLoad'][flow][path].append(endToEndStats[flow]['workload'][path])
@@ -474,7 +466,9 @@ def merge_results(return_dict, merged_results, flows, queues, num_of_paths):
                 merged_results['maxEpsilonNonMarkingProb'][flow][i] += return_dict[exp]['maxEpsilonNonMarkingProb'][flow][i]
                 merged_results['maxEpsilonLastNonMarkingProb'][flow][i] += return_dict[exp]['maxEpsilonLastNonMarkingProb'][flow][i]
                 merged_results['workLoad'][flow][i] += return_dict[exp]['workLoad'][flow][i]
-                merged_results['EndToEndSampleSize'][flow][i] += return_dict[exp]['EndToEndSampleSize'][flow][i]
+                merged_results['EndToEndSampleSizeDelay'][flow][i] += return_dict[exp]['EndToEndSampleSizeDelay'][flow][i]
+                merged_results['EndToEndSampleSizeSuccess'][flow][i] += return_dict[exp]['EndToEndSampleSizeSuccess'][flow][i]
+                merged_results['EndToEndSampleSizeMarking'][flow][i] += return_dict[exp]['EndToEndSampleSizeMarking'][flow][i]
     for exp in return_dict.keys():
         merged_results['experiments'] += return_dict[exp]['experiments']
         merged_results['DropRate'] += return_dict[exp]['DropRate']
@@ -509,7 +503,7 @@ def analyze_all_experiments(rate, steadyStart, steadyEnd, confidenceValue, dir, 
         merge_results(return_dict, merged_results, flows_name, queues_names, num_of_paths)
         print("{} joind".format(i))
     merged_results['AverageWorkLoad'] = sum(merged_results['AverageWorkLoad']) / merged_results['experiments']
-    with open('../Results/results_{}/{}/Q_e2e_Poisson_forward_Results_forward_{}_{}_to_{}.json'.format(dir, rate, experiments_end, steadyStart, steadyEnd), 'w') as f:
+    with open('../Results/results_{}/{}/Q_t_subsampling_forward_Results_forward_{}_{}_to_{}.json'.format(dir, rate, experiments_end, steadyStart, steadyEnd), 'w') as f:
         js.dump(merged_results, f, indent=4)
 
 # main function
