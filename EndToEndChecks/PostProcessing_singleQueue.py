@@ -65,6 +65,9 @@ def check_all_delayConsistency(endToEnd_statistics, samples_paths_aggregated_sta
                     res['MaxEpsilonIneq'][flow][path][var_method] = check_MaxEpsilon_ineq_delay(endToEnd_statistics[flow]['delay'][var_method][path], samples_paths_aggregated_statistics[flow][path], last)
                 else:
                     e = (samples_paths_aggregated_statistics[flow][path][last + 'DelayMean'] * samples_paths_aggregated_statistics[flow][path]['MaxEpsilon' + last + 'Delay']) + endToEnd_statistics[flow]['delay'][var_method][path][1] * confidenceValue
+                    # sigma = (samples_paths_aggregated_statistics[flow][path][last + 'DelayMean'] * samples_paths_aggregated_statistics[flow][path]['MaxEpsilon' + last + 'Delay']) / confidenceValue
+                    # sigma_e = endToEnd_statistics[flow]['delay'][var_method][path][1]
+                    # e = confidenceValue * np.sqrt((sigma**2) + (sigma_e**2))
                     res['MaxEpsilonIneq'][flow][path][var_method] = (abs(endToEnd_statistics[flow]['delay'][var_method][path][0] - samples_paths_aggregated_statistics[flow][path][last + 'DelayMean']) <= e)
     return res
 
@@ -83,6 +86,10 @@ def check_all_successProbConsistency(endToEnd_statistics, samples_paths_aggregat
                     eps = samples_paths_aggregated_statistics[flow][path]['MaxEpsilon' + last + 'SuccessProb']
                     e = samples_paths_aggregated_statistics[flow][path][last + 'SuccessProbMean'] - np.log(endToEnd_statistics[flow]['successProb'][var_method][path][0])
                     res['MaxEpsilonIneq'][flow][path][var_method] = ((e <= (np.log(1+epsp) - np.log(1-eps))) and (e >= (np.log(1-epsp) - np.log(1+eps))))
+                    # sigma = (np.exp(samples_paths_aggregated_statistics[flow][path][last + 'SuccessProbMean']) * samples_paths_aggregated_statistics[flow][path]['MaxEpsilon' + last + 'SuccessProb']) / confidenceValue
+                    # sigma_e = endToEnd_statistics[flow]['successProb'][var_method][path][1]
+                    # e = confidenceValue * np.sqrt((sigma**2) + (sigma_e**2))
+                    # res['MaxEpsilonIneq'][flow][path][var_method] = (abs(np.exp(samples_paths_aggregated_statistics[flow][path][last + 'SuccessProbMean']) - endToEnd_statistics[flow]['successProb'][var_method][path][0]) <= e)
     return res
 
 def check_all_nonMarkingProbConsistency(endToEnd_statistics, samples_paths_aggregated_statistics, paths, number_of_segments):
@@ -100,6 +107,10 @@ def check_all_nonMarkingProbConsistency(endToEnd_statistics, samples_paths_aggre
                     eps = samples_paths_aggregated_statistics[flow][path]['MaxEpsilonNonMarkingProb']
                     e = samples_paths_aggregated_statistics[flow][path]['NonMarkingProbMean'] - np.log(endToEnd_statistics[flow]['nonMarkingProb'][var_method][path][0])
                     res['MaxEpsilonIneq'][flow][path][var_method] = ((e <= (np.log(1+epsp) - np.log(1-eps))) and (e >= (np.log(1-epsp) - np.log(1+eps))))
+                    # sigma = (np.exp(samples_paths_aggregated_statistics[flow][path]['NonMarkingProbMean']) * samples_paths_aggregated_statistics[flow][path]['MaxEpsilonNonMarkingProb']) / confidenceValue
+                    # sigma_e = endToEnd_statistics[flow]['nonMarkingProb'][var_method][path][1]
+                    # e = confidenceValue * np.sqrt((sigma**2) + (sigma_e**2))
+                    # res['MaxEpsilonIneq'][flow][path][var_method] = (abs(np.exp(samples_paths_aggregated_statistics[flow][path]['NonMarkingProbMean']) - endToEnd_statistics[flow]['nonMarkingProb'][var_method][path][0]) <= e)
     return res
 
 def check_all_lastNonMarkingProbConsistency(endToEnd_statistics, samples_paths_aggregated_statistics, paths, number_of_segments):
@@ -117,6 +128,11 @@ def check_all_lastNonMarkingProbConsistency(endToEnd_statistics, samples_paths_a
                     eps = samples_paths_aggregated_statistics[flow][path]['MaxEpsilonLastNonMarkingProb']
                     e = samples_paths_aggregated_statistics[flow][path]['LastNonMarkingProbMean'] - np.log(endToEnd_statistics[flow]['nonMarkingProb'][var_method][path][0])
                     res['MaxEpsilonIneq'][flow][path][var_method] = ((e <= (np.log(1+epsp) - np.log(1-eps))) and (e >= (np.log(1-epsp) - np.log(1+eps))))
+                    # sigma = (np.exp(samples_paths_aggregated_statistics[flow][path]['LastNonMarkingProbMean']) * samples_paths_aggregated_statistics[flow][path]['MaxEpsilonLastNonMarkingProb']) / confidenceValue
+                    # sigma_e = endToEnd_statistics[flow]['nonMarkingProb'][var_method][path][1]
+                    # e = confidenceValue * np.sqrt((sigma**2) + (sigma_e**2))
+                    # res['MaxEpsilonIneq'][flow][path][var_method] = (abs(np.exp(samples_paths_aggregated_statistics[flow][path]['LastNonMarkingProbMean']) - endToEnd_statistics[flow]['nonMarkingProb'][var_method][path][0]) <= e)
+
     return res
 
 def prepare_results(flows, queues, num_of_paths):
@@ -322,9 +338,8 @@ def sample_endToEnd_packets(ns3_path, rate, segment, experiment, results_folder,
     return dfs
 
             
-def analyze_single_experiment(return_dict, rate, queues_names, confidenceValue, rounds_results, results_folder, config, experiment=0, ns3_path=__ns3_path):
+def analyze_single_experiment(return_dict, rate, queues_names, confidenceValue, rounds_results, results_folder, config, experiment=0, ns3_path=__ns3_path, differentiationDelay=None, errorRate=None):
     srcHostToSwitchLinkRate = convert_to_float(config.get('SingleQueue', 'srcHostToSwitchLinkRate')) * 1e-3
-    ## TODO: FIx the next line for the reverse experiments
     bottleneckLinkRate = convert_to_float(config.get('SingleQueue', 'bottleneckLinkRate')) * rate * 1e-3
     linkDelay = convert_to_float(config.get('Settings', 'hostToTorLinkDelay')) * 1e3
     steadyStart = convert_to_float(config.get('Settings', 'steadyStart')) * 1e9
@@ -332,19 +347,13 @@ def analyze_single_experiment(return_dict, rate, queues_names, confidenceValue, 
     swtichDstREDQueueDiscMaxSize = convert_to_float(config.get('Settings', 'swtichDstREDQueueDiscMaxSize'))
     num_of_paths = 1
     paths = range(num_of_paths)
-    # endToEnd_dfs = read_online_computations(__ns3_path, rate, 'EndToEnd', str(experiment), results_folder)
-    # samples_dfs = read_online_computations(__ns3_path, rate, 'PoissonSampler', str(experiment), results_folder)
     # biasCalculator = BiasCalculator(results_folder, rate, [experiment], steadyStart, steadyEnd, rounds_results, bottleneckLinkRate)
     # biasCalculator.calculateBias(['MarkingProb', 'DropProb', 'QueuingDelay', 'LastMarkingProb'])
-    endToEndStats = calculate_offline_computations(__ns3_path, rate, 'EndToEnd_packets', str(experiment), results_folder, steadyStart, steadyEnd, "SentTime", True, "IsReceived", [srcHostToSwitchLinkRate, bottleneckLinkRate], [linkDelay, linkDelay], swtichDstREDQueueDiscMaxSize)
+    endToEndStats = calculate_offline_computations(__ns3_path, rate, 'EndToEnd_packets', str(experiment), results_folder, steadyStart, steadyEnd, "SentTime", True, "IsReceived", [srcHostToSwitchLinkRate, bottleneckLinkRate], [linkDelay, linkDelay], swtichDstREDQueueDiscMaxSize, differentiationDelay=differentiationDelay, errorRate=errorRate)
     # endToEndStats = calculate_offline_computations_on_switch(__ns3_path, results_folder, rate, experiment, 'PoissonSampler_queueSize', steadyStart, steadyEnd, paths, bottleneckLinkRate)
     # plot_queuingDelay_distribution(__ns3_path, results_folder, rate, experiment, 'PoissonSampler_queueSize', steadyStart, steadyEnd, paths, bottleneckLinkRate)
-    # print(endToEndStats)
     # calculate_offline_computations(__ns3_path, rate, 'EndToEnd_markings', str(experiment), results_folder, endToEndStats['A0D0']['first'][0], endToEndStats['A0D0']['last'][0], "Time", linksRates=[srcHostToSwitchLinkRate, bottleneckLinkRate], linkDelays=[linkDelay, linkDelay], stats=endToEndStats)
-    # print(endToEndStats)
-    samplesSats = calculate_offline_computations(__ns3_path, rate, 'PoissonSampler_events', str(experiment), results_folder, endToEndStats['A0D0']['first'][0], endToEndStats['A0D0']['last'][0], "Time", linksRates=[bottleneckLinkRate], swtichDstREDQueueDiscMaxSize=swtichDstREDQueueDiscMaxSize)
-    # print(samplesSats)
-    # print(samplesSats['SD0']['DelayMean'], endToEndStats['A0D0']['delay']['event_linearInterp_timeAvg'][0], samplesSats['SD0']['DelayStd'] / np.sqrt(samplesSats['SD0']['sampleSize']) * confidenceValue, abs(samplesSats['SD0']['DelayMean'] - endToEndStats['A0D0']['delay']['event_linearInterp_timeAvg'][0]) <= samplesSats['SD0']['DelayStd'] / np.sqrt(samplesSats['SD0']['sampleSize']) * confidenceValue)
+    samplesSats = calculate_offline_computations(__ns3_path, rate, 'PoissonSampler_events', str(experiment), results_folder, endToEndStats['A0D0']['first'][0], endToEndStats['A0D0']['last'][0], "Time", linksRates=[bottleneckLinkRate], swtichDstREDQueueDiscMaxSize=swtichDstREDQueueDiscMaxSize, differentiationDelay=differentiationDelay, errorRate=errorRate)
     rounds_results['DropRate'].append(calculate_avgDrop_rate_offline(endToEndStats, paths))
     # samples_paths_statistics
     samples_paths_aggregated_statistics = {}
@@ -474,13 +483,13 @@ def merge_results(return_dict, merged_results, flows, queues, num_of_paths):
         merged_results['DropRate'] += return_dict[exp]['DropRate']
         merged_results['AverageWorkLoad'] += return_dict[exp]['AverageWorkLoad']
     
-def analyze_all_experiments(rate, steadyStart, steadyEnd, confidenceValue, dir, config, experiments_end=3, ns3_path=__ns3_path):
+def analyze_all_experiments(rate, steadyStart, steadyEnd, confidenceValue, dir, config, experiments_end=3, ns3_path=__ns3_path, differentiationDelay=None, errorRate=None):
     results_folder = 'Results_' + dir
     num_of_paths = 1
-    flows_name = read_data_flowIndicator(ns3_path, rate, results_folder)
+    flows_name = read_data_flowIndicator(ns3_path, rate, results_folder, differentiationDelay=differentiationDelay, errorRate=errorRate)
     flows_name.sort()
 
-    queues_names = read_queues_indicators(ns3_path, rate, results_folder)
+    queues_names = read_queues_indicators(ns3_path, rate, results_folder, differentiationDelay=differentiationDelay, errorRate=errorRate)
     queues_names.sort()
 
     rounds_results = prepare_results(flows_name, queues_names, num_of_paths)
@@ -490,11 +499,16 @@ def analyze_all_experiments(rate, steadyStart, steadyEnd, confidenceValue, dir, 
         ths = []
         return_dict = multiprocessing.Manager().dict()
         for experiment in range(batch_size * i, min(experiments_end, batch_size * (i + 1))):
-            if len(os.listdir('{}/scratch/{}/{}/{}'.format(__ns3_path, results_folder, rate, experiment))) == 0:
-                print(experiment)
-                continue
+            if differentiationDelay is not None and errorRate is not None:
+                if len(os.listdir('{}/scratch/{}/{}/D_{}/f_{}/{}'.format(__ns3_path, results_folder, rate, differentiationDelay, errorRate, experiment))) == 0:
+                    print(experiment)
+                    continue
+            else:
+                if len(os.listdir('{}/scratch/{}/{}/{}'.format(__ns3_path, results_folder, rate, experiment))) == 0:
+                    print(experiment)
+                    continue
             print("Analyzing experiment: ", experiment)
-            ths.append(multiprocessing.Process(target=analyze_single_experiment, args=(return_dict, rate, queues_names, confidenceValue, rounds_results, results_folder, config, experiment, ns3_path)))
+            ths.append(multiprocessing.Process(target=analyze_single_experiment, args=(return_dict, rate, queues_names, confidenceValue, rounds_results, results_folder, config, experiment, ns3_path, differentiationDelay, errorRate)))
         
         for th in ths:
             th.start()
@@ -503,8 +517,12 @@ def analyze_all_experiments(rate, steadyStart, steadyEnd, confidenceValue, dir, 
         merge_results(return_dict, merged_results, flows_name, queues_names, num_of_paths)
         print("{} joind".format(i))
     merged_results['AverageWorkLoad'] = sum(merged_results['AverageWorkLoad']) / merged_results['experiments']
-    with open('../Results/results_{}/{}/Q_t_subsampling_forward_Results_forward_{}_{}_to_{}.json'.format(dir, rate, experiments_end, steadyStart, steadyEnd), 'w') as f:
-        js.dump(merged_results, f, indent=4)
+    if differentiationDelay is not None and errorRate is not None:
+        with open('../Results/results_{}/{}/D_{}/f_{}/Q_e_m_subsampling_forward_Results_forward_{}_{}_to_{}.json'.format(dir, rate, differentiationDelay, errorRate, experiments_end, steadyStart, steadyEnd), 'w') as f:
+            js.dump(merged_results, f, indent=4)
+    else:
+        with open('../Results/results_{}/{}/Q_e_m_subsampling_forward_Results_forward_{}_{}_to_{}.json'.format(dir, rate, experiments_end, steadyStart, steadyEnd), 'w') as f:
+            js.dump(merged_results, f, indent=4)
 
 # main function
 def __main__():
@@ -521,21 +539,31 @@ def __main__():
     steadyStart = convert_to_float(config.get('Settings', 'steadyStart'))
     steadyEnd = convert_to_float(config.get('Settings', 'steadyEnd'))
     experiments = int(config.get('Settings', 'experiments'))
-    if "forward" in args.dir:
-        serviceRateScales = [float(x) for x in config.get('Settings', 'serviceRateScales').split(',')]
-    elif "param" in args.dir:
-        serviceRateScales = [float(x) for x in config.get('Settings', 'sampleRateScales').split(',')]
-    else:
-        serviceRateScales = [float(x) for x in config.get('Settings', 'errorRateScale').split(',')]
+    # if "forward" in args.dir:
+    serviceRateScales = [float(x) for x in config.get('Settings', 'serviceRateScales').split(',')]
+    # elif "param" in args.dir:
+    #     serviceRateScales = [float(x) for x in config.get('Settings', 'sampleRateScales').split(',')]
+    # else:
+    #     serviceRateScales = [float(x) for x in config.get('Settings', 'errorRateScale').split(',')]
     # serviceRateScales = [0.51]
     # serviceRateScales = [1.0, 1.01, 1.03, 1.05]
     # serviceRateScales = [0.91, 0.93, 0.95, 0.97, 0.99, 1.01, 1.03, 1.05]
     # serviceRateScales = [float(x) for x in config.get('Settings', 'serviceRateScales').split(',')]
     # experiments = 1
-
-    for rate in serviceRateScales:
-        print("\nAnalyzing experiments for rate: ", rate)
-        analyze_all_experiments(rate, steadyStart, steadyEnd, confidenceValue, args.dir, config, experiments_end=experiments, ns3_path=__ns3_path)
-        print("Rate {} {} done".format(rate, experiments))
+    errorRates = [float(x) for x in config.get('Settings', 'errorRate').split(',')]
+    # differentiationDelay = [float(x) for x in config.get('Settings', 'differentiationDelay').split(',')]
+    # differentiationDelay = [0.35]
+    if "forward" in args.dir:
+        for rate in serviceRateScales:
+            print("\nAnalyzing experiments for rate: ", rate)
+            analyze_all_experiments(rate, steadyStart, steadyEnd, confidenceValue, args.dir, config, experiments_end=experiments, ns3_path=__ns3_path)
+            print("Rate {} {} done".format(rate, experiments))
+    else:
+        for differentiationDelay in differentiationDelay:
+            for errorRate in errorRates:
+                for rate in serviceRateScales:
+                    print("\nAnalyzing experiments for rate: ", rate)
+                    analyze_all_experiments(rate, steadyStart, steadyEnd, confidenceValue, args.dir, config, experiments_end=experiments, ns3_path=__ns3_path, differentiationDelay=differentiationDelay, errorRate=errorRate)
+                    print("Rate {} with {} and {} done".format(rate, differentiationDelay, errorRate))
 
 __main__()
