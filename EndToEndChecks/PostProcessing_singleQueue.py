@@ -53,7 +53,7 @@ def check_MaxEpsilon_ineq_lastNonMarkingProb(endToEnd_statistics, samples_paths_
     else:
         return False
     
-def check_all_delayConsistency(endToEnd_statistics, samples_paths_aggregated_statistics, paths, last=""):
+def check_all_delayConsistency(endToEnd_statistics, samples_paths_aggregated_statistics, paths, last="", bias=0):
     res = {}
     res['MaxEpsilonIneq'] = {}
     for flow in endToEnd_statistics.keys():
@@ -64,14 +64,16 @@ def check_all_delayConsistency(endToEnd_statistics, samples_paths_aggregated_sta
                 if var_method != 'event_poisson_eventAvg' and var_method != 'event_eventAvg':
                     res['MaxEpsilonIneq'][flow][path][var_method] = check_MaxEpsilon_ineq_delay(endToEnd_statistics[flow]['delay'][var_method][path], samples_paths_aggregated_statistics[flow][path], last)
                 else:
-                    e = (samples_paths_aggregated_statistics[flow][path][last + 'DelayMean'] * samples_paths_aggregated_statistics[flow][path]['MaxEpsilon' + last + 'Delay']) + endToEnd_statistics[flow]['delay'][var_method][path][1] * confidenceValue
-                    # sigma = (samples_paths_aggregated_statistics[flow][path][last + 'DelayMean'] * samples_paths_aggregated_statistics[flow][path]['MaxEpsilon' + last + 'Delay']) / confidenceValue
+                    # e = (samples_paths_aggregated_statistics[flow][path][last + 'DelayMean'] * samples_paths_aggregated_statistics[flow][path]['MaxEpsilon' + last + 'Delay']) + endToEnd_statistics[flow]['delay'][var_method][path][1] * confidenceValue
+                    sigma = (samples_paths_aggregated_statistics[flow][path][last + 'DelayMean'] * samples_paths_aggregated_statistics[flow][path]['MaxEpsilon' + last + 'Delay']) / confidenceValue
                     # sigma_e = endToEnd_statistics[flow]['delay'][var_method][path][1]
+                    sigma_e = sigma * np.sqrt(samples_paths_aggregated_statistics[flow][path]['SampleSize']) / np.sqrt(endToEnd_statistics[flow]['sampleSize']['delay'][path])
                     # e = confidenceValue * np.sqrt((sigma**2) + (sigma_e**2))
+                    e = confidenceValue * np.sqrt((sigma**2) + (sigma_e**2)) + bias
                     res['MaxEpsilonIneq'][flow][path][var_method] = (abs(endToEnd_statistics[flow]['delay'][var_method][path][0] - samples_paths_aggregated_statistics[flow][path][last + 'DelayMean']) <= e)
     return res
 
-def check_all_successProbConsistency(endToEnd_statistics, samples_paths_aggregated_statistics, paths, number_of_segments, last=""):
+def check_all_successProbConsistency(endToEnd_statistics, samples_paths_aggregated_statistics, paths, number_of_segments, last="", bias=0):
     res = {}
     res['MaxEpsilonIneq'] = {}
     for flow in endToEnd_statistics.keys():
@@ -82,17 +84,19 @@ def check_all_successProbConsistency(endToEnd_statistics, samples_paths_aggregat
                 if var_method != 'event_poisson_eventAvg' and var_method != 'probability_poisson_eventAvg' and var_method != 'event_eventAvg' and var_method != 'probability_eventAvg':
                     res['MaxEpsilonIneq'][flow][path][var_method] = check_MaxEpsilon_ineq_successProb(np.log(endToEnd_statistics[flow]['successProb'][var_method][path]), samples_paths_aggregated_statistics[flow][path], number_of_segments, last)
                 else:
-                    epsp = (endToEnd_statistics[flow]['successProb'][var_method][path][1] * confidenceValue) / endToEnd_statistics[flow]['successProb'][var_method][path][0]
-                    eps = samples_paths_aggregated_statistics[flow][path]['MaxEpsilon' + last + 'SuccessProb']
-                    e = samples_paths_aggregated_statistics[flow][path][last + 'SuccessProbMean'] - np.log(endToEnd_statistics[flow]['successProb'][var_method][path][0])
-                    res['MaxEpsilonIneq'][flow][path][var_method] = ((e <= (np.log(1+epsp) - np.log(1-eps))) and (e >= (np.log(1-epsp) - np.log(1+eps))))
-                    # sigma = (np.exp(samples_paths_aggregated_statistics[flow][path][last + 'SuccessProbMean']) * samples_paths_aggregated_statistics[flow][path]['MaxEpsilon' + last + 'SuccessProb']) / confidenceValue
+                    # epsp = (endToEnd_statistics[flow]['successProb'][var_method][path][1] * confidenceValue) / endToEnd_statistics[flow]['successProb'][var_method][path][0]
+                    # eps = samples_paths_aggregated_statistics[flow][path]['MaxEpsilon' + last + 'SuccessProb']
+                    # e = samples_paths_aggregated_statistics[flow][path][last + 'SuccessProbMean'] - np.log(endToEnd_statistics[flow]['successProb'][var_method][path][0])
+                    # res['MaxEpsilonIneq'][flow][path][var_method] = ((e <= (np.log(1+epsp) - np.log(1-eps))) and (e >= (np.log(1-epsp) - np.log(1+eps))))
+                    sigma = (np.exp(samples_paths_aggregated_statistics[flow][path][last + 'SuccessProbMean']) * samples_paths_aggregated_statistics[flow][path]['MaxEpsilon' + last + 'SuccessProb']) / confidenceValue
                     # sigma_e = endToEnd_statistics[flow]['successProb'][var_method][path][1]
+                    sigma_e = sigma * np.sqrt(samples_paths_aggregated_statistics[flow][path]['SampleSize']) / np.sqrt(endToEnd_statistics[flow]['sampleSize']['successProb'][path])
                     # e = confidenceValue * np.sqrt((sigma**2) + (sigma_e**2))
-                    # res['MaxEpsilonIneq'][flow][path][var_method] = (abs(np.exp(samples_paths_aggregated_statistics[flow][path][last + 'SuccessProbMean']) - endToEnd_statistics[flow]['successProb'][var_method][path][0]) <= e)
+                    e = confidenceValue * np.sqrt((sigma**2) + (sigma_e**2)) + bias
+                    res['MaxEpsilonIneq'][flow][path][var_method] = (abs(np.exp(samples_paths_aggregated_statistics[flow][path][last + 'SuccessProbMean']) - endToEnd_statistics[flow]['successProb'][var_method][path][0]) <= e)
     return res
 
-def check_all_nonMarkingProbConsistency(endToEnd_statistics, samples_paths_aggregated_statistics, paths, number_of_segments):
+def check_all_nonMarkingProbConsistency(endToEnd_statistics, samples_paths_aggregated_statistics, paths, number_of_segments, bias=0):
     res = {}
     res['MaxEpsilonIneq'] = {}
     for flow in endToEnd_statistics.keys():
@@ -103,17 +107,19 @@ def check_all_nonMarkingProbConsistency(endToEnd_statistics, samples_paths_aggre
                 if var_method != 'event_poisson_eventAvg' and var_method != 'event_eventAvg':
                     res['MaxEpsilonIneq'][flow][path][var_method] = check_MaxEpsilon_ineq_nonMarkingProb(np.log(endToEnd_statistics[flow]['nonMarkingProb'][var_method][path]), samples_paths_aggregated_statistics[flow][path], number_of_segments)
                 else:
-                    epsp = (endToEnd_statistics[flow]['nonMarkingProb'][var_method][path][1] * confidenceValue) / endToEnd_statistics[flow]['nonMarkingProb'][var_method][path][0]
-                    eps = samples_paths_aggregated_statistics[flow][path]['MaxEpsilonNonMarkingProb']
-                    e = samples_paths_aggregated_statistics[flow][path]['NonMarkingProbMean'] - np.log(endToEnd_statistics[flow]['nonMarkingProb'][var_method][path][0])
-                    res['MaxEpsilonIneq'][flow][path][var_method] = ((e <= (np.log(1+epsp) - np.log(1-eps))) and (e >= (np.log(1-epsp) - np.log(1+eps))))
-                    # sigma = (np.exp(samples_paths_aggregated_statistics[flow][path]['NonMarkingProbMean']) * samples_paths_aggregated_statistics[flow][path]['MaxEpsilonNonMarkingProb']) / confidenceValue
+                    # epsp = (endToEnd_statistics[flow]['nonMarkingProb'][var_method][path][1] * confidenceValue) / endToEnd_statistics[flow]['nonMarkingProb'][var_method][path][0]
+                    # eps = samples_paths_aggregated_statistics[flow][path]['MaxEpsilonNonMarkingProb']
+                    # e = samples_paths_aggregated_statistics[flow][path]['NonMarkingProbMean'] - np.log(endToEnd_statistics[flow]['nonMarkingProb'][var_method][path][0])
+                    # res['MaxEpsilonIneq'][flow][path][var_method] = ((e <= (np.log(1+epsp) - np.log(1-eps))) and (e >= (np.log(1-epsp) - np.log(1+eps))))
+                    sigma = (np.exp(samples_paths_aggregated_statistics[flow][path]['NonMarkingProbMean']) * samples_paths_aggregated_statistics[flow][path]['MaxEpsilonNonMarkingProb']) / confidenceValue
                     # sigma_e = endToEnd_statistics[flow]['nonMarkingProb'][var_method][path][1]
+                    sigma_e = sigma * np.sqrt(samples_paths_aggregated_statistics[flow][path]['SampleSize']) / np.sqrt(endToEnd_statistics[flow]['sampleSize']['nonMarkingProb'][path])
                     # e = confidenceValue * np.sqrt((sigma**2) + (sigma_e**2))
-                    # res['MaxEpsilonIneq'][flow][path][var_method] = (abs(np.exp(samples_paths_aggregated_statistics[flow][path]['NonMarkingProbMean']) - endToEnd_statistics[flow]['nonMarkingProb'][var_method][path][0]) <= e)
+                    e = confidenceValue * np.sqrt((sigma**2) + (sigma_e**2)) + bias
+                    res['MaxEpsilonIneq'][flow][path][var_method] = (abs(np.exp(samples_paths_aggregated_statistics[flow][path]['NonMarkingProbMean']) - endToEnd_statistics[flow]['nonMarkingProb'][var_method][path][0]) <= e)
     return res
 
-def check_all_lastNonMarkingProbConsistency(endToEnd_statistics, samples_paths_aggregated_statistics, paths, number_of_segments):
+def check_all_lastNonMarkingProbConsistency(endToEnd_statistics, samples_paths_aggregated_statistics, paths, number_of_segments, bias=0):
     res = {}
     res['MaxEpsilonIneq'] = {}
     for flow in endToEnd_statistics.keys():
@@ -124,14 +130,15 @@ def check_all_lastNonMarkingProbConsistency(endToEnd_statistics, samples_paths_a
                 if var_method != 'event_poisson_eventAvg' and var_method != 'event_eventAvg':
                     res['MaxEpsilonIneq'][flow][path][var_method] = check_MaxEpsilon_ineq_lastNonMarkingProb(np.log(endToEnd_statistics[flow]['nonMarkingProb'][var_method][path]), samples_paths_aggregated_statistics[flow][path], number_of_segments)
                 else:
-                    epsp = (endToEnd_statistics[flow]['nonMarkingProb'][var_method][path][1] * confidenceValue) / endToEnd_statistics[flow]['nonMarkingProb'][var_method][path][0]
-                    eps = samples_paths_aggregated_statistics[flow][path]['MaxEpsilonLastNonMarkingProb']
-                    e = samples_paths_aggregated_statistics[flow][path]['LastNonMarkingProbMean'] - np.log(endToEnd_statistics[flow]['nonMarkingProb'][var_method][path][0])
-                    res['MaxEpsilonIneq'][flow][path][var_method] = ((e <= (np.log(1+epsp) - np.log(1-eps))) and (e >= (np.log(1-epsp) - np.log(1+eps))))
-                    # sigma = (np.exp(samples_paths_aggregated_statistics[flow][path]['LastNonMarkingProbMean']) * samples_paths_aggregated_statistics[flow][path]['MaxEpsilonLastNonMarkingProb']) / confidenceValue
-                    # sigma_e = endToEnd_statistics[flow]['nonMarkingProb'][var_method][path][1]
+                    # epsp = (endToEnd_statistics[flow]['nonMarkingProb'][var_method][path][1] * confidenceValue) / endToEnd_statistics[flow]['nonMarkingProb'][var_method][path][0]
+                    # eps = samples_paths_aggregated_statistics[flow][path]['MaxEpsilonLastNonMarkingProb']
+                    # e = samples_paths_aggregated_statistics[flow][path]['LastNonMarkingProbMean'] - np.log(endToEnd_statistics[flow]['nonMarkingProb'][var_method][path][0])
+                    # res['MaxEpsilonIneq'][flow][path][var_method] = ((e <= (np.log(1+epsp) - np.log(1-eps))) and (e >= (np.log(1-epsp) - np.log(1+eps))))
+                    sigma = (np.exp(samples_paths_aggregated_statistics[flow][path]['LastNonMarkingProbMean']) * samples_paths_aggregated_statistics[flow][path]['MaxEpsilonLastNonMarkingProb']) / confidenceValue
+                    sigma_e = endToEnd_statistics[flow]['nonMarkingProb'][var_method][path][1]
                     # e = confidenceValue * np.sqrt((sigma**2) + (sigma_e**2))
-                    # res['MaxEpsilonIneq'][flow][path][var_method] = (abs(np.exp(samples_paths_aggregated_statistics[flow][path]['LastNonMarkingProbMean']) - endToEnd_statistics[flow]['nonMarkingProb'][var_method][path][0]) <= e)
+                    e = confidenceValue * np.sqrt((sigma**2) + (sigma_e**2)) + bias
+                    res['MaxEpsilonIneq'][flow][path][var_method] = (abs(np.exp(samples_paths_aggregated_statistics[flow][path]['LastNonMarkingProbMean']) - endToEnd_statistics[flow]['nonMarkingProb'][var_method][path][0]) <= e)
 
     return res
 
@@ -252,14 +259,14 @@ def prepare_results(flows, queues, num_of_paths):
 
     return rounds_results
 
-def compatibility_check(rounds_results, samples_paths_aggregated_statistics, endToEnd_statistics, flows_name, paths, number_of_segments):
+def compatibility_check(rounds_results, samples_paths_aggregated_statistics, endToEnd_statistics, flows_name, paths, number_of_segments, biasCalculator):
     # End to End and Persegment Compatibility Check
-    delay_results = check_all_delayConsistency(endToEnd_statistics, samples_paths_aggregated_statistics, paths)
-    lastDelay_results = check_all_delayConsistency(endToEnd_statistics, samples_paths_aggregated_statistics, paths, 'Last')
-    successProb_results = check_all_successProbConsistency(endToEnd_statistics, samples_paths_aggregated_statistics, paths, number_of_segments)
-    lastSuccessProb_results = check_all_successProbConsistency(endToEnd_statistics, samples_paths_aggregated_statistics, paths, number_of_segments, 'Last')
-    nonMarkingProb_results = check_all_nonMarkingProbConsistency(endToEnd_statistics, samples_paths_aggregated_statistics, paths, number_of_segments)
-    lastNonMarkingProb_results = check_all_lastNonMarkingProbConsistency(endToEnd_statistics, samples_paths_aggregated_statistics, paths, number_of_segments)
+    delay_results = check_all_delayConsistency(endToEnd_statistics, samples_paths_aggregated_statistics, paths, bias=biasCalculator.GTBias['QueuingDelay'][1.0][0])
+    lastDelay_results = check_all_delayConsistency(endToEnd_statistics, samples_paths_aggregated_statistics, paths, 'Last', biasCalculator.GTBias['QueuingDelay'][1.0][0])
+    successProb_results = check_all_successProbConsistency(endToEnd_statistics, samples_paths_aggregated_statistics, paths, number_of_segments, bias=biasCalculator.GTBias['DropProb'][1.0][0])
+    lastSuccessProb_results = check_all_successProbConsistency(endToEnd_statistics, samples_paths_aggregated_statistics, paths, number_of_segments, 'Last', bias=biasCalculator.GTBias['DropProb'][1.0][0])
+    nonMarkingProb_results = check_all_nonMarkingProbConsistency(endToEnd_statistics, samples_paths_aggregated_statistics, paths, number_of_segments, biasCalculator.GTBias['MarkingProb'][1.0][0])
+    lastNonMarkingProb_results = check_all_lastNonMarkingProbConsistency(endToEnd_statistics, samples_paths_aggregated_statistics, paths, number_of_segments, biasCalculator.GTBias['MarkingProb'][1.0][0])
 
     for flow in flows_name:
         for path in paths:
@@ -347,8 +354,11 @@ def analyze_single_experiment(return_dict, rate, queues_names, confidenceValue, 
     swtichDstREDQueueDiscMaxSize = convert_to_float(config.get('Settings', 'swtichDstREDQueueDiscMaxSize'))
     num_of_paths = 1
     paths = range(num_of_paths)
-    # biasCalculator = BiasCalculator(results_folder, rate, [experiment], steadyStart, steadyEnd, rounds_results, bottleneckLinkRate)
-    # biasCalculator.calculateBias(['MarkingProb', 'DropProb', 'QueuingDelay', 'LastMarkingProb'])
+    if differentiationDelay is not None and errorRate is not None:
+        biasCalculator = BiasCalculator(results_folder, str(rate) + "/D_" + str(differentiationDelay) + "/f_" + str(errorRate), [experiment], steadyStart, steadyEnd, rounds_results, bottleneckLinkRate)
+    else:
+        biasCalculator = BiasCalculator(results_folder, rate, [experiment], steadyStart, steadyEnd, rounds_results, bottleneckLinkRate, differentiationDelay, errorRate)
+    biasCalculator.calculateBias(['MarkingProb', 'DropProb', 'QueuingDelay', 'LastMarkingProb'])
     endToEndStats = calculate_offline_computations(__ns3_path, rate, 'EndToEnd_packets', str(experiment), results_folder, steadyStart, steadyEnd, "SentTime", True, "IsReceived", [srcHostToSwitchLinkRate, bottleneckLinkRate], [linkDelay, linkDelay], swtichDstREDQueueDiscMaxSize, differentiationDelay=differentiationDelay, errorRate=errorRate)
     # endToEndStats = calculate_offline_computations_on_switch(__ns3_path, results_folder, rate, experiment, 'PoissonSampler_queueSize', steadyStart, steadyEnd, paths, bottleneckLinkRate)
     # plot_queuingDelay_distribution(__ns3_path, results_folder, rate, experiment, 'PoissonSampler_queueSize', steadyStart, steadyEnd, paths, bottleneckLinkRate)
@@ -361,6 +371,7 @@ def analyze_single_experiment(return_dict, rate, queues_names, confidenceValue, 
         samples_paths_aggregated_statistics[flow] = {}
         for path in paths:
             samples_paths_aggregated_statistics[flow][path] = {}
+            samples_paths_aggregated_statistics[flow][path]['SampleSize'] = samplesSats['SD0']['sampleSize']
             samples_paths_aggregated_statistics[flow][path]['DelayMean'] = samplesSats['SD0']['DelayMean']
             samples_paths_aggregated_statistics[flow][path]['MaxEpsilonDelay'] = calc_epsilon(confidenceValue, samplesSats['SD0'])
             # samples_paths_aggregated_statistics[flow][path]['DelayMean'] = samplesSats['SD0']['DelayMean'] + samplesSats['H']['DelayMean']
@@ -412,7 +423,7 @@ def analyze_single_experiment(return_dict, rate, queues_names, confidenceValue, 
     rounds_results['AverageWorkLoad'].append(AverageWorkLoad / len(endToEndStats.keys()))
     rounds_results['experiments'] += 1
     number_of_segments = 1
-    compatibility_check(rounds_results, samples_paths_aggregated_statistics, endToEndStats, endToEndStats.keys(), range(num_of_paths), number_of_segments)
+    compatibility_check(rounds_results, samples_paths_aggregated_statistics, endToEndStats, endToEndStats.keys(), range(num_of_paths), number_of_segments, biasCalculator)
               
     for q in queues_names:
         # if q[0] == 'S' and q[1] == 'D':
@@ -518,10 +529,10 @@ def analyze_all_experiments(rate, steadyStart, steadyEnd, confidenceValue, dir, 
         print("{} joind".format(i))
     merged_results['AverageWorkLoad'] = sum(merged_results['AverageWorkLoad']) / merged_results['experiments']
     if differentiationDelay is not None and errorRate is not None:
-        with open('../Results/results_{}/{}/D_{}/f_{}/Q_e_m_subsampling_forward_Results_forward_{}_{}_to_{}.json'.format(dir, rate, differentiationDelay, errorRate, experiments_end, steadyStart, steadyEnd), 'w') as f:
+        with open('../Results/results_{}/{}/D_{}/f_{}/Q_e_m_WBias_sigma_subsampling_forward_Results_forward_{}_{}_to_{}.json'.format(dir, rate, differentiationDelay, errorRate, experiments_end, steadyStart, steadyEnd), 'w') as f:
             js.dump(merged_results, f, indent=4)
     else:
-        with open('../Results/results_{}/{}/Q_e_m_subsampling_forward_Results_forward_{}_{}_to_{}.json'.format(dir, rate, experiments_end, steadyStart, steadyEnd), 'w') as f:
+        with open('../Results/results_{}/{}/Q_e_m_WBias_sigma_subsampling_forward_Results_forward_{}_{}_to_{}.json'.format(dir, rate, experiments_end, steadyStart, steadyEnd), 'w') as f:
             js.dump(merged_results, f, indent=4)
 
 # main function
@@ -551,15 +562,16 @@ def __main__():
     # serviceRateScales = [float(x) for x in config.get('Settings', 'serviceRateScales').split(',')]
     # experiments = 1
     errorRates = [float(x) for x in config.get('Settings', 'errorRate').split(',')]
-    # differentiationDelay = [float(x) for x in config.get('Settings', 'differentiationDelay').split(',')]
-    # differentiationDelay = [0.35]
+    # errorRates = [0.25, 0.30, 0.35, 0.40, 0.45, 0.50]
+    differentiationDelays = [float(x) for x in config.get('Settings', 'differentiationDelay').split(',')]
+    # differentiationDelays = [0.35]
     if "forward" in args.dir:
         for rate in serviceRateScales:
             print("\nAnalyzing experiments for rate: ", rate)
             analyze_all_experiments(rate, steadyStart, steadyEnd, confidenceValue, args.dir, config, experiments_end=experiments, ns3_path=__ns3_path)
             print("Rate {} {} done".format(rate, experiments))
     else:
-        for differentiationDelay in differentiationDelay:
+        for differentiationDelay in differentiationDelays:
             for errorRate in errorRates:
                 for rate in serviceRateScales:
                     print("\nAnalyzing experiments for rate: ", rate)

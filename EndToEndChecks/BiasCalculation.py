@@ -91,7 +91,7 @@ class BiasCalculator:
             Q_e = read_and_prune_data(self.results_folder, self.rate, exp, 'SD0_PoissonSampler_queueSizeByPackets', self.steadyStart, self.steadyEnd)
             poisson = read_and_prune_data(self.results_folder, self.rate, exp, 'SD0_PoissonSampler_events', self.steadyStart, self.steadyEnd)
             selectedFlows = self.selectFlows(Q)
-            self.calculateTrafficFractions(selectedFlows, exp)
+            # self.calculateTrafficFractions(selectedFlows, exp)
             for metric in metrics:
                 _GTBias, _GTByPacketsBias, _observabilityError = self.calculateSingleExpBias(Q, Q_e, metric, selectedFlows, poisson)
                 for fractionFactor in self.fractionsFactor:

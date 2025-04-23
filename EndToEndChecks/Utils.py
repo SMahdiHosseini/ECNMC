@@ -766,8 +766,11 @@ def calculate_offline_computations_on_switch(__ns3_path, results_folder, rate, e
 
         dfs[df_name] = df_res
     return dfs
-def calculate_offline_computations(__ns3_path, rate, segment, experiment, results_folder, steadyStart, steadyEnd, projectColumn, removeDrops=True, checkColumn="", linksRates=[], linkDelays=[], swtichDstREDQueueDiscMaxSize=0, stats=None, tsh=0.15):
-    file_paths = glob.glob('{}/scratch/{}/{}/{}/*_{}.csv'.format(__ns3_path, results_folder, rate, experiment, segment))
+def calculate_offline_computations(__ns3_path, rate, segment, experiment, results_folder, steadyStart, steadyEnd, projectColumn, removeDrops=True, checkColumn="", linksRates=[], linkDelays=[], swtichDstREDQueueDiscMaxSize=0, stats=None, tsh=0.15, differentiationDelay=None, errorRate=None):
+    if differentiationDelay is not None and errorRate is not None:
+        file_paths = glob.glob('{}/scratch/{}/{}/D_{}/f_{}/{}/*_{}.csv'.format(__ns3_path, results_folder, rate, differentiationDelay, errorRate, experiment, segment))
+    else:
+        file_paths = glob.glob('{}/scratch/{}/{}/{}/*_{}.csv'.format(__ns3_path, results_folder, rate, experiment, segment))
     dfs = {}
     for file_path in file_paths:
         df_res = {}
@@ -843,16 +846,22 @@ def read_data(__ns3_path, steadyStart, steadyEnd, rate, segment, checkColumn, pr
         dfs[df_name] = df
     return dfs
 
-def read_data_flowIndicator(__ns3_path, rate, results_folder):
+def read_data_flowIndicator(__ns3_path, rate, results_folder, differentiationDelay=None, errorRate=None):
     flows_name = []
-    file_paths = glob.glob('{}/scratch/{}/{}/0/*_EndToEnd.csv'.format(__ns3_path, results_folder, rate))
+    if differentiationDelay is not None and errorRate is not None:
+        file_paths = glob.glob('{}/scratch/{}/{}/D_{}/f_{}/0/*_EndToEnd.csv'.format(__ns3_path, results_folder, rate, differentiationDelay, errorRate))
+    else:
+        file_paths = glob.glob('{}/scratch/{}/{}/0/*_EndToEnd.csv'.format(__ns3_path, results_folder, rate))
     for file_path in file_paths:
         flows_name.append(file_path.split('/')[-1].split('_')[0])
     return flows_name
 
-def read_queues_indicators(__ns3_path, rate, results_folder):
+def read_queues_indicators(__ns3_path, rate, results_folder, differentiationDelay=None, errorRate=None):
     flows_name = []
-    file_paths = glob.glob('{}/scratch/{}/{}/0/*_PoissonSampler.csv'.format(__ns3_path, results_folder, rate))
+    if differentiationDelay is not None and errorRate is not None:
+        file_paths = glob.glob('{}/scratch/{}/{}/D_{}/f_{}/0/*_PoissonSampler.csv'.format(__ns3_path, results_folder, rate, differentiationDelay, errorRate))
+    else:
+        file_paths = glob.glob('{}/scratch/{}/{}/0/*_PoissonSampler.csv'.format(__ns3_path, results_folder, rate))
     for file_path in file_paths:
         if 'C' not in file_path.split('/')[-1].split('_')[0]:
             flows_name.append(file_path.split('/')[-1].split('_')[0])

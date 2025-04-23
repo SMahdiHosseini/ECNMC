@@ -3,8 +3,13 @@ import time
 import configparser
 import threading
 import argparse
+from enum import Enum
 # __ns3_path = os.popen('locate "ns-3.41" | grep /ns-3.41$').read().splitlines()[0]
 __ns3_path = "/media/experiments/ns-allinone-3.41/ns-3.41"
+
+class ReverseType(Enum):
+    Delay = 1
+    Loss = 2
 
 class ExperimentConfig:
     def __init__(self):
@@ -32,6 +37,7 @@ class ExperimentConfig:
         self.MaxTh = "0.15"
         self.traffic = "chicago_2010_traffic_10min_2paths/path"
         self.isDifferentating = False
+        self.silentPacketDrop = False
 
     def read_config_file(self, config_file):
         config = configparser.ConfigParser()
@@ -76,6 +82,7 @@ def run_forward_experiment(exp, singleQueue=False):
     expConfig = ExperimentConfig()
     expConfig.read_config_file('Parameters.config')
     expConfig.isDifferentating = False
+    expConfig.silentPacketDrop = False
     os.system('mkdir -p {}/scratch/ECNMC/Results/results_forward/'.format(get_ns3_path()))
     # copy Parameters.config to the results folder
     os.system('cp Parameters.config {}/scratch/ECNMC/Results/results_forward/'.format(get_ns3_path()))
@@ -111,6 +118,7 @@ def run_forward_experiment(exp, singleQueue=False):
                     '--traffic={} '.format(expConfig.traffic) +
                     '--differentiationDelay={} '.format(expConfig.differentiationDelay) +
                     '--isDifferentating={} '.format(expConfig.isDifferentating) +
+                    '--silentPacketDrop={} '.format(expConfig.silentPacketDrop) +
                     '\' > {}/scratch/ECNMC/Results/results_forward/result_{}.txt'.format(get_ns3_path(), i)
                 )
             else:
@@ -145,10 +153,15 @@ def run_forward_experiment(exp, singleQueue=False):
             print('\tExperiment {} done'.format(i))
         print('Rate {} done'.format(rate))
 
-def run_reverse_experiment(exp, singleQueue=False):
+def run_reverse_experiment(exp, singleQueue=False, type=ReverseType.Delay):
     expConfig = ExperimentConfig()
     expConfig.read_config_file('Parameters.config')
-    expConfig.isDifferentating = True
+    if type == ReverseType.Delay:
+        expConfig.isDifferentating = True
+        expConfig.silentPacketDrop = False
+    else:
+        expConfig.isDifferentating = False
+        expConfig.silentPacketDrop = True
     os.system('mkdir -p {}/scratch/ECNMC/Results/results_reverse/'.format(get_ns3_path()))
     os.system('cp Parameters.config {}/scratch/ECNMC/Results/results_reverse/'.format(get_ns3_path()))
     for CRate in expConfig.serviceRateScales:
@@ -184,6 +197,7 @@ def run_reverse_experiment(exp, singleQueue=False):
                             '--traffic={} '.format(expConfig.traffic) +
                             '--differentiationDelay={} '.format(DiffRate) +
                             '--isDifferentating={} '.format(expConfig.isDifferentating) +
+                            '--silentPacketDrop={} '.format(expConfig.silentPacketDrop) +
                             '\' > {}/scratch/ECNMC/Results/results_reverse/result_{}.txt'.format(get_ns3_path(), i)
                         )
                     else:
@@ -314,10 +328,18 @@ parser.add_argument("--IsSingleQueue",
                     type=int,
                     default=0)
 
+parser.add_argument("--ReverseType",
+                    required=False,
+                    dest="reverseType",
+                    help="In case of reverse experiment, if the experiment is for delayy differentiation or silent packet drop!",
+                    type=int,
+                    default=1)
+
 args = parser.parse_args()
 args.IsForward = int(args.IsForward)
 args.IsTest = bool(args.IsTest)
 args.IsSingleQueue = bool(args.IsSingleQueue)
+args.reverseType = ReverseType(int(args.reverseType))
 # rebuild_project()
 if (args.IsForward == 1):
     if (args.IsTest):
@@ -338,7 +360,7 @@ if (args.IsForward == 1):
             th.join()
 elif(args.IsForward == 0):
     if (args.IsTest):
-        run_reverse_experiment([0], args.IsSingleQueue)
+        run_reverse_experiment([0], args.IsSingleQueue, args.reverseType)
     else:
         expConfig = ExperimentConfig()
         expConfig.read_config_file('Parameters.config')
@@ -346,7 +368,7 @@ elif(args.IsForward == 0):
         ths = []
         numOfThs = 35
         for th in range(numOfThs):
-            ths.append(threading.Thread(target=run_reverse_experiment, args=([i for i in range(int(th * expConfig.experiments / numOfThs), int((th + 1) * expConfig.experiments / numOfThs))], args.IsSingleQueue, )))
+            ths.append(threading.Thread(target=run_reverse_experiment, args=([i for i in range(int(th * expConfig.experiments / numOfThs), int((th + 1) * expConfig.experiments / numOfThs))], args.IsSingleQueue, args.reverseType, )))
 
         for th in ths:
             th.start()

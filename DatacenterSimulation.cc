@@ -153,7 +153,8 @@ void run_single_queue_simulation(int argc, char* argv[]) {
     int experiment = 1;                                // Experiment number
     double errorRate = 0.005;                          // Silent Packet Drop Error rate
     bool isDifferentating = false;                     // If the simulation is differentating
-    double differentiationDelay = 0.35;                 // Extra delay for the differentiation
+    double differentiationDelay = 0.35;                // Extra delay for the differentiation
+    bool silentPacketDrop = false;                     // If the switch should drop packets silently
 
     /*command line input*/
     CommandLine cmd;
@@ -182,6 +183,7 @@ void run_single_queue_simulation(int argc, char* argv[]) {
     cmd.AddValue("traffic", "If the is CAIDA, Merged CAIDA or BulkSend", traffic);
     cmd.AddValue("isDifferentating", "If the simulation is differentating", isDifferentating);
     cmd.AddValue("differentiationDelay", "Extra delay for the differentiation", differentiationDelay); 
+    cmd.AddValue("silentPacketDrop", "If the switch should drop packets silently", silentPacketDrop);
     cmd.Parse(argc, argv);
 
     /*set default values*/
@@ -321,6 +323,14 @@ void run_single_queue_simulation(int argc, char* argv[]) {
 
     Ipv4GlobalRoutingHelper::PopulateRoutingTables();
 
+    // /* Erro Model Setup for Silent packet drops*/
+    if (silentPacketDrop) {
+        Ptr<RateErrorModel> em_srcToSwtich = CreateObject<RateErrorModel>();
+        em_srcToSwtich->SetAttribute("ErrorRate", DoubleValue(errorRate));
+        em_srcToSwtich->SetUnit(RateErrorModel::ErrorUnit::ERROR_UNIT_PACKET);
+        srcHostsToSwitchNetDevices[0].Get(1)->SetAttribute("ReceiveErrorModel", PointerValue(em_srcToSwtich));   
+    }
+
     // Each src host sends a flow to the dst host
     for (int i = 0; i < nSrcHosts; i++) {
         auto* caidaTrafficGenerator = new BackgroundReplay(srcHosts.Get(i), dstHosts.Get(0), Seconds(stof(trafficStartTime)), Seconds(stof(trafficStopTime)));
@@ -416,6 +426,7 @@ void run_single_queue_simulation(int argc, char* argv[]) {
     cout << "traffic: " << traffic << endl;
     cout << "isDifferentating: " << isDifferentating << endl;
     cout << "differentiationDelay: " << differentiationDelay << endl;
+    cout << "silentPacketDrop: " << silentPacketDrop << endl;
 
     // /* ########## END: Check Config ########## */
 
