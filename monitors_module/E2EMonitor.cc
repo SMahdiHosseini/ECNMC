@@ -249,8 +249,8 @@ void E2EMonitor::RecordIpv4PacketReceived(Ptr<const Packet> packet, Ptr<Ipv4> ip
             // Implementation of delay de-prioritization
             Time additionalDeprioritizationDelay = Seconds(0);
             if (_isDifferentiate){
-                uint32_t temp = rand->GetInteger(1, 1 / _errorRate);
-                if (temp == 0){
+                uint32_t temp = rand->GetInteger(1, 100);
+                if ((temp <= 100 * _errorRate)){
                     additionalDeprioritizationDelay = packetKeyEventPair->second->GetReceivedTime() - transmissionDelay - packetKeyEventPair->second->GetSentTime();
                     additionalDeprioritizationDelay = Time(additionalDeprioritizationDelay.GetNanoSeconds() * _differentiationDelay);
                 }
