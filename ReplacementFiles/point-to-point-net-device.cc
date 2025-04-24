@@ -223,6 +223,7 @@ PointToPointNetDevice::DoDispose()
 DataRate 
 PointToPointNetDevice::GetDataRate()
 {
+    
     return m_bps;
 }
 // ****** Mahdi Change ***** (END) ***** //
@@ -231,6 +232,9 @@ void
 PointToPointNetDevice::SetDataRate(DataRate bps)
 {
     NS_LOG_FUNCTION(this);
+    //mahdi
+    std::cout << " GOT HERE " << bps.GetBitRate() << std::endl;
+    //mahdi
     m_bps = bps;
 }
 

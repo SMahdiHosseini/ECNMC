@@ -64,6 +64,8 @@
 #include "ns3/log.h"
 #include "ns3/simulator.h"
 #include "ns3/uinteger.h"
+#include "ns3/ipv4-header.h"
+#include "ns3/ipv4-queue-disc-item.h"
 
 namespace ns3
 {
@@ -365,8 +367,10 @@ RedQueueDisc::DoEnqueue(Ptr<QueueDiscItem> item)
 
         m_idle = 0;
     }
-
+    // ****** Mahdi Change ***** (START) ***** // 
     m_qAvg = Estimator(nQueued, m + 1, m_qAvg, m_qW);
+    // m_qAvg = Estimator(nQueued + item->GetSize(), m + 1, m_qAvg, m_qW);
+    // ****** Mahdi Change ***** (END) ***** // 
 
     NS_LOG_DEBUG("\t bytesInQueue  " << GetInternalQueue(0)->GetNBytes() << "\tQavg " << m_qAvg);
     NS_LOG_DEBUG("\t packetsInQueue  " << GetInternalQueue(0)->GetNPackets() << "\tQavg "
@@ -375,13 +379,18 @@ RedQueueDisc::DoEnqueue(Ptr<QueueDiscItem> item)
     m_count++;
     m_countBytes += item->GetSize();
 
+
     uint32_t dropType = DTYPE_NONE;
+
     if (m_qAvg >= m_minTh && nQueued > 1)
     {
         if ((!m_isGentle && m_qAvg >= m_maxTh) || (m_isGentle && m_qAvg >= 2 * m_maxTh))
         {
             NS_LOG_DEBUG("adding DROP FORCED MARK");
             dropType = DTYPE_FORCED;
+            // Mahdi
+            _lastMarkingProb = 1.0;
+            // Mahdi
         }
         else if (m_old == 0)
         {
@@ -406,6 +415,9 @@ RedQueueDisc::DoEnqueue(Ptr<QueueDiscItem> item)
         // No packets are being dropped
         m_vProb = 0.0;
         m_old = 0;
+        // Mahdi
+        _lastMarkingProb = 0.0;
+        // Mahdi
     }
 
     if (dropType == DTYPE_UNFORCED)
@@ -659,6 +671,9 @@ RedQueueDisc::DropEarly(Ptr<QueueDiscItem> item, uint32_t qSize)
     double prob1 = CalculatePNew();
     m_vProb = ModifyP(prob1, item->GetSize());
 
+    // Mahdi
+    _lastMarkingProb = m_vProb;
+    // Mahdi
     // Drop probability is computed, pick random number and act
     if (m_cautious == 1)
     {
@@ -898,15 +913,28 @@ double
 RedQueueDisc::GetMarkingProbability()
 {
     uint32_t nQueued = GetInternalQueue(0)->GetCurrentSize().GetValue();
-     if (m_qAvg >= m_minTh && nQueued > 1)
+
+    // simulate number of packets arrival during idle period
+    uint32_t m = 0;
+    if (m_idle == 1)
     {
-        if ((!m_isGentle && m_qAvg >= m_maxTh) || (m_isGentle && m_qAvg >= 2 * m_maxTh))
+        Time now = Simulator::Now();
+        m = uint32_t(m_ptc * (now - m_idleTime).GetSeconds());
+    }
+
+    double qAvg = Estimator(nQueued, m + 1, m_qAvg, m_qW);
+    // double qAvg = m_qAvg;
+    // std::cout << Simulator::Now().GetNanoSeconds() << " nQueued: " << nQueued << " mq_avg: " << qAvg << " minTh: " << m_minTh << " maxTh: " << m_maxTh << std::endl;
+    if (qAvg >= m_minTh && nQueued > 1)
+    {
+        if ((!m_isGentle && qAvg >= m_maxTh) || (m_isGentle && qAvg >= 2 * m_maxTh))
         {
             return 1.0;
         }
         else
         {
-            return m_vProb;
+            double prob1 = CalculatePNew();
+            return ModifyP(prob1, 0);
         }
     }
     else

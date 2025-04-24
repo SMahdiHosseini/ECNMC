@@ -202,6 +202,7 @@ class RedQueueDisc : public QueueDisc
 
     // ****** Mahdi Change ***** (START) ***** // 
     double GetMarkingProbability();
+    double _lastMarkingProb;
     // ****** Mahdi Change ***** (END) ***** // 
   protected:
     /**
