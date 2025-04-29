@@ -125,6 +125,10 @@ void QueueSizeTracer(Ptr<RedQueueDisc> redQueue, Ptr<PointToPointNetDevice> netD
     cout << Simulator::Now().GetNanoSeconds() << " " << name << " redQueue Size + NetDevice Queue Size: " << redQueue->GetNBytes() << " + " << netDevice->GetQueue()->GetNBytes() << " = " << redQueue->GetNBytes() + netDevice->GetQueue()->GetNBytes() << endl;
 }
 
+void SetAppMaxSize(Ptr<BulkSendApplication> app) {
+    app->SetMaxBytes(10000);
+}
+
 void run_single_queue_simulation(int argc, char* argv[]) {
     auto start = std::chrono::high_resolution_clock::now();
     cout << endl<< "Start Single Queue Simulation" << endl;
@@ -155,6 +159,7 @@ void run_single_queue_simulation(int argc, char* argv[]) {
     bool isDifferentating = false;                     // If the simulation is differentating
     double differentiationDelay = 0.35;                // Extra delay for the differentiation
     bool silentPacketDrop = false;                     // If the switch should drop packets silently
+    double load = 0.9;                                 // The load on the buttleneck link
 
     /*command line input*/
     CommandLine cmd;
@@ -184,6 +189,7 @@ void run_single_queue_simulation(int argc, char* argv[]) {
     cmd.AddValue("isDifferentating", "If the simulation is differentating", isDifferentating);
     cmd.AddValue("differentiationDelay", "Extra delay for the differentiation", differentiationDelay); 
     cmd.AddValue("silentPacketDrop", "If the switch should drop packets silently", silentPacketDrop);
+    cmd.AddValue("load", "The load on the buttleneck link", load);
     cmd.Parse(argc, argv);
 
     /*set default values*/
@@ -332,44 +338,51 @@ void run_single_queue_simulation(int argc, char* argv[]) {
     }
 
     // Each src host sends a flow to the dst host
-    for (int i = 0; i < nSrcHosts; i++) {
-        auto* caidaTrafficGenerator = new BackgroundReplay(srcHosts.Get(i), dstHosts.Get(0), Seconds(stof(trafficStartTime)), Seconds(stof(trafficStopTime)));
-        caidaTrafficGenerator->SetPctOfPacedTcps(pctPacedBack);
-        string tracesPath = "/media/experiments/" + traffic + to_string(i % 2);
-        if (std::filesystem::exists(tracesPath)) {
-            caidaTrafficGenerator->RunAllTCPTraces(tracesPath, 0);
-        } else {
-            cout << "requested Background Directory does not exist" << endl;
-        }
+    // for (int i = 0; i < nSrcHosts; i++) {
+    //     auto* caidaTrafficGenerator = new BackgroundReplay(srcHosts.Get(i), dstHosts.Get(0), Seconds(stof(trafficStartTime)), Seconds(stof(trafficStopTime)));
+    //     caidaTrafficGenerator->SetPctOfPacedTcps(pctPacedBack);
+    //     string tracesPath = "/media/experiments/" + traffic + to_string(i % 2);
+    //     if (std::filesystem::exists(tracesPath)) {
+    //         caidaTrafficGenerator->RunAllTCPTraces(tracesPath, 0);
+    //     } else {
+    //         cout << "requested Background Directory does not exist" << endl;
+    //     }
+    // }
+
+    uint16_t portsrc = 50001;
+    BulkSendHelper host("ns3::TcpSocketFactory", InetSocketAddress(dstHostsToSwitchIps.GetAddress(0), portsrc));
+    host.SetAttribute("MaxBytes", UintegerValue(10000));
+    host.SetAttribute("SendSize", UintegerValue(5000));
+    ApplicationContainer sourceApps = host.Install(srcHosts.Get(0));
+    sourceApps.Start(startTime);
+    sourceApps.Stop(stopTime);
+    PacketSinkHelper sinkSrc("ns3::TcpSocketFactory", InetSocketAddress(Ipv4Address::GetAny(), portsrc));
+    ApplicationContainer sinkSrcApps = sinkSrc.Install(dstHosts.Get(0));
+    sinkSrcApps.Start(startTime);
+    sinkSrcApps.Stop(stopTime);
+    
+    AsciiTraceHelper asciiTraceHelper;
+    Ptr<OutputStreamWrapper> stream = asciiTraceHelper.CreateFileStream((string) (getenv("PWD")) + "/Results/results_" + dirName + "/" + to_string(experiment)  + "/50001_cwnd.csv");
+    
+    Simulator::Schedule(Seconds(0.0001), &TraceCwnd, 0, 0, stream);
+    for (int i = 0; i < 2000; i++) {
+        Simulator::Schedule(NanoSeconds(i * 500000), &SetAppMaxSize, sourceApps.Get(0)->GetObject<BulkSendApplication>());
     }
+    // ct
+    uint16_t portCt = 50005;
+    BulkSendHelper ctHost("ns3::TcpSocketFactory", InetSocketAddress(dstHostsToSwitchIps.GetAddress(0), portCt));
+    ctHost.SetAttribute("MaxBytes", UintegerValue(10000));
 
-    // uint16_t portsrc = 50001;
-    // BulkSendHelper host("ns3::TcpSocketFactory", InetSocketAddress(dstHostsToSwitchIps.GetAddress(0), portsrc));
-    // host.SetAttribute("MaxBytes", UintegerValue(0));
-    // ApplicationContainer sourceApps = host.Install(srcHosts.Get(0));
-    // sourceApps.Start(startTime);
-    // sourceApps.Stop(stopTime);
-    // PacketSinkHelper sinkSrc("ns3::TcpSocketFactory", InetSocketAddress(Ipv4Address::GetAny(), portsrc));
-    // ApplicationContainer sinkSrcApps = sinkSrc.Install(dstHosts.Get(0));
-    // sinkSrcApps.Start(startTime);
-    // sinkSrcApps.Stop(stopTime);
-    
-    // AsciiTraceHelper asciiTraceHelper;
-    // Ptr<OutputStreamWrapper> stream = asciiTraceHelper.CreateFileStream("/media/experiments/ns-allinone-3.41/ns-3.41/scratch/ECNMC/Results/50001_cwnd.csv");
-    
-    // Simulator::Schedule(Seconds(0.3), &TraceCwnd, 0, 0, stream);
-    // // ct
-    // uint16_t portCt = 50005;
-    // BulkSendHelper ctHost("ns3::TcpSocketFactory", InetSocketAddress(dstHostsToSwitchIps.GetAddress(0), portCt));
-    // ctHost.SetAttribute("MaxBytes", UintegerValue(0));
-    // ApplicationContainer ctApps = ctHost.Install(srcHosts.Get(1));
-    // ctApps.Start(startTime);
-    // ctApps.Stop(stopTime);
-    // PacketSinkHelper sinkCt("ns3::TcpSocketFactory", InetSocketAddress(Ipv4Address::GetAny(), portCt));
-    // ApplicationContainer sinkCtApps = sinkCt.Install(dstHosts.Get(0));
-    // sinkCtApps.Start(startTime);
-    // sinkCtApps.Stop(stopTime);
-
+    ApplicationContainer ctApps = ctHost.Install(srcHosts.Get(1));
+    ctApps.Start(startTime);
+    ctApps.Stop(stopTime);
+    PacketSinkHelper sinkCt("ns3::TcpSocketFactory", InetSocketAddress(Ipv4Address::GetAny(), portCt));
+    ApplicationContainer sinkCtApps = sinkCt.Install(dstHosts.Get(0));
+    sinkCtApps.Start(startTime);
+    sinkCtApps.Stop(stopTime);
+    for (int i = 0; i < 2000; i++) {
+        Simulator::Schedule(NanoSeconds(i * 500000 + 300), &SetAppMaxSize, ctApps.Get(0)->GetObject<BulkSendApplication>());
+    }
     ns3::PacketMetadata::Enable();
     // Monitor the packets between src Host 0 and dst Host 0
     auto *S0D0Monitor = new E2EMonitor(startTime, Seconds(stof(steadyStopTime)) + convergenceTime, Seconds(stof(steadyStartTime)), Seconds(stof(steadyStopTime)), DynamicCast<PointToPointNetDevice>(srcHostsToSwitchNetDevices[0].Get(0)), dstHosts.Get(0), srcHosts.Get(0), "A0D0", errorRate, DataRate(srcHostToSwitchLinkRate), DataRate(bottleneckLinkRate), Time(hostToSwitchLinkDelay), 1, 1, QueueSize(swtichDstREDQueueDiscMaxSize).GetValue(), isDifferentating, differentiationDelay);
