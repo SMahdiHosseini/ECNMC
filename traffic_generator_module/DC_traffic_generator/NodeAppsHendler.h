@@ -1,9 +1,9 @@
 //
-// Created by nal on 25.03.25
+// Created by nal on 24.04.25
 //
 
-#ifndef POISSONREPLAYSENDER_H
-#define POISSONREPLAYSENDER_H
+#ifndef NODEAPPSHANDLER_H
+#define NODEAPPSHANDLER_H
 
 #include "ns3/core-module.h"
 #include "ns3/applications-module.h"
@@ -15,21 +15,20 @@ using namespace ns3;
 using namespace std;
 using namespace helper_methods;
 
-class PoissonReplaySender : public Application {
+class NodeAppsHandler : public Application {
 
 private:
     void StartApplication() override;
-    void PrepareSocket();
+    void PrepareSockets();
     void StopApplication() override;
     void Send();
     void ScheduleNextSend();
 
-    Ptr<Socket> _socket;
-    Address _receiverAddress;
+    std::unordered_map<Address, vector<Ptr<Socket>>> _connectionPool;
+    std::vector<Address> _receiverAddress;
     string _protocol;
-    uint32_t _frameNb;
-    EventId _sendEvent;
     double _rate;
+    uint32_t _connectionSize;
     Ptr<ExponentialRandomVariable> m_var;;
 
 protected:
@@ -38,10 +37,10 @@ protected:
 public:
     static TypeId GetTypeId();
 
-    PoissonReplaySender();
-    ~PoissonReplaySender() override;
+    NodeAppsHandler();
+    ~NodeAppsHandler() override;
 
 };
 
 
-#endif //POISSONREPLAYSENDER_H
+#endif //NODEAPPSHANDLER_H
