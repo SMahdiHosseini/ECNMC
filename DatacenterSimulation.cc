@@ -18,6 +18,7 @@
 #include "monitors_module/NetDeviceMonitor.h"
 #include "monitors_module/BurstMonitor.h"
 #include "traffic_generator_module/background_replay/BackgroundReplay.h"
+#include "traffic_generator_module/DC_traffic_generator/NodeAppsHandler.h"
 #include <iomanip>
 #include <iostream>
 #include <string>
@@ -126,7 +127,7 @@ void QueueSizeTracer(Ptr<RedQueueDisc> redQueue, Ptr<PointToPointNetDevice> netD
 }
 
 void SetAppMaxSize(Ptr<BulkSendApplication> app) {
-    app->SetMaxBytes(10000);
+    app->SetMaxBytes(20000);
 }
 
 void run_single_queue_simulation(int argc, char* argv[]) {
@@ -206,6 +207,7 @@ void run_single_queue_simulation(int argc, char* argv[]) {
     Config::SetDefault("ns3::TcpSocket::SegmentSize", UintegerValue(1448));
     Config::SetDefault("ns3::TcpSocket::DelAckCount", UintegerValue(2));
     Config::SetDefault("ns3::TcpSocket::SndBufSize", UintegerValue(25000000));
+    Config::SetDefault("ns3::TcpSocket::RcvBufSize", UintegerValue(25000000));
     GlobalValue::Bind("ChecksumEnabled", BooleanValue(false));
     Config::SetDefault("ns3::RedQueueDisc::UseHardDrop", BooleanValue(false));
     Config::SetDefault("ns3::RedQueueDisc::MeanPktSize", UintegerValue(1000));
@@ -348,46 +350,55 @@ void run_single_queue_simulation(int argc, char* argv[]) {
     //         cout << "requested Background Directory does not exist" << endl;
     //     }
     // }
-
-    uint16_t portsrc = 50001;
-    BulkSendHelper host("ns3::TcpSocketFactory", InetSocketAddress(dstHostsToSwitchIps.GetAddress(0), portsrc));
-    host.SetAttribute("MaxBytes", UintegerValue(10000));
-    host.SetAttribute("SendSize", UintegerValue(5000));
-    ApplicationContainer sourceApps = host.Install(srcHosts.Get(0));
-    sourceApps.Start(startTime);
-    sourceApps.Stop(stopTime);
-    PacketSinkHelper sinkSrc("ns3::TcpSocketFactory", InetSocketAddress(Ipv4Address::GetAny(), portsrc));
-    ApplicationContainer sinkSrcApps = sinkSrc.Install(dstHosts.Get(0));
-    sinkSrcApps.Start(startTime);
-    sinkSrcApps.Stop(stopTime);
+    ObjectFactory factory;
+    factory.SetTypeId(NodeAppsHandler::GetTypeId());
+    factory.Set("StartTime", TimeValue(Seconds(0)));
+    factory.Set("StopTime", TimeValue(Seconds(0.2)));
+    Ptr<NodeAppsHandler> nodeAppsHandler = factory.Create<NodeAppsHandler>();
+    srcHosts.Get(0)->AddApplication(nodeAppsHandler);
+    // uint16_t portsrc = 50001;
+    // BulkSendHelper host("ns3::TcpSocketFactory", InetSocketAddress(dstHostsToSwitchIps.GetAddress(0), portsrc));
+    // host.SetAttribute("MaxBytes", UintegerValue(0));
+    // // host.SetAttribute("MaxBytes", UintegerValue(10000));
+    // // host.SetAttribute("SendSize", UintegerValue(10000));
+    // ApplicationContainer sourceApps = host.Install(srcHosts.Get(0));
+    // sourceApps.Start(startTime);
+    // sourceApps.Stop(stopTime);
+    // PacketSinkHelper sinkSrc("ns3::TcpSocketFactory", InetSocketAddress(Ipv4Address::GetAny(), portsrc));
+    // ApplicationContainer sinkSrcApps = sinkSrc.Install(dstHosts.Get(0));
+    // sinkSrcApps.Start(startTime);
+    // sinkSrcApps.Stop(stopTime);
     
-    AsciiTraceHelper asciiTraceHelper;
-    Ptr<OutputStreamWrapper> stream = asciiTraceHelper.CreateFileStream((string) (getenv("PWD")) + "/Results/results_" + dirName + "/" + to_string(experiment)  + "/50001_cwnd.csv");
+    // AsciiTraceHelper asciiTraceHelper;
+    // Ptr<OutputStreamWrapper> stream = asciiTraceHelper.CreateFileStream((string) (getenv("PWD")) + "/Results/results_" + dirName + "/" + to_string(experiment)  + "/50001_cwnd.csv");
     
-    Simulator::Schedule(Seconds(0.0001), &TraceCwnd, 0, 0, stream);
-    for (int i = 0; i < 2000; i++) {
-        Simulator::Schedule(NanoSeconds(i * 500000), &SetAppMaxSize, sourceApps.Get(0)->GetObject<BulkSendApplication>());
-    }
-    // ct
-    uint16_t portCt = 50005;
-    BulkSendHelper ctHost("ns3::TcpSocketFactory", InetSocketAddress(dstHostsToSwitchIps.GetAddress(0), portCt));
-    ctHost.SetAttribute("MaxBytes", UintegerValue(10000));
+    // Simulator::Schedule(Seconds(0.0001), &TraceCwnd, 0, 0, stream);
+    // // for (int i = 0; i < 2000; i++) {
+    // //     Simulator::Schedule(NanoSeconds(i * 500000), &SetAppMaxSize, sourceApps.Get(0)->GetObject<BulkSendApplication>());
+    // // }
+    // // ct
+    // uint16_t portCt = 50005;
+    // BulkSendHelper ctHost("ns3::TcpSocketFactory", InetSocketAddress(dstHostsToSwitchIps.GetAddress(0), portCt));
+    // // ctHost.SetAttribute("MaxBytes", UintegerValue(10000));
+    // ctHost.SetAttribute("MaxBytes", UintegerValue(0));
 
-    ApplicationContainer ctApps = ctHost.Install(srcHosts.Get(1));
-    ctApps.Start(startTime);
-    ctApps.Stop(stopTime);
-    PacketSinkHelper sinkCt("ns3::TcpSocketFactory", InetSocketAddress(Ipv4Address::GetAny(), portCt));
-    ApplicationContainer sinkCtApps = sinkCt.Install(dstHosts.Get(0));
-    sinkCtApps.Start(startTime);
-    sinkCtApps.Stop(stopTime);
-    for (int i = 0; i < 2000; i++) {
-        Simulator::Schedule(NanoSeconds(i * 500000 + 300), &SetAppMaxSize, ctApps.Get(0)->GetObject<BulkSendApplication>());
-    }
+    // ApplicationContainer ctApps = ctHost.Install(srcHosts.Get(1));
+    // ctApps.Start(startTime);
+    // ctApps.Stop(stopTime);
+    // PacketSinkHelper sinkCt("ns3::TcpSocketFactory", InetSocketAddress(Ipv4Address::GetAny(), portCt));
+    // ApplicationContainer sinkCtApps = sinkCt.Install(dstHosts.Get(0));
+    // sinkCtApps.Start(startTime);
+    // sinkCtApps.Stop(stopTime);
+    // for (int i = 0; i < 2000; i++) {
+    //     Simulator::Schedule(NanoSeconds(i * 500000), &SetAppMaxSize, ctApps.Get(0)->GetObject<BulkSendApplication>());
+    // }
     ns3::PacketMetadata::Enable();
     // Monitor the packets between src Host 0 and dst Host 0
     auto *S0D0Monitor = new E2EMonitor(startTime, Seconds(stof(steadyStopTime)) + convergenceTime, Seconds(stof(steadyStartTime)), Seconds(stof(steadyStopTime)), DynamicCast<PointToPointNetDevice>(srcHostsToSwitchNetDevices[0].Get(0)), dstHosts.Get(0), srcHosts.Get(0), "A0D0", errorRate, DataRate(srcHostToSwitchLinkRate), DataRate(bottleneckLinkRate), Time(hostToSwitchLinkDelay), 1, 1, QueueSize(swtichDstREDQueueDiscMaxSize).GetValue(), isDifferentating, differentiationDelay);
     S0D0Monitor->AddAppKey(AppKey(srcHostsToSwitchIps[0].GetAddress(0), dstHostsToSwitchIps.GetAddress(0), 0, 0));
 
+    // auto *C0D0Monitor = new E2EMonitor(startTime, Seconds(stof(steadyStopTime)) + convergenceTime, Seconds(stof(steadyStartTime)), Seconds(stof(steadyStopTime)), DynamicCast<PointToPointNetDevice>(ctHostsToSwitchNetDevices[0].Get(0)), dstHosts.Get(0), srcHosts.Get(1), "C0D0", errorRate, DataRate(ctHostToSwitchLinkRate), DataRate(bottleneckLinkRate), Time(hostToSwitchLinkDelay), 1, 1, QueueSize(swtichDstREDQueueDiscMaxSize).GetValue(), isDifferentating, differentiationDelay);
+    // C0D0Monitor->AddAppKey(AppKey(ctHostsToSwitchIps[0].GetAddress(0), dstHostsToSwitchIps.GetAddress(0), 0, 0));
     // Ptr<PointToPointNetDevice> hostToSwitchrNetDevice = DynamicCast<PointToPointNetDevice>(srcHostsToSwitchNetDevices[0].Get(0));
     // auto *hostToSwitchrSampler = new PoissonSampler(Seconds(stof(steadyStartTime)), Seconds(stof(steadyStopTime)), nullptr, hostToSwitchrNetDevice->GetQueue(), hostToSwitchrNetDevice, "H", sampleRate);
 
@@ -440,7 +451,7 @@ void run_single_queue_simulation(int argc, char* argv[]) {
     cout << "isDifferentating: " << isDifferentating << endl;
     cout << "differentiationDelay: " << differentiationDelay << endl;
     cout << "silentPacketDrop: " << silentPacketDrop << endl;
-
+    cout << "load: " << load << endl;
     // /* ########## END: Check Config ########## */
 
 
@@ -451,7 +462,7 @@ void run_single_queue_simulation(int argc, char* argv[]) {
     Simulator::Destroy();
 
     S0D0Monitor->SaveMonitorRecords((string) (getenv("PWD")) + "/Results/results_" + dirName + "/" + to_string(experiment)  + "/" + S0D0Monitor->GetMonitorTag() + "_EndToEnd.csv");
-
+    // C0D0Monitor->SaveMonitorRecords((string) (getenv("PWD")) + "/Results/results_" + dirName + "/" + to_string(experiment)  + "/" + C0D0Monitor->GetMonitorTag() + "_EndToEnd.csv");
     // switchMonitor->SavePacketRecords((string) (getenv("PWD")) + "/Results/results_" + dirName + "/" + to_string(experiment)  + "/" + switchMonitor->GetMonitorTag() + "_Switch.csv");
     // hostToSwitchrSampler->SaveMonitorRecords((string) (getenv("PWD")) + "/Results/results_" + dirName + "/" + to_string(experiment)  + "/" + hostToSwitchrSampler->GetMonitorTag() + "_PoissonSampler.csv");
     switchToDstSampler->SaveMonitorRecords((string) (getenv("PWD")) + "/Results/results_" + dirName + "/" + to_string(experiment)  + "/" + switchToDstSampler->GetMonitorTag() + "_PoissonSampler.csv");

@@ -6,8 +6,8 @@ import numpy as np
 import argparse
 
 # __ns3_path = os.popen('locate "ns-3.41" | grep /ns-3.41$').read().splitlines()[0]
-# __ns3_path = "/media/experiments/ns-allinone-3.41/ns-3.41"
-__ns3_path = '/Users/shossein/Documents/NAL/Flwo-Path_Consistency/ns-allinone-3.41/ns-3.41'
+__ns3_path = "/media/experiments/ns-allinone-3.41/ns-3.41"
+# __ns3_path = '/Users/shossein/Documents/NAL/Flwo-Path_Consistency/ns-allinone-3.41/ns-3.41'
 
 def __main__():
     parser=argparse.ArgumentParser()

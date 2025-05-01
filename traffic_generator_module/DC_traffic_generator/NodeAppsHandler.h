@@ -23,20 +23,23 @@ private:
     void StopApplication() override;
     void Send();
     void ScheduleNextSend();
+    void ReadWorkloadFile();
 
-    std::unordered_map<Address, vector<Ptr<Socket>>> _connectionPool;
+    // std::unordered_map<Address, vector<Ptr<Socket>>> _connectionPool;
     std::vector<Address> _receiverAddress;
     string _protocol;
     double _rate;
-    uint32_t _connectionSize;
+    uint32_t _connectionPoolSize;
     Ptr<ExponentialRandomVariable> m_var;;
-
+    EventId _sendEvent;
+    std::string workloadFile;
+    Ptr<EmpiricalRandomVariable> m_erv;
 protected:
     void DoDispose() override;
 
 public:
     static TypeId GetTypeId();
-
+    void addReceiverAddress(Address address);
     NodeAppsHandler();
     ~NodeAppsHandler() override;
 

@@ -1,109 +1,8 @@
-import numpy as np
-# from Utils import *
+# import numpy as np
+# # from Utils import *
 
-list =[
-                143,
-                168,
-                154,
-                158,
-                167,
-                168,
-                145,
-                157,
-                167,
-                167,
-                154,
-                153,
-                138,
-                165,
-                159,
-                165,
-                164,
-                152,
-                157,
-                155,
-                152,
-                133,
-                152,
-                169,
-                159,
-                157,
-                168,
-                157,
-                167,
-                153,
-                156,
-                168,
-                156,
-                154,
-                152,
-                120,
-                141,
-                172,
-                157,
-                162,
-                157,
-                154,
-                157,
-                132,
-                157,
-                164,
-                153,
-                152,
-                149,
-                152,
-                152,
-                158,
-                166,
-                158,
-                153,
-                157,
-                160,
-                143,
-                171,
-                169,
-                164,
-                157,
-                161,
-                160,
-                153,
-                153,
-                153,
-                157,
-                158,
-                158,
-                155,
-                141,
-                158,
-                153,
-                120,
-                169,
-                138,
-                131,
-                148,
-                166,
-                164,
-                166,
-                156,
-                133,
-                158,
-                164,
-                163,
-                166,
-                155,
-                158,
-                138,
-                141,
-                168,
-                160,
-                155,
-                157,
-                165,
-                156,
-                165,
-                154
-            ]
-print(np.average(list))
+# list =[]
+# print(np.average(list))
 # print(np.average([x[0] for x in list]))
 # import matplotlib.pyplot as plt
 # import numpy as np
@@ -157,3 +56,96 @@ print(np.average(list))
 
 # plt.grid(True, linestyle='--', alpha=0.5)
 # plt.show()
+
+
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.stats import anderson
+
+def read_data(filename):
+    times = []
+    sizes = []
+
+    with open(filename, 'r') as f:
+        for line in f:
+            if ',' not in line:
+                continue
+            time_str, size_str = line.strip().split(',')
+            try:
+                times.append(float(time_str))
+                sizes.append(float(size_str))
+            except ValueError:
+                continue
+
+    return np.array(times), np.array(sizes)
+
+def read_actual_cdf(filename):
+    x_vals = []
+    cdf_vals = []
+
+    with open(filename, 'r') as f:
+        i = 0
+        for line in f:
+            if i == 0:
+                i += 1
+                continue
+            x_str, cdf_str = line.strip().split()
+            try:
+                x_vals.append(float(x_str))
+                cdf_vals.append(float(cdf_str))
+            except ValueError:
+                continue
+    return np.array(x_vals), np.array(cdf_vals)
+
+def check_poisson_process(times):
+    sorted_times = np.sort(times)
+    inter_arrivals = np.diff(sorted_times)
+
+    normalized = inter_arrivals / np.mean(inter_arrivals)
+
+    result = anderson(normalized, dist='expon')
+
+    print("Anderson-Darling Test Statistic:", result.statistic)
+    print("Critical Values:", result.critical_values)
+    print("Significance Levels:", result.significance_level)
+
+    for stat, alpha in zip(result.critical_values, result.significance_level):
+        if result.statistic < stat:
+            print(f"At {alpha}%: Inter-arrivals are exponential ⇒ Poisson process likely.")
+        else:
+            print(f"At {alpha}%: Inter-arrivals are not exponential ⇒ Not Poisson.")
+
+def plot_size_cdf(sizes, actual_cdf_file=None):
+    sorted_sizes = np.sort(sizes)
+    cdf_empirical = np.arange(1, len(sizes) + 1) / len(sizes)
+
+    plt.figure(figsize=(8, 6))
+    plt.plot(sorted_sizes, cdf_empirical, label="Empirical CDF", marker='.', linestyle='none')
+
+    if actual_cdf_file:
+        x_vals, cdf_vals = read_actual_cdf(actual_cdf_file)
+        plt.plot(x_vals, cdf_vals, label="Actual CDF", color='orange', linewidth=2)
+    
+    plt.xscale('log')
+
+    plt.xlabel("Size")
+    plt.ylabel("CDF")
+    plt.title("Empirical vs Actual CDF of Sizes")
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    plt.savefig("size_cdf.png")
+
+if __name__ == "__main__":
+    traffic_file = "temp.txt"        # time,size file
+    actual_cdf_file = "../DCWorkloads/Google_AllRPC.txt"       # value,cdf file
+
+    times, sizes = read_data(traffic_file)
+
+    if len(times) < 2:
+        print("Not enough data to analyze.")
+    else:
+        check_poisson_process(times)
+        plot_size_cdf(sizes, actual_cdf_file)
+
+

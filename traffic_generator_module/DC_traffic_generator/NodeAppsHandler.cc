@@ -7,30 +7,29 @@ NS_LOG_COMPONENT_DEFINE ("NodeAppsHandler");
 
 NS_OBJECT_ENSURE_REGISTERED (NodeAppsHandler);
 
-TypeId PoissonReplaySender::GetTypeId() {
+TypeId NodeAppsHandler::GetTypeId() {
 
     static TypeId tid = TypeId ("ns3::NodeAppsHandler")
             .SetParent<Application> ()
             .SetGroupName("Applications")
             .AddConstructor<NodeAppsHandler> ()
-            .AddAttribute("ConnectionSize",
+            .AddAttribute("ConnectionPoolSize",
                            "The number of connections to be created",
                            UintegerValue(1),
-                           MakeUintegerAccessor(&NodeAppsHandler::_connectionSize),
+                           MakeUintegerAccessor(&NodeAppsHandler::_connectionPoolSize),
                            MakeUintegerChecker<uint32_t>())
-            .AddAttribute ("RemoteAddresses",
-                           "The destination Address of othe nodes to send packets to",
-                           vector<AddressValue()>(),
-                           MakeAddressAccessor (&NodeAppsHandler::_receiverAddress),
-                           MakeAddressChecker())
             .AddAttribute ("Protocol", "the name of the protocol to use to send traffic by the applications",
                            StringValue ("ns3::TcpSocketFactory"),
                            MakeStringAccessor (&NodeAppsHandler::_protocol),
                            MakeStringChecker())
             .AddAttribute("Rate", "The rate of the Poisson process (request per second)",
                           DoubleValue(5000.0),
-                          MakeDoubleAccessor(&PoissonReplaySender::_rate),
+                          MakeDoubleAccessor(&NodeAppsHandler::_rate),
                           MakeDoubleChecker<double>())
+            .AddAttribute("WorkloadFile", "The workload file to be used",
+                          StringValue("scratch/ECNMC/DCWorkloads/Google_AllRPC.txt"),
+                          MakeStringAccessor(&NodeAppsHandler::workloadFile),
+                          MakeStringChecker())
     ;
     return tid;
 }
@@ -38,7 +37,41 @@ TypeId PoissonReplaySender::GetTypeId() {
 NodeAppsHandler::NodeAppsHandler() {
     NS_LOG_FUNCTION (this);
     m_var = CreateObject<ExponentialRandomVariable>();
-    m_var->SetAttribute("Mean", DoubleValue(1 / _rate));
+    m_erv = CreateObject<EmpiricalRandomVariable>();
+}
+
+NodeAppsHandler::~NodeAppsHandler() {
+    NS_LOG_FUNCTION (this);
+    Simulator::Cancel(_sendEvent);
+    DoDispose();
+}
+
+void NodeAppsHandler::ReadWorkloadFile() {
+    NS_LOG_FUNCTION (this);
+    std::ifstream file(workloadFile);
+    if (!file.is_open()) {
+        NS_FATAL_ERROR("Could not open workload file: " << workloadFile);
+    }
+
+    std::string line;
+    std::getline(file, line); // Skip the header line
+    while (std::getline(file, line)) {
+        std::istringstream iss(line);
+        double value;
+        double cdf;
+        if (!(iss >> value >> cdf)) {
+            NS_FATAL_ERROR("Error reading line from workload file: " << line);
+        }
+        // Assuming the workload file contains pairs of (value, cdf)
+        // Add the value and cdf to the empirical random variable
+        m_erv->CDF(value, cdf);
+    }
+    file.close();
+}
+
+void NodeAppsHandler::addReceiverAddress(Address address) {
+    NS_LOG_FUNCTION (this);
+    _receiverAddress.push_back(address);
 }
 
 void NodeAppsHandler::DoDispose() {
@@ -49,68 +82,59 @@ void NodeAppsHandler::DoDispose() {
 
 void NodeAppsHandler::StartApplication() {
     NS_LOG_FUNCTION(this);
+    m_var->SetAttribute("Mean", DoubleValue(1/_rate));
+    ReadWorkloadFile();
     PrepareSockets();
 }
 
 void NodeAppsHandler::PrepareSockets() {
     NS_LOG_FUNCTION (this);
 
-    for (auto &address : _receiverAddress) {
-        NS_LOG_INFO("Receiver address: " << Ipv4Address::ConvertFrom(address));
-        Ptr<Socket> socket = Socket::CreateSocket(GetNode(), TypeId::LookupByName(_protocol));
-        if socket->Bind();
-        socket->Connect(address);
-        socket->SetAllowBroadcast (true);
-        socket->SetRecvCallback (MakeNullCallback<void, Ptr<Socket> > ());
-        _connectionPool[address].push_back(socket);
-    }
-    // if (!_socket)     {
-    //     TypeId tid = TypeId::LookupByName (_protocol);
-    //     _socket = Socket::CreateSocket (GetNode (), tid);
-    //     if (_socket->Bind () == -1) {
-    //         NS_FATAL_ERROR ("Failed to bind socket");
+    // for (auto &address : _receiverAddress) {
+    //     NS_LOG_INFO("Preparing connections for receiver address: " << Ipv4Address::ConvertFrom(address));
+    //     for (int i = 0; i < _connectionPoolSize; ++i) {
+    //         NS_LOG_INFO("Creating connection " << i + 1 << " for receiver address: " << Ipv4Address::ConvertFrom(address));
+        
+    //         Ptr<Socket> socket = Socket::CreateSocket(GetNode(), TypeId::LookupByName(_protocol));
+    //         if (socket->Bind () == -1) {
+    //             NS_FATAL_ERROR ("Failed to bind socket");
+    //         }
+    //         socket->Connect(address);
+    //         socket->SetAllowBroadcast (true);
+    //         socket->SetRecvCallback (MakeNullCallback<void, Ptr<Socket> > ());
+    //         if(_protocol == "ns3::TcpSocketFactory") {
+    //             Ptr<TcpSocketBase> tcpSocket = _socket->GetObject<TcpSocketBase>();
+    //             tcpSocket->SetPacingStatus(0);
+    //         }
+    //         _connectionPool[address].push_back(socket);
     //     }
-    //     _socket->Connect(_receiverAddress);
     // }
-
-    // // part to change starts from here
-    // _socket->SetRecvCallback (MakeNullCallback<void, Ptr<Socket> > ());
-    // _socket->SetAllowBroadcast (true);
-
-    // // to enable/disable pacing for the measurement traffic
-    // if(_protocol == "ns3::TcpSocketFactory") {
-    //     Ptr<TcpSocketBase> tcpSocket = _socket->GetObject<TcpSocketBase>();
-    //     tcpSocket->SetPacingStatus(0);
-    // }
-    // _sendEvent = Simulator::Schedule(Seconds(0), &PoissonReplaySender::ScheduleNextSend, this);
+    double nextEventTime = m_var->GetValue();
+    _sendEvent = Simulator::Schedule(Seconds(nextEventTime), &NodeAppsHandler::ScheduleNextSend, this);
 }
 
-void PoissonReplaySender::StopApplication() {
+void NodeAppsHandler::StopApplication() {
     NS_LOG_FUNCTION (this);
 
-    _socket->Dispose();
+    // _socket->Dispose();
     Simulator::Cancel (_sendEvent);
     DoDispose();
 }
 
-void PoissonReplaySender::Send() {
+void NodeAppsHandler::Send() {
     NS_LOG_FUNCTION(this);
-
-    SeqTsHeader seqTs;
-    seqTs.SetSeq (_frameNb++);
-    uint32_t segmentSize = 1448;
-    Ptr<Packet> p = Create<Packet>(segmentSize);
-    p->AddHeader(seqTs);
-
-    if ((_socket->Send (p)) < 0) {
-        NS_LOG_INFO ("Error while sending " << segmentSize << " bytes to "
-                                            << Ipv4Address::ConvertFrom (_receiverAddress));
-    }
+    uint32_t segmentSize = m_erv->GetValue();
+    // segmentSize *= 1442; // for DCTCP workload
+    cout << Simulator::Now().GetNanoSeconds() << "," << segmentSize << endl;
+    // if ((_socket->Send (p)) < 0) {
+    //     NS_LOG_INFO ("Error while sending " << segmentSize << " bytes to "
+    //                                         << Ipv4Address::ConvertFrom (_receiverAddress));
+    // }
 }
 
-void PoissonReplaySender::ScheduleNextSend() {
+void NodeAppsHandler::ScheduleNextSend() {
     Send();
     double nextEvent = m_var->GetValue();
-    _sendEvent = Simulator::Schedule(Seconds(nextEvent), &PoissonReplaySender::ScheduleNextSend, this);
+    _sendEvent = Simulator::Schedule(Seconds(nextEvent), &NodeAppsHandler::ScheduleNextSend, this);
 }
 
