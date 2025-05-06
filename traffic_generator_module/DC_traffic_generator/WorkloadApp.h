@@ -2,48 +2,50 @@
 // Created by nal on 24.04.25
 //
 
-#ifndef NODEAPPSHANDLER_H
-#define NODEAPPSHANDLER_H
+#ifndef WORKLOAD_APP_H
+#define WORKLOAD_APP_H
 
 #include "ns3/core-module.h"
 #include "ns3/applications-module.h"
 #include "ns3/internet-module.h"
 
 #include "../../helper_classes/HelperMethods.h"
+#include "ConnectionPool.h"
 
 using namespace ns3;
 using namespace std;
 using namespace helper_methods;
 
-class NodeAppsHandler : public Application {
+class WorkloadApp : public Application {
 
 private:
     void StartApplication() override;
-    void PrepareSockets();
+    void PrepareConnections();
     void StopApplication() override;
     void Send();
     void ScheduleNextSend();
     void ReadWorkloadFile();
 
-    // std::unordered_map<Address, vector<Ptr<Socket>>> _connectionPool;
-    std::vector<Address> _receiverAddress;
+    vector<vector<Address>> _receiverAddress;
+    vector<ConnectionPool> _connectionPools;
     string _protocol;
     double _rate;
-    uint32_t _connectionPoolSize;
+    uint32_t _receiversNumber;
     Ptr<ExponentialRandomVariable> m_var;;
     EventId _sendEvent;
-    std::string workloadFile;
+    std::string workloadPath;
     Ptr<EmpiricalRandomVariable> m_erv;
+    Ptr<UniformRandomVariable> m_uniform;
 protected:
     void DoDispose() override;
 
 public:
     static TypeId GetTypeId();
-    void addReceiverAddress(Address address);
-    NodeAppsHandler();
-    ~NodeAppsHandler() override;
+    void SetReceiverAddress(vector<vector<Address>> receiversAddresses);
+    WorkloadApp();
+    ~WorkloadApp() override;
 
 };
 
 
-#endif //NODEAPPSHANDLER_H
+#endif //WORKLOAD_APP_H

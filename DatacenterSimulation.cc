@@ -18,7 +18,7 @@
 #include "monitors_module/NetDeviceMonitor.h"
 #include "monitors_module/BurstMonitor.h"
 #include "traffic_generator_module/background_replay/BackgroundReplay.h"
-#include "traffic_generator_module/DC_traffic_generator/NodeAppsHandler.h"
+#include "traffic_generator_module/DC_traffic_generator/DCWorkloadGenerator.h"
 #include <iomanip>
 #include <iostream>
 #include <string>
@@ -130,6 +130,27 @@ void SetAppMaxSize(Ptr<BulkSendApplication> app) {
     app->SetMaxBytes(20000);
 }
 
+double readAvgMsgSize(string traffic) {
+    string cdfFile  = "scratch/ECNMC/DCWorkloads/" + traffic;
+    string line;
+    ifstream file(cdfFile);
+    if (!file.is_open()) {
+        cerr << "Error opening file: " << cdfFile << endl;
+        return 0;
+    }
+    // the first line is the average message size
+    getline(file, line);
+    istringstream iss(line);
+    double avgMsgSize;
+    iss >> avgMsgSize;
+    file.close();
+    return avgMsgSize;
+}
+
+double computeTraffciRate(double load, DataRate linkRate, uint32_t avgMsgSize) {
+    return load * linkRate.GetBitRate() / 8 / avgMsgSize; // in packets
+}
+
 void run_single_queue_simulation(int argc, char* argv[]) {
     auto start = std::chrono::high_resolution_clock::now();
     cout << endl<< "Start Single Queue Simulation" << endl;
@@ -161,6 +182,10 @@ void run_single_queue_simulation(int argc, char* argv[]) {
     double differentiationDelay = 0.35;                // Extra delay for the differentiation
     bool silentPacketDrop = false;                     // If the switch should drop packets silently
     double load = 0.9;                                 // The load on the buttleneck link
+    uint16_t poolSize = 30;                            // The size of the connection pool
+    double avgMsgSize = 1448.0;                        // The average message size
+    double hostTrafficRate = 1000.0;                   // The traffic rate of the cross traffic
+    double ctTrafficRate = 1000.0;                     // The traffic rate of the cross traffic
 
     /*command line input*/
     CommandLine cmd;
@@ -350,12 +375,23 @@ void run_single_queue_simulation(int argc, char* argv[]) {
     //         cout << "requested Background Directory does not exist" << endl;
     //     }
     // }
-    ObjectFactory factory;
-    factory.SetTypeId(NodeAppsHandler::GetTypeId());
-    factory.Set("StartTime", TimeValue(Seconds(0)));
-    factory.Set("StopTime", TimeValue(Seconds(0.2)));
-    Ptr<NodeAppsHandler> nodeAppsHandler = factory.Create<NodeAppsHandler>();
-    srcHosts.Get(0)->AddApplication(nodeAppsHandler);
+    avgMsgSize = readAvgMsgSize(traffic);
+    hostTrafficRate = computeTraffciRate(load, DataRate(srcHostToSwitchLinkRate), avgMsgSize);
+    ctTrafficRate = computeTraffciRate(load, DataRate(ctHostToSwitchLinkRate), avgMsgSize);
+    vector<Ptr<Node>> receivers;
+    receivers.push_back(dstHosts.Get(0));
+    auto* dcTrafficGenerator = new DCWorkloadGenerator(srcHosts.Get(0), receivers, hostTrafficRate, poolSize, "scratch/ECNMC/DCWorkloads/" + traffic, "ns3::TcpSocketFactory", Time(Seconds(0)), stopTime - Seconds(0.002));
+    dcTrafficGenerator->GenrateTraffic();
+
+    auto* dcTrafficGeneratorCross = new DCWorkloadGenerator(srcHosts.Get(1), receivers, ctTrafficRate, poolSize, "scratch/ECNMC/DCWorkloads/" + traffic, "ns3::TcpSocketFactory", Time(Seconds(0)), stopTime - Seconds(0.002));
+    dcTrafficGeneratorCross->GenrateTraffic();
+
+    // ObjectFactory factory;
+    // factory.SetTypeId(NodeAppsHandler::GetTypeId());
+    // factory.Set("StartTime", TimeValue(Seconds(0)));
+    // factory.Set("StopTime", TimeValue(Seconds(0.2)));
+    // Ptr<NodeAppsHandler> nodeAppsHandler = factory.Create<NodeAppsHandler>();
+    // srcHosts.Get(0)->AddApplication(nodeAppsHandler);
     // uint16_t portsrc = 50001;
     // BulkSendHelper host("ns3::TcpSocketFactory", InetSocketAddress(dstHostsToSwitchIps.GetAddress(0), portsrc));
     // host.SetAttribute("MaxBytes", UintegerValue(0));
@@ -452,6 +488,9 @@ void run_single_queue_simulation(int argc, char* argv[]) {
     cout << "differentiationDelay: " << differentiationDelay << endl;
     cout << "silentPacketDrop: " << silentPacketDrop << endl;
     cout << "load: " << load << endl;
+    cout << "Average Message Size: " << avgMsgSize << endl;
+    cout << "Measurement Traffic Rate: " << hostTrafficRate << endl;
+    cout << "Cross Traffic Rate: " << ctTrafficRate << endl;
     // /* ########## END: Check Config ########## */
 
 
