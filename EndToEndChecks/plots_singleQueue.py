@@ -2,26 +2,30 @@ import argparse
 import configparser
 import os
 import json as js
+from matplotlib.cm import get_cmap
 import matplotlib.pyplot as plt
 import numpy as np
+import itertools
 
 colors = ['b', 'g', 'r', 'c', 'm', 'y', 'k', 'b', 'g', 'r', 'c', 'm', 'y', 'k']
-def readResults(results_dir, serviceRateScales, results_dir_file, selectedVarMethods, differentiationDelay=0, errorRate=0):
+def readResults(results_dir, serviceRateScales, results_dir_file, selectedVarMethods, differentiationDelay=0, errorRate=0, load=0, traffic=''):
     results = {}
     dropRate = {}
     sampleSizes = {}
     CVS = {}
+    workload = {}
     flows = ['A0D0']
     paths = ["0"]
     for rate in serviceRateScales:
         results[rate] = {}
         dropRate[rate] = {}
         sampleSizes[rate] = {}
+        workload[rate] = {}
         CVS[rate] = {}
         if differentiationDelay == 0 and errorRate == 0:
-            rate_dir = str(rate)
+            rate_dir = traffic + "/" + str(rate) + "/" + str(load)
         else:
-            rate_dir = str(rate) + "/D_" + str(differentiationDelay) + "/f_" + str(errorRate)
+            rate_dir = traffic + "/" + str(rate) + "/" + str(load) + "/D_" + str(differentiationDelay) + "/f_" + str(errorRate)
         for file in os.listdir('../Results/results_' + results_dir + '/' + rate_dir):
             if file.find(results_dir_file) != -1:
                 temp = {}
@@ -39,7 +43,8 @@ def readResults(results_dir, serviceRateScales, results_dir_file, selectedVarMet
                         results[rate]['LastSuccessProb'] = {}
                         results[rate]['NonMarkingProb'] = {}
                         results[rate]['LastNonMarkingProb'] = {}
-                        CVS[rate]['DelayCV'] = np.mean([temp['SD0Delaystd'][i] / temp['SD0DelayMean'][i] for i in range(temp['experiments'])])
+                        workload[rate] = temp['AverageWorkLoad']
+                        CVS[rate]['DelayCV'] = np.mean([temp['SD0Delaystd'][i] / temp['SD0DelayMean'][i] if temp['SD0DelayMean'][i] != 0 else 0 for i in range(temp['experiments'])])
                         # CVS[rate]['LastDelayCV'] = np.mean([temp['SD0LastDelaystd'][i] / temp['SD0LastDelayMean'][i] for i in range(temp['experiments'])])
                         CVS[rate]['SuccessProbCV'] = np.mean([temp['SD0SuccessProbStd'][i] / temp['SD0SuccessProbMean'][i] for i in range(temp['experiments'])])
                         # CVS[rate]['LastSuccessProbCV'] = np.mean([temp['SD0LastSuccessProbStd'][i] / temp['SD0LastSuccessProbMean'][i] for i in range(temp['experiments'])])
@@ -48,31 +53,32 @@ def readResults(results_dir, serviceRateScales, results_dir_file, selectedVarMet
                         # CVS[rate]['SubSamplesDelayCV'] = np.mean([temp['EndToEndDelayMean']['event_poisson_eventAvg'][flow][path][i][1] / temp['EndToEndDelayMean']['event_poisson_eventAvg'][flow][path][i][0] * np.sqrt(temp['EndToEndSampleSizeDelay'][flow][path][i]) for i in range(temp['experiments'])])
                         # CVS[rate]['SubSamplesSuccessProbCV'] = np.mean([temp['EndToEndSuccessProb']['event_poisson_eventAvg'][flow][path][i][1] / temp['EndToEndSuccessProb']['event_poisson_eventAvg'][flow][path][i][0] * np.sqrt(temp['EndToEndSampleSizeSuccess'][flow][path][i]) for i in range(temp['experiments'])])
                         # CVS[rate]['SubSamplesNonMarkingProbCV'] = np.mean([temp['EndToEndNonMarkingProb']['event_poisson_eventAvg'][flow][path][i][1] / temp['EndToEndNonMarkingProb']['event_poisson_eventAvg'][flow][path][i][0] * np.sqrt(temp['EndToEndSampleSizeMarking'][flow][path][i]) for i in range(temp['experiments'])])
-                        # sampleSizes[rate]['SampleSizeDelay'] = np.mean([temp['EndToEndSampleSizeDelay'][flow][path][i] for i in range(temp['experiments'])])
+                        sampleSizes[rate]['SampleSizeDelay'] = np.mean([temp['EndToEndSampleSizeDelay'][flow][path][i] for i in range(temp['experiments'])])
 
-
+                        if len(selectedVarMethods) == 0:
+                            selectedVarMethods = list(temp['MaxEpsilonIneqDelay'].keys()) + list(temp['MaxEpsilonIneqSuccessProb'].keys()) + list(temp['MaxEpsilonIneqNonMarkingProb'].keys())
                         for var_method in temp['MaxEpsilonIneqDelay'].keys():
                             if var_method not in selectedVarMethods:
                                 continue
-                            results[rate]['Delay'][var_method] = temp['MaxEpsilonIneqDelay'][var_method][flow][path] / temp['experiments'] * 100
-                            results[rate]['LastDelay'][var_method] = temp['MaxEpsilonIneqLastDelay'][var_method][flow][path] / temp['experiments'] * 100
+                            results[rate]['Delay'][var_method] = temp['MaxEpsilonIneqDelay'][var_method][flow][path][0] / temp['MaxEpsilonIneqDelay'][var_method][flow][path][1] * 100 if temp['MaxEpsilonIneqDelay'][var_method][flow][path][1] != 0 else None
+                            results[rate]['LastDelay'][var_method] = temp['MaxEpsilonIneqLastDelay'][var_method][flow][path][0] / temp['MaxEpsilonIneqLastDelay'][var_method][flow][path][1] * 100 if temp['MaxEpsilonIneqLastDelay'][var_method][flow][path][1] != 0 else None
                         
                         for var_method in temp['MaxEpsilonIneqSuccessProb'].keys():
                             if var_method not in selectedVarMethods:
                                 continue
-                            results[rate]['SuccessProb'][var_method] = temp['MaxEpsilonIneqSuccessProb'][var_method][flow][path] / temp['experiments'] * 100
-                            results[rate]['LastSuccessProb'][var_method] = temp['MaxEpsilonIneqLastSuccessProb'][var_method][flow][path] / temp['experiments'] * 100
+                            results[rate]['SuccessProb'][var_method] = temp['MaxEpsilonIneqSuccessProb'][var_method][flow][path][0] /temp['MaxEpsilonIneqSuccessProb'][var_method][flow][path][1] * 100 if temp['MaxEpsilonIneqSuccessProb'][var_method][flow][path][1] != 0 else None
+                            results[rate]['LastSuccessProb'][var_method] = temp['MaxEpsilonIneqLastSuccessProb'][var_method][flow][path][0] / temp['MaxEpsilonIneqLastSuccessProb'][var_method][flow][path][1] * 100 if temp['MaxEpsilonIneqLastSuccessProb'][var_method][flow][path][1] != 0 else None
                             
                         for var_method in temp['MaxEpsilonIneqNonMarkingProb'].keys():
                             if var_method not in selectedVarMethods:
                                 continue
-                            results[rate]['NonMarkingProb'][var_method] = temp['MaxEpsilonIneqNonMarkingProb'][var_method][flow][path] / temp['experiments'] * 100
+                            results[rate]['NonMarkingProb'][var_method] = temp['MaxEpsilonIneqNonMarkingProb'][var_method][flow][path][0] / temp['MaxEpsilonIneqNonMarkingProb'][var_method][flow][path][1] * 100 if temp['MaxEpsilonIneqNonMarkingProb'][var_method][flow][path][1] != 0 else None
 
                         for var_method in temp['MaxEpsilonIneqLastNonMarkingProb'].keys():
                             if var_method not in selectedVarMethods:
                                 continue
-                            results[rate]['LastNonMarkingProb'][var_method] = temp['MaxEpsilonIneqLastNonMarkingProb'][var_method][flow][path] / temp['experiments'] * 100
-    return results, flows, paths, dropRate, CVS, sampleSizes
+                            results[rate]['LastNonMarkingProb'][var_method] = temp['MaxEpsilonIneqLastNonMarkingProb'][var_method][flow][path][0] / temp['MaxEpsilonIneqLastNonMarkingProb'][var_method][flow][path][1] * 100 if temp['MaxEpsilonIneqLastNonMarkingProb'][var_method][flow][path][1] != 0 else None
+    return results, flows, paths, dropRate, CVS, sampleSizes, workload
 
 def plot_CV_perRate(serviceRateScales, results_dir, results_dir_file, CVS, DropRates):
     oversub_ratios = [1 / r if r != 0 else np.nan for r in serviceRateScales]
@@ -204,7 +210,231 @@ def plot_success_per_dropRates(results, rates, results_dir, results_dir_file, Dr
         plt.savefig(f"../Results/results_{results_dir}/{results_dir_file}_{metric}_vs_DropRate.png")
         plt.close()
 
-def analyse_reverse_exp(results_dir, results_dir_file, rateScales, differentiationDelays, errorRates, selectedVarMethods, type):
+def plot_droprate_vs_load(traffic_list, loads, rates, results_dir, DropRates):
+    print("Generating Drop Rate vs Load subplots (subplot per ratio, shape per traffic)...")
+
+    # Compute oversubscription ratios
+    oversub_ratios = [1 / r if r != 0 else np.nan for r in rates]
+    oversub_ratio_map = dict(zip(rates, oversub_ratios))
+
+    # Assign marker shapes to each traffic
+    marker_styles = ['o', 's', '^', 'D', 'v', 'P', '*', 'X', 'H', '8']
+    marker_map = {traffic: marker_styles[i % len(marker_styles)] for i, traffic in enumerate(traffic_list)}
+
+    # Assign colors to traffic (consistent across subplots)
+    cmap = get_cmap('tab10') if len(traffic_list) <= 10 else get_cmap('tab20')
+    color_map = {traffic: cmap(i / len(traffic_list)) for i, traffic in enumerate(traffic_list)}
+
+    num_ratios = len(rates)
+    fig, axs = plt.subplots(nrows=num_ratios, ncols=1, figsize=(20, 7 * num_ratios), sharex=True)
+
+    if num_ratios == 1:
+        axs = [axs]  # wrap in list for consistency
+
+    for idx, rate in enumerate(rates):
+        alpha = oversub_ratio_map[rate]
+        ax = axs[idx]
+        for traffic in traffic_list:
+            marker = marker_map[traffic]
+            color = color_map[traffic]
+            x_vals, y_vals = [], []
+
+            for load in sorted(loads):
+                drop_val = DropRates[traffic][load].get(rate, np.nan)
+                if not np.isnan(drop_val):
+                    x_vals.append(load)
+                    y_vals.append(drop_val * 100)  # convert to %
+
+            if x_vals:
+                ax.plot(
+                    x_vals, y_vals,
+                    linestyle='-',
+                    marker=marker,
+                    color=color,
+                    markerfacecolor='none',  # hollow
+                    markeredgecolor=color,
+                    markersize=8,
+                    linewidth=1.5,
+                    label=traffic
+                )
+
+        ax.set_title(f"Drop Rate vs Load (α = {alpha:.2f})", fontsize=18)
+        ax.set_ylabel("Drop Rate (%)", fontsize=14)
+        ax.set_ylim(bottom=-0.05, top=5)
+        ax.set_yticks(np.arange(-0.05, 5.05, 0.1))
+        ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f"{x:.2f}%"))
+        ax.grid(True, which='both', linestyle='--', linewidth=0.5)
+        ax.legend(loc='best', fontsize=10, fancybox=True, shadow=True)
+
+    axs[-1].set_xlabel("Offered Load", fontsize=16)
+    axs[-1].set_xticks(sorted(loads))
+    axs[-1].set_xticklabels([f"{l:.2f}" for l in sorted(loads)], fontsize=12)
+
+    plt.suptitle("Drop Rate vs Load per Oversubscription Ratio", fontsize=24)
+    plt.tight_layout(rect=[0, 0, 1, 0.96])
+    plt.savefig(f"../Results/results_{results_dir}/DropRate_vs_Load_Subplots.png")
+    plt.close()
+
+
+def plot_forward_success_per_loads_traffic(results, loads, rates, results_dir, results_dir_file, selectedVarMethod):
+    import matplotlib.pyplot as plt
+    import numpy as np
+    from matplotlib.cm import get_cmap
+
+    print("Generating forward success rate subplots per load (1 per α, shape per traffic)...")
+
+    oversub_ratio_map = {r: 1 / r if r != 0 else np.nan for r in rates}
+    traffic_list = list(results.keys())
+
+    # Assign distinct marker per traffic
+    marker_styles = ['o', 's', '^', 'D', 'v', 'P', '*', 'X', 'H', '8']
+    marker_map = {traffic: marker_styles[i % len(marker_styles)] for i, traffic in enumerate(traffic_list)}
+
+    # Assign color per traffic (consistent across subplots)
+    cmap = get_cmap('tab10') if len(traffic_list) <= 10 else get_cmap('tab20')
+    color_map = {traffic: cmap(i / len(traffic_list)) for i, traffic in enumerate(traffic_list)}
+
+    # Determine all relevant metrics
+    all_metrics = set(
+        k for traffic in results.values()
+          for load_dict in traffic.values()
+          for rate_dict in load_dict.values()
+          for k in rate_dict.keys()
+    )
+
+    for metric in all_metrics:
+        if len(selectedVarMethod) == 0:
+            if 'success' in metric.lower():
+                selectedVarMethod_ = 'probability_linearInterp_timeAvg'
+            else:
+                selectedVarMethod_ = 'event_linearInterp_timeAvg'
+        else:
+            selectedVarMethod_ = selectedVarMethod[0]
+
+        num_ratios = len(rates)
+        fig, axs = plt.subplots(nrows=num_ratios, ncols=1, figsize=(20, 5 * num_ratios), sharex=True)
+
+        if num_ratios == 1:
+            axs = [axs]  # make iterable if only one subplot
+
+        for ax_idx, rate in enumerate(rates):
+            alpha = oversub_ratio_map[rate]
+            ax = axs[ax_idx]
+            for traffic in traffic_list:
+                marker = marker_map[traffic]
+                color = color_map[traffic]
+                x_vals = []
+                y_vals = []
+                for load in sorted(loads):
+                    try:
+                        val = results[traffic][load].get(rate, {}).get(metric, {}).get(selectedVarMethod_, np.nan)
+                        if not np.isnan(val):
+                            x_vals.append(load)
+                            y_vals.append(val)
+                    except:
+                        continue
+
+                if x_vals:
+                    ax.plot(
+                        x_vals, y_vals,
+                        linestyle='-',
+                        marker=marker,
+                        color=color,
+                        markerfacecolor='none',  # hollow
+                        markeredgecolor=color,
+                        markersize=8,
+                        linewidth=1.5,
+                        label=traffic
+                    )
+
+            ax.set_title(f"{metric} Success Rate vs Load (α = {alpha:.2f})", fontsize=18)
+            ax.set_ylabel("Success Rate (%)", fontsize=14)
+            ax.set_ylim(-5, 110)
+            ax.set_yticks(np.arange(0, 101, 10))
+            ax.grid(True, which='both', linestyle='--', linewidth=0.5)
+            ax.legend(loc='best', fontsize=10, fancybox=True, shadow=True)
+
+        axs[-1].set_xlabel("Offered Load", fontsize=16)
+        axs[-1].set_xticks(sorted(loads))
+        axs[-1].set_xticklabels([f"{l:.2f}" for l in sorted(loads)], fontsize=12)
+
+        plt.suptitle(f"{metric} Success Rate vs Offered Load per Oversubscription Ratio", fontsize=24)
+        plt.tight_layout(rect=[0, 0, 1, 0.96])
+        plt.savefig(f"../Results/results_{results_dir}/{results_dir_file}_{metric}_SuccessRate_vs_Load_Subplots.png")
+        plt.close()
+
+
+def plot_success_vs_loads(results, loads, rates, results_dir, results_dir_file, selectedVarMethod):
+    for metric in set(
+        k for load_dict in results.values()
+          for rate_dict in load_dict.values()
+          for k in rate_dict.keys()
+    ):
+        print(f"Plotting {metric} vs Load...")
+        plt.figure(figsize=(20, 14))
+        ax = plt.gca()
+
+        # One line per rate
+        for i, rate in enumerate(rates):
+            y_values = [
+                results[load].get(rate, {})
+                              .get(metric, {})
+                              .get(selectedVarMethod, np.nan)
+                for load in loads
+            ]
+            plt.plot(loads, y_values, marker='o', label=f"α={1/rate:.2f}" if rate != 0 else "α=NaN",
+                     color=colors[i % len(colors)], linewidth=1, markersize=4)
+
+        # Primary x-axis: Load values
+        ax.set_xticks(loads)
+        ax.set_xticklabels([f"{l:.2f}" for l in loads], rotation=45, fontsize=15)
+        ax.set_xlabel("Load", fontsize=20)
+
+        # Y-axis: Success rate
+        ax.set_ylim(-5, 110)
+        ax.set_yticks(np.arange(0, 101, 10))
+        ax.set_ylabel("Success Rate (%)", fontsize=20)
+
+        # Secondary x-axis (top): Drop rates per load
+        drop_rates_per_load = [
+            np.mean([results[load]['DropRate'][rate] for rate in rates if rate in results[load]]) 
+            if 'DropRate' in results[load] else np.nan
+            for load in loads
+        ]
+        ax_top = ax.secondary_xaxis('top')
+        ax_top.set_xticks(loads)
+        ax_top.set_xticklabels([f"{drop*100:.4f}%" if not np.isnan(drop) else "NaN" for drop in drop_rates_per_load],
+                               rotation=90, fontsize=15)
+        ax_top.set_xlabel("Drop Rate", fontsize=20)
+
+        # Plot title and legend
+        plt.title(f"{metric} Success Rate vs Offered Load", fontsize=22)
+        plt.legend(loc='lower right', ncol=4, fancybox=True, shadow=True, prop={'size': 10}, title="Oversubscription Ratio (α)")
+        plt.grid(True, which='both', linestyle='--', linewidth=0.5)
+        plt.subplots_adjust(left=0.05, right=0.95)
+        plt.savefig(f"../Results/results_{results_dir}/{results_dir_file}_{metric}_vs_Load.png")
+        plt.close()
+
+
+def analyse_forward_exp(results_dir, results_dir_file, rateScales, loads, selectedVarMethods, traffics):
+    results = {}
+    DropRates = {}
+    workload = {}
+    for traffic in traffics:
+        results[traffic] = {}
+        DropRates[traffic] = {}
+        workload[traffic] = {}
+        for load in loads:
+            results[traffic][load] = {}
+            DropRates[traffic][load] = {}
+            workload[traffic][load] = {}
+            results[traffic][load], flows, paths, DropRates[traffic][load], CVS, sampleSizes, workload[traffic][load] = readResults(results_dir, rateScales, results_dir_file, selectedVarMethods, load=load, traffic=traffic)
+            # results[traffic][load]['DropRate'] = DropRates[traffic][load]
+    selectedRates = rateScales
+    plot_forward_success_per_loads_traffic(results, loads, selectedRates, results_dir, results_dir_file, selectedVarMethods)
+    # plot_droprate_vs_load(results, loads, selectedRates, results_dir, DropRates)
+
+def analyse_reverse_exp(results_dir, results_dir_file, rateScales, differentiationDelays, errorRates, selectedVarMethods, type, traffics):
     results = {}
     DropRates = {}
     for differentiationDelay in differentiationDelays:
@@ -213,9 +443,9 @@ def analyse_reverse_exp(results_dir, results_dir_file, rateScales, differentiati
         for errorRate in errorRates:
             results[differentiationDelay][errorRate] = {}
             DropRates[differentiationDelay][errorRate] = {}
-            results[differentiationDelay][errorRate], flows, paths, DropRates[differentiationDelay][errorRate], CVS, sampleSizes = readResults(results_dir, rateScales, results_dir_file, selectedVarMethods, differentiationDelay, errorRate)
+            results[differentiationDelay][errorRate], flows, paths, DropRates[differentiationDelay][errorRate], CVS, sampleSizes, _ = readResults(results_dir, rateScales, results_dir_file, selectedVarMethods, differentiationDelay, errorRate)
     selectedRates = rateScales
-    plot_success_vs_errorRate(results, differentiationDelays, selectedRates, results_dir, results_dir_file, selectedVarMethods[0], type)
+    plot_success_vs_errorRate(list(results.keys()), differentiationDelays, selectedRates, results_dir, results_dir_file, selectedVarMethods[0], type)
         
 def plot_success_vs_errorRate(results, differentiationDelays, rates, results_dir, results_dir_file, selectedVarMethods, type):
     for differentiationDelay in differentiationDelays:
@@ -286,22 +516,27 @@ def __main__():
     args = parser.parse_args()
     results_dir = args.dir
     # results_dir_file = args.file
-    results_dir_file = "Q_e_m_WBias_sigma_subsampling"
+    results_dir_file = "Q_thinning_0.5"
     config = configparser.ConfigParser()
     config.read('../Results/results_{}/Parameters.config'.format(args.dir))
     rateScales = [float(x) for x in config.get('Settings', 'serviceRateScales').split(',')]
+    loads = [float(x) for x in config.get('Settings', 'load').split(',')]
+    traffics = config.get('Settings', 'traffic').split(',')
+    # traffics = ["Google_AllRPC", "Fabricated_Heavy_Head", "Fabricated_Heavy_Middle", "Google_SearchRPC", "Facebook_HadoopDist_All"]
     # experiments = 1
     errorRates = [float(x) for x in config.get('Settings', 'errorRate').split(',')]
     # errorRates = [0.25, 0.30, 0.35, 0.40, 0.45, 0.50]
     differentiationDelays = [float(x) for x in config.get('Settings', 'differentiationDelay').split(',')]
     # differentiationDelays = [0.35]
-    selectedVarMethods = ['event_poisson_eventAvg']
+    # selectedVarMethods = ['event_poisson_eventAvg']
+    selectedVarMethods = []
     # print(RateScales)
     # serviceRateScales = [0.75, 0.80, 0.85, 0.90, 0.95, 1.0, 1.05]
     if args.IsForward == 1:
-        results, flows, paths, DropRates, CVS, sampleSizes = readResults(results_dir, rateScales, results_dir_file, selectedVarMethods)
-        # plot_success_per_rate(results, flows, paths, RateScales, results_dir, results_dir_file)
-        plot_success_per_dropRates(results, rateScales, results_dir, results_dir_file, DropRates.values())
+        analyse_forward_exp(results_dir, results_dir_file, rateScales, loads, selectedVarMethods, traffics)
+        # results, flows, paths, DropRates, CVS, sampleSizes = readResults(results_dir, rateScales, results_dir_file, selectedVarMethods)
+        # # plot_success_per_rate(results, flows, paths, RateScales, results_dir, results_dir_file)
+        # plot_success_per_dropRates(results, rateScales, results_dir, results_dir_file, DropRates.values())
         # plot_CV_perRate(rateScales, results_dir, results_dir_file, CVS, DropRates.values())
         # plot_SampleSize_perRate(rateScales, results_dir, results_dir_file, sampleSizes, DropRates.values())
         # plot_CV_perRate(results, serviceRateScales, results_dir, results_dir_file, metric='SuccessProb')
@@ -309,7 +544,7 @@ def __main__():
         # plot_boxplot(results, serviceRateScales, results_dir, results_dir_file, metric='SD0Delaystd')
         # plot_boxplot(results, serviceRateScales, results_dir, results_dir_file, metric='SD0DelayMean')
     else:
-        analyse_reverse_exp(results_dir, results_dir_file, rateScales, differentiationDelays, errorRates, selectedVarMethods, args.type)
+        analyse_reverse_exp(results_dir, results_dir_file, rateScales, differentiationDelays, errorRates, selectedVarMethods, args.type, traffics)
         
 
 __main__()

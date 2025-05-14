@@ -290,7 +290,7 @@ def calculate_offline_E2E_workload(full_df, df_res, steadyStart, steadyEnd):
     full_df_ = None
     return df_res
 
-def calculate_offline_E2E_lossRates(__ns3_path, full_df, df_res, checkColumn, linksRate, swtichDstREDQueueDiscMaxSize):
+def calculate_offline_E2E_lossRates(__ns3_path, full_df, df_res, checkColumn, txDelay, linksRate, swtichDstREDQueueDiscMaxSize):
     df_res['successProb'] = {}
     for var in ['event', 'probability']:
         for method in ['rightCont_timeAvg', 'leftCont_timeAvg', 'linearInterp_timeAvg', 'poisson_eventAvg', 'eventAvg']:
@@ -321,10 +321,13 @@ def calculate_offline_E2E_lossRates(__ns3_path, full_df, df_res, checkColumn, li
 
         df_res['successProb']['event_eventAvg'][path] = (np.mean(values), np.std(values) / np.sqrt(len(values)))
    
-        samples_times = find_samples_path(time)
+        samples_times = find_samples_path(time, txDelay)
         df_res['sampleSize']['successProb'][path] = len(samples_times)
         samples_values = df[df['SentTime'].isin(samples_times)]['nonDropEvent'].values
-        avg, std = np.mean(samples_values), np.std(samples_values) / np.sqrt(len(samples_values))
+        if df_res['sampleSize']['successProb'][path] == 0:
+            avg, std = 0, 0
+        else:
+            avg, std = np.mean(samples_values), np.std(samples_values) / np.sqrt(len(samples_values))
         df_res['successProb']['event_poisson_eventAvg'][path] = (avg, std)
 
         df['nonDropProb'] = df.apply(lambda x: 1.0 - packets_cfd.calculate_probability_greater_than(max(swtichDstREDQueueDiscMaxSize - (x['Delay'] * linksRate / 8), x['PayloadSize'])) if x[checkColumn] != 0 else 0.0, axis=1)
@@ -344,7 +347,11 @@ def calculate_offline_E2E_lossRates(__ns3_path, full_df, df_res, checkColumn, li
         df_res['successProb']['probability_eventAvg'][path] = (np.mean(values), np.std(values) / np.sqrt(len(values)))
 
         samples_values = df[df['SentTime'].isin(samples_times)]['nonDropProb'].values
-        avg, std = np.mean(samples_values), np.std(samples_values) / np.sqrt(len(samples_values))
+        if df_res['sampleSize']['successProb'][path] == 0:
+            avg, std = 0, 0
+        else:
+            avg, std = np.mean(samples_values), np.std(samples_values) / np.sqrt(len(samples_values))
+
         df_res['successProb']['probability_poisson_eventAvg'][path] = (avg, std)
 
     full_df_ = None
@@ -379,7 +386,7 @@ def calculate_offline_markingProbMean_at_receiver(df, swtichDstREDQueueDiscMaxSi
     ecn_df['F'] = ecn_df['F'] * ecn_df['InterArrivalTime']
     return 1 - (ecn_df['F'].sum() / ecn_df['InterArrivalTime'].sum())
 
-def find_samples_path(time):
+def find_samples_path(time, txDelay):
     # Step 1: Compute interarrival times
     interarrival = np.diff(time)
 
@@ -391,42 +398,59 @@ def find_samples_path(time):
 
     # Step 3: Divide into chunks of average interarrival time
     avg_interarrival = np.mean(interarrival) * 10
+    # avg_interarrival = np.mean(interarrival[interarrival > txDelay])
     # print("Average interarrival time:", avg_interarrival, "Average Delay:", np.mean(values))
     start_time = time[0]
     end_time = time[-1]
     bins = np.arange(start_time, end_time, avg_interarrival)
+    max_sample_size = 0
+    max_sample_size_indices = []
+    # for brnval in [0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5]:
+    for brnval in [0.1]:
+        tries = 20
+        final_values = []
+        while tries > 0 :
+            selected_indices = []
+            for i in range(len(bins) - 1):
+                # Get indices in the current chunk
+                mask = (time >= bins[i]) & (time < bins[i+1])
+                indices = np.where(mask)[0]
+                if len(indices) > 0:
+                    # Randomly pick one index from the chunk
+                    selected_indices.append(np.random.choice(indices))
 
-    tries = 10
-    final_values = []
-    while tries > 0 :
-        selected_indices = []
-        for i in range(len(bins) - 1):
-            # Get indices in the current chunk
-            mask = (time >= bins[i]) & (time < bins[i+1])
-            indices = np.where(mask)[0]
-            if len(indices) > 0:
-                # Randomly pick one index from the chunk
-                selected_indices.append(np.random.choice(indices))
+            selected_indices = np.array(selected_indices)
+            selected_times = time[selected_indices]
 
-        selected_indices = np.array(selected_indices)
-        selected_times = time[selected_indices]
+            # Step 4: Check if interarrival of selected packets is exponential
+            selected_interarrival = np.diff(selected_times)
+            anderson_statistic, anderson_critical_values, _ = anderson(selected_interarrival, 'expon')
+            if anderson_statistic <= anderson_critical_values[2]:
+                # print("Selected First interarrival times are exponentially distributed.")
+                if len(selected_times) > max_sample_size:
+                    max_sample_size = len(selected_times)
+                    max_sample_size_indices = selected_indices
+                    break
+                # return selected_times
 
-        # Step 4: Check if interarrival of selected packets is exponential
-        selected_interarrival = np.diff(selected_times)
-        anderson_statistic, anderson_critical_values, _ = anderson(selected_interarrival, 'expon')
-        if anderson_statistic <= anderson_critical_values[2]:
-            # print("Selected First interarrival times are exponentially distributed.")
-            return selected_times
-
-        # Step 5: Use Bernoulli sampling on selected packets
-        keep_mask = bernoulli.rvs(0.1, size=len(selected_times))
-        final_times = selected_times[keep_mask == 1]
-        anderson_statistic, anderson_critical_values, _ = anderson(np.diff(final_times), 'expon')
-        if anderson_statistic <= anderson_critical_values[2]:
-            # print("Selected Second interarrival times are exponentially distributed.")
-            return final_times
-        tries -= 1
-    print("Failed to find exponentially distributed interarrival times after 10 tries.")
+            # Step 5: Use Bernoulli sampling on selected packets
+            keep_mask = bernoulli.rvs(brnval, size=len(selected_times))
+            final_times = selected_times[keep_mask == 1]
+            if len(final_times) <= 1:
+                tries -= 1
+                continue
+            anderson_statistic, anderson_critical_values, _ = anderson(np.diff(final_times), 'expon')
+            if anderson_statistic <= anderson_critical_values[2]:
+                # print("Selected Second interarrival times are exponentially distributed.")
+                # return final_times
+                if len(final_times) > max_sample_size:
+                    max_sample_size = len(final_times)
+                    max_sample_size_indices = selected_indices
+                    break
+            tries -= 1
+    if max_sample_size:
+        return time[max_sample_size_indices]
+    print("Failed to find exponentially distributed interarrival times after 20 tries.")
     return []
 
 def e2e_poisson_sampling(time, values, delay=False, sizes=None):
@@ -488,7 +512,7 @@ def calculate_offline_markingProbMean_at_receiver_poisson(df, swtichDstREDQueueD
         markingProbs.append(1 - (df_sample['ECN'].sum() / len(df_sample)))
     return np.mean(markingProbs)
 
-def calculate_offline_E2E_markingProb(full_df, df_res, checkColumn, swtichDstREDQueueDiscMaxSize, linkRate, __ns3_path, tsh):
+def calculate_offline_E2E_markingProb(full_df, df_res, checkColumn, txDelay, swtichDstREDQueueDiscMaxSize, linkRate, __ns3_path, tsh):
     # timeAvg_methods = ['rightCont_timeAvg', 'leftCont_timeAvg', 'linearInterp_timeAvg']
     # nonMarkingProb_timeAvg_vars = ['event_currentProb', 'event_lastProb']
     df_res['nonMarkingProb'] = {}
@@ -516,17 +540,20 @@ def calculate_offline_E2E_markingProb(full_df, df_res, checkColumn, swtichDstRED
         linearInterp_time_average = np.sum(((values[:-1] + values[1:]) / 2) * np.diff(time)) / (time[-1] - time[0])
         df_res['nonMarkingProb']['event_linearInterp_timeAvg'][path] = linearInterp_time_average
 
-        samples_times = find_samples_path(time)
+        samples_times = find_samples_path(time, txDelay)
         df_res['sampleSize']['nonMarkingProb'][path] = len(samples_times)
         samples_values = df[df['SentTime'].isin(samples_times)]['nonMarking'].values
-        avg, std = np.mean(samples_values), np.std(samples_values) / np.sqrt(len(samples_values))
+        if df_res['sampleSize']['nonMarkingProb'][path] == 0:
+            avg, std = 0, 0
+        else:
+            avg, std = np.mean(samples_values), np.std(samples_values) / np.sqrt(len(samples_values))
         df_res['nonMarkingProb']['event_poisson_eventAvg'][path] = (avg, std)
 
         df_res['nonMarkingProb']['event_eventAvg'][path] = (np.mean(values), np.std(values) / np.sqrt(len(values)))
     full_df_ = None
     return df_res
 
-def calculate_offline_E2E_delays(full_df, removeDrops, checkColumn, df_res):
+def calculate_offline_E2E_delays(full_df, removeDrops, checkColumn, txDelay, df_res):
     df_res['delay'] = {}
     for var in ['event']:
         for method in ['rightCont_timeAvg', 'leftCont_timeAvg', 'linearInterp_timeAvg', 'poisson_eventAvg', 'eventAvg']:
@@ -539,6 +566,7 @@ def calculate_offline_E2E_delays(full_df, removeDrops, checkColumn, df_res):
     for path in full_df_['Path'].unique():
         df = full_df_[full_df_['Path'] == path]
         df = df.sort_values(by='SentTime').reset_index(drop=True)
+        df_res['totalPckts'][path] = len(df)
         time = df['SentTime'].values
         values = df['Delay'].values
 
@@ -551,10 +579,13 @@ def calculate_offline_E2E_delays(full_df, removeDrops, checkColumn, df_res):
         linearInterp_time_average = np.sum(((values[:-1] + values[1:]) / 2) * np.diff(time)) / (time[-1] - time[0])
         df_res['delay']['event_linearInterp_timeAvg'][path] = linearInterp_time_average
 
-        samples_times = find_samples_path(time)
+        samples_times = find_samples_path(time, txDelay)
         df_res['sampleSize']['delay'][path] = len(samples_times)
-        samples_values = df[df['SentTime'].isin(samples_times)]['Delay'].values        
-        avg, std = np.mean(samples_values), np.std(samples_values) / np.sqrt(len(samples_values))
+        samples_values = df[df['SentTime'].isin(samples_times)]['Delay'].values
+        if df_res['sampleSize']['delay'][path] == 0:
+            avg, std = 0, 0
+        else:
+            avg, std = np.mean(samples_values), np.std(samples_values) / np.sqrt(len(samples_values))
         df_res['delay']['event_poisson_eventAvg'][path] = (avg, std)
 
         df_res['delay']['event_eventAvg'][path] = (np.mean(values), np.std(values) / np.sqrt(len(values)))
@@ -692,8 +723,8 @@ def plot_queuingDelay_distribution(__ns3_path, results_folder, rate, experiment,
         plt.savefig('{}/scratch/{}/{}/{}/queuingDelay_distribution.png'.format(__ns3_path, results_folder, rate, experiment, segment))
 
 
-def calculate_offline_computations_on_switch(__ns3_path, results_folder, rate, experiment, segment, steadyStart, steadyEnd, paths, linkRate):
-    file_paths = glob.glob('{}/scratch/{}/{}/{}/*_{}.csv'.format(__ns3_path, results_folder, rate, experiment, segment))
+def calculate_offline_computations_on_switch(__ns3_path, results_folder, rate, experiment, segment, steadyStart, steadyEnd, paths, linkRate, load):
+    file_paths = glob.glob('{}/scratch/{}/{}/{}/{}/*_{}.csv'.format(__ns3_path, results_folder, rate, load, experiment, segment))
     dfs = {}
     for file_path in file_paths:
         df_res = {}
@@ -703,6 +734,10 @@ def calculate_offline_computations_on_switch(__ns3_path, results_folder, rate, e
         df_res['last'] = {}
         df_res['workload'] = {}
         df_res['sampleSize'] = {}
+        df_res['sampleSize']['delay'] = {}
+        df_res['sampleSize']['successProb'] = {}
+        df_res['sampleSize']['nonMarkingProb'] = {}
+        df_res['totalPckts'] = {}
         df_res['successProbMean'] = {}
         full_df = prune_data(full_df, 'Time', steadyStart, steadyEnd)
         # full_df = full_df[full_df['Label'].str.contains('10.1.1.1', na=False)]
@@ -727,7 +762,10 @@ def calculate_offline_computations_on_switch(__ns3_path, results_folder, rate, e
                 df_res['nonMarkingProb'][var + '_' + method] = {}
         
         for path in paths:
-            df_res['sampleSize'][path] = len(full_df)
+            df_res['sampleSize']['delay'][path] = len(full_df)
+            df_res['sampleSize']['successProb'][path] = len(full_df)
+            df_res['sampleSize']['nonMarkingProb'][path] = len(full_df)
+            df_res['totalPckts'][path] = len(full_df)
             
             full_df['nonDropProb'] = 1.0 - full_df['DropProb']
             time = full_df['Time'].values
@@ -766,11 +804,11 @@ def calculate_offline_computations_on_switch(__ns3_path, results_folder, rate, e
 
         dfs[df_name] = df_res
     return dfs
-def calculate_offline_computations(__ns3_path, rate, segment, experiment, results_folder, steadyStart, steadyEnd, projectColumn, removeDrops=True, checkColumn="", linksRates=[], linkDelays=[], swtichDstREDQueueDiscMaxSize=0, stats=None, tsh=0.15, differentiationDelay=None, errorRate=None):
+def calculate_offline_computations(__ns3_path, rate, segment, experiment, results_folder, steadyStart, steadyEnd, projectColumn, removeDrops=True, checkColumn="", linksRates=[], linkDelays=[], swtichDstREDQueueDiscMaxSize=0, stats=None, tsh=0.15, differentiationDelay=None, errorRate=None, load=None):
     if differentiationDelay is not None and errorRate is not None:
-        file_paths = glob.glob('{}/scratch/{}/{}/D_{}/f_{}/{}/*_{}.csv'.format(__ns3_path, results_folder, rate, differentiationDelay, errorRate, experiment, segment))
+        file_paths = glob.glob('{}/scratch/{}/{}/{}/D_{}/f_{}/{}/*_{}.csv'.format(__ns3_path, results_folder, rate, load, differentiationDelay, errorRate, experiment, segment))
     else:
-        file_paths = glob.glob('{}/scratch/{}/{}/{}/*_{}.csv'.format(__ns3_path, results_folder, rate, experiment, segment))
+        file_paths = glob.glob('{}/scratch/{}/{}/{}/{}/*_{}.csv'.format(__ns3_path, results_folder, rate, load, experiment, segment))
     dfs = {}
     for file_path in file_paths:
         df_res = {}
@@ -791,16 +829,20 @@ def calculate_offline_computations(__ns3_path, rate, segment, experiment, result
             df_res['sampleSize'] = {}
             df_res['successProbMean'] = {}
             df_res['sampleSize'] = {}
+            df_res['totalPckts'] = {}
+            txDelay = (1502 * 8 / linksRates[0])
             full_df = addRemoveTransmission_data(full_df, linkDelays, linksRates)
             full_df = prune_data(full_df, projectColumn, steadyStart, steadyEnd)
-            df_res = calculate_offline_E2E_lossRates(__ns3_path, full_df, df_res, checkColumn, linksRates[1], swtichDstREDQueueDiscMaxSize)
-            df_res = calculate_offline_E2E_delays(full_df, removeDrops, checkColumn, df_res)
+            df_res = calculate_offline_E2E_lossRates(__ns3_path, full_df, df_res, checkColumn, txDelay, linksRates[1], swtichDstREDQueueDiscMaxSize)
+            df_res = calculate_offline_E2E_delays(full_df, removeDrops, checkColumn, txDelay, df_res)
             df_res = calculate_offline_E2E_workload(full_df, df_res, steadyStart, steadyEnd)
-            df_res = calculate_offline_E2E_markingProb(full_df, df_res, checkColumn, swtichDstREDQueueDiscMaxSize, linksRates[1], __ns3_path, tsh)
+            df_res = calculate_offline_E2E_markingProb(full_df, df_res, checkColumn, txDelay, swtichDstREDQueueDiscMaxSize, linksRates[1], __ns3_path, tsh)
         if 'Poisson' in segment:
             packets_cfd = PacketCDF()
             packets_cfd.load_cdf_data('{}/scratch/ECNMC/Helpers/packet_size_cdf_singleQueue.csv'.format(__ns3_path))
             full_df = prune_data(full_df, projectColumn, steadyStart, steadyEnd)
+            # apply a thinning function to the data. The thinning function is a bernoulli process with a probability of 0.8 to keep the data
+            full_df = full_df.sample(frac=0.5, random_state=1)
             # full_df['MarkingProb'] = full_df.apply(lambda x: packets_cfd.calculate_probability_greater_than(swtichDstREDQueueDiscMaxSize * 0.15 - x['QueueSize']) if x['MarkingProb'] != 1.0 else 1.0, axis=1)
             # df_res = calculate_offline_switch_congestionEstimation(full_df, df_res)
             full_df['Delay'] = (full_df['TotalQueueSize'] * 8) / linksRates[0]
@@ -846,22 +888,22 @@ def read_data(__ns3_path, steadyStart, steadyEnd, rate, segment, checkColumn, pr
         dfs[df_name] = df
     return dfs
 
-def read_data_flowIndicator(__ns3_path, rate, results_folder, differentiationDelay=None, errorRate=None):
+def read_data_flowIndicator(__ns3_path, rate, results_folder, differentiationDelay=None, errorRate=None, load=None):
     flows_name = []
     if differentiationDelay is not None and errorRate is not None:
         file_paths = glob.glob('{}/scratch/{}/{}/D_{}/f_{}/0/*_EndToEnd.csv'.format(__ns3_path, results_folder, rate, differentiationDelay, errorRate))
     else:
-        file_paths = glob.glob('{}/scratch/{}/{}/0/*_EndToEnd.csv'.format(__ns3_path, results_folder, rate))
+        file_paths = glob.glob('{}/scratch/{}/{}/{}/0/*_EndToEnd.csv'.format(__ns3_path, results_folder, rate, load))
     for file_path in file_paths:
         flows_name.append(file_path.split('/')[-1].split('_')[0])
     return flows_name
 
-def read_queues_indicators(__ns3_path, rate, results_folder, differentiationDelay=None, errorRate=None):
+def read_queues_indicators(__ns3_path, rate, results_folder, differentiationDelay=None, errorRate=None, load=None):
     flows_name = []
     if differentiationDelay is not None and errorRate is not None:
         file_paths = glob.glob('{}/scratch/{}/{}/D_{}/f_{}/0/*_PoissonSampler.csv'.format(__ns3_path, results_folder, rate, differentiationDelay, errorRate))
     else:
-        file_paths = glob.glob('{}/scratch/{}/{}/0/*_PoissonSampler.csv'.format(__ns3_path, results_folder, rate))
+        file_paths = glob.glob('{}/scratch/{}/{}/{}/0/*_PoissonSampler.csv'.format(__ns3_path, results_folder, rate, load))
     for file_path in file_paths:
         if 'C' not in file_path.split('/')[-1].split('_')[0]:
             flows_name.append(file_path.split('/')[-1].split('_')[0])
