@@ -1,0 +1,108 @@
+
+Start Single Queue Simulation
+Number of receivers: 1
+Number of receivers: 1
+Sender Tx Queue Size: 1
+Switch Tx Queue Size: 1
+Hosts and Switches IP addresses
+Src: 0 Id:0 IP: 10.1.1.1
+Src CT: 1 Id:1 IP: 10.2.1.1
+Dst: 0 Id:2 IP: 10.3.1.1
+Total preparing time = 82712 microsecond
+Config Parameters
+srcHostToSwitchLinkRate: 300Mbps
+ctHostToSwitchLinkRate: 300Mbps
+hostToSwitchLinkDelay: 50us
+bottleneckLinkRate: 600.0Mbps
+pctPacedBack: 0
+enableSwitchECN: 1
+enableECMP: 1
+sampleRate: 12000
+errorRate: 0
+dirName: forward
+experiment: 43
+trafficStartTime: 37.800000000000004
+trafficStopTime: 38.7
+steadyStartTime: 0.3
+steadyEndTime: 0.8
+duration: 0.9
+swtichDstREDQueueDiscMaxSize: 18KB
+switchSrcREDQueueDiscMaxSize: 18KB
+minTh: 0.15
+maxTh: 0.15
+traffic: Facebook_HadoopDist_All
+isDifferentating: 0
+differentiationDelay: 0
+silentPacketDrop: 0
+load: 0.07
+Average Message Size: 127797
+Measurement Traffic Rate: 20.5405
+Cross Traffic Rate: 20.5405
+Node 10.1.1.1 WorkloadApp started at: 0 Will end at: 897999976
+Connection Pool of: Sender Address: 10.1.1.1 Receiver Address: 10.3.1.1
+Socket created for 10.3.1.1 On port 4001
+Socket created for 10.3.1.1 On port 4002
+Socket created for 10.3.1.1 On port 4003
+Socket created for 10.3.1.1 On port 4004
+Socket created for 10.3.1.1 On port 4005
+Socket created for 10.3.1.1 On port 4006
+Socket created for 10.3.1.1 On port 4007
+Socket created for 10.3.1.1 On port 4008
+Socket created for 10.3.1.1 On port 4009
+Socket created for 10.3.1.1 On port 4010
+Socket created for 10.3.1.1 On port 4011
+Socket created for 10.3.1.1 On port 4012
+Socket created for 10.3.1.1 On port 4013
+Socket created for 10.3.1.1 On port 4014
+Socket created for 10.3.1.1 On port 4015
+Socket created for 10.3.1.1 On port 4016
+Socket created for 10.3.1.1 On port 4017
+Socket created for 10.3.1.1 On port 4018
+Socket created for 10.3.1.1 On port 4019
+Socket created for 10.3.1.1 On port 4020
+Socket created for 10.3.1.1 On port 4021
+Socket created for 10.3.1.1 On port 4022
+Socket created for 10.3.1.1 On port 4023
+Socket created for 10.3.1.1 On port 4024
+Socket created for 10.3.1.1 On port 4025
+Socket created for 10.3.1.1 On port 4026
+Socket created for 10.3.1.1 On port 4027
+Socket created for 10.3.1.1 On port 4028
+Socket created for 10.3.1.1 On port 4029
+Socket created for 10.3.1.1 On port 4030
+Node 10.2.1.1 WorkloadApp started at: 0 Will end at: 897999976
+Connection Pool of: Sender Address: 10.2.1.1 Receiver Address: 10.3.1.1
+Socket created for 10.3.1.1 On port 4031
+Socket created for 10.3.1.1 On port 4032
+Socket created for 10.3.1.1 On port 4033
+Socket created for 10.3.1.1 On port 4034
+Socket created for 10.3.1.1 On port 4035
+Socket created for 10.3.1.1 On port 4036
+Socket created for 10.3.1.1 On port 4037
+Socket created for 10.3.1.1 On port 4038
+Socket created for 10.3.1.1 On port 4039
+Socket created for 10.3.1.1 On port 4040
+Socket created for 10.3.1.1 On port 4041
+Socket created for 10.3.1.1 On port 4042
+Socket created for 10.3.1.1 On port 4043
+Socket created for 10.3.1.1 On port 4044
+Socket created for 10.3.1.1 On port 4045
+Socket created for 10.3.1.1 On port 4046
+Socket created for 10.3.1.1 On port 4047
+Socket created for 10.3.1.1 On port 4048
+Socket created for 10.3.1.1 On port 4049
+Socket created for 10.3.1.1 On port 4050
+Socket created for 10.3.1.1 On port 4051
+Socket created for 10.3.1.1 On port 4052
+Socket created for 10.3.1.1 On port 4053
+Socket created for 10.3.1.1 On port 4054
+Socket created for 10.3.1.1 On port 4055
+Socket created for 10.3.1.1 On port 4056
+Socket created for 10.3.1.1 On port 4057
+Socket created for 10.3.1.1 On port 4058
+Socket created for 10.3.1.1 On port 4059
+Socket created for 10.3.1.1 On port 4060
+Node 10.1.1.1 Connection Pools closed at 897999976
+Node 10.2.1.1 Connection Pools closed at 897999976
+Done 
+Total execution time = 2430091 microsecond
