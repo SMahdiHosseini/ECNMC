@@ -131,7 +131,7 @@ void SetAppMaxSize(Ptr<BulkSendApplication> app) {
 }
 
 double readAvgMsgSize(string traffic) {
-    string cdfFile  = "scratch/ECNMC/DCWorkloads/" + traffic;
+    string cdfFile  = "scratch/ECNMC/DCWorkloads/" + traffic + ".txt";
     string line;
     ifstream file(cdfFile);
     if (!file.is_open()) {
@@ -441,7 +441,7 @@ void run_single_queue_simulation(int argc, char* argv[]) {
     Ptr<PointToPointNetDevice> switchToDstNetDevice = DynamicCast<PointToPointNetDevice>(dstHostsToSwitchNetDevices.Get(1));
     Ptr<PointToPointNetDevice> incomingNetDevice = DynamicCast<PointToPointNetDevice>(srcHostsToSwitchNetDevices[0].Get(1));
     Ptr<PointToPointNetDevice> incomingNetDevice_1 = DynamicCast<PointToPointNetDevice>(ctHostsToSwitchNetDevices[0].Get(1));
-    auto *switchToDstSampler = new PoissonSampler(Seconds(stof(steadyStartTime)), Seconds(stof(steadyStopTime)), DynamicCast<RedQueueDisc>(switchToDstHostQueueDisc.Get(0)), switchToDstNetDevice->GetQueue(), switchToDstNetDevice, "SD0", sampleRate, incomingNetDevice, incomingNetDevice_1);
+    auto *switchToDstSampler = new PoissonSampler(Seconds(stof(steadyStartTime)), Seconds(stof(steadyStopTime)), DynamicCast<RedQueueDisc>(switchToDstHostQueueDisc.Get(0)), switchToDstNetDevice->GetQueue(), switchToDstNetDevice, "SD0", sampleRate, incomingNetDevice, incomingNetDevice_1, traffic);
     // auto *switchToDstSampler = new PoissonSampler(Seconds(stof(steadyStartTime)), Seconds(stof(steadyStopTime)), DynamicCast<RedQueueDisc>(switchToDstHostQueueDisc.Get(0)), switchToDstNetDevice->GetQueue(), switchToDstNetDevice, "SD0", sampleRate);
     // auto *switchToDstSampler = new PoissonSampler(Seconds(stof(steadyStartTime)), Seconds(stof(steadyStopTime)), nullptr, switchToDstNetDevice->GetQueue(), switchToDstNetDevice, "SD0", sampleRate);
 
