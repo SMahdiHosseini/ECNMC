@@ -41,7 +41,7 @@ DCWorkloadGenerator::GenrateTraffic() {
     factory.Set("StopTime", TimeValue(trafficEndTime));
     factory.Set("Protocol", StringValue(protocol));
     factory.Set("Rate", DoubleValue(_avgRate));
-    factory.Set("WorkloadPath", StringValue(_workloadPath));
+    factory.Set("WorkloadPath", StringValue(_workloadPath + ".txt"));
     Ptr<WorkloadApp> nodeAppsHandler = factory.Create<WorkloadApp>();
     nodeAppsHandler->SetReceiverAddress(receiversAddresses);
     _sender->AddApplication(nodeAppsHandler);
