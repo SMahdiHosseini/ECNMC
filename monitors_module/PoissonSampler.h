@@ -118,7 +118,7 @@ private:
     uint32_t ComputeQueueSize();
 public:
     PoissonSampler(const Time &steadyStartTime, const Time &steadyStopTime, Ptr<RedQueueDisc> queueDisc, Ptr<Queue<Packet>> queue, Ptr<PointToPointNetDevice> outgoingNetDevice, const string &sampleTag, double sampleRate);
-    PoissonSampler(const Time &steadyStartTime, const Time &steadyStopTime, Ptr<RedQueueDisc> queueDisc, Ptr<Queue<Packet>> queue, Ptr<PointToPointNetDevice> outgoingNetDevice, const string &sampleTag, double sampleRate, Ptr<PointToPointNetDevice> incomingNetDevice, Ptr<PointToPointNetDevice> incomingNetDevice_1);
+    PoissonSampler(const Time &steadyStartTime, const Time &steadyStopTime, Ptr<RedQueueDisc> queueDisc, Ptr<Queue<Packet>> queue, Ptr<PointToPointNetDevice> outgoingNetDevice, const string &sampleTag, double sampleRate, Ptr<PointToPointNetDevice> incomingNetDevice, Ptr<PointToPointNetDevice> incomingNetDevice_1, const string cdfFileName);
     void SaveMonitorRecords(const string &filename);
 };
 

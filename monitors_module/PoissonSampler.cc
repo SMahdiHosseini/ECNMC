@@ -35,11 +35,11 @@ double samplingEvent::GetLastDropProb() const { return _lastLossProb; }
 uint32_t samplingEvent::GetLastQueueSize() const { return _lastQueueSize; }
 uint32_t samplingEvent::GetLastTotalQueueSize() const { return _lastTotalQueueSize; }
 PoissonSampler::PoissonSampler(const Time &steadyStartTime, const Time &steadyStopTime, Ptr<RedQueueDisc> queueDisc, Ptr<Queue<Packet>> queue, Ptr<PointToPointNetDevice>  outgoingNetDevice, const string &sampleTag, double sampleRate) 
-: PoissonSampler(steadyStartTime, steadyStopTime, queueDisc, queue, outgoingNetDevice, sampleTag, sampleRate, nullptr, nullptr) {
+: PoissonSampler(steadyStartTime, steadyStopTime, queueDisc, queue, outgoingNetDevice, sampleTag, sampleRate, nullptr, nullptr, "") {
 
 }
 
-PoissonSampler::PoissonSampler(const Time &steadyStartTime, const Time &steadyStopTime, Ptr<RedQueueDisc> queueDisc, Ptr<Queue<Packet>> queue, Ptr<PointToPointNetDevice>  outgoingNetDevice, const string &sampleTag, double sampleRate, Ptr<PointToPointNetDevice> _incomingNetDevice, Ptr<PointToPointNetDevice> _incomingNetDevice_1)
+PoissonSampler::PoissonSampler(const Time &steadyStartTime, const Time &steadyStopTime, Ptr<RedQueueDisc> queueDisc, Ptr<Queue<Packet>> queue, Ptr<PointToPointNetDevice>  outgoingNetDevice, const string &sampleTag, double sampleRate, Ptr<PointToPointNetDevice> _incomingNetDevice, Ptr<PointToPointNetDevice> _incomingNetDevice_1, const string cdfFileName)
 : Monitor(Seconds(0), steadyStopTime, steadyStartTime, steadyStopTime, sampleTag) {
     REDQueueDisc = queueDisc;
     NetDeviceQueue = queue;
@@ -54,8 +54,8 @@ PoissonSampler::PoissonSampler(const Time &steadyStartTime, const Time &steadySt
     sampleMean.push_back(0);
     unbiasedSmapleVariance.push_back(0.0);
     sampleSize.push_back(0);
-    // packetCDF.loadCDFData("/media/experiments/ns-allinone-3.41/ns-3.41/scratch/ECNMC/Helpers/packet_size_cdf.csv");
-    packetCDF.loadCDFData("/media/experiments/ns-allinone-3.41/ns-3.41/scratch/ECNMC/Helpers/packet_size_cdf_singleQueue.csv");
+    packetCDF.SetCDFFile("/media/experiments/ns-allinone-3.41/ns-3.41/scratch/ECNMC/DCWorkloads/packet_size_cdf_" + cdfFileName + ".csv");
+    packetCDF.loadCDFData();
     numOfGTSamples = 0;
     GTPacketSizeMean = 0;
     GTDropMean = 0;
@@ -443,6 +443,7 @@ void PoissonSampler::SaveMonitorRecords(const string& filename) {
     queueSizeByPacketsFile.close();
 
     // if (_monitorTag == "SD0") {
-    //     packetCDF.printCDF();
+    //     // packetCDF.printCDF();
+    //     packetCDF.saveCDFData();
     // }
 }

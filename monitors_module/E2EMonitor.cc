@@ -49,7 +49,8 @@ E2EMonitor::E2EMonitor(const Time &startTime, const Time &duration, const Time &
         lastDelay.push_back(Time(0));
         sentPackets_onlink.push_back(0);
     }
-    packetCDF.loadCDFData("/media/experiments/ns-allinone-3.41/ns-3.41/scratch/ECNMC/Helpers/packet_size_cdf_singleQueue.csv");
+    packetCDF.SetCDFFile("/media/experiments/ns-allinone-3.41/ns-3.41/scratch/ECNMC/Helpers/packet_size_cdf_singleQueue.csv");
+    packetCDF.loadCDFData();
     GTDropMean = 0;
     lastItemTime = Time(0);
     firstItemTime = Time(-1);

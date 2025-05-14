@@ -10,8 +10,12 @@ using namespace std;
 
 class PacketCDF {
 public:
-    void loadCDFData(const std::string& filename) {
-        std::ifstream file(filename);
+    void SetCDFFile(const std::string& filename) {
+        fileName = filename;
+    }
+
+    void loadCDFData() {
+        std::ifstream file(fileName);
         std::string line;
 
         // Skip the header
@@ -56,10 +60,22 @@ public:
         }
     }
 
+    // Save the CDF data to a CSV file
+    void saveCDFData() const {
+        std::ofstream
+        file(fileName);
+        file << "packet_size,cdf" << std::endl;
+        for (const auto& entry : packet_cdf) {
+            file << entry.first << "," << entry.second << std::endl;
+        }
+        file.close();
+    }
+
 private:
     std::map<uint32_t, uint32_t> packet_count;  // Stores count of each packet size
     std::map<uint32_t, double> packet_cdf; // Stores CDF values for each packet size
     uint32_t total_packets = 0;               // Total number of packets observed
+    string fileName;                     // File name for saving CDF data
 
     // Function to update the CDF values after adding a packet
     void updateCDF() {
