@@ -4,6 +4,9 @@ import configparser
 import threading
 import argparse
 from enum import Enum
+import subprocess
+import random
+import psutil
 # __ns3_path = os.popen('locate "ns-3.41" | grep /ns-3.41$').read().splitlines()[0]
 __ns3_path = "/media/experiments/ns-allinone-3.41/ns-3.41"
 # __ns3_path = '/Users/shossein/Documents/NAL/Flwo-Path_Consistency/ns-allinone-3.41/ns-3.41'
@@ -40,6 +43,7 @@ class ExperimentConfig:
         self.traffic = []
         self.isDifferentating = False
         self.silentPacketDrop = False
+        self.probeInterval = "1ms"
 
     def read_config_file(self, config_file):
         config = configparser.ConfigParser()
@@ -72,6 +76,7 @@ class ExperimentConfig:
         self.MinTh = config.get('Settings', 'MinTh')
         self.MaxTh = config.get('Settings', 'MaxTh')
         self.traffic = config.get('Settings', 'traffic').split(',')
+        self.probeInterval = config.get('Settings', 'probeInterval')
 
 
 
@@ -80,6 +85,40 @@ def get_ns3_path(): return __ns3_path
 
 def rebuild_project():
     os.system('{}/ns3 build'.format(get_ns3_path()))
+
+def run_ns3_with_timeout(base_cmd, output_file, timeout_seconds=180, initial_seed=1):
+    seed = initial_seed or int(time.time())
+    attempt = 1
+
+    while attempt <= 5:
+        print(f"Attempt {attempt}: Running simulation with seed {seed}")
+
+        # Add the seed to the command
+        full_cmd = f"{base_cmd} --seed={seed} \' > {output_file}"
+
+        try:
+            # Start the process
+            process = subprocess.Popen(full_cmd, shell=True)
+            proc = psutil.Process(process.pid)
+
+            # Wait for the timeout
+            try:
+                process.wait(timeout=timeout_seconds)
+                print(f"Simulation completed successfully with seed {seed}")
+                break  # success
+            except subprocess.TimeoutExpired:
+                print(f"Timeout expired for seed {seed}. Killing process tree...")
+                for child in proc.children(recursive=True):
+                    child.kill()
+                proc.kill()
+                time.sleep(1)  # Give the system a moment to reclaim resources
+
+        except Exception as e:
+            print(f"Error running simulation with seed {seed}: {e}")
+
+        # Retry with a new seed
+        seed = int(time.time()) + random.randint(0, 10000)
+        attempt += 1
 
 def run_forward_experiment(exp, singleQueue=False):
     expConfig = ExperimentConfig()
@@ -99,8 +138,8 @@ def run_forward_experiment(exp, singleQueue=False):
                 for i in exp:
                     os.system('mkdir -p {}/scratch/ECNMC/Results/results_forward/{}'.format(get_ns3_path(), i + 1))
                     if singleQueue:
-                        os.system(
-                            '{}/ns3 run \'DatacenterSimulation '.format(get_ns3_path()) +
+                        # NS_LOG="DefaultSimulatorImpl=*" 
+                        cmd = ('{}/ns3 run \'DatacenterSimulation '.format(get_ns3_path()) +
                             '{} '.format(singleQueue) +
                             '--srcHostToSwitchLinkRate={} '.format(expConfig.srcHostToSwitchLinkRate) +
                             '--ctHostToSwitchLinkRate={} '.format(expConfig.ctHostToSwitchLinkRate) +
@@ -125,11 +164,11 @@ def run_forward_experiment(exp, singleQueue=False):
                             '--traffic={} '.format(traffic) +
                             '--differentiationDelay={} '.format(expConfig.differentiationDelay[0]) +
                             '--isDifferentating={} '.format(expConfig.isDifferentating) +
-                            '--silentPacketDrop={} '.format(expConfig.silentPacketDrop) +
-                            '\' > {}/scratch/ECNMC/Results/results_forward/result_{}.txt'.format(get_ns3_path(), i)
+                            '--silentPacketDrop={} '.format(expConfig.silentPacketDrop) + 
+                            '--probeInterval={} '.format(expConfig.probeInterval)
                         )
                     else:
-                        os.system(
+                        cmd = (
                             '{}/ns3 run \'DatacenterSimulation '.format(get_ns3_path()) +
                             '{} '.format(singleQueue) +
                             '--hostToTorLinkRate={} '.format(expConfig.host_to_tor_link_rate) +
@@ -149,10 +188,10 @@ def run_forward_experiment(exp, singleQueue=False):
                             '--trafficStopTime={} '.format((i + 1) * float(expConfig.duration)) +
                             '--steadyStartTime={} '.format(expConfig.steadyStart) +
                             '--steadyStopTime={} '.format(expConfig.steadyEnd) +
-                            '--dirName=' + 'forward' +
-                            '\' > {}/scratch/ECNMC/Results/results_forward/result_{}.txt'.format(get_ns3_path(), i)
+                            '--dirName=' + 'forward '
                         )
-            
+                    output_file = '{}/scratch/ECNMC/Results/results_forward/result_{}.txt'.format(get_ns3_path(), i)
+                    run_ns3_with_timeout(cmd, output_file, timeout_seconds=600, initial_seed=i + 1)
                     os.system('mkdir -p {}/scratch/Results_forward/{}/{}/{}/{}'.format(get_ns3_path(), traffic, rate, load, i))
                     os.system('mv {}/scratch/ECNMC/Results/results_forward/{}/*.csv {}/scratch/Results_forward/{}/{}/{}/{}'.format(get_ns3_path(), i + 1, get_ns3_path(), traffic, rate, load, i))
                     # os.system('mv {}/scratch/ECNMC/Results/*_cwnd.csv {}/scratch/Results_forward/{}/{}'.format(get_ns3_path(), get_ns3_path(), rate, i))
@@ -175,71 +214,74 @@ def run_reverse_experiment(exp, singleQueue=False, type=ReverseType.Delay):
     os.system('cp Parameters.config {}/scratch/ECNMC/Results/results_reverse/'.format(get_ns3_path()))
     for traffic in expConfig.traffic:
         for CRate in expConfig.serviceRateScales:
-            for DiffRate in expConfig.differentiationDelay: 
-                for errorRate in expConfig.errorRate:
-                    exp_tor_to_agg_link_rate = "{}Mbps".format(round(float(expConfig.tor_to_agg_link_rate.split('M')[0]) * CRate, 1))
-                    exp_bottleNeckLinkRate = "{}Mbps".format(round(float(expConfig.bottleneckLinkRate.split('M')[0]) * CRate, 1))
-                    for i in exp:
-                        os.system('mkdir -p {}/scratch/ECNMC/Results/results_reverse/{}'.format(get_ns3_path(), i + 1))
-                        if singleQueue:
-                            os.system(
-                                '{}/ns3 run \'DatacenterSimulation '.format(get_ns3_path()) +
-                                '{} '.format(singleQueue) +
-                                '--srcHostToSwitchLinkRate={} '.format(expConfig.srcHostToSwitchLinkRate) +
-                                '--ctHostToSwitchLinkRate={} '.format(expConfig.ctHostToSwitchLinkRate) +
-                                '--hostToSwitchLinkDelay={} '.format(expConfig.host_to_tor_link_delay) +
-                                '--bottleneckLinkRate={} '.format(exp_bottleNeckLinkRate) +
-                                '--pctPacedBack={} '.format(expConfig.pct_paced_back) +
-                                '--duration={} '.format(expConfig.duration) +
-                                '--sampleRate={} '.format(expConfig.sampleRate) +
-                                '--experiment={} '.format(i + 1) +
-                                '--errorRate={} '.format(errorRate) +
-                                '--trafficStartTime={} '.format(i * float(expConfig.duration)) +
-                                '--trafficStopTime={} '.format((i + 1) * float(expConfig.duration)) +
-                                '--steadyStartTime={} '.format(expConfig.steadyStart) +
-                                '--steadyStopTime={} '.format(expConfig.steadyEnd) +
-                                '--swtichDstREDQueueDiscMaxSize={} '.format(expConfig.swtichDstREDQueueDiscMaxSize) +
-                                '--switchSrcREDQueueDiscMaxSize={} '.format(expConfig.switchSrcREDQueueDiscMaxSize) +
-                                '--switchTXMaxSize={} '.format(expConfig.switchTXMaxSize) +
-                                '--minTh={} '.format(expConfig.MinTh) +
-                                '--maxTh={} '.format(expConfig.MaxTh) +
-                                '--dirName=' + 'reverse ' +
-                                '--traffic={} '.format(traffic) +
-                                '--differentiationDelay={} '.format(DiffRate) +
-                                '--isDifferentating={} '.format(expConfig.isDifferentating) +
-                                '--silentPacketDrop={} '.format(expConfig.silentPacketDrop) +
-                                '\' > {}/scratch/ECNMC/Results/results_reverse/result_{}.txt'.format(get_ns3_path(), i)
-                            )
-                        else:
-                            os.system(
-                                '{}/ns3 run \'DatacenterSimulation '.format(get_ns3_path()) +
-                                '--hostToTorLinkRate={} '.format(expConfig.host_to_tor_link_rate) +
-                                '--hostToTorLinkRateCrossTraffic={} '.format(expConfig.host_to_tor_cross_traffic_rate) +
-                                '--torToAggLinkRate={} '.format(exp_tor_to_agg_link_rate) +
-                                '--aggToCoreLinkRate={} '.format(expConfig.agg_to_core_link_rate) +
-                                '--hostToTorLinkDelay={} '.format(expConfig.host_to_tor_link_delay) +
-                                '--torToAggLinkDelay={} '.format(expConfig.tor_to_agg_link_delay) +
-                                '--aggToCoreLinkDelay={} '.format(expConfig.agg_to_core_link_delay) +
-                                '--pctPacedBack={} '.format(expConfig.pct_paced_back) +
-                                '--appDataRate={} '.format(expConfig.app_data_rate) +
-                                '--duration={} '.format(expConfig.duration) +
-                                '--sampleRate={} '.format(expConfig.sampleRate) +
-                                '--experiment={} '.format(i + 1) +
-                                '--errorRate={} '.format(errorRate) +
-                                '--trafficStartTime={} '.format(i * float(expConfig.duration)) +
-                                '--trafficStopTime={} '.format((i + 1) * float(expConfig.duration)) +
-                                '--steadyStartTime={} '.format(expConfig.steadyStart) +
-                                '--steadyStopTime={} '.format(expConfig.steadyEnd) +
-                                '--dirName=' + 'reverse' +
-                                '\' > {}/scratch/ECNMC/Results/results_reverse/result_{}.txt'.format(get_ns3_path(), i)
-                            )
-                
-                        os.system('mkdir -p {}/scratch/Results_reverse_C:{}_{}/{}/{}/D_{}/f_{}/{}'.format(get_ns3_path(), expConfig.serviceRateScales[0], expConfig.serviceRateScales[-1], traffic, CRate, DiffRate, errorRate, i))
-                        os.system('mv {}/scratch/ECNMC/Results/results_reverse/{}/*.csv {}/scratch/Results_reverse_C:{}_{}/{}/{}/D_{}/f_{}/{}'.format(get_ns3_path(), i + 1, get_ns3_path(), expConfig.serviceRateScales[0], expConfig.serviceRateScales[-1], traffic, CRate, DiffRate, errorRate, i))
-                        os.system('mkdir -p {}/scratch/ECNMC/Results/results_reverse_C:{}_{}/{}/{}/D_{}/f_{}'.format(get_ns3_path(), expConfig.serviceRateScales[0], expConfig.serviceRateScales[-1], traffic, CRate, DiffRate, errorRate))
-                        print('\tExperiment {} with {} rate {} and diff {} with fraction {} done'.format(i, traffic, CRate, DiffRate, errorRate))
-                    print('traffic {} Rate {} , diff {} with fraction {} done'.format(traffic, CRate, DiffRate, errorRate))
-                print('Rate {} done'.format(CRate))
+            for load in expConfig.load:
+                for DiffRate in expConfig.differentiationDelay: 
+                    for errorRate in expConfig.errorRate:
+                        exp_tor_to_agg_link_rate = "{}Mbps".format(round(float(expConfig.tor_to_agg_link_rate.split('M')[0]) * CRate, 1))
+                        exp_bottleNeckLinkRate = "{}Mbps".format(round(float(expConfig.bottleneckLinkRate.split('M')[0]) * CRate, 1))
+                        for i in exp:
+                            os.system('mkdir -p {}/scratch/ECNMC/Results/results_reverse/{}'.format(get_ns3_path(), i + 1))
+                            if singleQueue:
+                                os.system(
+                                    '{}/ns3 run \'DatacenterSimulation '.format(get_ns3_path()) +
+                                    '{} '.format(singleQueue) +
+                                    '--srcHostToSwitchLinkRate={} '.format(expConfig.srcHostToSwitchLinkRate) +
+                                    '--ctHostToSwitchLinkRate={} '.format(expConfig.ctHostToSwitchLinkRate) +
+                                    '--hostToSwitchLinkDelay={} '.format(expConfig.host_to_tor_link_delay) +
+                                    '--bottleneckLinkRate={} '.format(exp_bottleNeckLinkRate) +
+                                    '--pctPacedBack={} '.format(expConfig.pct_paced_back) +
+                                    '--duration={} '.format(expConfig.duration) +
+                                    '--sampleRate={} '.format(expConfig.sampleRate) +
+                                    '--load={} '.format(load) +
+                                    '--experiment={} '.format(i + 1) +
+                                    '--errorRate={} '.format(errorRate) +
+                                    '--trafficStartTime={} '.format(i * float(expConfig.duration)) +
+                                    '--trafficStopTime={} '.format((i + 1) * float(expConfig.duration)) +
+                                    '--steadyStartTime={} '.format(expConfig.steadyStart) +
+                                    '--steadyStopTime={} '.format(expConfig.steadyEnd) +
+                                    '--swtichDstREDQueueDiscMaxSize={} '.format(expConfig.swtichDstREDQueueDiscMaxSize) +
+                                    '--switchSrcREDQueueDiscMaxSize={} '.format(expConfig.switchSrcREDQueueDiscMaxSize) +
+                                    '--switchTXMaxSize={} '.format(expConfig.switchTXMaxSize) +
+                                    '--minTh={} '.format(expConfig.MinTh) +
+                                    '--maxTh={} '.format(expConfig.MaxTh) +
+                                    '--dirName=' + 'reverse ' +
+                                    '--traffic={} '.format(traffic) +
+                                    '--differentiationDelay={} '.format(DiffRate) +
+                                    '--isDifferentating={} '.format(expConfig.isDifferentating) +
+                                    '--silentPacketDrop={} '.format(expConfig.silentPacketDrop) +
+                                    '\' > {}/scratch/ECNMC/Results/results_reverse/result_{}.txt'.format(get_ns3_path(), i)
+                                )
+                            else:
+                                os.system(
+                                    '{}/ns3 run \'DatacenterSimulation '.format(get_ns3_path()) +
+                                    '--hostToTorLinkRate={} '.format(expConfig.host_to_tor_link_rate) +
+                                    '--hostToTorLinkRateCrossTraffic={} '.format(expConfig.host_to_tor_cross_traffic_rate) +
+                                    '--torToAggLinkRate={} '.format(exp_tor_to_agg_link_rate) +
+                                    '--aggToCoreLinkRate={} '.format(expConfig.agg_to_core_link_rate) +
+                                    '--hostToTorLinkDelay={} '.format(expConfig.host_to_tor_link_delay) +
+                                    '--torToAggLinkDelay={} '.format(expConfig.tor_to_agg_link_delay) +
+                                    '--aggToCoreLinkDelay={} '.format(expConfig.agg_to_core_link_delay) +
+                                    '--pctPacedBack={} '.format(expConfig.pct_paced_back) +
+                                    '--appDataRate={} '.format(expConfig.app_data_rate) +
+                                    '--duration={} '.format(expConfig.duration) +
+                                    '--sampleRate={} '.format(expConfig.sampleRate) +
+                                    '--experiment={} '.format(i + 1) +
+                                    '--errorRate={} '.format(errorRate) +
+                                    '--trafficStartTime={} '.format(i * float(expConfig.duration)) +
+                                    '--trafficStopTime={} '.format((i + 1) * float(expConfig.duration)) +
+                                    '--steadyStartTime={} '.format(expConfig.steadyStart) +
+                                    '--steadyStopTime={} '.format(expConfig.steadyEnd) +
+                                    '--dirName=' + 'reverse' +
+                                    '\' > {}/scratch/ECNMC/Results/results_reverse/result_{}.txt'.format(get_ns3_path(), i)
+                                )
+                    
+                            os.system('mkdir -p {}/scratch/Results_reverse_C:{}_{}/{}/{}/{}/D_{}/f_{}/{}'.format(get_ns3_path(), expConfig.serviceRateScales[0], expConfig.serviceRateScales[-1], traffic, CRate, load, DiffRate, errorRate, i))
+                            os.system('mv {}/scratch/ECNMC/Results/results_reverse/{}/*.csv {}/scratch/Results_reverse_C:{}_{}/{}/{}/{}/D_{}/f_{}/{}'.format(get_ns3_path(), i + 1, get_ns3_path(), expConfig.serviceRateScales[0], expConfig.serviceRateScales[-1], traffic, CRate, load, DiffRate, errorRate, i))
+                            os.system('mkdir -p {}/scratch/ECNMC/Results/results_reverse_C:{}_{}/{}/{}/{}/D_{}/f_{}'.format(get_ns3_path(), expConfig.serviceRateScales[0], expConfig.serviceRateScales[-1], traffic, CRate, load, DiffRate, errorRate))
+                            print('\tExperiment {} with {} rate {} load {} and diff {} with fraction {} done'.format(i, traffic, CRate, load, DiffRate, errorRate))
+                        print('traffic {} Rate {} load {}, diff {} with fraction {} done'.format(traffic, CRate, load, DiffRate, errorRate))
+                print('Rate {} load {} done'.format(CRate, load))
+            print('Rate {} done'.format(CRate))
         print('Traffic {} done'.format(traffic))
 
 def run_param_experiments(exp):
