@@ -25,6 +25,10 @@ TypeId WorkloadApp::GetTypeId() {
                           StringValue("scratch/ECNMC/DCWorkloads/Google_AllRPC.txt"),
                           MakeStringAccessor(&WorkloadApp::workloadPath),
                           MakeStringChecker())
+            .AddAttribute("EnablePacing", "Enable pacing for the application",
+                          BooleanValue(false),
+                          MakeBooleanAccessor(&WorkloadApp::_enablePacing),
+                          MakeBooleanChecker())
     ;
     return tid;
 }
@@ -97,7 +101,7 @@ void WorkloadApp::PrepareConnections() {
     for (auto &addresses : _receiverAddress) {
         cout << "Connection Pool of: Sender Address: " << GetNode()->GetObject<Ipv4>()->GetAddress(1, 0).GetLocal() << " Receiver Address: " << InetSocketAddress::ConvertFrom(addresses[0]).GetIpv4() << endl;
         ConnectionPool connectionPool(addresses[0], _protocol, GetNode());
-        connectionPool.CreateSockets(addresses);
+        connectionPool.CreateSockets(addresses, _enablePacing);
         _connectionPools.push_back(connectionPool);
     }
 }
@@ -116,12 +120,15 @@ void WorkloadApp::Send() {
     uint32_t segmentSize = m_erv->GetValue();
     // segmentSize *= 1442; // for DCTCP workload
     uint32_t selectedReceiver = m_uniform->GetInteger(0, _receiversNumber - 1);
+    // cout << "Node " << GetNodeIP(GetNode(), 1) << " WorkloadApp sending to receiver size of: " << segmentSize << " at: " << Simulator::Now().GetNanoSeconds() << endl;
     _connectionPools[selectedReceiver].SendData(Create<Packet>(segmentSize));
 }
 
 void WorkloadApp::ScheduleNextSend() {
+    // cout << "Node " << GetNodeIP(GetNode(), 1) << " WorkloadApp sending at: " << Simulator::Now().GetNanoSeconds() << endl;
     Send();
     double nextEvent = m_var->GetValue();
     _sendEvent = Simulator::Schedule(Seconds(nextEvent), &WorkloadApp::ScheduleNextSend, this);
+    // cout << "Node " << GetNodeIP(GetNode(), 1) << " WorkloadApp next event at: " << (Simulator::Now() + Seconds(nextEvent)).GetNanoSeconds() << " Event: " << _sendEvent.GetUid() << endl;
 }
 

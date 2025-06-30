@@ -19,7 +19,7 @@ class ConnectionPool {
 public:
     ConnectionPool(const Address& address, const string& protocol, Ptr<Node> senderNode);
     ~ConnectionPool();
-    void CreateSockets(vector<Address> receiverAddresses);
+    void CreateSockets(vector<Address> receiverAddresses, bool enablePacing);
     void CloseConnections();
     void SendData(const Ptr<Packet>& packet);
     void SetSocketState(uint32_t socketId, bool state);
@@ -31,6 +31,7 @@ private:
     string protocol;
     Ptr<Node> senderNode;
     Ptr<UniformRandomVariable> m_uniform;
+    Ptr<Socket> findIdleSocket();
 };
 
 #endif //CONNECTIONPOOL_H

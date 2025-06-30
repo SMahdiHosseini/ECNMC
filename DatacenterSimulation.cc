@@ -170,6 +170,7 @@ void run_single_queue_simulation(int argc, char* argv[]) {
     string swtichDstREDQueueDiscMaxSize = "10KB";      // Maximum size of the RED Queue Disc between the switch and the dst host
     string switchSrcREDQueueDiscMaxSize = "6KB";       // Maximum size of the RED Queue Disc between the switch and the src host
     string traffic = "chicago_2010_traffic_10min_2paths/path";  // If the is CAIDA, Merged CAIDA or BulkSend                            
+    string probeInterval = "100us";                    // Probe interval for the probe clock at TCP socket 
     double pctPacedBack = 0.0;                         // the percentage of tcp flows of the CAIDA trace to be paced
     bool enableSwitchECN = true;                       // Enable ECN on the switches
     bool enableECMP = true;                            // Enable ECMP on the switches
@@ -186,6 +187,7 @@ void run_single_queue_simulation(int argc, char* argv[]) {
     double avgMsgSize = 1448.0;                        // The average message size
     double hostTrafficRate = 1000.0;                   // The traffic rate of the cross traffic
     double ctTrafficRate = 1000.0;                     // The traffic rate of the cross traffic
+    int seed = 1;                                      // The seed for the random number generator
 
     /*command line input*/
     CommandLine cmd;
@@ -212,14 +214,16 @@ void run_single_queue_simulation(int argc, char* argv[]) {
     cmd.AddValue("swtichDstREDQueueDiscMaxSize", "Maximum size of the RED Queue Disc between the switch and the dst host", swtichDstREDQueueDiscMaxSize);
     cmd.AddValue("switchSrcREDQueueDiscMaxSize", "Maximum size of the RED Queue Disc between the switch and the src host", switchSrcREDQueueDiscMaxSize);
     cmd.AddValue("traffic", "If the is CAIDA, Merged CAIDA or BulkSend", traffic);
+    cmd.AddValue("probeInterval", "Probe interval for the probe clock at TCP socket", probeInterval);
     cmd.AddValue("isDifferentating", "If the simulation is differentating", isDifferentating);
     cmd.AddValue("differentiationDelay", "Extra delay for the differentiation", differentiationDelay); 
     cmd.AddValue("silentPacketDrop", "If the switch should drop packets silently", silentPacketDrop);
     cmd.AddValue("load", "The load on the buttleneck link", load);
+    cmd.AddValue("seed", "The seed for the random number generator", seed);
     cmd.Parse(argc, argv);
 
     /*set default values*/
-    ns3::RngSeedManager::SetSeed(experiment);
+    ns3::RngSeedManager::SetSeed(seed);
     Time startTime = Seconds(0);
     Time stopTime = Seconds(stof(duration));
     Time convergenceTime = Seconds(0.2);
@@ -236,6 +240,7 @@ void run_single_queue_simulation(int argc, char* argv[]) {
     GlobalValue::Bind("ChecksumEnabled", BooleanValue(false));
     Config::SetDefault("ns3::RedQueueDisc::UseHardDrop", BooleanValue(false));
     Config::SetDefault("ns3::RedQueueDisc::MeanPktSize", UintegerValue(1000));
+    Config::SetDefault("ns3::TcpSocketBase::ProbeClockInterval", StringValue(probeInterval));
     // Config::SetDefault("ns3::DropTailQueue<Packet>::MaxSize", QueueSizeValue(QueueSize("10KB")));
     // Config::SetDefault("ns3::RedQueueDisc::MaxSize", QueueSizeValue(QueueSize("1.8MB")));
     // DCTCP tracks instantaneous queue length only; so set QW = 1
@@ -381,10 +386,10 @@ void run_single_queue_simulation(int argc, char* argv[]) {
     vector<Ptr<Node>> receivers;
     receivers.push_back(dstHosts.Get(0));
     auto* dcTrafficGenerator = new DCWorkloadGenerator(srcHosts.Get(0), receivers, hostTrafficRate, poolSize, "scratch/ECNMC/DCWorkloads/" + traffic, "ns3::TcpSocketFactory", Time(Seconds(0)), stopTime - Seconds(0.002));
-    dcTrafficGenerator->GenrateTraffic();
+    dcTrafficGenerator->GenrateTraffic(pctPacedBack);
 
     auto* dcTrafficGeneratorCross = new DCWorkloadGenerator(srcHosts.Get(1), receivers, ctTrafficRate, poolSize, "scratch/ECNMC/DCWorkloads/" + traffic, "ns3::TcpSocketFactory", Time(Seconds(0)), stopTime - Seconds(0.002));
-    dcTrafficGeneratorCross->GenrateTraffic();
+    dcTrafficGeneratorCross->GenrateTraffic(pctPacedBack);
 
     // ObjectFactory factory;
     // factory.SetTypeId(NodeAppsHandler::GetTypeId());
@@ -468,6 +473,7 @@ void run_single_queue_simulation(int argc, char* argv[]) {
     cout << "hostToSwitchLinkDelay: " << hostToSwitchLinkDelay << endl;
     cout << "bottleneckLinkRate: " << bottleneckLinkRate << endl;
     cout << "pctPacedBack: " << pctPacedBack << endl;
+    cout << "probeInterval: " << probeInterval << endl;
     cout << "enableSwitchECN: " << enableSwitchECN << endl;
     cout << "enableECMP: " << enableECMP << endl;
     cout << "sampleRate: " << sampleRate << endl;
@@ -491,6 +497,7 @@ void run_single_queue_simulation(int argc, char* argv[]) {
     cout << "Average Message Size: " << avgMsgSize << endl;
     cout << "Measurement Traffic Rate: " << hostTrafficRate << endl;
     cout << "Cross Traffic Rate: " << ctTrafficRate << endl;
+    cout << "Seed: " << seed << endl;
     // /* ########## END: Check Config ########## */
 
 

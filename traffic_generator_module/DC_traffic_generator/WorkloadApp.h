@@ -31,6 +31,7 @@ private:
     string _protocol;
     double _rate;
     uint32_t _receiversNumber;
+    bool _enablePacing;
     Ptr<ExponentialRandomVariable> m_var;;
     EventId _sendEvent;
     std::string workloadPath;
