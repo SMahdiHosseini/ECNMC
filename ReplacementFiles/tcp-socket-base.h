@@ -581,6 +581,11 @@ class TcpSocketBase : public TcpSocket
      */
     void SetPaceInitialWindow(bool paceWindow);
 
+    /** mahdi
+     * \brief Enable measurement probe clock
+     */
+    void StartMeasurementProbeClock();
+
     // Necessary implementations of null functions from ns3::Socket
     SocketErrno GetErrno() const override;     // returns m_errno
     SocketType GetSocketType() const override; // returns socket type
@@ -653,6 +658,13 @@ class TcpSocketBase : public TcpSocket
     bool GetAllowBroadcast() const override;
 
     // Helper functions: Connection set up
+    
+    /** Mahdi
+    * \brief The regular clock to check for the probe
+    */
+    void MeasurementProbeClockTick();
+    void SetProbeClockInterval(Time probeClock);
+    Time GetProbeClockInterval() const;
 
     /**
      * \brief Common part of the two Bind(), i.e. set callback and remembering local addr:port
@@ -1278,6 +1290,11 @@ class TcpSocketBase : public TcpSocket
     SequenceNumber32 GetHighRxAck() const;
 
   protected:
+    // mahdi start
+    // probee clock parameters
+    Time m_probeClockInterval{Seconds(0.0)}; //!< Interval for the probe clock
+    // mahdi end
+    
     // Counters and events
     EventId m_retxEvent{};     //!< Retransmission event
     EventId m_lastAckEvent{};  //!< Last ACK timeout event
