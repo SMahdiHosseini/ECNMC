@@ -1,109 +1,109 @@
-import numpy as np
-# from Utils import *
+# import numpy as np
+# # from Utils import *
 
-list = [
-                        6039.702496157652,
-                        1960.901693161407,
-                        2437.792690346038,
-                        1060.3901369474113,
-                        14788.471946437978,
-                        9157.589038778124,
-                        1253.7530814002757,
-                        4070.3398736765657,
-                        4449.414459906187,
-                        5064.826519884737,
-                        82063.3462265752,
-                        1275.5721678746008,
-                        831.7224287331619,
-                        77986.6539339941,
-                        1259.4903545124303,
-                        6734.428571196932,
-                        52146.54622993412,
-                        2676.6522107444957,
-                        1459.8212370468955,
-                        2543.952668213181,
-                        39660.664034305904,
-                        1772.048136289897,
-                        3865.1366522715284,
-                        5330.488439183394,
-                        5787.7347278959405,
-                        2474.6961039077037,
-                        1111.2591169624066,
-                        887.019503879876,
-                        69667.69771703363,
-                        147151.16650485003,
-                        54964.628368270976,
-                        1615.998383370973,
-                        4395.224575103194,
-                        3996.421825220984,
-                        1004.0275166796648,
-                        36713.56653671433,
-                        21304.34390839286,
-                        10069.163799419372,
-                        11036.632482024816,
-                        1174.8944382072432,
-                        32773.743434682074,
-                        27134.245253503235,
-                        101259.9721045294,
-                        9511.273880139584,
-                        5717.896729288562,
-                        12507.79933343261,
-                        42977.904478126955,
-                        36255.98280956559,
-                        32314.126134480928,
-                        69274.88599370359,
-                        1322.3422291490294,
-                        1702.735683667404,
-                        1265.8714696082086,
-                        45389.61694166758,
-                        2968.930671302899,
-                        2709.2458219891146,
-                        2114.206946667507,
-                        25094.999248534787,
-                        4265.056088155044,
-                        42001.5602401894,
-                        30398.11633567862,
-                        881.6904649627589,
-                        1559.7766307210036,
-                        2285.635333404654,
-                        2292.2792756591607,
-                        33069.80166879228,
-                        23716.485070865423,
-                        20118.826513506632,
-                        16505.918314917413,
-                        3198.2642631877247,
-                        2268.579529459257,
-                        1036.5947168608259,
-                        30074.474556908994,
-                        32467.54647334835,
-                        1544.523896906895,
-                        8983.078921086544,
-                        8446.35008767299,
-                        50071.70875812125,
-                        1245.8901048253742,
-                        3607.400386467646,
-                        3894.144962839852,
-                        5968.943402550037,
-                        33946.94040286163,
-                        838.7935013473921,
-                        1844.745420752461,
-                        20201.90900254988,
-                        15005.774070314643,
-                        17313.4474470348,
-                        7470.926209046275,
-                        4742.327607388407,
-                        3663.672464006833,
-                        24106.159954824998,
-                        12144.051981768227,
-                        32666.095074928155,
-                        19139.58635288977,
-                        3535.6929805980103,
-                        117878.47793490169,
-                        26957.273886405364,
-                        1091.2284600508442,
-                        15153.57480665271
-                    ]
-print(np.average(list))
+# list = [
+#         0.7408196721311475,
+#         0.8218085106382979,
+#         0.8154771853585158,
+#         0.8160039926800865,
+#         0.825157441166722,
+#         0.7915331421824928,
+#         0.7677536831650389,
+#         0.7813772048846676,
+#         0.8628158844765343,
+#         0.7584037092233813,
+#         0.8323758026360257,
+#         0.7557695500581105,
+#         0.7687221028269136,
+#         0.7144049407444499,
+#         0.8166917544739923,
+#         0.7819548872180451,
+#         0.864359059291156,
+#         0.8265739012387578,
+#         0.6616566466265865,
+#         0.79986624310316,
+#         0.8629073104845517,
+#         0.7896417169208939,
+#         0.8934357775179556,
+#         0.8284616669450476,
+#         0.8720442730169378,
+#         0.7632061323112814,
+#         0.8042213727771315,
+#         0.8113176509294292,
+#         0.784845496383958,
+#         0.8491009914300118,
+#         0.764373546028581,
+#         0.8110484406104844,
+#         0.7896336316056053,
+#         0.8198198198198199,
+#         0.7796405115796751,
+#         0.785885989010989,
+#         0.7975346166835529,
+#         0.7739352640545145,
+#         0.8054036134593071,
+#         0.7768428138673847,
+#         0.7354047424366312,
+#         0.8247947454844007,
+#         0.8785140562248996,
+#         0.7831813576494427,
+#         0.7140003329448976,
+#         0.7985444922262653,
+#         0.7994041708043694,
+#         0.7614678899082569,
+#         0.6750830564784054,
+#         0.8023833167825223,
+#         0.8088554720133667,
+#         0.8208704419425307,
+#         0.7742099036673991,
+#         0.800033921302578,
+#         0.8480927575197446,
+#         0.7955599734923791,
+#         0.8406117247238742,
+#         0.7438678458201236,
+#         0.848291646231813,
+#         0.8941870261162594,
+#         0.8076600033596506,
+#         0.6295375435106911,
+#         0.745011449133137,
+#         0.9024269440316989,
+#         0.7083192994274166,
+#         0.7446485757626833,
+#         0.7437904048996258,
+#         0.7203667321545514,
+#         0.8750419322375041,
+#         0.8297488097192579,
+#         0.7531790022823606,
+#         0.7403687849851828,
+#         0.7858803986710964,
+#         0.8386828538167304,
+#         0.7469125359499238,
+#         0.7347288949897048,
+#         0.8609249329758712,
+#         0.7801324503311258,
+#         0.847887323943662,
+#         0.7350883038987004,
+#         0.7423435419440746,
+#         0.7975661897714192,
+#         0.853510498687664,
+#         0.723091976516634,
+#         0.85351595122766,
+#         0.8080690685704799,
+#         0.7107001321003963,
+#         0.8184579045048085,
+#         0.7870385835977952,
+#         0.7657443557969784,
+#         0.7820641282565131,
+#         0.7935383552176918,
+#         0.7743871935967984,
+#         0.7809778968519758,
+#         0.7417173766058147,
+#         0.7700643413477819,
+#         0.7003682624707064,
+#         0.7636911740077039,
+#         0.7342259414225941,
+#         0.7847095813337746
+#     ]
+# print(np.average(list))
 # print(np.average([x[0] for x in list]))
 # import matplotlib.pyplot as plt
 # import numpy as np
@@ -184,7 +184,7 @@ print(np.average(list))
 #     x_vals = []
 #     cdf_vals = []
 
-#     with open(filename, 'r') as f:
+#     with open('../DCWorkloads/' + filename + '.txt', 'r') as f:
 #         i = 0
 #         for line in f:
 #             if i == 0:
@@ -216,37 +216,68 @@ print(np.average(list))
 #         else:
 #             print(f"At {alpha}%: Inter-arrivals are not exponential ⇒ Not Poisson.")
 
-# def plot_size_cdf(sizes, actual_cdf_file=None):
-#     sorted_sizes = np.sort(sizes)
-#     cdf_empirical = np.arange(1, len(sizes) + 1) / len(sizes)
-
-#     plt.figure(figsize=(8, 6))
-#     plt.plot(sorted_sizes, cdf_empirical, label="Empirical CDF", marker='.', linestyle='none')
-
-#     if actual_cdf_file:
-#         x_vals, cdf_vals = read_actual_cdf(actual_cdf_file)
-#         plt.plot(x_vals, cdf_vals, label="Actual CDF", color='orange', linewidth=2)
+# def plot_size_cdf(actual_cdf_file):
+#     for traffic in actual_cdf_file:
+#         x_vals, cdf_vals = read_actual_cdf(traffic)
+#         plt.plot(x_vals, cdf_vals, label=traffic, linewidth=2)
     
 #     plt.xscale('log')
-
-#     plt.xlabel("Size")
+#     plt.xlabel("Message Size(Bytes)")
 #     plt.ylabel("CDF")
-#     plt.title("Empirical vs Actual CDF of Sizes")
+#     plt.title("Actual CDF of Message Sizes")
 #     plt.legend()
 #     plt.grid(True)
 #     plt.tight_layout()
 #     plt.savefig("size_cdf.png")
 
 # if __name__ == "__main__":
-#     traffic_file = "temp.txt"        # time,size file
-#     actual_cdf_file = "../DCWorkloads/Google_AllRPC.txt"       # value,cdf file
+#     traffics = ["Google_AllRPC", "Fabricated_Heavy_Head", "Fabricated_Heavy_Middle", "Google_SearchRPC", "Facebook_HadoopDist_All", "FacebookKeyValue_Sampled"]
+#     plot_size_cdf(traffics)
 
-#     times, sizes = read_data(traffic_file)
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.interpolate import interp1d
 
-#     if len(times) < 2:
-#         print("Not enough data to analyze.")
-#     else:
-#         check_poisson_process(times)
-#         plot_size_cdf(sizes, actual_cdf_file)
+def read_packets_cdf(filename):
+    x_vals = []
+    cdf_vals = []
+
+    with open('../DCWorkloads/packet_size_cdf_' + filename + '.csv', 'r') as f:
+        i = 0
+        for line in f:
+            if i == 0:
+                i += 1
+                continue
+            x_str, cdf_str = line.strip().split(',')
+            try:
+                x_vals.append(float(x_str))
+                cdf_vals.append(float(cdf_str))
+            except ValueError:
+                continue
+    return np.array(x_vals), np.array(cdf_vals)
+
+def plot_size_pdff(traffic):
+    x_common = np.linspace(52, 1500, 500)
+    x_mid = (x_common[:-1] + x_common[1:]) / 2
+    plt.figure(figsize=(10, 5))
+    for t in traffic:
+        x_vals, cdf_vals = read_packets_cdf(t)
+        interp_cdf = interp1d(x_vals, cdf_vals, kind='linear', bounds_error=False, fill_value=(0, 1))
+        cdf_interp = interp_cdf(x_common)
+        pdf = np.diff(cdf_interp) / np.diff(x_common)
+        plt.bar(x_mid, pdf, width=np.diff(x_common), align='center', alpha=0.7, label=t)
+
+    # plt.xscale('log')
+    plt.title('Histogram (PDF)')
+    plt.ylabel('Density')
+    plt.xlabel("Message Size(Bytes)")
+    plt.title("Actual PDF of Message Sizes")
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    plt.savefig("size_pdf.png")
 
 
+
+traffics = ["Google_AllRPC", "Fabricated_Heavy_Head", "Fabricated_Heavy_Middle", "Google_SearchRPC", "Facebook_HadoopDist_All", "FacebookKeyValue_Sampled"]
+plot_size_pdff(traffics)

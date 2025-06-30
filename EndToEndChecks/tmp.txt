@@ -1,0 +1,22 @@
+
+Calculating delay for path: 0 with 1681 packets.
+Average interarrival time: 1000000.0
+Selected times: 293 from 1681 total packets.
+Final times after Bernoulli sampling: 32 with brnval: 0.1
+Selected Second interarrival times are exponentially distributed.
+Selected times: 293 from 1681 total packets.
+Final times after Bernoulli sampling: 84 with brnval: 0.3
+Selected Second interarrival times are exponentially distributed.
+Selected times: 293 from 1681 total packets.
+Final times after Bernoulli sampling: 154 with brnval: 0.5
+Tries left: 19 with brnval: 0.5
+Selected times: 293 from 1681 total packets.
+Final times after Bernoulli sampling: 148 with brnval: 0.5
+Selected Second interarrival times are exponentially distributed.
+Max sample size found: 148 148
+Calculating delay for path: 0 with 1681 packets. is done! 
+Delay Mean: 8745.288684911327
+0 joind
+Traffic Google_AllRPC Rate 0.5 0.05 1 done
+Traffic Google_AllRPC Rate 0.5 done
+Traffic Google_AllRPC done
