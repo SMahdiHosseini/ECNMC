@@ -55,7 +55,7 @@ Ptr<Socket> ConnectionPool::findIdleSocket() {
         // cout << "Socket " << socketIndex << " is full, trying another to find the first none empty.\n";
         for (uint32_t i = 0; i < sockets.size(); ++i) {
             if (DynamicCast<TcpSocketBase>(sockets[i])->GetTxBuffer()->Size() == 0) {
-                // cout << "Found available socket at index: " << i << endl;
+                // cout << "Found available socket at index: " << i << " Nagle's algo: " << DynamicCast<TcpSocketBase>(sockets[i])->GetTcpNoDelay() << endl;
                 return sockets[i];
             }
         }

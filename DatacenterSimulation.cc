@@ -19,6 +19,7 @@
 #include "monitors_module/BurstMonitor.h"
 #include "traffic_generator_module/background_replay/BackgroundReplay.h"
 #include "traffic_generator_module/DC_traffic_generator/DCWorkloadGenerator.h"
+#include "traffic_generator_module/DC_traffic_generator/ProbeGenerator.h"
 #include <iomanip>
 #include <iostream>
 #include <string>
@@ -237,6 +238,7 @@ void run_single_queue_simulation(int argc, char* argv[]) {
     Config::SetDefault("ns3::TcpSocket::DelAckCount", UintegerValue(2));
     Config::SetDefault("ns3::TcpSocket::SndBufSize", UintegerValue(25000000));
     Config::SetDefault("ns3::TcpSocket::RcvBufSize", UintegerValue(25000000));
+    Config::SetDefault("ns3::TcpSocket::TcpNoDelay", BooleanValue(false));
     GlobalValue::Bind("ChecksumEnabled", BooleanValue(false));
     Config::SetDefault("ns3::RedQueueDisc::UseHardDrop", BooleanValue(false));
     Config::SetDefault("ns3::RedQueueDisc::MeanPktSize", UintegerValue(1000));
@@ -391,6 +393,9 @@ void run_single_queue_simulation(int argc, char* argv[]) {
     auto* dcTrafficGeneratorCross = new DCWorkloadGenerator(srcHosts.Get(1), receivers, ctTrafficRate, poolSize, "scratch/ECNMC/DCWorkloads/" + traffic, "ns3::TcpSocketFactory", Time(Seconds(0)), stopTime - Seconds(0.002));
     dcTrafficGeneratorCross->GenrateTraffic(pctPacedBack);
 
+    // // Install Probe application
+    // auto* probeGenerator = new ProbeGenerator(srcHosts.Get(0), dstHosts.Get(0), 1 / Time(probeInterval).GetSeconds(), Seconds(stof(steadyStartTime)), Seconds(stof(steadyStopTime)));
+    // probeGenerator->GenrateTraffic();
     // ObjectFactory factory;
     // factory.SetTypeId(NodeAppsHandler::GetTypeId());
     // factory.Set("StartTime", TimeValue(Seconds(0)));

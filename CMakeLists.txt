@@ -27,6 +27,8 @@ add_library(
   traffic_generator_module/DC_traffic_generator/DCWorkloadGenerator.cc
   traffic_generator_module/DC_traffic_generator/WorkloadApp.cc
   traffic_generator_module/DC_traffic_generator/ConnectionPool.cc
+  traffic_generator_module/DC_traffic_generator/ProbeApp.cc
+  traffic_generator_module/DC_traffic_generator/ProbeGenerator.cc
 )
 
 # Link the custom library to the scratch executable

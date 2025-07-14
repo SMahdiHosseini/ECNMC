@@ -95,8 +95,17 @@ void PoissonSampler::RecordIncomingPacket(Ptr<const Packet> packet) {
     if (ipHeader.GetSource() == Ipv4Address("10.3.1.1")) {
         return;
     }
-    TcpHeader tcpHeader;
-    pktCopy->PeekHeader(tcpHeader);
+    uint16_t sourcePort = 0;
+    if (ipHeader.GetProtocol() == 6) {
+        TcpHeader tcpHeader;
+        pktCopy->PeekHeader(tcpHeader);
+        sourcePort = tcpHeader.GetSourcePort();
+    }
+    else if (ipHeader.GetProtocol() == 17) {
+        UdpHeader udpHeader;
+        pktCopy->PeekHeader(udpHeader);
+        sourcePort = udpHeader.GetSourcePort();
+    }
     // Time prev = lastPacketTime;
     // lastPacketTime = Simulator::Now();
     // if (firstItemTime == Time(-1)) {
@@ -119,7 +128,7 @@ void PoissonSampler::RecordIncomingPacket(Ptr<const Packet> packet) {
     std::ostringstream oss;
     ipHeader.GetSource().Print(oss);
     std::string headerString = oss.str();
-    string label = headerString + ":" + to_string(tcpHeader.GetSourcePort());
+    string label = headerString + ":" + to_string(sourcePort);
     event.SetLabel(label);
     queueSizeProcessByPackets.push_back(std::make_tuple(Simulator::Now(), event));
 
@@ -173,12 +182,23 @@ void PoissonSampler::EnqueueQueueDisc(Ptr<const QueueDiscItem> item) {
     event.SetQueueSize(REDQueueDisc->GetNBytes());
     event.SetTotalQueueSize(ComputeQueueSize());
     event.SetLastMarkingProb(REDQueueDisc->_lastMarkingProb);
-    TcpHeader tcpHeader;
-    item->GetPacket()->PeekHeader(tcpHeader);
+    const Ptr<Packet> &pktCopy = item->GetPacket()->Copy();
+    Ipv4Header ipHeader = DynamicCast<const Ipv4QueueDiscItem>(item)->GetHeader();
+    uint16_t sourcePort = 0;
+    if (ipHeader.GetProtocol() == 6) {
+        TcpHeader tcpHeader;
+        pktCopy->PeekHeader(tcpHeader);
+        sourcePort = tcpHeader.GetSourcePort();
+    }
+    else if (ipHeader.GetProtocol() == 17) {
+        UdpHeader udpHeader;
+        pktCopy->PeekHeader(udpHeader);
+        sourcePort = udpHeader.GetSourcePort();
+    }
     std::ostringstream oss;
     DynamicCast<const Ipv4QueueDiscItem>(item)->GetHeader().GetSource().Print(oss);
     std::string headerString = oss.str();
-    string label = headerString + ":" + to_string(tcpHeader.GetSourcePort()); 
+    string label = headerString + ":" + to_string(sourcePort); 
     event.SetLabel(label);
     event.SetEventAction("E");
     queueSizeProcess.push_back(std::make_tuple(Simulator::Now(), event));
@@ -210,12 +230,26 @@ void PoissonSampler::DequeueQueueDisc(Ptr<const QueueDiscItem> item) {
     event.SetQueueSize(REDQueueDisc->GetNBytes());
     event.SetTotalQueueSize(ComputeQueueSize() + item->GetSize() + 2);
     event.SetLastMarkingProb(REDQueueDisc->_lastMarkingProb);
-    TcpHeader tcpHeader;
-    item->GetPacket()->PeekHeader(tcpHeader);
+    const Ptr<Packet> &pktCopy = item->GetPacket()->Copy();
+    PppHeader pppHeader;
+    pktCopy->RemoveHeader(pppHeader);
+    Ipv4Header ipHeader;
+    pktCopy->RemoveHeader(ipHeader);
+    uint16_t sourcePort = 0;
+    if (ipHeader.GetProtocol() == 6) {
+        TcpHeader tcpHeader;
+        pktCopy->PeekHeader(tcpHeader);
+        sourcePort = tcpHeader.GetSourcePort();
+    }
+    else if (ipHeader.GetProtocol() == 17) {
+        UdpHeader udpHeader;
+        pktCopy->PeekHeader(udpHeader);
+        sourcePort = udpHeader.GetSourcePort();
+    }
     std::ostringstream oss;
     DynamicCast<const Ipv4QueueDiscItem>(item)->GetHeader().GetSource().Print(oss);
     std::string headerString = oss.str();
-    string label = headerString + ":" + to_string(tcpHeader.GetSourcePort()); 
+    string label = headerString + ":" + to_string(sourcePort); 
     event.SetLabel(label);
     event.SetEventAction("D");
     queueSizeProcess.push_back(std::make_tuple(Simulator::Now(), event));
