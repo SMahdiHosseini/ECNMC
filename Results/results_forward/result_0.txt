@@ -8,13 +8,14 @@ Hosts and Switches IP addresses
 Src: 0 Id:0 IP: 10.1.1.1
 Src CT: 1 Id:1 IP: 10.2.1.1
 Dst: 0 Id:2 IP: 10.3.1.1
-Total preparing time = 5195 microsecond
+Total preparing time = 57348 microsecond
 Config Parameters
 srcHostToSwitchLinkRate: 300Mbps
 ctHostToSwitchLinkRate: 300Mbps
 hostToSwitchLinkDelay: 50us
-bottleneckLinkRate: 300.0Mbps
-pctPacedBack: 0
+bottleneckLinkRate: 600.0Mbps
+pctPacedBack: 1
+probeInterval: 1ms
 enableSwitchECN: 1
 enableECMP: 1
 sampleRate: 12000
@@ -30,14 +31,15 @@ swtichDstREDQueueDiscMaxSize: 18KB
 switchSrcREDQueueDiscMaxSize: 18KB
 minTh: 0.15
 maxTh: 0.15
-traffic: Google_AllRPC.txt
+traffic: FacebookKeyValue_Sampled
 isDifferentating: 0
 differentiationDelay: 0
 silentPacketDrop: 0
 load: 1.3
-Average Message Size: 2927.35
-Measurement Traffic Rate: 16655.3
-Cross Traffic Rate: 16655.3
+Average Message Size: 187.77
+Measurement Traffic Rate: 260695
+Cross Traffic Rate: 260695
+Seed: 1
 Node 10.1.1.1 WorkloadApp started at: 0 Will end at: 897999976
 Connection Pool of: Sender Address: 10.1.1.1 Receiver Address: 10.3.1.1
 Socket created for 10.3.1.1 On port 4001
@@ -105,4 +107,4 @@ Socket created for 10.3.1.1 On port 4060
 Node 10.1.1.1 Connection Pools closed at 897999976
 Node 10.2.1.1 Connection Pools closed at 897999976
 Done 
-Total execution time = 788158 microsecond
+Total execution time = 72978025 microsecond
