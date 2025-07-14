@@ -24,6 +24,7 @@ def readResults(results_dir, serviceRateScales, results_dir_file, selectedVarMet
     stds = {}
     switch_samples_rtt = {}
     switch_delay = {}
+    queueOccupancy = {}
     workload = {}
     totalPkts = {}
     pcktsRatio = {}
@@ -46,6 +47,7 @@ def readResults(results_dir, serviceRateScales, results_dir_file, selectedVarMet
         e2e_stds[rate] = {}
         switch_samples_rtt[rate] = {}
         switch_delay[rate] = {}
+        queueOccupancy[rate] = {}
         stds[rate] = {}
         stdsRatios[rate] = {}
         avgRtt[rate] = {}
@@ -112,6 +114,7 @@ def readResults(results_dir, serviceRateScales, results_dir_file, selectedVarMet
                         stdsRatios[rate]['nonMarking'] = np.mean([temp['EndToEndNonMarkingProb']['event_poisson_eventAvg'][flow][path][0][i][1] / temp['SD0NonMarkingProbStd'][i] if temp['SD0NonMarkingProbStd'][i] != 0 else 1 for i in range(temp['EndToEndNonMarkingProb']['event_poisson_eventAvg'][flow][path][1])])
                         switch_samples_rtt[rate] = np.mean([temp['RTT'][flow][path][i] / temp['SD0InterArrivals'][i] for i in range(temp['experiments']) if temp['SD0InterArrivals'][i] != 0])
                         switch_delay[rate] = np.mean(temp['SD0DelayMean'])
+                        queueOccupancy[rate] = np.mean(temp['SD0Occupancy'])
                         if len(selectedVarMethods) == 0:
                             selectedVarMethods = list(temp['MaxEpsilonIneqDelay'].keys()) + list(temp['MaxEpsilonIneqSuccessProb'].keys()) + list(temp['MaxEpsilonIneqNonMarkingProb'].keys())
                         for var_method in temp['MaxEpsilonIneqDelay'].keys():
@@ -162,6 +165,7 @@ def readResults(results_dir, serviceRateScales, results_dir_file, selectedVarMet
     res['errors'] = erors
     res['bias'] = bias
     res['switch_delay'] = switch_delay
+    res['queueOccupancy'] = queueOccupancy
     res['e2e_delay'] = e2e_delay
     res['e2e_stds'] = e2e_stds
     res['stdsRatios'] = stdsRatios
@@ -349,8 +353,8 @@ def plot_droprate_vs_load(traffic_list, loads, rates, results_dir, DropRates, re
 
         ax.set_title(f"Drop Rate vs Load (α = {alpha:.2f})", fontsize=18)
         ax.set_ylabel("Drop Rate (%)", fontsize=14)
-        ax.set_ylim(bottom=-0.05, top=5)
-        ax.set_yticks(np.arange(-0.05, 5.05, 0.1))
+        ax.set_ylim(bottom=-0.05, top=2)
+        ax.set_yticks(np.arange(-0.05, 2.05, 0.1))
         ax.tick_params(axis='y', labelsize=12)
         ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f"{x:.2f}%"))
         ax.grid(True, which='both', linestyle='--', linewidth=0.5)
@@ -594,6 +598,7 @@ def analyse_forward_exp(results_dir, results_dir_file, rateScales, loads, select
     e2e_stds_all['nonMarking'] = {}
     switch_samples_rtt = {}
     switch_delay = {}
+    queueOccupancy = {}
     sampleSizes = {}
     pcktsRatio = {}
     CVS = {}
@@ -637,6 +642,7 @@ def analyse_forward_exp(results_dir, results_dir_file, rateScales, loads, select
         e2e_stds_all['nonMarking'][traffic] = {}
         switch_samples_rtt[traffic] = {}
         switch_delay[traffic] = {}
+        queueOccupancy[traffic] = {}
         sampleSizes[traffic] = {}
         CVS[traffic] = {}
         CVS_all['delay'][traffic] = {}
@@ -675,6 +681,7 @@ def analyse_forward_exp(results_dir, results_dir_file, rateScales, loads, select
             e2e_stds_all['nonMarking'][traffic][load] = {}
             switch_samples_rtt[traffic][load] = {}
             switch_delay[traffic][load] = {}
+            queueOccupancy[traffic][load] = {}
             sampleSizes[traffic][load] = {}
             CVS[traffic][load] = {}
             CVS_all['delay'][traffic][load] = {}
@@ -712,6 +719,7 @@ def analyse_forward_exp(results_dir, results_dir_file, rateScales, loads, select
             errors[traffic][load] = res['errors']
             bias[traffic][load] = res['bias']
             switch_delay[traffic][load] = res['switch_delay']
+            queueOccupancy[traffic][load] = res['queueOccupancy']
             e2e_delay[traffic][load] = res['e2e_delay']
             pcktsRatio[traffic][load] = res['pcktsRatio']
             e2e_stds[traffic][load] = res['e2e_stds']
@@ -755,6 +763,7 @@ def analyse_forward_exp(results_dir, results_dir_file, rateScales, loads, select
     plot_metric_per_loads_traffic(list(results.keys()), e2e_stds_all['delay'], loads, selectedRates, results_dir, results_dir_file, 'End-to-end STD of Delay(ns)')
     plot_metric_per_loads_traffic(list(results.keys()), stdsRatios_all['delay'], loads, selectedRates, results_dir, results_dir_file, 'End-to-end STD of Delay(ns) over Switch STD of Delay(ns)')
     plot_metric_per_loads_traffic(list(results.keys()), switch_delay, loads, selectedRates, results_dir, results_dir_file, 'Switch Delay(ns)')
+    plot_metric_per_loads_traffic(list(results.keys()), queueOccupancy, loads, selectedRates, results_dir, results_dir_file, 'Queue Occupancy(%)')
     plot_metric_per_loads_traffic(list(results.keys()), e2e_delay, loads, selectedRates, results_dir, results_dir_file, 'End-to-End Delay(ns)')
     plot_metric_per_loads_traffic(list(results.keys()), pcktsRatio, loads, selectedRates, results_dir, results_dir_file, '#end-to-end Packets Ratio')
     plot_metric_per_loads_traffic(list(results.keys()), stds_all['delay'], loads, selectedRates, results_dir, results_dir_file, 'STD of Delay(ns)')
@@ -866,8 +875,8 @@ def __main__():
     # differentiationDelays = [0.35]
     selectedVarMethods = ['event_poisson_eventAvg']
     # serviceRateScales = [0.75]
-    # traffics = ["Google_AllRPC","Fabricated_Heavy_Head","Fabricated_Heavy_Middle","Google_SearchRPC"]
-    # loads = [0.05]
+    # traffics = ["Google_AllRPC","Fabricated_Heavy_Head","Fabricated_Heavy_Middle","Google_SearchRPC", "Facebook_HadoopDist_All"]
+    # loads = [0.05, 0.07, 0.1, 0.2, 0.3]
     # selectedVarMethods = []
     # print(RateScales)
     # rateScales = [0.5]
