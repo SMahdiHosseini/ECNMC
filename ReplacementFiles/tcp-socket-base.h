@@ -452,6 +452,7 @@ class TcpSocketBase : public TcpSocket
     void SetCongestionControlAlgorithm(Ptr<TcpCongestionOps> algo);
     // mahdi
     Ptr<TcpCongestionOps> GetCongestionControlAlgorithm() const { return m_congestionControl; }
+    void SendProbe(); // mahdi
     // mahdi
 
     /**

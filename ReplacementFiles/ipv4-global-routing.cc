@@ -149,19 +149,13 @@ Ipv4GlobalRouting::GetHashValue(const Ipv4Header header, Ptr<const Packet> ipPay
     switch (header.GetProtocol())
     {
         case 17:
-        {
-            UdpHeader udpHeader;
-            ipPayload->PeekHeader(udpHeader);
+        {  
             NS_LOG_DEBUG ("FiveTuple() -> UDP: (src, dst, protNb, sPort, dPort) - "
                 << header.GetSource() << " , "
                 << header.GetDestination() << " , "
-                << (int)header.GetProtocol() << " , "
-                << (int)udpHeader.GetSourcePort () << " , "
-                << (int)udpHeader.GetDestinationPort ());
-
-            oss << udpHeader.GetDestinationPort()
-                << udpHeader.GetSourcePort();
-
+                << (int)header.GetProtocol());
+            // oss << udpHeader.GetDestinationPort()
+            //     << udpHeader.GetSourcePort();
             break;
         }
         case 6:

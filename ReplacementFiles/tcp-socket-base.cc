@@ -629,6 +629,10 @@ Time TcpSocketBase::GetProbeClockInterval() const
     return m_probeClockInterval;
 }
 
+void TcpSocketBase::SendProbe()
+{
+    SendEmptyPacket(TcpHeader::NONE);
+}
 // mahdi end
 
 /* Inherit from Socket class: Bind socket (with specific address) to an end-point in TcpL4Protocol
@@ -4696,7 +4700,7 @@ TcpSocketBase::UpdatePacingRate()
     DataRate pacingRate((std::max(m_tcb->m_cWnd, m_tcb->m_bytesInFlight) * 8 * factor) /
                         lastRtt.GetSeconds());
     // mahdi START
-    // pacingRate = pacingRate * 0.75;
+    // pacingRate = pacingRate * 0.25; // Reduce the pacing rate by 75% to have a more mixing arrival at the switch
     // mahdi END
     if (pacingRate < m_tcb->m_maxPacingRate)
     {
