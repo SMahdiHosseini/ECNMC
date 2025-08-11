@@ -742,6 +742,12 @@ def prune_data(full_df, projectColumn, steadyStart, steadyEnd):
     full_df = full_df.sort_values(by=[projectColumn], ignore_index=True)
     return full_df
 
+def addExtraDelay(full_df, differentiationDelay, errorRate):
+    if differentiationDelay > 0:
+        extra_delay_indices = full_df.sample(frac=errorRate).index
+        full_df.loc[extra_delay_indices, 'Delay'] += np.int64(full_df.loc[extra_delay_indices, 'Delay'] * differentiationDelay)
+    return full_df
+
 def addRemoveTransmission_data(full_df, linkDelays, linksRates):
     full_df['Delay'] = abs(full_df['ReceiveTime'] - full_df['SentTime'] - full_df['transmissionDelay'])
     # full_df['Delay'] = abs(full_df['ReceiveTime'] - full_df['TxEnqueueTime'] - full_df['transmissionDelay'])
@@ -1539,7 +1545,7 @@ def calculate_reconstructedSignal_delays(reconstructedSignal_df, df_res, linkRat
 
 
 def calculate_offline_computations(__ns3_path, rate, segment, experiment, results_folder, steadyStart, steadyEnd, projectColumn, removeDrops=True, checkColumn="", linksRates=[], linkDelays=[], swtichDstREDQueueDiscMaxSize=0, stats=None, tsh=0.15, differentiationDelay=None, errorRate=None, load=None):
-    if differentiationDelay is not None and errorRate is not None:
+    if differentiationDelay == 0.0 and errorRate is not None:
         file_paths = glob.glob('{}/scratch/{}/{}/{}/D_{}/f_{}/{}/*_{}.csv'.format(__ns3_path, results_folder, rate, load, differentiationDelay, errorRate, experiment, segment))
     else:
         file_paths = glob.glob('{}/scratch/{}/{}/{}/{}/*_{}.csv'.format(__ns3_path, results_folder, rate, load, experiment, segment))
@@ -1568,18 +1574,18 @@ def calculate_offline_computations(__ns3_path, rate, segment, experiment, result
             df_res['InterArrivals'] = {}
             txDelay = (1502 * 8 / linksRates[0])
             full_df = addRemoveTransmission_data(full_df, linkDelays, linksRates)
+            if (differentiationDelay is not None) and (differentiationDelay != 0.0):
+                full_df = addExtraDelay(full_df, differentiationDelay, errorRate)
             full_df = prune_data(full_df, projectColumn, steadyStart, steadyEnd)
-            # keep only sampling packets
-            # full_df = full_df[full_df['DestinationPort'] != 9000]
             df_res = calc_RTT_per_path(full_df, df_res, checkColumn, linkDelays)
-            # plot_cdf(full_df, '{}/scratch/{}/{}/{}/{}/'.format(__ns3_path, results_folder, rate, load, experiment))
-            reconstructedSignal_df = reconstructSignal(full_df, linksRates, file_path.replace(f'{df_name}_EndToEnd_packets.csv', ''))
-            # print(reconstructedSignal_df)
-            df_res = calculate_reconstructedSignal_delays(reconstructedSignal_df, df_res, linksRates[1])
-            # df_res = calculate_offline_E2E_lossRates(__ns3_path, full_df, df_res, checkColumn, txDelay, linksRates[1], swtichDstREDQueueDiscMaxSize, df_name)
-            # df_res = calculate_offline_E2E_delays(full_df, removeDrops, checkColumn, txDelay, df_res, df_name)
+            # for the reconstructed signal:
+            # reconstructedSignal_df = reconstructSignal(full_df, linksRates, file_path.replace(f'{df_name}_EndToEnd_packets.csv', ''))
+            # df_res = calculate_reconstructedSignal_delays(reconstructedSignal_df, df_res, linksRates[1])
+
+            df_res = calculate_offline_E2E_lossRates(__ns3_path, full_df, df_res, checkColumn, txDelay, linksRates[1], swtichDstREDQueueDiscMaxSize, df_name)
+            df_res = calculate_offline_E2E_delays(full_df, removeDrops, checkColumn, txDelay, df_res, df_name)
             df_res = calculate_offline_E2E_workload(full_df, df_res, steadyStart, steadyEnd)
-            # df_res = calculate_offline_E2E_markingProb(full_df, df_res, checkColumn, txDelay, swtichDstREDQueueDiscMaxSize, linksRates[1], __ns3_path, tsh, df_name)
+            df_res = calculate_offline_E2E_markingProb(full_df, df_res, checkColumn, txDelay, swtichDstREDQueueDiscMaxSize, linksRates[1], __ns3_path, tsh, df_name)
         if 'Poisson' in segment:
             packets_cfd = PacketCDF()
             packets_cfd.load_cdf_data('{}/scratch/ECNMC/DCWorkloads/packet_size_cdf_{}.csv'.format(__ns3_path, results_folder.split('/')[-1]))
