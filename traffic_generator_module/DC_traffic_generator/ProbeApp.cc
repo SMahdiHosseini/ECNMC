@@ -14,7 +14,7 @@ TypeId ProbeApp::GetTypeId() {
             .SetGroupName("Applications")
             .AddConstructor<ProbeApp> ()
             .AddAttribute ("Protocol", "the name of the protocol to use to send traffic by the applications",
-                           StringValue ("ns3::UdpSocketFactory"),
+                           StringValue ("ns3::TcpSocketFactory"),
                            MakeStringAccessor (&ProbeApp::_protocol),
                            MakeStringChecker())
             .AddAttribute("Rate", "The rate of the Poisson process (request per second)",
@@ -50,7 +50,8 @@ void ProbeApp::StartApplication() {
     PrepareConnection();
     double nextEventTime = m_var->GetValue();
     // cout << "Next event scheduled at: " << (Simulator::Now() + Seconds(nextEventTime)).GetNanoSeconds() << " seconds" << endl;
-    _sendEvent = Simulator::Schedule(Seconds(nextEventTime), &ProbeApp::ScheduleNextSend, this);
+    socket->Send(Create<Packet>(0)); // Send an empty packet to establish the connection
+    _sendEvent = Simulator::Schedule(Seconds(nextEventTime) + Seconds(0.001), &ProbeApp::ScheduleNextSend, this);
 }
 
 void ProbeApp::PrepareConnection() {
@@ -70,6 +71,7 @@ void ProbeApp::PrepareConnection() {
 
 void ProbeApp::StopApplication() {
     NS_LOG_FUNCTION (this);
+    cout << "Node " << GetNodeIP(GetNode(), 1) << " ProbeApp stopped at: " << Simulator::Now().GetSeconds() << endl;
     //close connection
     if (socket) {
         socket->Close();
@@ -79,16 +81,9 @@ void ProbeApp::StopApplication() {
 
 void ProbeApp::Send() {
     NS_LOG_FUNCTION(this);
-    // send a packet
-    Ptr<Packet> packet = Create<Packet>(1); // Create a packet of size 1 bytes
-    if (socket->Send(packet) < 0) {
-        // cout << "Error sending packet from " << GetNodeIP(GetNode(), 1) << " to " << InetSocketAddress::ConvertFrom(_receiverAddress).GetIpv4() << endl;
-        NS_LOG_INFO ("Error while sending packet to " << InetSocketAddress::ConvertFrom(_receiverAddress).GetIpv4());
-    } else {
-        // cout << "Packet sent from " << GetNodeIP(GetNode(), 1) << " to " << InetSocketAddress::ConvertFrom(_receiverAddress).GetIpv4() << endl;
-        NS_LOG_INFO ("Packet sent to " << InetSocketAddress::ConvertFrom(_receiverAddress).GetIpv4());
-    }
-
+    // cout << "Node " << GetNodeIP(GetNode(), 1) << " ProbeApp sending packet at: " << Simulator::Now().GetSeconds() << endl;
+    DynamicCast<TcpSocketBase>(socket)->SendProbe();
+    // socket->SendProbe();
 }
 
 void ProbeApp::ScheduleNextSend() {

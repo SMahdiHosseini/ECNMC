@@ -56,13 +56,16 @@ Ptr<Socket> ConnectionPool::findIdleSocket() {
         for (uint32_t i = 0; i < sockets.size(); ++i) {
             if (DynamicCast<TcpSocketBase>(sockets[i])->GetTxBuffer()->Size() == 0) {
                 // cout << "Found available socket at index: " << i << " Nagle's algo: " << DynamicCast<TcpSocketBase>(sockets[i])->GetTcpNoDelay() << endl;
+                // cout << "Socket Size: " << DynamicCast<TcpSocketBase>(sockets[i])->GetTxBuffer()->Size() << endl;
                 return sockets[i];
             }
         }
         // cout << "All sockets are full, returning the first one.\n";
+        // cout << "Socket Size: " << DynamicCast<TcpSocketBase>(sockets[socketIndex])->GetTxBuffer()->Size() << endl;
         return sockets[socketIndex];
     } else {
         // cout << "Socket " << socketIndex << " is available for sending.\n";
+        // cout << "Socket Size: " << DynamicCast<TcpSocketBase>(sockets[socketIndex])->GetTxBuffer()->Size() << endl;
         return sockets[socketIndex];
     }
     

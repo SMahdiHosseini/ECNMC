@@ -43,6 +43,8 @@ class ExperimentConfig:
         self.traffic = []
         self.isDifferentating = False
         self.silentPacketDrop = False
+        self.NagleIsEnabled = False
+        self.ProbeIsEnabled = False
         self.probeInterval = "1ms"
 
     def read_config_file(self, config_file):
@@ -56,6 +58,8 @@ class ExperimentConfig:
         self.tor_to_agg_link_delay = config.get('Settings', 'torToAggLinkDelay')
         self.agg_to_core_link_delay = config.get('Settings', 'aggToCoreLinkDelay')
         self.pct_paced_back = config.getfloat('Settings', 'pctPacedBack')
+        self.NagleIsEnabled = config.getboolean('Settings', 'Nagle')
+        self.ProbeIsEnabled = config.getboolean('Settings', 'probe')
         self.app_data_rate = config.get('Settings', 'appDataRate')
         self.duration = config.get('Settings', 'duration')
         self.sampleRate = config.get('Settings', 'sampleRate')
@@ -162,6 +166,8 @@ def run_forward_experiment(exp, singleQueue=False):
                             '--maxTh={} '.format(expConfig.MaxTh) +
                             '--dirName=' + 'forward ' +
                             '--traffic={} '.format(traffic) +
+                            '--Nagle={} '.format(expConfig.NagleIsEnabled) +
+                            '--probe={} '.format(expConfig.ProbeIsEnabled) +
                             '--differentiationDelay={} '.format(expConfig.differentiationDelay[0]) +
                             '--isDifferentating={} '.format(expConfig.isDifferentating) +
                             '--silentPacketDrop={} '.format(expConfig.silentPacketDrop) + 

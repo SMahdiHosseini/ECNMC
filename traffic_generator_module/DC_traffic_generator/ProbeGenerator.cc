@@ -15,7 +15,7 @@ ProbeGenerator::establishPairConnections() {
 
     // create sink at receiver
     TraceReplayReceiverHelper replayHelperServer(receiverAddress);
-    replayHelperServer.SetAttribute("Protocol", StringValue("ns3::UdpSocketFactory"));
+    replayHelperServer.SetAttribute("Protocol", StringValue("ns3::TcpSocketFactory"));
     ApplicationContainer replayAppServer = replayHelperServer.Install(_receiver);
     replayAppServer.Start(Simulator::Now());
 
@@ -29,9 +29,9 @@ ProbeGenerator::GenrateTraffic() {
     // cout << "connection at the serverside established with address: " << InetSocketAddress::ConvertFrom(receiverAddresses).GetIpv4() << " port: " << InetSocketAddress::ConvertFrom(receiverAddresses).GetPort() << endl;
     ObjectFactory factory;
     factory.SetTypeId(ProbeApp::GetTypeId());
-    factory.Set("StartTime", TimeValue(trafficStartTime));
+    factory.Set("StartTime", TimeValue(trafficStartTime - Seconds(0.001))); // Start a bit earlier to ensure the connection is established
     factory.Set("StopTime", TimeValue(trafficEndTime));
-    factory.Set("Protocol", StringValue("ns3::UdpSocketFactory"));
+    factory.Set("Protocol", StringValue("ns3::TcpSocketFactory"));
     factory.Set("Rate", DoubleValue(_avgRate));
     Ptr<ProbeApp> nodeAppsHandler = factory.Create<ProbeApp>();
     nodeAppsHandler->SetReceiverAddress(receiverAddresses);
