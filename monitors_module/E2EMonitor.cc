@@ -274,7 +274,9 @@ void E2EMonitor::RecordIpv4PacketReceived(Ptr<const Packet> packet, Ptr<Ipv4> ip
             double dropProbDynamicCDF = packetCDF.calculateProbabilityGreaterThan(availableCapacity);
             
             GTDropMean = (GTDropMean * (prev - firstItemTime).GetNanoSeconds() + dropProbDynamicCDF * (lastItemTime - prev).GetNanoSeconds()) / (lastItemTime - firstItemTime).GetNanoSeconds();
-            // cout << "### E2E ### Enqueue Time: " << lastItemTime.GetNanoSeconds() << " Queue Size: " << (((packetKeyEventPair->second->GetReceivedTime() - transmissionDelay - packetKeyEventPair->second->GetSentTime()) * torToAggLinkRate) / 8) << endl;
+            // cout << "### E2E ### Enqueue Time: " << lastItemTime.GetNanoSeconds();
+            // cout << " ID: " << packetKeyEventPair->first.GetId();
+            // cout << " Queue Size: " << (((packetKeyEventPair->second->GetReceivedTime() - transmissionDelay - packetKeyEventPair->second->GetSentTime()) * torToAggLinkRate) / 8) << endl;
 
             if (_isDifferentiate){
                 packetKeyEventPair->second->SetReceived(packetKeyEventPair->second->GetReceivedTime() + additionalDeprioritizationDelay);
@@ -323,17 +325,17 @@ double E2EMonitor::calculateUnbiasedGTDrop() {
 
 }
 void E2EMonitor::SaveMonitorRecords(const string& filename) {
-    ofstream outfile;
-    outfile.open(filename);
-    outfile << "path,sampleDelayMean,unbiasedSmapleDelayVariance,averagePacketSize,receivedPackets,sentPackets,markedPackets,timeAverage,sentPacketsOnLink,GTDropMean,UnbiasedGTDropMean,OWAQsize" << endl;
-    for (int i = 0; i < numOfPaths; i++) {
-        outfile << i << "," << sampleMean[i] << "," << unbiasedSmapleVariance[i] << "," << sumOfPacketSizes[i] / sampleSize[i] << "," << sampleSize[i] << "," << sentPackets[i] << "," << markedPackets[i] 
-        << "," << timeAverageIntegral[i].GetNanoSeconds() / (integralEndTime[i] - integralStartTime[i]).GetNanoSeconds() << "," << sentPackets_onlink[i]
-        << "," << GTDropMean << "," << calculateUnbiasedGTDrop() 
-        << "," << (Time(timeAverageIntegral[i].GetNanoSeconds() / (integralEndTime[i] - integralStartTime[i]).GetNanoSeconds()) * torToAggLinkRate) / 8 << endl;
+    // ofstream outfile;
+    // outfile.open(filename);
+    // outfile << "path,sampleDelayMean,unbiasedSmapleDelayVariance,averagePacketSize,receivedPackets,sentPackets,markedPackets,timeAverage,sentPacketsOnLink,GTDropMean,UnbiasedGTDropMean,OWAQsize" << endl;
+    // for (int i = 0; i < numOfPaths; i++) {
+    //     outfile << i << "," << sampleMean[i] << "," << unbiasedSmapleVariance[i] << "," << sumOfPacketSizes[i] / sampleSize[i] << "," << sampleSize[i] << "," << sentPackets[i] << "," << markedPackets[i] 
+    //     << "," << timeAverageIntegral[i].GetNanoSeconds() / (integralEndTime[i] - integralStartTime[i]).GetNanoSeconds() << "," << sentPackets_onlink[i]
+    //     << "," << GTDropMean << "," << calculateUnbiasedGTDrop() 
+    //     << "," << (Time(timeAverageIntegral[i].GetNanoSeconds() / (integralEndTime[i] - integralStartTime[i]).GetNanoSeconds()) * torToAggLinkRate) / 8 << endl;
 
-    }
-    outfile.close();
+    // }
+    // outfile.close();
 
     ofstream packetsFile;
     packetsFile.open(filename.substr(0, filename.size() - 4) + "_packets.csv");
@@ -360,11 +362,11 @@ void E2EMonitor::SaveMonitorRecords(const string& filename) {
     }
     packetsFile.close();
 
-    ofstream markingsFile;
-    markingsFile.open(filename.substr(0, filename.size() - 4) + "_markings.csv");
-    markingsFile << "Time,BytesAcked,MarkingProb,rtt" << endl;
-    for (auto &item : markingProbProcess) {
-        markingsFile << std::get<0>(item).GetNanoSeconds() << "," << std::get<1>(item) << "," << std::get<2>(item) << "," << std::get<3>(item).GetNanoSeconds() << endl;
-    }
-    markingsFile.close();
+    // ofstream markingsFile;
+    // markingsFile.open(filename.substr(0, filename.size() - 4) + "_markings.csv");
+    // markingsFile << "Time,BytesAcked,MarkingProb,rtt" << endl;
+    // for (auto &item : markingProbProcess) {
+    //     markingsFile << std::get<0>(item).GetNanoSeconds() << "," << std::get<1>(item) << "," << std::get<2>(item) << "," << std::get<3>(item).GetNanoSeconds() << endl;
+    // }
+    // markingsFile.close();
 }

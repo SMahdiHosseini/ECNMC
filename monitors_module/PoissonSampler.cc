@@ -74,7 +74,7 @@ uint32_t PoissonSampler::ComputeQueueSize() {
     uint32_t TXedBytes = (outgoingDataRate * (Simulator::Now() - lastLeftTime)) / 8;
     uint32_t remainedBytes = (lastLeftSize > TXedBytes) ? lastLeftSize - TXedBytes : 0;
     if (REDQueueDisc != nullptr) {
-        return REDQueueDisc->GetNBytes() + NetDeviceQueue->GetNBytes() + remainedBytes;
+        return REDQueueDisc->GetNBytes() + NetDeviceQueue->GetNBytes() + remainedBytes + REDQueueDisc->GetNPackets() * 2;
     }
     return NetDeviceQueue->GetNBytes() + remainedBytes;
 }
@@ -136,7 +136,11 @@ void PoissonSampler::RecordIncomingPacket(Ptr<const Packet> packet) {
     _lastQueueSize = REDQueueDisc->GetNBytes();
     _lastTotalQueueSize = ComputeQueueSize();
     // updateGTCounters();
-    // cout << "### POISSON ### Enqueue Time: " << Simulator::Now().GetNanoSeconds() << " Queueing Delay: " << queuingDelay.GetNanoSeconds() << " REDQueue Size: " << REDQueueDisc->GetNBytes() << " GTQueuingDelay: " << GTQueuingDelay << " ECN >>> " << markingProbDynamic << endl;
+    // if (ipHeader.GetSource() == Ipv4Address("10.1.1.1")) {
+        // cout << "### POISSON ### Enqueue Time: " << Simulator::Now().GetNanoSeconds();
+        // cout << " ID: " << ipHeader.GetIdentification();
+        // cout << " Queue Size: " << ComputeQueueSize() << " + " << packet->GetSize() << endl;
+    // }
 }
 
 void PoissonSampler::updateGTCounters() {
@@ -366,7 +370,7 @@ void PoissonSampler::EventHandler() {
     event->SetLastQueueSize(_lastQueueSize);
     event->SetLastTotalQueueSize(_lastTotalQueueSize);
     _recordedSamples[*packetKey] = event;
-    // cout << "### EVENT ### " << "Time: " << Simulator::Now().GetNanoSeconds() << " Queue Size: " << queueSize << " Total Queue Size: " << ComputeQueueSize() << " Queuing Delay: " << queuingDelay.GetNanoSeconds() << endl;
+    // cout << "### EVENT ### " << "Time: " << Simulator::Now().GetNanoSeconds() << " Queue Size: " << ComputeQueueSize() << endl;
     updateCounters(event);
 }
 
