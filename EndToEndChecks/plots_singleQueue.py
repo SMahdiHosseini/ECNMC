@@ -11,6 +11,9 @@ colors = ['b', 'g', 'r', 'c', 'm', 'y', 'k', 'b', 'g', 'r', 'c', 'm', 'y', 'k']
 def readResults(results_dir, serviceRateScales, results_dir_file, selectedVarMethods, differentiationDelay=0, errorRate=0, load=0, traffic=''):
     results = {}
     results_WOBias = {}
+    results_WOBias_mixingRate_filter = {}
+    results_WOBias_packetsInQueue_filter = {}
+    results_WOBias_mixingRate_packetsInQueue_filter = {}
     dropRate = {}
     sampleSizes = {}
     CVS = {}
@@ -24,16 +27,32 @@ def readResults(results_dir, serviceRateScales, results_dir_file, selectedVarMet
     stds = {}
     switch_samples_rtt = {}
     switch_delay = {}
+    switch_nonMarking = {}
     queueOccupancy = {}
+    PacktsInQueue = {}
+    GT1PktsFrac = {}
+    EmptyFrac = {}
+    ks_statistic = {}
+    ks_statisticMean = {}
+    mixingRate = {}
+    mixingRateTimeAvg = {}
+    mixingSignalAvg = {}
+    mixingDelayDiff = {}
+    mixingRateMonly = {}
+    mixingRatePoisson = {}
+    mixingRateE2EPoisson = {}
     workload = {}
     totalPkts = {}
     pcktsRatio = {}
     stdsRatios = {}
-    flows = ['A0D0']
+    flows = ['P0D0']
     paths = ["0"]
     for rate in serviceRateScales:
         results[rate] = {}
         results_WOBias[rate] = {}
+        results_WOBias_mixingRate_filter[rate] = {}
+        results_WOBias_packetsInQueue_filter[rate] = {}
+        results_WOBias_mixingRate_packetsInQueue_filter[rate] = {}
         dropRate[rate] = {}
         sampleSizes[rate] = {}
         workload[rate] = {}
@@ -47,7 +66,20 @@ def readResults(results_dir, serviceRateScales, results_dir_file, selectedVarMet
         e2e_stds[rate] = {}
         switch_samples_rtt[rate] = {}
         switch_delay[rate] = {}
+        switch_nonMarking[rate] = {}
         queueOccupancy[rate] = {}
+        PacktsInQueue[rate] = {}
+        GT1PktsFrac[rate] = {}
+        EmptyFrac[rate] = {}
+        ks_statistic[rate] = {}
+        ks_statisticMean[rate] = {}
+        mixingRate[rate] = {}
+        mixingRateTimeAvg[rate] = {}
+        mixingSignalAvg[rate] = {}
+        mixingDelayDiff[rate] = {}
+        mixingRateMonly[rate] = {}
+        mixingRatePoisson[rate] = {}
+        mixingRateE2EPoisson[rate] = {}
         stds[rate] = {}
         stdsRatios[rate] = {}
         avgRtt[rate] = {}
@@ -80,6 +112,9 @@ def readResults(results_dir, serviceRateScales, results_dir_file, selectedVarMet
                         results_WOBias[rate]['LastSuccessProb'] = {}
                         results_WOBias[rate]['NonMarkingProb'] = {}
                         results_WOBias[rate]['LastNonMarkingProb'] = {}
+                        results_WOBias_mixingRate_filter[rate]['Delay'] = {}
+                        results_WOBias_packetsInQueue_filter[rate]['Delay'] = {}
+                        results_WOBias_mixingRate_packetsInQueue_filter[rate]['Delay'] = {}
                         workload[rate] = np.mean(temp['workLoad'][flow][path]) * 1e3
                         totalPkts[rate] = np.mean(temp['totalPckts'][flow][path])
                         pcktsRatio[rate] = np.mean([temp['EndToEndSampleSizeDelay'][flow][path][i] / temp['totalPckts'][flow][path][i] for i in range(temp['experiments'])])
@@ -91,16 +126,19 @@ def readResults(results_dir, serviceRateScales, results_dir_file, selectedVarMet
                         bias[rate]['delay'] = np.mean(temp['DelayBias'][flow][path])
                         bias[rate]['success'] = np.mean(temp['SuccessProbBias'][flow][path])
                         bias[rate]['nonMarking'] = np.mean(temp['NonMarkingProbBias'][flow][path])
-                        erors[rate]['delay'] = np.mean([abs(temp['SD0DelayMean'][i] - temp['EndToEndDelayMean']['event_poisson_eventAvg'][flow][path][0][i][0]) for i in range(temp['EndToEndDelayMean']['event_poisson_eventAvg'][flow][path][1])])
-                        erors[rate]['success'] = np.mean([abs(temp['SD0SuccessProbMean'][i] - temp['EndToEndSuccessProb']['event_poisson_eventAvg'][flow][path][0][i][0]) for i in range(temp['EndToEndSuccessProb']['event_poisson_eventAvg'][flow][path][1])])
-                        erors[rate]['nonMarking'] = np.mean([abs(temp['SD0NonMarkingProbMean'][i] - temp['EndToEndNonMarkingProb']['event_poisson_eventAvg'][flow][path][0][i][0]) for i in range(temp['EndToEndNonMarkingProb']['event_poisson_eventAvg'][flow][path][1])])
+                        # erors[rate]['delay'] = np.mean([abs(temp['SD0DelayMean'][i] - temp['EndToEndDelayMean']['event_poisson_eventAvg'][flow][path][0][i][0]) for i in range(temp['EndToEndDelayMean']['event_poisson_eventAvg'][flow][path][1])])
+                        # erors[rate]['success'] = np.mean([abs(temp['SD0SuccessProbMean'][i] - temp['EndToEndSuccessProb']['event_poisson_eventAvg'][flow][path][0][i][0]) for i in range(temp['EndToEndSuccessProb']['event_poisson_eventAvg'][flow][path][1])])
+                        # erors[rate]['nonMarking'] = np.mean([abs(temp['SD0NonMarkingProbMean'][i] - temp['EndToEndNonMarkingProb']['event_poisson_eventAvg'][flow][path][0][i][0]) for i in range(temp['EndToEndNonMarkingProb']['event_poisson_eventAvg'][flow][path][1])])
+                        erors[rate]['delay'] = np.mean([temp['SD0DelayMean'][i] - temp['EndToEndDelayMean']['event_poisson_eventAvg'][flow][path][0][i][0] for i in range(temp['EndToEndDelayMean']['event_poisson_eventAvg'][flow][path][1])])
+                        erors[rate]['success'] = np.mean([temp['SD0SuccessProbMean'][i] - temp['EndToEndSuccessProb']['event_poisson_eventAvg'][flow][path][0][i][0] for i in range(temp['EndToEndSuccessProb']['event_poisson_eventAvg'][flow][path][1])])
+                        erors[rate]['nonMarking'] = np.mean([temp['SD0NonMarkingProbMean'][i] - temp['EndToEndNonMarkingProb']['event_poisson_eventAvg'][flow][path][0][i][0] for i in range(temp['EndToEndNonMarkingProb']['event_poisson_eventAvg'][flow][path][1])])
                         # CVS[rate]['LastNonMarkingProbCV'] = np.mean([temp['SD0LastNonMarkingProbStd'][i] / temp['SD0LastNonMarkingProbMean'][i] for i in range(temp['experiments'])])
                         # CVS[rate]['SubSamplesDelayCV'] = np.mean([temp['EndToEndDelayMean']['event_poisson_eventAvg'][flow][path][i][1] / temp['EndToEndDelayMean']['event_poisson_eventAvg'][flow][path][i][0] * np.sqrt(temp['EndToEndSampleSizeDelay'][flow][path][i]) for i in range(temp['experiments'])])
                         # CVS[rate]['SubSamplesSuccessProbCV'] = np.mean([temp['EndToEndSuccessProb']['event_poisson_eventAvg'][flow][path][i][1] / temp['EndToEndSuccessProb']['event_poisson_eventAvg'][flow][path][i][0] * np.sqrt(temp['EndToEndSampleSizeSuccess'][flow][path][i]) for i in range(temp['experiments'])])
                         # CVS[rate]['SubSamplesNonMarkingProbCV'] = np.mean([temp['EndToEndNonMarkingProb']['event_poisson_eventAvg'][flow][path][i][1] / temp['EndToEndNonMarkingProb']['event_poisson_eventAvg'][flow][path][i][0] * np.sqrt(temp['EndToEndSampleSizeMarking'][flow][path][i]) for i in range(temp['experiments'])])
-                        stds[rate]['delay'] = np.mean(temp['SD0Delaystd'])
-                        stds[rate]['success'] = np.mean(temp['SD0SuccessProbStd'])
-                        stds[rate]['nonMarking'] = np.mean(temp['SD0NonMarkingProbStd'])
+                        stds[rate]['delay'] = np.sqrt(sum(temp['SD0Delaystd'][i] ** 2 for i in range(len(temp['SD0Delaystd'])))) / len(temp['SD0Delaystd'])
+                        stds[rate]['success'] = np.sqrt(sum(temp['SD0SuccessProbStd'][i] ** 2 for i in range(len(temp['SD0SuccessProbStd'])))) / len(temp['SD0SuccessProbStd'])
+                        stds[rate]['nonMarking'] = np.sqrt(sum(temp['SD0NonMarkingProbStd'][i] ** 2 for i in range(len(temp['SD0NonMarkingProbStd'])))) / len(temp['SD0NonMarkingProbStd'])
                         sampleSizes[rate] = np.mean(temp['EndToEndSampleSizeDelay'][flow][path])
                         e2e_samples_rtt[rate] = np.mean([temp['RTT'][flow][path][i] / temp['InterArrivals'][flow][path][i] for i in range(temp['experiments']) if temp['InterArrivals'][flow][path][i] != 0])
                         avgRtt[rate] = np.mean(temp['RTT'][flow][path])
@@ -114,7 +152,20 @@ def readResults(results_dir, serviceRateScales, results_dir_file, selectedVarMet
                         stdsRatios[rate]['nonMarking'] = np.mean([temp['EndToEndNonMarkingProb']['event_poisson_eventAvg'][flow][path][0][i][1] / temp['SD0NonMarkingProbStd'][i] if temp['SD0NonMarkingProbStd'][i] != 0 else 1 for i in range(temp['EndToEndNonMarkingProb']['event_poisson_eventAvg'][flow][path][1])])
                         switch_samples_rtt[rate] = np.mean([temp['RTT'][flow][path][i] / temp['SD0InterArrivals'][i] for i in range(temp['experiments']) if temp['SD0InterArrivals'][i] != 0])
                         switch_delay[rate] = np.mean(temp['SD0DelayMean'])
+                        switch_nonMarking[rate] = np.mean(temp['SD0NonMarkingProbMean'])
                         queueOccupancy[rate] = np.mean(temp['SD0Occupancy'])
+                        PacktsInQueue[rate] = np.mean(temp['SD0PacktsInQueue'])
+                        EmptyFrac[rate] = np.mean(temp['SD0EmptyFrac'])
+                        GT1PktsFrac[rate] = np.mean(temp['SD0GT1PktsFrac'])
+                        # ks_statistic[rate] = np.mean(temp['SD0ks_statistic'])
+                        # ks_statisticMean[rate] = np.mean(temp['SD0ks_statisticMean'])
+                        mixingRate[rate] = np.mean(temp['SD0mixingRate'])
+                        # mixingRateTimeAvg[rate] = np.mean(temp['SD0mixingRateTimeAvg'])
+                        mixingSignalAvg[rate] = abs(np.mean(temp['SD0mixingSignalAvg']))
+                        mixingDelayDiff[rate] = abs(np.mean(temp['SD0mixingDelayDiff']))
+                        mixingRateMonly[rate] = np.mean(temp['SD0mixingRateMonly'])
+                        mixingRatePoisson[rate] = np.mean(temp['SD0mixingRatePoisson'])
+                        # mixingRateE2EPoisson[rate] = np.mean(temp['SD0mixingRateE2EPoisson'])
                         if len(selectedVarMethods) == 0:
                             selectedVarMethods = list(temp['MaxEpsilonIneqDelay'].keys()) + list(temp['MaxEpsilonIneqSuccessProb'].keys()) + list(temp['MaxEpsilonIneqNonMarkingProb'].keys())
                         for var_method in temp['MaxEpsilonIneqDelay'].keys():
@@ -126,7 +177,29 @@ def readResults(results_dir, serviceRateScales, results_dir_file, selectedVarMet
                             results[rate]['LastDelay'][var_method] = temp['MaxEpsilonIneqLastDelay'][var_method][flow][path][0]['WBias'] / temp['MaxEpsilonIneqLastDelay'][var_method][flow][path][1] * 100 if temp['MaxEpsilonIneqLastDelay'][var_method][flow][path][1] != 0 else None
                             results_WOBias[rate]['Delay'][var_method] = temp['MaxEpsilonIneqDelay'][var_method][flow][path][0]['WOBias'] / temp['MaxEpsilonIneqDelay'][var_method][flow][path][1] * 100 if temp['MaxEpsilonIneqDelay'][var_method][flow][path][1] != 0 else None
                             results_WOBias[rate]['LastDelay'][var_method] = temp['MaxEpsilonIneqLastDelay'][var_method][flow][path][0]['WOBias'] / temp['MaxEpsilonIneqLastDelay'][var_method][flow][path][1] * 100 if temp['MaxEpsilonIneqLastDelay'][var_method][flow][path][1] != 0 else None
-                        
+                            # WOBias_mixingRate_filter = []
+                            # WOBias_packetsInQueue_filter = []
+                            # WOBias_mixingRate_packetsInQueue_filter = []
+
+                            # exp = 0
+                            # exp_wenoughSamples = 0
+                            # mixingrate_trsh = 0.10
+                            # packetsInQueue_trsh = 1.0
+                            # samples_trsh = 1
+                            # while (exp < temp['experiments']):
+                            #     if (temp['EndToEndSampleSizeDelay'][flow][path][exp] >= 15):
+                            #         if(temp['SD0mixingRate'][exp] > mixingrate_trsh and temp['SD0PacktsInQueue'][exp] > packetsInQueue_trsh):
+                            #                 WOBias_mixingRate_packetsInQueue_filter.append(abs(temp['EndToEndDelayMean']['event_poisson_eventAvg'][flow][path][0][exp_wenoughSamples][0] - temp['SD0DelayMean'][exp]) < (1.96 * temp['SD0Delaystd'][exp] * np.sqrt(1 / temp['EndToEndSampleSizeDelay'][flow][path][exp] + 1 / temp['SD0SampleSize'][exp])))                                        
+                            #         if(temp['SD0mixingRate'][exp] > mixingrate_trsh):
+                            #             WOBias_mixingRate_filter.append(abs(temp['EndToEndDelayMean']['event_poisson_eventAvg'][flow][path][0][exp_wenoughSamples][0] - temp['SD0DelayMean'][exp]) < (1.96 * temp['SD0Delaystd'][exp] * np.sqrt(1 / temp['EndToEndSampleSizeDelay'][flow][path][exp] + 1 / temp['SD0SampleSize'][exp])))
+                            #         if(temp['SD0PacktsInQueue'][exp] > packetsInQueue_trsh):
+                            #             WOBias_packetsInQueue_filter.append(abs(temp['EndToEndDelayMean']['event_poisson_eventAvg'][flow][path][0][exp_wenoughSamples][0] - temp['SD0DelayMean'][exp]) < (1.96 * temp['SD0Delaystd'][exp] * np.sqrt(1 / temp['EndToEndSampleSizeDelay'][flow][path][exp] + 1 / temp['SD0SampleSize'][exp])))
+                            #         exp_wenoughSamples += 1
+                            #     exp += 1
+                            # results_WOBias_mixingRate_filter[rate]['Delay'][var_method] = np.mean(WOBias_mixingRate_filter) * 100 if len(WOBias_mixingRate_filter) >= samples_trsh else None
+                            # results_WOBias_packetsInQueue_filter[rate]['Delay'][var_method] = np.mean(WOBias_packetsInQueue_filter) * 100 if len(WOBias_packetsInQueue_filter) >= samples_trsh else None
+                            # results_WOBias_mixingRate_packetsInQueue_filter[rate]['Delay'][var_method] = np.mean(WOBias_mixingRate_packetsInQueue_filter) * 100 if len(WOBias_mixingRate_packetsInQueue_filter) >= samples_trsh else None
+                            # print(len(WOBias_mixingRate_occupancy_filter))
                         for var_method in temp['MaxEpsilonIneqSuccessProb'].keys():
                             if var_method not in selectedVarMethods:
                                 continue
@@ -153,6 +226,9 @@ def readResults(results_dir, serviceRateScales, results_dir_file, selectedVarMet
     res = {}
     res['results'] = results
     res['results_WOBias'] = results_WOBias
+    res['results_WOBias_mixingRate_filter'] = results_WOBias_mixingRate_filter
+    res['results_WOBias_packetsInQueue_filter'] = results_WOBias_packetsInQueue_filter
+    res['results_WOBias_mixingRate_packetsInQueue_filter'] = results_WOBias_mixingRate_packetsInQueue_filter
     res['dropRate'] = dropRate
     res['CVS'] = CVS
     res['sampleSizes'] = sampleSizes
@@ -165,7 +241,20 @@ def readResults(results_dir, serviceRateScales, results_dir_file, selectedVarMet
     res['errors'] = erors
     res['bias'] = bias
     res['switch_delay'] = switch_delay
+    res['switch_nonMarking'] = switch_nonMarking
     res['queueOccupancy'] = queueOccupancy
+    res['PacktsInQueue'] = PacktsInQueue
+    res['EmptyFrac'] = EmptyFrac
+    res['GT1PktsFrac'] = GT1PktsFrac
+    res['ks_statistic'] = ks_statistic
+    res['ks_statisticMean'] = ks_statisticMean
+    res['mixingRate'] = mixingRate
+    res['mixingRateTimeAvg'] = mixingRateTimeAvg
+    res['mixingSignalAvg'] = mixingSignalAvg
+    res['mixingDelayDiff'] = mixingDelayDiff
+    res['mixingRateMonly'] = mixingRateMonly
+    res['mixingRatePoisson'] = mixingRatePoisson
+    res['mixingRateE2EPoisson'] = mixingRateE2EPoisson
     res['e2e_delay'] = e2e_delay
     res['e2e_stds'] = e2e_stds
     res['stdsRatios'] = stdsRatios
@@ -453,6 +542,91 @@ def plot_forward_success_per_loads_traffic(results, loads, rates, results_dir, r
         plt.savefig(f"../Results/results_{results_dir}/{results_dir_file}/{biasTag}_{metric}_SuccessRate_vs_Load_Subplots.png")
         plt.close()
 
+def plot_metric_per_loads_traffic_with_std(traffic_list, metric, metric_std, loads, rates, results_dir, results_dir_file, label):
+    print(f"Generating {label} Rate vs Load subplots (subplot per ratio, shape per traffic)...")
+
+    # Compute oversubscription ratios
+    oversub_ratios = [1 / r if r != 0 else np.nan for r in rates]
+    oversub_ratio_map = dict(zip(rates, oversub_ratios))
+
+    # Assign marker shapes to each traffic
+    marker_styles = ['o', 's', '^', 'D', 'v', 'P', '*', 'X', 'H', '8']
+    marker_map = {traffic: marker_styles[i % len(marker_styles)] for i, traffic in enumerate(traffic_list)}
+
+    # Assign colors to traffic (consistent across subplots)
+    cmap = get_cmap('tab10') if len(traffic_list) <= 10 else get_cmap('tab20')
+    color_map = {traffic: cmap(i / len(traffic_list)) for i, traffic in enumerate(traffic_list)}
+
+    num_ratios = len(rates)
+    fig, axs = plt.subplots(nrows=num_ratios, ncols=1, figsize=(20, 7 * num_ratios), sharex=True)
+
+    if num_ratios == 1:
+        axs = [axs]  # wrap in list for consistency
+    max_y = 0
+    min_y = 0
+    for idx, rate in enumerate(rates):
+        alpha = oversub_ratio_map[rate]
+        ax = axs[idx]
+        for traffic in traffic_list:
+            marker = marker_map[traffic]
+            color = color_map[traffic]
+            x_vals, y_vals, error_valas = [], [], []
+
+            for load in sorted(loads):
+                metric_val = metric[traffic][load].get(rate, np.nan)
+                metric_std_val = metric_std[traffic][load].get(rate, np.nan)
+                if not np.isnan(metric_val):
+                    x_vals.append(load)
+                    y_vals.append(metric_val)  # convert to %
+                    error_valas.append(metric_std_val)
+
+            if x_vals:
+                if max(y_vals) > max_y:
+                    max_y = max(y_vals)
+                if min_y == 0:
+                    min_y = min(y_vals)
+                if min(y_vals) < min_y:
+                    min_y = min(y_vals)
+                ax.errorbar(
+                    x_vals, y_vals, error_valas,
+                    linestyle='-',
+                    marker=marker,
+                    color=color,
+                    markerfacecolor='none',  # hollow
+                    markeredgecolor=color,
+                    markersize=8,
+                    linewidth=1.5,
+                    label=traffic
+                )
+
+        ax.set_title(f"{label} vs Load (α = {alpha:.2f})", fontsize=18)
+        ax.set_ylabel(f"{label}", fontsize=14)
+        ax.grid(True, which='both', linestyle='--', linewidth=0.5)
+        ax.legend(loc='best', fontsize=10, fancybox=True, shadow=True)
+        ax.axhline(36000 * alpha, color='red', linestyle='--', linewidth=1, label='Trshold')
+        ax.text(0.02, 0.95, f'Trshold = {36000 * alpha:.2f}', transform=ax.transAxes, color='red', fontsize=12, verticalalignment='top')
+
+        ax.axhline(20000 * alpha, color='blue', linestyle='--', linewidth=1, label='1 MSS')
+        ax.text(0.02, 0.90, f'1 MSS = {20000 * alpha:.2f}', transform=ax.transAxes, color='blue', fontsize=12, verticalalignment='top')
+    # max_y = 0.003
+    # min_y = -10000
+    # print(f"max_y: {max_y}, min_y: {min_y}")
+    for ax in axs:
+        ax.set_ylim(bottom=-0.05 * min_y, top=1.05 * max_y)
+        # ax.set_ylim(bottom=-0.05, top=0.5 * 1e6)
+        ax.set_yticks(np.arange(-0.05 * min_y, 1.05 * max_y, (1.05 * max_y + 0.05 * min_y) / 20))
+        # ax.set_yticks(np.arange(0, 0.5 * 1e6, 0.5 * 1e6 / 20))
+        ax.tick_params(axis='y', labelsize=12)
+
+    axs[-1].set_xlabel("Load", fontsize=16)
+    axs[-1].set_xticks(sorted(loads))
+    axs[-1].set_xticklabels([f"{l:.2f}" for l in sorted(loads)], fontsize=12)
+
+    plt.suptitle(f"{label} vs Load per Oversubscription Ratio", fontsize=24)
+    plt.tight_layout(rect=[0, 0, 1, 0.96])
+    plt.savefig(f"../Results/results_{results_dir}/{results_dir_file}/{label}_withSTD_vs_Load_Subplots.png")
+    plt.close()
+    
 def plot_metric_per_loads_traffic(traffic_list, metric, loads, rates, results_dir, results_dir_file, label):
     print(f"Generating {label} Rate vs Load subplots (subplot per ratio, shape per traffic)...")
 
@@ -513,6 +687,9 @@ def plot_metric_per_loads_traffic(traffic_list, metric, loads, rates, results_di
         ax.grid(True, which='both', linestyle='--', linewidth=0.5)
         ax.legend(loc='best', fontsize=10, fancybox=True, shadow=True)
 
+    # max_y = 0.003
+    # min_y = -10000
+    # print(f"max_y: {max_y}, min_y: {min_y}")
     for ax in axs:
         ax.set_ylim(bottom=-0.05 * min_y, top=1.05 * max_y)
         # ax.set_ylim(bottom=-0.05, top=0.5 * 1e6)
@@ -586,6 +763,9 @@ def plot_success_vs_loads(results, loads, rates, results_dir, results_dir_file, 
 def analyse_forward_exp(results_dir, results_dir_file, rateScales, loads, selectedVarMethods, traffics):
     results = {}
     results_WOBias = {}
+    results_WOBias_mixingRate_filter = {}
+    results_WOBias_packetsInQueue_filter = {}
+    results_WOBias_mixingRate_packetsInQueue_filter = {}
     DropRates = {}
     workload = {}
     totalPkts = {}
@@ -598,7 +778,20 @@ def analyse_forward_exp(results_dir, results_dir_file, rateScales, loads, select
     e2e_stds_all['nonMarking'] = {}
     switch_samples_rtt = {}
     switch_delay = {}
+    switch_nonMarking = {}
     queueOccupancy = {}
+    PacktsInQueue = {}
+    EmptyFrac = {}
+    GT1PktsFrac = {}
+    ks_statistic = {}
+    ks_statisticMean = {}
+    mixingRate = {}
+    mixingRateTimeAvg = {}
+    mixingSignalAvg = {}
+    mixingDelayDiff = {}
+    mixingRateMonly = {}
+    mixingRatePoisson = {}
+    mixingRateE2EPoisson = {}
     sampleSizes = {}
     pcktsRatio = {}
     CVS = {}
@@ -631,6 +824,9 @@ def analyse_forward_exp(results_dir, results_dir_file, rateScales, loads, select
     for traffic in traffics:
         results[traffic] = {}
         results_WOBias[traffic] = {}
+        results_WOBias_mixingRate_filter[traffic] = {}
+        results_WOBias_packetsInQueue_filter[traffic] = {}
+        results_WOBias_mixingRate_packetsInQueue_filter[traffic] = {}
         DropRates[traffic] = {}
         workload[traffic] = {}
         totalPkts[traffic] = {}
@@ -642,8 +838,21 @@ def analyse_forward_exp(results_dir, results_dir_file, rateScales, loads, select
         e2e_stds_all['nonMarking'][traffic] = {}
         switch_samples_rtt[traffic] = {}
         switch_delay[traffic] = {}
+        switch_nonMarking[traffic] = {}
         queueOccupancy[traffic] = {}
+        PacktsInQueue[traffic] = {}
+        EmptyFrac[traffic] = {}
+        GT1PktsFrac[traffic] = {}
+        ks_statistic[traffic] = {}
+        ks_statisticMean[traffic] = {}
         sampleSizes[traffic] = {}
+        mixingRate[traffic] = {}
+        mixingRateTimeAvg[traffic] = {}
+        mixingSignalAvg[traffic] = {}
+        mixingDelayDiff[traffic] = {}
+        mixingRateMonly[traffic] = {}
+        mixingRatePoisson[traffic] = {}
+        mixingRateE2EPoisson[traffic] = {}
         CVS[traffic] = {}
         CVS_all['delay'][traffic] = {}
         CVS_all['success'][traffic] = {}
@@ -670,6 +879,9 @@ def analyse_forward_exp(results_dir, results_dir_file, rateScales, loads, select
         for load in loads:
             results[traffic][load] = {}
             results_WOBias[traffic][load] = {}
+            results_WOBias_mixingRate_filter[traffic][load] = {}
+            results_WOBias_packetsInQueue_filter[traffic][load] = {}
+            results_WOBias_mixingRate_packetsInQueue_filter[traffic][load] = {}
             DropRates[traffic][load] = {}
             workload[traffic][load] = {}
             totalPkts[traffic][load] = {}
@@ -681,7 +893,20 @@ def analyse_forward_exp(results_dir, results_dir_file, rateScales, loads, select
             e2e_stds_all['nonMarking'][traffic][load] = {}
             switch_samples_rtt[traffic][load] = {}
             switch_delay[traffic][load] = {}
+            switch_nonMarking[traffic][load] = {}
             queueOccupancy[traffic][load] = {}
+            PacktsInQueue[traffic][load] = {}
+            EmptyFrac[traffic][load] = {}
+            GT1PktsFrac[traffic][load] = {}
+            ks_statistic[traffic][load] = {}
+            ks_statisticMean[traffic][load] = {}
+            mixingRate[traffic][load] = {}
+            mixingRateTimeAvg[traffic][load] = {}
+            mixingSignalAvg[traffic][load] = {}
+            mixingDelayDiff[traffic][load] = {}
+            mixingRateMonly[traffic][load] = {}
+            mixingRatePoisson[traffic][load] = {}
+            mixingRateE2EPoisson[traffic][load] = {}
             sampleSizes[traffic][load] = {}
             CVS[traffic][load] = {}
             CVS_all['delay'][traffic][load] = {}
@@ -708,6 +933,9 @@ def analyse_forward_exp(results_dir, results_dir_file, rateScales, loads, select
             res = readResults(results_dir, rateScales, results_dir_file, selectedVarMethods, load=load, traffic=traffic)
             results[traffic][load] = res['results']
             results_WOBias[traffic][load] = res['results_WOBias']
+            results_WOBias_mixingRate_filter[traffic][load] = res['results_WOBias_mixingRate_filter']
+            results_WOBias_packetsInQueue_filter[traffic][load] = res['results_WOBias_packetsInQueue_filter']
+            results_WOBias_mixingRate_packetsInQueue_filter[traffic][load] = res['results_WOBias_mixingRate_packetsInQueue_filter']
             DropRates[traffic][load] = res['dropRate']
             CVS[traffic][load] = res['CVS']
             sampleSizes[traffic][load] = res['sampleSizes']
@@ -719,7 +947,20 @@ def analyse_forward_exp(results_dir, results_dir_file, rateScales, loads, select
             errors[traffic][load] = res['errors']
             bias[traffic][load] = res['bias']
             switch_delay[traffic][load] = res['switch_delay']
+            switch_nonMarking[traffic][load] = res['switch_nonMarking']
             queueOccupancy[traffic][load] = res['queueOccupancy']
+            PacktsInQueue[traffic][load] = res['PacktsInQueue']
+            EmptyFrac[traffic][load] = res['EmptyFrac']
+            GT1PktsFrac[traffic][load] = res['GT1PktsFrac']
+            ks_statistic[traffic][load] = res['ks_statistic']
+            ks_statisticMean[traffic][load] = res['ks_statisticMean']
+            mixingRate[traffic][load] = res['mixingRate']
+            mixingRateTimeAvg[traffic][load] = res['mixingRateTimeAvg']
+            mixingSignalAvg[traffic][load] = res['mixingSignalAvg']
+            mixingDelayDiff[traffic][load] = res['mixingDelayDiff']
+            mixingRateMonly[traffic][load] = res['mixingRateMonly']
+            mixingRatePoisson[traffic][load] = res['mixingRatePoisson']
+            mixingRateE2EPoisson[traffic][load] = res['mixingRateE2EPoisson']
             e2e_delay[traffic][load] = res['e2e_delay']
             pcktsRatio[traffic][load] = res['pcktsRatio']
             e2e_stds[traffic][load] = res['e2e_stds']
@@ -763,7 +1004,20 @@ def analyse_forward_exp(results_dir, results_dir_file, rateScales, loads, select
     plot_metric_per_loads_traffic(list(results.keys()), e2e_stds_all['delay'], loads, selectedRates, results_dir, results_dir_file, 'End-to-end STD of Delay(ns)')
     plot_metric_per_loads_traffic(list(results.keys()), stdsRatios_all['delay'], loads, selectedRates, results_dir, results_dir_file, 'End-to-end STD of Delay(ns) over Switch STD of Delay(ns)')
     plot_metric_per_loads_traffic(list(results.keys()), switch_delay, loads, selectedRates, results_dir, results_dir_file, 'Switch Delay(ns)')
+    plot_metric_per_loads_traffic(list(results.keys()), switch_nonMarking, loads, selectedRates, results_dir, results_dir_file, 'Switch Non Marking Probability')
     plot_metric_per_loads_traffic(list(results.keys()), queueOccupancy, loads, selectedRates, results_dir, results_dir_file, 'Queue Occupancy(%)')
+    plot_metric_per_loads_traffic(list(results.keys()), PacktsInQueue, loads, selectedRates, results_dir, results_dir_file, '#Packets in Queue')
+    plot_metric_per_loads_traffic(list(results.keys()), EmptyFrac, loads, selectedRates, results_dir, results_dir_file, 'Empty Fraction')
+    plot_metric_per_loads_traffic(list(results.keys()), GT1PktsFrac, loads, selectedRates, results_dir, results_dir_file, 'Fraction of Loads with >1 Packet')
+    # plot_metric_per_loads_traffic(list(results.keys()), ks_statistic, loads, selectedRates, results_dir, results_dir_file, 'KS Statistic')
+    # plot_metric_per_loads_traffic(list(results.keys()), ks_statisticMean, loads, selectedRates, results_dir, results_dir_file, 'KS Statistic Mean')
+    # plot_metric_per_loads_traffic(list(results.keys()), mixingRate, loads, selectedRates, results_dir, results_dir_file, 'Mixing Rate')
+    # plot_metric_per_loads_traffic(list(results.keys()), mixingRateTimeAvg, loads, selectedRates, results_dir, results_dir_file, 'Mixing Rate Time Avg')
+    # plot_metric_per_loads_traffic(list(results.keys()), mixingSignalAvg, loads, selectedRates, results_dir, results_dir_file, 'Mixing Signal Avg')
+    # plot_metric_per_loads_traffic(list(results.keys()), mixingDelayDiff, loads, selectedRates, results_dir, results_dir_file, 'Mixing Delay Difference(ns)')
+    # plot_metric_per_loads_traffic(list(results.keys()), mixingRateMonly, loads, selectedRates, results_dir, results_dir_file, 'Mixing Rate M only')
+    # plot_metric_per_loads_traffic(list(results.keys()), mixingRatePoisson, loads, selectedRates, results_dir, results_dir_file, 'Mixing Rate Poisson')
+    # plot_metric_per_loads_traffic(list(results.keys()), mixingRateE2EPoisson, loads, selectedRates, results_dir, results_dir_file, 'Mixing Rate E2E Poisson')
     plot_metric_per_loads_traffic(list(results.keys()), e2e_delay, loads, selectedRates, results_dir, results_dir_file, 'End-to-End Delay(ns)')
     plot_metric_per_loads_traffic(list(results.keys()), pcktsRatio, loads, selectedRates, results_dir, results_dir_file, '#end-to-end Packets Ratio')
     plot_metric_per_loads_traffic(list(results.keys()), stds_all['delay'], loads, selectedRates, results_dir, results_dir_file, 'STD of Delay(ns)')
@@ -775,8 +1029,11 @@ def analyse_forward_exp(results_dir, results_dir_file, rateScales, loads, select
     plot_metric_per_loads_traffic(list(results.keys()), avgRtt, loads, selectedRates, results_dir, results_dir_file, 'Avg RTT(ns)')
     plot_forward_success_per_loads_traffic(results, loads, selectedRates, results_dir, results_dir_file, selectedVarMethods, 'WithBias')
     plot_forward_success_per_loads_traffic(results_WOBias, loads, selectedRates, results_dir, results_dir_file, selectedVarMethods, 'WithoutBias')
+    # plot_forward_success_per_loads_traffic(results_WOBias_mixingRate_filter, loads, selectedRates, results_dir, results_dir_file, selectedVarMethods, 'WithoutBias_MixingRateFilter')
+    # plot_forward_success_per_loads_traffic(results_WOBias_packetsInQueue_filter, loads, selectedRates, results_dir, results_dir_file, selectedVarMethods, 'WithoutBias_PacketsInQueueFilter')
+    # plot_forward_success_per_loads_traffic(results_WOBias_mixingRate_packetsInQueue_filter, loads, selectedRates, results_dir, results_dir_file, selectedVarMethods, 'WithoutBias_MixingRate_PacketsInQueueFilter')
     plot_droprate_vs_load(list(results.keys()), loads, selectedRates, results_dir, DropRates, results_dir_file)
-
+    plot_metric_per_loads_traffic_with_std(list(results.keys()), switch_delay, stds_all['delay'], loads, selectedRates, results_dir, results_dir_file, 'Switch Delay(ns)')
 def analyse_reverse_exp(results_dir, results_dir_file, rateScales, differentiationDelays, errorRates, selectedVarMethods, type, traffics):
     results = {}
     DropRates = {}
@@ -867,7 +1124,7 @@ def __main__():
     rateScales = [float(x) for x in config.get('Settings', 'serviceRateScales').split(',')]
     loads = [float(x) for x in config.get('Settings', 'load').split(',')]
     traffics = config.get('Settings', 'traffic').split(',')
-    # traffics = ["Google_AllRPC", "Fabricated_Heavy_Head", "Fabricated_Heavy_Middle"]
+    # traffics = ["Facebook_HadoopDist_All"]
     # experiments = 1
     errorRates = [float(x) for x in config.get('Settings', 'errorRate').split(',')]
     # errorRates = [0.25, 0.30, 0.35, 0.40, 0.45, 0.50]
