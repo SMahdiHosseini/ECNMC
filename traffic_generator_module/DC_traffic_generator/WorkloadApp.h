@@ -27,16 +27,18 @@ private:
     void ReadWorkloadFile();
 
     vector<vector<Address>> _receiverAddress;
-    vector<ConnectionPool> _connectionPools;
+    vector<ConnectionPool *> _connectionPools;
     string _protocol;
     double _rate;
     uint32_t _receiversNumber;
     bool _enablePacing;
-    Ptr<ExponentialRandomVariable> m_var;;
+    Ptr<ExponentialRandomVariable> m_var;
     EventId _sendEvent;
     std::string workloadPath;
     Ptr<EmpiricalRandomVariable> m_erv;
     Ptr<UniformRandomVariable> m_uniform;
+    bool _probe;
+    double _probeInterval;
 protected:
     void DoDispose() override;
 

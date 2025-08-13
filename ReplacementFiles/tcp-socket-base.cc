@@ -631,7 +631,7 @@ Time TcpSocketBase::GetProbeClockInterval() const
 
 void TcpSocketBase::SendProbe()
 {
-    SendEmptyPacket(TcpHeader::NONE);
+    SendEmptyPacketWithMyTag(TcpHeader::NONE, true);
 }
 // mahdi end
 
@@ -2799,11 +2799,11 @@ TcpSocketBase::Destroy6()
     CancelAllTimers();
 }
 
-/* Send an empty packet with specified TCP flags */
-void
-TcpSocketBase::SendEmptyPacket(uint8_t flags)
+// mahdi START
+/* Send an empty packet with specified TCP flags and MyTag*/
+void TcpSocketBase::SendEmptyPacketWithMyTag(uint8_t flags, bool addTag)
 {
-    NS_LOG_FUNCTION(this << static_cast<uint32_t>(flags));
+NS_LOG_FUNCTION(this << static_cast<uint32_t>(flags));
 
     if (m_endPoint == nullptr && m_endPoint6 == nullptr)
     {
@@ -2825,6 +2825,16 @@ TcpSocketBase::SendEmptyPacket(uint8_t flags)
     }
 
     AddSocketTags(p);
+    
+    // mahdi START
+    if (addTag)
+    {
+        // Add MyTag to the packet
+        MeasurementProbeTag tag;
+        tag.SetFlag(true);
+        p->AddPacketTag(tag);
+    }
+    // mahdi END
 
     header.SetFlags(flags);
     header.SetSequenceNumber(s);
@@ -2931,6 +2941,15 @@ TcpSocketBase::SendEmptyPacket(uint8_t flags)
                      << (Simulator::Now() + m_rto.Get()).GetSeconds());
         m_retxEvent = Simulator::Schedule(m_rto, &TcpSocketBase::SendEmptyPacket, this, flags);
     }
+}
+// mahdi END
+
+void
+TcpSocketBase::SendEmptyPacket(uint8_t flags)
+{
+    // mahdi START
+    SendEmptyPacketWithMyTag(flags, false);
+    // mahdi END
 }
 
 /* This function closes the endpoint completely. Called upon RST_TX action. */

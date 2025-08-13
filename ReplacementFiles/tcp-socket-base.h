@@ -24,13 +24,12 @@
 #include "ipv6-header.h"
 #include "tcp-socket-state.h"
 #include "tcp-socket.h"
-
 #include "ns3/data-rate.h"
 #include "ns3/node.h"
 #include "ns3/sequence-number.h"
 #include "ns3/timer.h"
 #include "ns3/traced-value.h"
-
+#include "../../scratch/ECNMC/helper_classes/MeasurementProbeTag.h" // mahdi
 #include <queue>
 #include <stdint.h>
 
@@ -450,10 +449,13 @@ class TcpSocketBase : public TcpSocket
      * \param algo Algorithm to be installed
      */
     void SetCongestionControlAlgorithm(Ptr<TcpCongestionOps> algo);
-    // mahdi
+    // mahdi START
     Ptr<TcpCongestionOps> GetCongestionControlAlgorithm() const { return m_congestionControl; }
     void SendProbe(); // mahdi
-    // mahdi
+    int checkProbe() {return 1;}; // mahdi
+    void SendPendingDataAsProbe() {}; // mahdi
+    void SendEmptyPacketWithMyTag(uint8_t flags, bool addTag); // mahdi
+    // mahdi END
 
     /**
      * \brief Install a recovery algorithm on this socket

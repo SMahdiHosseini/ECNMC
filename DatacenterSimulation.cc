@@ -184,7 +184,8 @@ void run_single_queue_simulation(int argc, char* argv[]) {
     double differentiationDelay = 0.35;                // Extra delay for the differentiation
     bool silentPacketDrop = false;                     // If the switch should drop packets silently
     bool Nagle = false;                                // If the Nagle algorithm should be used
-    bool probe = false;                                // If the probe should be used
+    bool activeProbe = false;                          // If the active probe should be used
+    bool passiveProbe = true;                          // If the passive probe should be used
     double load = 0.9;                                 // The load on the buttleneck link
     uint16_t poolSize = 30;                            // The size of the connection pool
     double avgMsgSize = 1448.0;                        // The average message size
@@ -224,7 +225,8 @@ void run_single_queue_simulation(int argc, char* argv[]) {
     cmd.AddValue("load", "The load on the buttleneck link", load);
     cmd.AddValue("seed", "The seed for the random number generator", seed);
     cmd.AddValue("Nagle", "If the Nagle algorithm should be used", Nagle);
-    cmd.AddValue("probe", "If the probe should be used", probe);
+    cmd.AddValue("ActiveProbe", "If the active probe should be used", activeProbe);
+    cmd.AddValue("PassiveProbe", "If the passive probe should be used", passiveProbe);
     cmd.Parse(argc, argv);
 
     /*set default values*/
@@ -261,7 +263,7 @@ void run_single_queue_simulation(int argc, char* argv[]) {
 
 
     int nSrcHosts = 2;
-    if (probe) {
+    if (activeProbe) {
         nSrcHosts += 1; // one more host for the probe traffic
     }
     int nDstHosts = 1;
@@ -300,7 +302,7 @@ void run_single_queue_simulation(int argc, char* argv[]) {
     // connecting the probe host to the ToR switch
     PointToPointHelper p2pProbeHostToSwitch;
     NetDeviceContainer probeHostToSwitchNetDevices;
-    if (probe) {
+    if (activeProbe) {
         // p2pProbeHostToSwitch.DisableFlowControl();
         p2pProbeHostToSwitch.SetDeviceAttribute("DataRate", StringValue(srcHostToSwitchLinkRate));
         p2pProbeHostToSwitch.SetChannelAttribute("Delay", StringValue(hostToSwitchLinkDelay));
@@ -337,7 +339,7 @@ void run_single_queue_simulation(int argc, char* argv[]) {
     // switchToSrcHostQueueDiscs.push_back(switchToSrcHostTCH.Install(srcHostsToSwitchNetDevices[0]));
     
     QueueDiscContainer switchToProbeHostQueueDisc;
-    if (probe) {
+    if (activeProbe) {
         // Install RED Queue Discs on the switche to probe host links
         TrafficControlHelper switchToProbeHostTCH;
         switchToProbeHostTCH.SetRootQueueDisc("ns3::RedQueueDisc", 
@@ -395,7 +397,7 @@ void run_single_queue_simulation(int argc, char* argv[]) {
     Ipv4InterfaceContainer dstHostsToSwitchIps = address.Assign(dstHostsToSwitchNetDevices);
     
     Ipv4InterfaceContainer probeHostToSwitchIps;
-    if (probe) {
+    if (activeProbe) {
         // set the ips between the probe host and the switch
         address.SetBase(("10." + to_string(++nbSubnet) + ".1.0").c_str(), "255.255.255.0");
         probeHostToSwitchIps = address.Assign(probeHostToSwitchNetDevices);
@@ -428,13 +430,13 @@ void run_single_queue_simulation(int argc, char* argv[]) {
     vector<Ptr<Node>> receivers;
     receivers.push_back(dstHosts.Get(0));
     auto* dcTrafficGenerator = new DCWorkloadGenerator(srcHosts.Get(0), receivers, hostTrafficRate, poolSize, "scratch/ECNMC/DCWorkloads/" + traffic, "ns3::TcpSocketFactory", Time(Seconds(0)), stopTime - Seconds(0.002));
-    dcTrafficGenerator->GenrateTraffic(pctPacedBack);
+    dcTrafficGenerator->GenrateTraffic(pctPacedBack, passiveProbe, Time(probeInterval));
 
     auto* dcTrafficGeneratorCross = new DCWorkloadGenerator(srcHosts.Get(1), receivers, ctTrafficRate, poolSize, "scratch/ECNMC/DCWorkloads/" + traffic, "ns3::TcpSocketFactory", Time(Seconds(0)), stopTime - Seconds(0.002));
-    dcTrafficGeneratorCross->GenrateTraffic(pctPacedBack);
+    dcTrafficGeneratorCross->GenrateTraffic(pctPacedBack, false, Time(probeInterval));
 
     // Install Probe application
-    if (probe) {
+    if (activeProbe) {
         auto* probeGenerator = new ProbeGenerator(srcHosts.Get(2), dstHosts.Get(0), 1 / Time(probeInterval).GetSeconds(), Seconds(stof(steadyStartTime)), Seconds(stof(steadyStopTime)));
         probeGenerator->GenrateTraffic();
     }
@@ -487,7 +489,7 @@ void run_single_queue_simulation(int argc, char* argv[]) {
     S0D0Monitor->AddAppKey(AppKey(srcHostsToSwitchIps[0].GetAddress(0), dstHostsToSwitchIps.GetAddress(0), 0, 0));
 
     E2EMonitor *P0D0Monitor = nullptr;
-    if (probe) {
+    if (activeProbe) {
         // Monitor the packets between probe Host 0 and dst Host 0
         P0D0Monitor = new E2EMonitor(startTime, Seconds(stof(steadyStopTime)) + convergenceTime, Seconds(stof(steadyStartTime)), Seconds(stof(steadyStopTime)), DynamicCast<PointToPointNetDevice>(probeHostToSwitchNetDevices.Get(0)), dstHosts.Get(0), srcHosts.Get(2), "P0D0", errorRate, DataRate(srcHostToSwitchLinkRate), DataRate(bottleneckLinkRate), Time(hostToSwitchLinkDelay), 1, 1, QueueSize(swtichDstREDQueueDiscMaxSize).GetValue(), false, 0);
         P0D0Monitor->AddAppKey(AppKey(probeHostToSwitchIps.GetAddress(0), dstHostsToSwitchIps.GetAddress(0), 0, 0));
@@ -516,7 +518,7 @@ void run_single_queue_simulation(int argc, char* argv[]) {
     cout << "Hosts and Switches IP addresses" << endl;
     cout << "Src: " << 0 << " Id:" << srcHosts.Get(0)->GetId() << " IP: " << srcHostsToSwitchIps[0].GetAddress(0) << endl;
     cout << "Src CT: " << 1 << " Id:" << srcHosts.Get(1)->GetId() << " IP: " << ctHostsToSwitchIps[0].GetAddress(0) << endl;
-    if (probe) {
+    if (activeProbe) {
         cout << "Probe: " << 2 << " Id:" << srcHosts.Get(2)->GetId() << " IP: " << probeHostToSwitchIps.GetAddress(0) << endl;
     }
     cout << "Dst: " << 0 << " Id:" << dstHosts.Get(0)->GetId() << " IP: " << dstHostsToSwitchIps.GetAddress(0) << endl;
@@ -554,7 +556,8 @@ void run_single_queue_simulation(int argc, char* argv[]) {
     cout << "Measurement Traffic Rate: " << hostTrafficRate << endl;
     cout << "Cross Traffic Rate: " << ctTrafficRate << endl;
     cout << "Sender Nagle: " << Nagle << endl;
-    cout << "Sender Probe: " << probe << endl;
+    cout << "Sender ActiveProbe: " << activeProbe << endl;
+    cout << "Sender PassiveProbe: " << passiveProbe << endl;
     cout << "Seed: " << seed << endl;
     // /* ########## END: Check Config ########## */
 
@@ -566,7 +569,7 @@ void run_single_queue_simulation(int argc, char* argv[]) {
     Simulator::Destroy();
 
     S0D0Monitor->SaveMonitorRecords((string) (getenv("PWD")) + "/Results/results_" + dirName + "/" + to_string(experiment)  + "/" + S0D0Monitor->GetMonitorTag() + "_EndToEnd.csv");
-    if (probe) {
+    if (activeProbe) {
         P0D0Monitor->SaveMonitorRecords((string) (getenv("PWD")) + "/Results/results_" + dirName + "/" + to_string(experiment)  + "/" + P0D0Monitor->GetMonitorTag() + "_EndToEnd.csv");
     }
     // C0D0Monitor->SaveMonitorRecords((string) (getenv("PWD")) + "/Results/results_" + dirName + "/" + to_string(experiment)  + "/" + C0D0Monitor->GetMonitorTag() + "_EndToEnd.csv");

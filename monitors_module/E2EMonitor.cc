@@ -115,6 +115,14 @@ void E2EMonitor::Capture(Ptr< const Packet > packet) {
         }
         packetEvent->SetSent();
         packetEvent->SetTxDequeueTime(Simulator::Now());
+        MeasurementProbeTag tag;
+        bool tagged = false;
+        if (packet->PeekPacketTag(tag)) {
+            if (tag.GetFlag()) {
+                tagged = true;
+            }
+        }
+        packetEvent->GetPacketKey()->SetTagged(tagged);
         // uncomment the following line to record the packets when they are sent over the link
         // _recordedPackets[*packetKey] = packetEvent;
 
@@ -126,7 +134,7 @@ void E2EMonitor::Capture(Ptr< const Packet > packet) {
         uint64_t hash = GetHashValue(packetKey->GetSrcIp(), packetKey->GetDstIp(), packetKey->GetSrcPort(), packetKey->GetDstPort(), IPHeader.GetProtocol());
         pktCopy->AddHeader(IPHeader);
         pktCopy->AddHeader(pppHeader);
-        packetKey->SetPath(hash % numOfPaths);
+        // packetKey->SetPath(hash % numOfPaths);
         sentPackets_onlink[hash % numOfPaths] += 1;
     }
 }
@@ -339,7 +347,7 @@ void E2EMonitor::SaveMonitorRecords(const string& filename) {
 
     ofstream packetsFile;
     packetsFile.open(filename.substr(0, filename.size() - 4) + "_packets.csv");
-    packetsFile << "SourceIp,SourcePort,DestinationIp,DestinationPort,SequenceNb,Id,PayloadSize,Path,TxEnqueueTime,TxDequeueTime,SentTime,IsReceived,ReceiveTime,transmissionDelay,ECN" << endl;
+    packetsFile << "SourceIp,SourcePort,DestinationIp,DestinationPort,SequenceNb,Id,PayloadSize,Path,TxEnqueueTime,TxDequeueTime,SentTime,IsReceived,ReceiveTime,transmissionDelay,ECN,Tagged" << endl;
     for (auto& packetKeyEventPair: _recordedPackets) {
         PacketKey key = packetKeyEventPair.first;
         E2EMonitorEvent* event = packetKeyEventPair.second;
@@ -358,7 +366,7 @@ void E2EMonitor::SaveMonitorRecords(const string& filename) {
         packetsFile << event->GetPath() << ",";
         packetsFile << event->GetTxEnqueueTime().GetNanoSeconds() << "," << event->GetTxDequeueTime().GetNanoSeconds() << ",";
         packetsFile << event->GetSentTime().GetNanoSeconds() << ",";
-        packetsFile << event->IsReceived() << "," << event->GetReceivedTime().GetNanoSeconds() << "," << transmissionDelay.GetNanoSeconds() << "," << event->GetEcn() << endl;
+        packetsFile << event->IsReceived() << "," << event->GetReceivedTime().GetNanoSeconds() << "," << transmissionDelay.GetNanoSeconds() << "," << event->GetEcn() << "," << event->GetPacketKey()->IsTagged() << endl;
     }
     packetsFile.close();
 

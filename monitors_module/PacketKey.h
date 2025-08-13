@@ -29,8 +29,11 @@ private:
     int records;
     int path;
     bool ecn;
+    bool tagged;
 
 public:
+    PacketKey(const Ipv4Address &srcIp, const Ipv4Address &dstIp, uint16_t id, uint16_t srcPort, uint16_t dstPort,
+              const SequenceNumber32& seqNb, const SequenceNumber32& ackNb, uint32_t size, size_t payloadHash, bool tagged);
     PacketKey(const Ipv4Address &srcIp, const Ipv4Address &dstIp, uint16_t id, uint16_t srcPort, uint16_t dstPort,
               const SequenceNumber32& seqNb, const SequenceNumber32& ackNb, uint32_t size, size_t payloadHash);
 
@@ -47,6 +50,7 @@ public:
     [[nodiscard]] int GetRecords() const;
     [[nodiscard]] int GetPath() const;
     [[nodiscard]] bool GetEcn() const;
+    [[nodiscard]] bool IsTagged() const;
 
     bool operator<(const PacketKey &rhs) const;
     bool operator>(const PacketKey &rhs) const;
@@ -71,6 +75,7 @@ public:
     void SetRecords(int records);
     void SetPath(int path);
     void SetEcn(bool ecn);
+    void SetTagged(bool tagged);
 };
 
 struct PacketKeyHash {

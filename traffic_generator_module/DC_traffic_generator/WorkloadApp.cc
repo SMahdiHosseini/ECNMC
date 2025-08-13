@@ -29,6 +29,14 @@ TypeId WorkloadApp::GetTypeId() {
                           BooleanValue(false),
                           MakeBooleanAccessor(&WorkloadApp::_enablePacing),
                           MakeBooleanChecker())
+            .AddAttribute("Probe", "Enable probe traffic generation",
+                            BooleanValue(false),
+                            MakeBooleanAccessor(&WorkloadApp::_probe),
+                            MakeBooleanChecker())
+            .AddAttribute("ProbeInterval", "Interval for probe traffic generation",
+                            DoubleValue(0.1),
+                            MakeDoubleAccessor(&WorkloadApp::_probeInterval),
+                            MakeDoubleChecker<double>())
     ;
     return tid;
 }
@@ -100,8 +108,8 @@ void WorkloadApp::PrepareConnections() {
 
     for (auto &addresses : _receiverAddress) {
         cout << "Connection Pool of: Sender Address: " << GetNode()->GetObject<Ipv4>()->GetAddress(1, 0).GetLocal() << " Receiver Address: " << InetSocketAddress::ConvertFrom(addresses[0]).GetIpv4() << endl;
-        ConnectionPool connectionPool(addresses[0], _protocol, GetNode());
-        connectionPool.CreateSockets(addresses, _enablePacing);
+        ConnectionPool* connectionPool = new ConnectionPool(addresses[0], _protocol, GetNode(), _probeInterval);
+        connectionPool->CreateSockets(addresses, _enablePacing, _probe);
         _connectionPools.push_back(connectionPool);
     }
 }
@@ -109,7 +117,7 @@ void WorkloadApp::PrepareConnections() {
 void WorkloadApp::StopApplication() {
     NS_LOG_FUNCTION (this);
     for (auto &connectionPool : _connectionPools) {
-        connectionPool.CloseConnections();
+        connectionPool->CloseConnections();
     }
     cout << "Node " << GetNodeIP(GetNode(), 1) << " Connection Pools closed at " << Simulator::Now().GetNanoSeconds() << endl;
     Simulator::Cancel (_sendEvent);
@@ -121,7 +129,7 @@ void WorkloadApp::Send() {
     // segmentSize *= 1442; // for DCTCP workload
     uint32_t selectedReceiver = m_uniform->GetInteger(0, _receiversNumber - 1);
     // cout << "Node " << GetNodeIP(GetNode(), 1) << " WorkloadApp sending to receiver size of: " << segmentSize << " at: " << Simulator::Now().GetNanoSeconds() << endl;
-    _connectionPools[selectedReceiver].SendData(Create<Packet>(segmentSize));
+    _connectionPools[selectedReceiver]->SendData(Create<Packet>(segmentSize));
 }
 
 void WorkloadApp::ScheduleNextSend() {
