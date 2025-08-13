@@ -19,7 +19,7 @@
 #define DROPTAIL_H
 
 #include "queue.h"
-#include "../../scratch/ECNMC/helper_classes/MeasurementProbeTag.h" // mahdi
+#include "MeasurementProbeTag.h" // mahdi
 
 namespace ns3
 {
@@ -138,7 +138,12 @@ DropTailQueue<Item>::Dequeue()
     {
         MeasurementProbeTag tag;
         tag.SetFlag(true);
-        DynamicCast<Packet>(item)->AddPacketTag(tag);
+        Ptr<Packet> packet = DynamicCast<Packet>(item);
+        MeasurementProbeTag checkTag;
+        if (!packet->PeekPacketTag(checkTag) || !checkTag.GetFlag())
+        {
+            packet->AddPacketTag(tag);
+        }
         TagPacket = false; // Reset the tag after use
     }
     // mahdi end

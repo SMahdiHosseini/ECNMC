@@ -256,6 +256,7 @@ void run_single_queue_simulation(int argc, char* argv[]) {
     Config::SetDefault("ns3::RedQueueDisc::Gentle", BooleanValue(false));
     Config::SetDefault("ns3::RedQueueDisc::Wait", BooleanValue(false));
     Config::SetDefault("ns3::RedQueueDisc::LInterm", DoubleValue(1));
+    Config::SetDefault("ns3::WorkloadApp::ProbeStartTime", TimeValue(Seconds(stof(steadyStartTime))));
     // DCTCP uses K > 1/7(C * RTT) and minTh = maxTh = K
     // maxTh = minTh = 0.15;
     // Config::SetDefault("ns3::RedQueueDisc::MinTh", DoubleValue(minTh));

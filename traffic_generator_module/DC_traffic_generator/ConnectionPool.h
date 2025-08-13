@@ -23,7 +23,7 @@ class ConnectionPool {
 public:
     ConnectionPool(const Address& address, const string& protocol, Ptr<Node> senderNode, double probeInterval);
     ~ConnectionPool();
-    void CreateSockets(vector<Address> receiverAddresses, bool enablePacing, bool enableProbe);
+    void CreateSockets(vector<Address> receiverAddresses, bool enablePacing, bool enableProbe, Time probeStartTime);
     void CloseConnections();
     void SendData(const Ptr<Packet>& packet);
     void SetSocketState(uint32_t socketId, bool state);

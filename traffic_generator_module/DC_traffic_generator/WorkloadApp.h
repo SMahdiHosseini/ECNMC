@@ -39,6 +39,7 @@ private:
     Ptr<UniformRandomVariable> m_uniform;
     bool _probe;
     double _probeInterval;
+    Time _probeStartTime;
 protected:
     void DoDispose() override;
 

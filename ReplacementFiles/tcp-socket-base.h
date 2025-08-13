@@ -29,7 +29,7 @@
 #include "ns3/sequence-number.h"
 #include "ns3/timer.h"
 #include "ns3/traced-value.h"
-#include "../../scratch/ECNMC/helper_classes/MeasurementProbeTag.h" // mahdi
+#include "ns3/MeasurementProbeTag.h" // mahdi
 #include <queue>
 #include <stdint.h>
 

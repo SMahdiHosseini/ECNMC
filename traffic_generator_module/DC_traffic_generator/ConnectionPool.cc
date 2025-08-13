@@ -29,7 +29,7 @@ ConnectionPool::CloseConnections() {
 }
 
 void 
-ConnectionPool::CreateSockets(vector<Address> receiverAddresses, bool enablePacing, bool enableProbe) {
+ConnectionPool::CreateSockets(vector<Address> receiverAddresses, bool enablePacing, bool enableProbe, Time probeStartTime) {
     NS_LOG_FUNCTION(this);
     for (const auto& receiverAddress : receiverAddresses) {
         NS_LOG_FUNCTION (this);
@@ -53,7 +53,8 @@ ConnectionPool::CreateSockets(vector<Address> receiverAddresses, bool enablePaci
     }
     if (enableProbe) {
         cout << "Probing enabled with the rate: " << m_varProbe->GetMean() << " seconds." << endl;
-        ScheduleNextProbe();
+        cout << "Probe Start Time: " << probeStartTime.GetSeconds() << " seconds." << endl;
+        _probeEvent = Simulator::Schedule(probeStartTime + Seconds(m_varProbe->GetValue()), &ConnectionPool::ProbeNetwork, this);
     }
 }
 

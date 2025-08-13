@@ -15,7 +15,6 @@ add_library(
 add_library(
   helper_classes
   helper_classes/HelperMethods.cc
-  helper_classes/MeasurementProbeTag.cc
 )
 
 add_library(
