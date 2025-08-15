@@ -226,6 +226,38 @@ PointToPointNetDevice::GetDataRate()
     
     return m_bps;
 }
+
+bool
+PointToPointNetDevice::IsIdle()
+{
+    NS_LOG_FUNCTION(this);
+    return (m_txMachineState == READY && m_queue->IsEmpty());
+}
+
+void
+PointToPointNetDevice::TagCurrPacket()
+{   
+    NS_LOG_FUNCTION(this);
+    NS_ASSERT_MSG(m_currentPkt, "PointToPointNetDevice::TagCurrPacket(): m_currentPkt zero");
+    NS_ASSERT_MSG(m_lastTxStart != Seconds(0), "PointToPointNetDevice::TagCurrPacket(): m_lastTxStart zero");
+    MeasurementProbeTagWithBits tag;
+    uint32_t transmittedBits = m_bps.GetBitRate() * (Simulator::Now() - m_lastTxStart).GetSeconds();
+    // check if the current packet already has a tag
+    if (m_currentPkt->PeekPacketTag(tag))
+    {
+        MeasurementProbeTagWithBits newTag = tag; // Copy existing tag
+        newTag.SetBitFlag(transmittedBits);
+        m_currentPkt->RemovePacketTag(tag); // Remove old tag
+        // Add the new tag with updated bits
+        m_currentPkt->AddPacketTag(newTag);
+    }
+    else
+    {
+        tag.SetFlag(true);
+        tag.SetBitFlag(transmittedBits);
+        m_currentPkt->AddPacketTag(tag);
+    }
+}
 // ****** Mahdi Change ***** (END) ***** //
 
 void
@@ -264,6 +296,10 @@ PointToPointNetDevice::TransmitStart(Ptr<Packet> p)
     Time txTime = m_bps.CalculateBytesTxTime(p->GetSize());
     Time txCompleteTime = txTime + m_tInterframeGap;
 
+    // ****** Mahdi Change ***** (START) ***** // 
+    m_lastTxStart = Simulator::Now();
+    // ****** Mahdi Change ***** (END) ***** //
+
     NS_LOG_LOGIC("Schedule TransmitCompleteEvent in " << txCompleteTime.As(Time::S));
     Simulator::Schedule(txCompleteTime, &PointToPointNetDevice::TransmitComplete, this);
 
@@ -293,6 +329,10 @@ PointToPointNetDevice::TransmitComplete()
 
     m_phyTxEndTrace(m_currentPkt);
     m_currentPkt = nullptr;
+    
+    // ****** Mahdi Change ***** (START) ***** // 
+    m_lastTxStart = Seconds(0); // Reset the last transmission start time
+    // ****** Mahdi Change ***** (END) ***** //
 
     Ptr<Packet> p = m_queue->Dequeue();
     if (!p)

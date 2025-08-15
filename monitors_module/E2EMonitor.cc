@@ -78,6 +78,7 @@ uint64_t E2EMonitor::GetHashValue(const Ipv4Address src, const Ipv4Address dst, 
 void E2EMonitor::Connect(const Ptr<PointToPointNetDevice> netDevice, uint32_t rxNodeId, uint32_t txNodeId) {
     netDevice->GetQueue()->TraceConnectWithoutContext("Enqueue", MakeCallback(&E2EMonitor::Enqueue, this));
     netDevice->TraceConnectWithoutContext("PromiscSniffer", MakeCallback(&E2EMonitor::Capture, this));
+    netDevice->TraceConnectWithoutContext("PhyTxEnd",MakeCallback(&E2EMonitor::TxComplete, this));
     Config::ConnectWithoutContext("/NodeList/" + to_string(rxNodeId) + "/$ns3::Ipv4L3Protocol/Rx", MakeCallback(
             &E2EMonitor::RecordIpv4PacketReceived, this));
     // Config::ConnectWithoutContext("/NodeList/" + to_string(txNodeId) + "/$ns3::Ipv4L3Protocol/Tx", MakeCallback(
@@ -90,6 +91,35 @@ void E2EMonitor::Disconnect(const Ptr<PointToPointNetDevice> netDevice, uint32_t
             &E2EMonitor::RecordIpv4PacketReceived, this));
     // Config::DisconnectWithoutContext("/NodeList/" + to_string(txNodeId) + "/$ns3::Ipv4L3Protocol/Tx", MakeCallback(
     //         &E2EMonitor::RecordIpv4PacketSent, this));
+}
+void E2EMonitor::TxComplete(Ptr<const Packet> packet) {
+    if (Simulator::Now() < _steadyStartTime || Simulator::Now() > _steadyStopTime) {
+        return;
+    }
+    PacketKey* packetKey = PacketKey::Packet2PacketKey(packet, FIRST_HEADER_PPP);
+    if(_appsKey.count(AppKey::PacketKey2AppKey(*packetKey))) {
+        E2EMonitorEvent* packetEvent;
+        auto packetKeyEventPair = _recordedPackets.find(*packetKey);
+        if (packetKeyEventPair == _recordedPackets.end()) {
+            packetEvent = new E2EMonitorEvent(packetKey);
+            _recordedPackets[*packetKey] = packetEvent;
+        }
+        else {
+            packetEvent = packetKeyEventPair->second;
+        }
+        MeasurementProbeTagWithBits tag;
+        string tagged = "0";
+        if (packet->PeekPacketTag(tag)) {
+            if (tag.GetFlag()) {
+                tagged = "1";
+            }
+            vector<uint32_t> bits = tag.GetBitsFlag();
+            for (const auto &bit : bits) {
+                tagged += ":" + std::to_string(bit);
+            }
+        }
+        packetEvent->GetPacketKey()->SetTagged(tagged);
+    }
 }
 
 void E2EMonitor::Capture(Ptr< const Packet > packet) {
@@ -115,14 +145,6 @@ void E2EMonitor::Capture(Ptr< const Packet > packet) {
         }
         packetEvent->SetSent();
         packetEvent->SetTxDequeueTime(Simulator::Now());
-        MeasurementProbeTag tag;
-        bool tagged = false;
-        if (packet->PeekPacketTag(tag)) {
-            if (tag.GetFlag()) {
-                tagged = true;
-            }
-        }
-        packetEvent->GetPacketKey()->SetTagged(tagged);
         // uncomment the following line to record the packets when they are sent over the link
         // _recordedPackets[*packetKey] = packetEvent;
 

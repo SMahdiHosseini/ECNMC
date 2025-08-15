@@ -29,7 +29,7 @@
 #include "ns3/ptr.h"
 #include "ns3/queue-fwd.h"
 #include "ns3/traced-callback.h"
-
+#include "ns3/MeasurementProbeTag.h" // mahdi
 #include <cstring>
 
 namespace ns3
@@ -199,6 +199,8 @@ class PointToPointNetDevice : public NetDevice
     bool SupportsSendFrom() const override;
     // ****** Mahdi Change ***** (START) ***** // 
     DataRate GetDataRate();
+    bool IsIdle();
+    void TagCurrPacket();
     // ****** Mahdi Change ***** (END) ***** //
 
   protected:
@@ -446,6 +448,10 @@ class PointToPointNetDevice : public NetDevice
     uint32_t m_mtu;
 
     Ptr<Packet> m_currentPkt; //!< Current packet processed
+
+    // ****** Mahdi Change ***** (START) ***** // 
+    Time m_lastTxStart; //!< Last time a packet was started to be transmitted
+    // ****** Mahdi Change ***** (END) ***** // 
 
     /**
      * \brief PPP to Ethernet protocol number mapping

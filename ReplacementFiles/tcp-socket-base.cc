@@ -2830,8 +2830,9 @@ NS_LOG_FUNCTION(this << static_cast<uint32_t>(flags));
     if (addTag)
     {
         // Add MyTag to the packet
-        MeasurementProbeTag tag;
+        MeasurementProbeTagWithBits tag;
         tag.SetFlag(true);
+        tag.SetBitFlag(0);
         p->AddPacketTag(tag);
     }
     // mahdi END

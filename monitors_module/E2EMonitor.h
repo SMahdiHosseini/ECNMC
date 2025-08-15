@@ -78,6 +78,7 @@ private:
 
     void Enqueue(Ptr< const Packet > packet);
     void Capture(Ptr< const Packet > packet);
+    void TxComplete(Ptr< const Packet > packet);
     void RecordIpv4PacketReceived(Ptr<const Packet> packet, Ptr<Ipv4> ipv4, uint32_t interface);
     void RecordIpv4PacketSent(Ptr<const Packet> packet, Ptr<Ipv4> ipv4, uint32_t interface);
     uint64_t GetHashValue(const Ipv4Address src, const Ipv4Address dst, const uint16_t srcPort, const uint16_t dstPort, const uint8_t protocol);

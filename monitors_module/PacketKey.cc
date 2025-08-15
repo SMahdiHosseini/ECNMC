@@ -13,7 +13,7 @@
 
 PacketKey::PacketKey(const Ipv4Address &srcIp, const Ipv4Address &dstIp, uint16_t id,
                      uint16_t srcPort, uint16_t dstPort, const SequenceNumber32& seqNb, const SequenceNumber32& ackNb,
-                     uint32_t size, size_t payloadHash, bool tagged) : _srcIp(srcIp), _dstIp(dstIp), _id(id),
+                     uint32_t size, size_t payloadHash, string tagged) : _srcIp(srcIp), _dstIp(dstIp), _id(id),
                         _srcPort(srcPort), _dstPort(dstPort), _seqNb(seqNb), _ackNb(ackNb),
                         _size(size), _payloadHash(payloadHash), _packetSize(0), records(0), path(0), ecn(false), tagged(tagged) {}
 
@@ -21,7 +21,7 @@ PacketKey::PacketKey(const Ipv4Address &srcIp, const Ipv4Address &dstIp, uint16_
                      uint16_t srcPort, uint16_t dstPort, const SequenceNumber32& seqNb, const SequenceNumber32& ackNb,
                      uint32_t size, size_t payloadHash) : _srcIp(srcIp), _dstIp(dstIp), _id(id),
                         _srcPort(srcPort), _dstPort(dstPort), _seqNb(seqNb), _ackNb(ackNb),
-                        _size(size), _payloadHash(payloadHash), _packetSize(0), records(0), path(0), ecn(false), tagged(false) {}
+                        _size(size), _payloadHash(payloadHash), _packetSize(0), records(0), path(0), ecn(false), tagged("0") {}
 
 bool PacketKey::operator<(const PacketKey &rhs) const {
     if (_srcIp < rhs._srcIp) return true;
@@ -79,7 +79,7 @@ uint32_t PacketKey::GetPacketSize() const { return _packetSize; }
 int PacketKey::GetRecords() const { return records; }
 int PacketKey::GetPath() const { return path; }
 bool PacketKey::GetEcn() const { return ecn; }
-bool PacketKey::IsTagged() const { return tagged; }
+string PacketKey::IsTagged() const { return tagged; }
 
 PacketKey* PacketKey::Packet2PacketKey(Ptr<const Packet> packet, uint8_t firstHeaderType) {
     const Ptr<Packet> &pktCopy = packet->Copy();
@@ -136,10 +136,16 @@ PacketKey* PacketKey::Packet2PacketKey(Ptr<const Packet> packet, uint8_t firstHe
     if(firstHeaderType == FIRST_HEADER_PPP) {
         pktCopy->AddHeader(pppHeader);
     }
-    MeasurementProbeTag tag;
-    bool tagged = false;
+    MeasurementProbeTagWithBits tag;
+    string tagged = "0";
     if (pktCopy->PeekPacketTag(tag)) {
-        tagged = true;
+        if (tag.GetFlag()) {
+            tagged = "1";
+        }
+        vector<uint32_t> bits = tag.GetBitsFlag();
+        for (const auto &bit : bits) {
+            tagged += ":" + std::to_string(bit);
+        }
     }
     return new PacketKey(srcIp, dstIp, id, srcPort, dstPort, seqNb, ackNb, size, payloadHash, tagged);
 }
@@ -172,4 +178,4 @@ void PacketKey::SetId(uint16_t id) { _id = id; }
 void PacketKey::SetRecords(int records) { PacketKey::records = records; }
 void PacketKey::SetPath(int path) { PacketKey::path = path; }
 void PacketKey::SetEcn(bool ecn) { PacketKey::ecn = ecn; }
-void PacketKey::SetTagged(bool tagged) { PacketKey::tagged = tagged; }
+void PacketKey::SetTagged(string tagged) { PacketKey::tagged = tagged; }
