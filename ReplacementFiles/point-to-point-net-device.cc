@@ -258,6 +258,70 @@ PointToPointNetDevice::TagCurrPacket()
         m_currentPkt->AddPacketTag(tag);
     }
 }
+
+void
+PointToPointNetDevice::ManageNextSend(uint32_t mss)
+{
+    if (!m_isHalted) 
+    {
+        m_remainedHaltTime = m_bps.CalculateBytesTxTime(mss) + m_channel->GetDelay();
+        m_haltStartTime = Simulator::Now();
+        m_isHalted = true;
+        m_tagNext = true;
+        // std::cout << " ### PointToPointNetDevice ### Device is halted for " << m_remainedHaltTime.GetNanoSeconds() << " at time: " << Simulator::Now().GetNanoSeconds() << std::endl;
+        Simulator::Schedule(m_bps.CalculateBytesTxTime(mss / 2), &PointToPointNetDevice::ResumeTransmission, this);
+    }
+}
+
+void
+PointToPointNetDevice::ResumeTransmission()
+{
+    NS_LOG_FUNCTION(this);
+    Ptr<const Packet> p = m_queue->Peek();
+    if (p)
+    {
+        m_remainedHaltTime -= (Simulator::Now() - m_haltStartTime);
+        m_remainedHaltTime -= (m_bps.CalculateBytesTxTime(p->GetSize()) + m_channel->GetDelay());
+        if (m_remainedHaltTime <= Seconds(0))
+        {
+            m_isHalted = false;
+            m_haltStartTime = Seconds(0);
+            m_remainedHaltTime = Seconds(0);
+            // std::cout << " ### PointToPointNetDevice ### Device is resumed at time: " << Simulator::Now().GetNanoSeconds() << std::endl;
+            Ptr<Packet> pkt = m_queue->Dequeue();
+            if (m_tagNext)
+            {
+                MeasurementProbeTagWithBits tag;
+                tag.SetFlag(true);
+                tag.SetBitFlag(0);
+                pkt->AddPacketTag(tag);
+                m_tagNext = false;
+            }
+            m_snifferTrace(pkt);
+            m_promiscSnifferTrace(pkt);
+            TransmitStart(pkt);
+        }
+        else
+        {
+            // std::cout << " ### PointToPointNetDevice ### Device is still halted, remaining time: " << m_remainedHaltTime.GetNanoSeconds() << " at time: " << Simulator::Now().GetNanoSeconds() << std::endl;
+            Simulator::Schedule(m_remainedHaltTime, &PointToPointNetDevice::ResumeTransmission, this);
+        }
+    }
+    else
+    {
+        m_isHalted = false;
+        m_haltStartTime = Seconds(0);
+        m_remainedHaltTime = Seconds(0);
+        // std::cout << " ### PointToPointNetDevice ### No packet to resume transmission at time: " << Simulator::Now().GetNanoSeconds() << std::endl;
+    }
+}
+
+void
+PointToPointNetDevice::TagNextPacket()
+{
+    NS_LOG_FUNCTION(this);
+    m_tagNext = true;
+}
 // ****** Mahdi Change ***** (END) ***** //
 
 void
@@ -281,7 +345,7 @@ bool
 PointToPointNetDevice::TransmitStart(Ptr<Packet> p)
 {
     NS_LOG_FUNCTION(this << p);
-    NS_LOG_LOGIC("UID is " << p->GetUid() << ")");
+    NS_LOG_LOGIC("UID is " << p->GetUid() << ")"); 
 
     //
     // This function is called to start the process of transmitting a packet.
@@ -332,21 +396,23 @@ PointToPointNetDevice::TransmitComplete()
     
     // ****** Mahdi Change ***** (START) ***** // 
     m_lastTxStart = Seconds(0); // Reset the last transmission start time
-    // ****** Mahdi Change ***** (END) ***** //
-
-    Ptr<Packet> p = m_queue->Dequeue();
-    if (!p)
+    if (!m_isHalted) // start transmitting the next packet, if there is any, if we are not halted
     {
-        NS_LOG_LOGIC("No pending packets in device queue after tx complete");
-        return;
-    }
+        Ptr<Packet> p = m_queue->Dequeue();
+        if (!p)
+        {
+            NS_LOG_LOGIC("No pending packets in device queue after tx complete");
+            return;
+        }
 
-    //
-    // Got another packet off of the queue, so start the transmit process again.
-    //
-    m_snifferTrace(p);
-    m_promiscSnifferTrace(p);
-    TransmitStart(p);
+        //
+        // Got another packet off of the queue, so start the transmit process again.
+        //
+        m_snifferTrace(p);
+        m_promiscSnifferTrace(p);
+        TransmitStart(p);
+    }
+    // ****** Mahdi Change ***** (END) ***** //
 }
 
 bool
@@ -595,7 +661,7 @@ PointToPointNetDevice::Send(Ptr<Packet> packet, const Address& dest, uint16_t pr
         //
         // If the channel is ready for transition we send the packet right now
         //
-        if (m_txMachineState == READY)
+        if (m_txMachineState == READY && (!m_isHalted)) // mahdi
         {
             packet = m_queue->Dequeue();
             m_snifferTrace(packet);

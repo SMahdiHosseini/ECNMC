@@ -117,6 +117,12 @@ void E2EMonitor::TxComplete(Ptr<const Packet> packet) {
             for (const auto &bit : bits) {
                 tagged += ":" + std::to_string(bit);
             }
+            // const Ptr<Packet> &pktCopy = packet->Copy();
+            // PppHeader pppHeader;
+            // pktCopy->RemoveHeader(pppHeader);
+            // Ipv4Header IPHeader;
+            // pktCopy->RemoveHeader(IPHeader);
+            // cout << "### E2E ### End of tx time of : " << IPHeader.GetIdentification() << " Time: " << Simulator::Now().GetNanoSeconds() << endl;
         }
         packetEvent->GetPacketKey()->SetTagged(tagged);
     }
@@ -157,6 +163,7 @@ void E2EMonitor::Capture(Ptr< const Packet > packet) {
         pktCopy->AddHeader(IPHeader);
         pktCopy->AddHeader(pppHeader);
         // packetKey->SetPath(hash % numOfPaths);
+        // cout << "### E2E ### Start tx time of : " << IPHeader.GetIdentification() << " Time: " << Simulator::Now().GetNanoSeconds() << " Size: " << packet->GetSize() << endl;
         sentPackets_onlink[hash % numOfPaths] += 1;
     }
 }
@@ -311,6 +318,8 @@ void E2EMonitor::RecordIpv4PacketReceived(Ptr<const Packet> packet, Ptr<Ipv4> ip
             if (_isDifferentiate){
                 packetKeyEventPair->second->SetReceived(packetKeyEventPair->second->GetReceivedTime() + additionalDeprioritizationDelay);
             }
+
+            // cout << "### E2E ### Receiving Time of tx time of : " << header.GetIdentification() << " Time: " << Simulator::Now().GetNanoSeconds() << endl;
         }
     }
 }

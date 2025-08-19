@@ -45,7 +45,7 @@ def readResults(results_dir, serviceRateScales, results_dir_file, selectedVarMet
     totalPkts = {}
     pcktsRatio = {}
     stdsRatios = {}
-    flows = ['P0D0']
+    flows = ['A0D0']
     paths = ["0"]
     for rate in serviceRateScales:
         results[rate] = {}
@@ -140,7 +140,7 @@ def readResults(results_dir, serviceRateScales, results_dir_file, selectedVarMet
                         stds[rate]['success'] = np.sqrt(sum(temp['SD0SuccessProbStd'][i] ** 2 for i in range(len(temp['SD0SuccessProbStd'])))) / len(temp['SD0SuccessProbStd'])
                         stds[rate]['nonMarking'] = np.sqrt(sum(temp['SD0NonMarkingProbStd'][i] ** 2 for i in range(len(temp['SD0NonMarkingProbStd'])))) / len(temp['SD0NonMarkingProbStd'])
                         sampleSizes[rate] = np.mean(temp['EndToEndSampleSizeDelay'][flow][path])
-                        e2e_samples_rtt[rate] = np.mean([temp['RTT'][flow][path][i] / temp['InterArrivals'][flow][path][i] for i in range(temp['experiments']) if temp['InterArrivals'][flow][path][i] != 0])
+                        e2e_samples_rtt[rate] = np.mean([temp['RTT'][flow][path][i] / temp['InterArrivals'][flow][path][i] for i in range(temp['experiments']) if (str(temp['InterArrivals'][flow][path][i]) != 'nan' and temp['InterArrivals'][flow][path][i] != 0)])
                         avgRtt[rate] = np.mean(temp['RTT'][flow][path])
                         avgInterArrivals[rate] = np.nanmean(temp['InterArrivals'][flow][path])
                         e2e_delay[rate] = np.mean([temp['EndToEndDelayMean']['event_poisson_eventAvg'][flow][path][0][i][0] for i in range(temp['EndToEndDelayMean']['event_poisson_eventAvg'][flow][path][1])])
@@ -1000,7 +1000,7 @@ def analyse_forward_exp(results_dir, results_dir_file, rateScales, loads, select
     plot_metric_per_loads_traffic(list(results.keys()), CVS_all['success'], loads, selectedRates, results_dir, results_dir_file, 'CV of Success Probability')
     plot_metric_per_loads_traffic(list(results.keys()), CVS_all['nonMarking'], loads, selectedRates, results_dir, results_dir_file, 'CV of Non Marking Probability')
     plot_metric_per_loads_traffic(list(results.keys()), errors_all['delay'], loads, selectedRates, results_dir, results_dir_file, 'Absolute Error of Delay(ns)')
-    plot_metric_per_loads_traffic(list(results.keys()), bias_all['delay'], loads, selectedRates, results_dir, results_dir_file, 'Bias of Delay(ns)')
+    # plot_metric_per_loads_traffic(list(results.keys()), bias_all['delay'], loads, selectedRates, results_dir, results_dir_file, 'Bias of Delay(ns)')
     plot_metric_per_loads_traffic(list(results.keys()), e2e_stds_all['delay'], loads, selectedRates, results_dir, results_dir_file, 'End-to-end STD of Delay(ns)')
     plot_metric_per_loads_traffic(list(results.keys()), stdsRatios_all['delay'], loads, selectedRates, results_dir, results_dir_file, 'End-to-end STD of Delay(ns) over Switch STD of Delay(ns)')
     plot_metric_per_loads_traffic(list(results.keys()), switch_delay, loads, selectedRates, results_dir, results_dir_file, 'Switch Delay(ns)')
