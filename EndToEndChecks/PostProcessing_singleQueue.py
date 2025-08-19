@@ -758,19 +758,19 @@ def __main__():
     serviceRateScales = [float(x) for x in config.get('Settings', 'serviceRateScales').split(',')]
     loads = [float(x) for x in config.get('Settings', 'load').split(',')]
     traffics = config.get('Settings', 'traffic').split(',')
-    # serviceRateScales = [0.5] 
-    # traffics = ["Google_AllRPC"]
+    # serviceRateScales = [0.5]
+    traffics = ["Facebook_HadoopDist_All", "FacebookKeyValue_Sampled"]
     # traffics = ["Google_AllRPC", "Fabricated_Heavy_Head", "Fabricated_Heavy_Middle", "Google_SearchRPC", "Facebook_HadoopDist_All", "FacebookKeyValue_Sampled"]
-    # loads = [1.0]
+    # loads = [0.05]
     # elif "param" in args.dir:
     #     serviceRateScales = [float(x) for x in config.get('Settings', 'sampleRateScales').split(',')]
     # else:
     #     serviceRateScales = [float(x) for x in config.get('Settings', 'errorRateScale').split(',')]
     # experiments = 1
     errorRates = [float(x) for x in config.get('Settings', 'errorRate').split(',')]
-    # errorRates = [0.5]
+    # errorRates = [0.001]
     differentiationDelays = [float(x) for x in config.get('Settings', 'differentiationDelay').split(',')]
-    # differentiationDelays = [0.1]
+    # differentiationDelays = [0.5]
     if "forward" in args.dir:
         for traffic in traffics:
             for rate in serviceRateScales:
@@ -787,6 +787,7 @@ def __main__():
                     for differentiationDelay in differentiationDelays:
                         for errorRate in errorRates:
                             print("\nAnalyzing experiments for rate: ", rate, " load: ", load, " differentiationDelay: ", differentiationDelay, " errorRate: ", errorRate)
+                            os.system('mkdir -p ../Results/results_{}/{}/{}/{}/D_{}/f_{}/'.format(args.dir, traffic, rate, load, differentiationDelay, errorRate))
                             analyze_all_experiments(rate, steadyStart, steadyEnd, confidenceValue, args.dir + "/" + traffic, config, experiments_end=experiments, ns3_path=__ns3_path, differentiationDelay=differentiationDelay, errorRate=errorRate, load=load)
                             print("Rate {} load {} with {} and {} done".format(rate, load, differentiationDelay, errorRate))
                     print("Traffic {} Rate {} load {} done".format(traffic, rate, load))

@@ -1653,7 +1653,7 @@ def read_data_flowIndicator(__ns3_path, rate, results_folder, differentiationDel
     i = 0
     if differentiationDelay is not None and errorRate is not None:
         while len(file_paths) == 0:
-            file_paths = glob.glob('{}/scratch/{}/{}/D_{}/f_{}/{}/*_EndToEnd_packets.csv'.format(__ns3_path, results_folder, rate, differentiationDelay, errorRate, i))
+            file_paths = glob.glob('{}/scratch/{}/{}/{}/D_{}/f_{}/{}/*_EndToEnd_packets.csv'.format(__ns3_path, results_folder, rate, load, differentiationDelay, errorRate, i))
             i += 1
     else:
         while len(file_paths) == 0:
@@ -1669,7 +1669,7 @@ def read_queues_indicators(__ns3_path, rate, results_folder, differentiationDela
     i = 0
     if differentiationDelay is not None and errorRate is not None:
         while len(file_paths) == 0:
-            file_paths = glob.glob('{}/scratch/{}/{}/D_{}/f_{}/{}/*_PoissonSampler.csv'.format(__ns3_path, results_folder, rate, differentiationDelay, errorRate, i))
+            file_paths = glob.glob('{}/scratch/{}/{}/{}/D_{}/f_{}/{}/*_PoissonSampler.csv'.format(__ns3_path, results_folder, rate, load, differentiationDelay, errorRate, i))
             i += 1
     else:
         while len(file_paths) == 0:
