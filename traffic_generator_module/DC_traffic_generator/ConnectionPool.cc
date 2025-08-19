@@ -3,10 +3,12 @@
 
 NS_LOG_COMPONENT_DEFINE ("ConnectionPool");
 
-ConnectionPool::ConnectionPool(const Address& address, const string& protocol, Ptr<Node> senderNode)
-    : remoteAddress(address), protocol(protocol), senderNode(senderNode) {
+ConnectionPool::ConnectionPool(const Address& address, const string& protocol, Ptr<Node> senderNode, double probeInterval)
+    : remoteAddress(address), protocol(protocol), senderNode(senderNode), _probeInterval(probeInterval) {
     NS_LOG_FUNCTION(this);
     m_uniform = CreateObject<UniformRandomVariable>();
+    m_varProbe = CreateObject<ExponentialRandomVariable>();
+    m_varProbe->SetAttribute("Mean", DoubleValue(probeInterval));
 }
 
 ConnectionPool::~ConnectionPool() {
@@ -16,6 +18,7 @@ ConnectionPool::~ConnectionPool() {
 void
 ConnectionPool::CloseConnections() {
     NS_LOG_FUNCTION(this);
+    Simulator::Cancel(_probeEvent);
     for (auto& socket : sockets) {
         if (socket) {
             socket->Close();
@@ -26,7 +29,7 @@ ConnectionPool::CloseConnections() {
 }
 
 void 
-ConnectionPool::CreateSockets(vector<Address> receiverAddresses, bool enablePacing) {
+ConnectionPool::CreateSockets(vector<Address> receiverAddresses, bool enablePacing, bool enableProbe, Time probeStartTime) {
     NS_LOG_FUNCTION(this);
     for (const auto& receiverAddress : receiverAddresses) {
         NS_LOG_FUNCTION (this);
@@ -48,7 +51,75 @@ ConnectionPool::CreateSockets(vector<Address> receiverAddresses, bool enablePaci
         socketStates.push_back(false);
         cout << "Socket created for " << InetSocketAddress::ConvertFrom(receiverAddress).GetIpv4() << " On port " << InetSocketAddress::ConvertFrom(receiverAddress).GetPort() << endl;
     }
+    if (enableProbe) {
+        cout << "Probing enabled with the rate: " << m_varProbe->GetMean() << " seconds." << endl;
+        cout << "Probe Start Time: " << probeStartTime.GetSeconds() << " seconds." << endl;
+        _probeEvent = Simulator::Schedule(probeStartTime + Seconds(m_varProbe->GetValue()), &ConnectionPool::ProbeNetwork, this);
+    }
 }
+
+void ConnectionPool::ScheduleNextProbe() {
+    _probeEvent = Simulator::Schedule(Seconds(m_varProbe->GetValue()), &ConnectionPool::ProbeNetwork, this);
+}
+
+void ConnectionPool::ProbeNetwork() {
+    NS_LOG_FUNCTION(this);
+    ScheduleNextProbe();
+    // Probing with monitoring TX queue, but making sure the next observation will happen in 2 MSSs
+    Ptr<PointToPointNetDevice> netDevice = DynamicCast<PointToPointNetDevice>(senderNode->GetDevice(0));
+    // cout << "Clock tick at: " << Simulator::Now().GetNanoSeconds() << endl;
+    netDevice->ManageNextSend(1502 * 2);
+    if (netDevice->GetQueue()->GetNPackets() == 0) {
+        // cout << "Probing: NetDevice is idle, sending probe." << endl;
+        uint32_t socketIndex = m_uniform->GetInteger(0, sockets.size() - 1);
+        DynamicCast<TcpSocketBase>(sockets[socketIndex])->SendProbe();
+    } 
+    // else {
+    //     cout << "Probing: NetDevice is busy, tagging next packet." << endl;
+    //     // netDevice->TagNextPacket();
+    // }
+    // Probing with monitoring NetDevice state
+    // Ptr<PointToPointNetDevice> netDevice = DynamicCast<PointToPointNetDevice>(senderNode->GetDevice(0));
+    // if (netDevice->IsIdle()) {
+    //     // cout << "Probing: NetDevice is idle, sending probe." << endl;
+    //     uint32_t socketIndex = m_uniform->GetInteger(0, sockets.size() - 1);
+    //     DynamicCast<TcpSocketBase>(sockets[socketIndex])->SendProbe();
+    // } else {
+    //     // cout << "Probing: NetDevice is busy, tagging current packet." << endl;
+    //     netDevice->TagCurrPacket();
+    // }
+    // Probing with monitoring TX queue
+    // Ptr<DropTailQueue<Packet>> TxQueue = DynamicCast<DropTailQueue<Packet>>(DynamicCast<PointToPointNetDevice>(senderNode->GetDevice(0))->GetQueue());
+    // if (TxQueue->GetNPackets() != 0) {
+    //     TxQueue->SetTagPacket(true);
+    // } else {
+    //     uint32_t socketIndex = m_uniform->GetInteger(0, sockets.size() - 1);
+    //     DynamicCast<TcpSocketBase>(sockets[socketIndex])->SendProbe();
+    // }
+
+
+    // Probing with monitoring sockets
+    // vector<Ptr<Socket>> pacingTimerWaitingSockets;
+    // for (uint32_t i = 0; i < sockets.size(); ++i) {
+    //    Ptr<TcpSocketBase> tcpSocket = DynamicCast<TcpSocketBase>(sockets[i]);
+    //    int res = tcpSocket->checkProbe();
+    //     if (res == 1) {
+    //         tcpSocket->SendPendingDataAsProbe();
+    //         return; // Exit after sending the first probe
+    //     }
+    //     if (res == 2) {
+    //         pacingTimerWaitingSockets.push_back(sockets[i]);
+    //     }
+    // }
+    // if (!pacingTimerWaitingSockets.empty()) {
+    //     uint32_t socketIndex = m_uniform->GetInteger(0, pacingTimerWaitingSockets.size() - 1);
+    //     DynamicCast<TcpSocketBase>(pacingTimerWaitingSockets[socketIndex])->SendPendingDataAsProbe();
+    // } else {
+    //     uint32_t socketIndex = m_uniform->GetInteger(0, sockets.size() - 1);
+    //     DynamicCast<TcpSocketBase>(sockets[socketIndex])->SendProbe();
+    // }
+}
+
 Ptr<Socket> ConnectionPool::findIdleSocket() {
     uint32_t socketIndex = m_uniform->GetInteger(0, sockets.size() - 1);
     if (DynamicCast<TcpSocketBase>(sockets[socketIndex])->GetTxBuffer()->Size() > 0) {

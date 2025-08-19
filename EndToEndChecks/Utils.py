@@ -310,7 +310,7 @@ def calculate_offline_E2E_workload(full_df, df_res, steadyStart, steadyEnd):
     full_df_ = None
     return df_res
 
-def calculate_offline_E2E_lossRates(__ns3_path, full_df, df_res, checkColumn, txDelay, linksRate, swtichDstREDQueueDiscMaxSize, df_name):
+def calculate_offline_E2E_lossRates(__ns3_path, full_df, df_res, checkColumn, txDelay, linksRate, swtichDstREDQueueDiscMaxSize, df_name, passiveProbe):
     df_res['successProb'] = {}
     for var in ['event', 'probability']:
         for method in ['rightCont_timeAvg', 'leftCont_timeAvg', 'linearInterp_timeAvg', 'poisson_eventAvg', 'eventAvg']:
@@ -340,8 +340,17 @@ def calculate_offline_E2E_lossRates(__ns3_path, full_df, df_res, checkColumn, tx
         df_res['successProb']['event_linearInterp_timeAvg'][path] = linearInterp_time_average
 
         df_res['successProb']['event_eventAvg'][path] = (np.mean(values), np.std(values) / np.sqrt(len(values)))
-   
-        samples_times = find_samples_path(time, txDelay, df_res['RTT'][path], df_name)
+
+        if passiveProbe:
+            interarrival = np.diff(time)
+            anderson_statistic, anderson_critical_values, _ = anderson(interarrival, 'expon')
+            if anderson_statistic <= anderson_critical_values[2]:
+                samples_times = time
+            else:
+                print("Sample times are 'NOT' exponentially distributed.")
+                samples_times = []
+        else:
+            samples_times = find_samples_path(time, txDelay, df_res['RTT'][path], df_name)
         df_res['sampleSize']['successProb'][path] = len(samples_times)
         samples_values = df[df['SentTime'].isin(samples_times)]['nonDropEvent'].values
         if df_res['sampleSize']['successProb'][path] == 0:
@@ -642,7 +651,7 @@ def calculate_offline_markingProbMean_at_receiver_poisson(df, swtichDstREDQueueD
         markingProbs.append(1 - (df_sample['ECN'].sum() / len(df_sample)))
     return np.mean(markingProbs)
 
-def calculate_offline_E2E_markingProb(full_df, df_res, checkColumn, txDelay, swtichDstREDQueueDiscMaxSize, linkRate, __ns3_path, tsh, df_name):
+def calculate_offline_E2E_markingProb(full_df, df_res, checkColumn, txDelay, swtichDstREDQueueDiscMaxSize, linkRate, __ns3_path, tsh, df_name, passiveProbe):
     # timeAvg_methods = ['rightCont_timeAvg', 'leftCont_timeAvg', 'linearInterp_timeAvg']
     # nonMarkingProb_timeAvg_vars = ['event_currentProb', 'event_lastProb']
     df_res['nonMarkingProb'] = {}
@@ -670,7 +679,16 @@ def calculate_offline_E2E_markingProb(full_df, df_res, checkColumn, txDelay, swt
         linearInterp_time_average = np.sum(((values[:-1] + values[1:]) / 2) * np.diff(time)) / (time[-1] - time[0])
         df_res['nonMarkingProb']['event_linearInterp_timeAvg'][path] = linearInterp_time_average
 
-        samples_times = find_samples_path(time, txDelay, df_res['RTT'][path], df_name)
+        if passiveProbe:
+            interarrival = np.diff(time)
+            anderson_statistic, anderson_critical_values, _ = anderson(interarrival, 'expon')
+            if anderson_statistic <= anderson_critical_values[2]:
+                samples_times = time
+            else:
+                print("Sample times are 'NOT' exponentially distributed.")
+                samples_times = []
+        else:
+            samples_times = find_samples_path(time, txDelay, df_res['RTT'][path], df_name)
         df_res['sampleSize']['nonMarkingProb'][path] = len(samples_times)
         samples_values = df[df['SentTime'].isin(samples_times)]['nonMarking'].values
         if df_res['sampleSize']['nonMarkingProb'][path] == 0:
@@ -683,7 +701,7 @@ def calculate_offline_E2E_markingProb(full_df, df_res, checkColumn, txDelay, swt
     full_df_ = None
     return df_res
 
-def calculate_offline_E2E_delays(full_df, removeDrops, checkColumn, txDelay, df_res, df_name):
+def calculate_offline_E2E_delays(full_df, removeDrops, checkColumn, txDelay, df_res, df_name, passiveProbe):
     df_res['delay'] = {}
     for var in ['event']:
         for method in ['rightCont_timeAvg', 'leftCont_timeAvg', 'linearInterp_timeAvg', 'poisson_eventAvg', 'eventAvg']:
@@ -709,10 +727,21 @@ def calculate_offline_E2E_delays(full_df, removeDrops, checkColumn, txDelay, df_
         linearInterp_time_average = np.sum(((values[:-1] + values[1:]) / 2) * np.diff(time)) / (time[-1] - time[0])
         df_res['delay']['event_linearInterp_timeAvg'][path] = linearInterp_time_average
         # print("Calculating delay for path:", path, "with", len(time), "packets.")
-        samples_times = find_samples_path(time, txDelay, df_res['RTT'][path], df_name)
+        if passiveProbe:
+            interarrival = np.diff(time)
+            anderson_statistic, anderson_critical_values, _ = anderson(interarrival, 'expon')
+            if anderson_statistic <= anderson_critical_values[2]:
+                samples_times = time
+            else:
+                print("Sample times are 'NOT' exponentially distributed.")
+                samples_times = []
+        else:
+            samples_times = find_samples_path(time, txDelay, df_res['RTT'][path], df_name)
+
         # print("Calculating delay for path:", path, "with", len(time), "packets. is done! ")
         df_res['sampleSize']['delay'][path] = len(samples_times)
         samples_values = df[df['SentTime'].isin(samples_times)]['Delay'].values
+        # print(df[df['SentTime'].isin(samples_times)])
         # samples_packetSizes = df[df['SentTime'].isin(samples_times)]['PayloadSize'].values
         # print("samples_times: ", len(samples_times))
         # # plot the sample values and times in a scatter plot
@@ -1544,7 +1573,7 @@ def calculate_reconstructedSignal_delays(reconstructedSignal_df, df_res, linkRat
     return df_res
 
 
-def calculate_offline_computations(__ns3_path, rate, segment, experiment, results_folder, steadyStart, steadyEnd, projectColumn, removeDrops=True, checkColumn="", linksRates=[], linkDelays=[], swtichDstREDQueueDiscMaxSize=0, stats=None, tsh=0.15, differentiationDelay=None, errorRate=None, load=None):
+def calculate_offline_computations(__ns3_path, rate, segment, experiment, results_folder, steadyStart, steadyEnd, projectColumn, removeDrops=True, checkColumn="", linksRates=[], linkDelays=[], swtichDstREDQueueDiscMaxSize=0, stats=None, tsh=0.15, differentiationDelay=None, errorRate=None, load=None, passiveProbe=False):
     if differentiationDelay == 0.0 and errorRate is not None:
         file_paths = glob.glob('{}/scratch/{}/{}/{}/D_{}/f_{}/{}/*_{}.csv'.format(__ns3_path, results_folder, rate, load, differentiationDelay, errorRate, experiment, segment))
     else:
@@ -1574,6 +1603,24 @@ def calculate_offline_computations(__ns3_path, rate, segment, experiment, result
             df_res['InterArrivals'] = {}
             txDelay = (1502 * 8 / linksRates[0])
             full_df = addRemoveTransmission_data(full_df, linkDelays, linksRates)
+            
+            if passiveProbe:
+                full_df = full_df[full_df['Tagged'] != "0"]
+                full_df['BitsTag'] = full_df['Tagged'].apply(lambda x: x.split(':')[1:] if isinstance(x, str) else [])
+                full_df = full_df.explode('BitsTag')
+                full_df['BitsTag'] = full_df['BitsTag'].astype(int)
+                full_df['Delay'] = full_df['Delay'] + full_df['BitsTag'] / linksRates[1]
+                full_df['SentTime'] = full_df['SentTime'] + full_df['BitsTag'] / linksRates[0]
+                full_df = full_df.sort_values(by=['SentTime'])
+                # interarrival = np.diff(full_df['SentTime'].values)
+                # print(full_df)
+                # anderson_statistic, anderson_critical_values, _ = anderson(interarrival, 'expon')
+                # if anderson_statistic <= anderson_critical_values[2]:
+                #     print("Interarrival times are exponentially distributed.")
+                # else:
+                #     print("Interarrival times are *NOT* exponentially distributed.")
+
+                
             if (differentiationDelay is not None) and (differentiationDelay != 0.0):
                 full_df = addExtraDelay(full_df, differentiationDelay, errorRate)
             full_df = prune_data(full_df, projectColumn, steadyStart, steadyEnd)
@@ -1582,10 +1629,10 @@ def calculate_offline_computations(__ns3_path, rate, segment, experiment, result
             # reconstructedSignal_df = reconstructSignal(full_df, linksRates, file_path.replace(f'{df_name}_EndToEnd_packets.csv', ''))
             # df_res = calculate_reconstructedSignal_delays(reconstructedSignal_df, df_res, linksRates[1])
 
-            df_res = calculate_offline_E2E_lossRates(__ns3_path, full_df, df_res, checkColumn, txDelay, linksRates[1], swtichDstREDQueueDiscMaxSize, df_name)
-            df_res = calculate_offline_E2E_delays(full_df, removeDrops, checkColumn, txDelay, df_res, df_name)
+            df_res = calculate_offline_E2E_lossRates(__ns3_path, full_df, df_res, checkColumn, txDelay, linksRates[1], swtichDstREDQueueDiscMaxSize, df_name, passiveProbe)
+            df_res = calculate_offline_E2E_delays(full_df, removeDrops, checkColumn, txDelay, df_res, df_name, passiveProbe)
             df_res = calculate_offline_E2E_workload(full_df, df_res, steadyStart, steadyEnd)
-            df_res = calculate_offline_E2E_markingProb(full_df, df_res, checkColumn, txDelay, swtichDstREDQueueDiscMaxSize, linksRates[1], __ns3_path, tsh, df_name)
+            df_res = calculate_offline_E2E_markingProb(full_df, df_res, checkColumn, txDelay, swtichDstREDQueueDiscMaxSize, linksRates[1], __ns3_path, tsh, df_name, passiveProbe)
         if 'Poisson' in segment:
             packets_cfd = PacketCDF()
             packets_cfd.load_cdf_data('{}/scratch/ECNMC/DCWorkloads/packet_size_cdf_{}.csv'.format(__ns3_path, results_folder.split('/')[-1]))

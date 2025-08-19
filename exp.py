@@ -44,7 +44,8 @@ class ExperimentConfig:
         self.isDifferentating = False
         self.silentPacketDrop = False
         self.NagleIsEnabled = False
-        self.ProbeIsEnabled = False
+        self.ActiveProbeIsEnabled = False
+        self.PassiveProbeIsEnabled = False
         self.probeInterval = "1ms"
 
     def read_config_file(self, config_file):
@@ -59,7 +60,8 @@ class ExperimentConfig:
         self.agg_to_core_link_delay = config.get('Settings', 'aggToCoreLinkDelay')
         self.pct_paced_back = config.getfloat('Settings', 'pctPacedBack')
         self.NagleIsEnabled = config.getboolean('Settings', 'Nagle')
-        self.ProbeIsEnabled = config.getboolean('Settings', 'probe')
+        self.ActiveProbeIsEnabled = config.getboolean('Settings', 'ActiveProbe')
+        self.PassiveProbeIsEnabled = config.getboolean('Settings', 'PassiveProbe')
         self.app_data_rate = config.get('Settings', 'appDataRate')
         self.duration = config.get('Settings', 'duration')
         self.sampleRate = config.get('Settings', 'sampleRate')
@@ -167,7 +169,8 @@ def run_forward_experiment(exp, singleQueue=False):
                             '--dirName=' + 'forward ' +
                             '--traffic={} '.format(traffic) +
                             '--Nagle={} '.format(expConfig.NagleIsEnabled) +
-                            '--probe={} '.format(expConfig.ProbeIsEnabled) +
+                            '--ActiveProbe={} '.format(expConfig.ActiveProbeIsEnabled) +
+                            '--PassiveProbe={} '.format(expConfig.PassiveProbeIsEnabled) +
                             '--differentiationDelay={} '.format(expConfig.differentiationDelay[0]) +
                             '--isDifferentating={} '.format(expConfig.isDifferentating) +
                             '--silentPacketDrop={} '.format(expConfig.silentPacketDrop) + 
@@ -254,7 +257,8 @@ def run_reverse_experiment(exp, singleQueue=False, type=ReverseType.Delay):
                                     '--dirName=' + 'reverse ' +
                                     '--traffic={} '.format(traffic) +
                                     '--Nagle={} '.format(expConfig.NagleIsEnabled) +
-                                    '--probe={} '.format(expConfig.ProbeIsEnabled) +
+                                    '--ActiveProbe={} '.format(expConfig.ActiveProbeIsEnabled) +
+                                    '--PassiveProbe={} '.format(expConfig.PassiveProbeIsEnabled) +
                                     '--probeInterval={} '.format(expConfig.probeInterval) +
                                     '--differentiationDelay={} '.format(DiffRate) +
                                     '--isDifferentating={} '.format(expConfig.isDifferentating) +

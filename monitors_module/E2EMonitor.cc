@@ -78,6 +78,7 @@ uint64_t E2EMonitor::GetHashValue(const Ipv4Address src, const Ipv4Address dst, 
 void E2EMonitor::Connect(const Ptr<PointToPointNetDevice> netDevice, uint32_t rxNodeId, uint32_t txNodeId) {
     netDevice->GetQueue()->TraceConnectWithoutContext("Enqueue", MakeCallback(&E2EMonitor::Enqueue, this));
     netDevice->TraceConnectWithoutContext("PromiscSniffer", MakeCallback(&E2EMonitor::Capture, this));
+    netDevice->TraceConnectWithoutContext("PhyTxEnd",MakeCallback(&E2EMonitor::TxComplete, this));
     Config::ConnectWithoutContext("/NodeList/" + to_string(rxNodeId) + "/$ns3::Ipv4L3Protocol/Rx", MakeCallback(
             &E2EMonitor::RecordIpv4PacketReceived, this));
     // Config::ConnectWithoutContext("/NodeList/" + to_string(txNodeId) + "/$ns3::Ipv4L3Protocol/Tx", MakeCallback(
@@ -90,6 +91,41 @@ void E2EMonitor::Disconnect(const Ptr<PointToPointNetDevice> netDevice, uint32_t
             &E2EMonitor::RecordIpv4PacketReceived, this));
     // Config::DisconnectWithoutContext("/NodeList/" + to_string(txNodeId) + "/$ns3::Ipv4L3Protocol/Tx", MakeCallback(
     //         &E2EMonitor::RecordIpv4PacketSent, this));
+}
+void E2EMonitor::TxComplete(Ptr<const Packet> packet) {
+    if (Simulator::Now() < _steadyStartTime || Simulator::Now() > _steadyStopTime) {
+        return;
+    }
+    PacketKey* packetKey = PacketKey::Packet2PacketKey(packet, FIRST_HEADER_PPP);
+    if(_appsKey.count(AppKey::PacketKey2AppKey(*packetKey))) {
+        E2EMonitorEvent* packetEvent;
+        auto packetKeyEventPair = _recordedPackets.find(*packetKey);
+        if (packetKeyEventPair == _recordedPackets.end()) {
+            packetEvent = new E2EMonitorEvent(packetKey);
+            _recordedPackets[*packetKey] = packetEvent;
+        }
+        else {
+            packetEvent = packetKeyEventPair->second;
+        }
+        MeasurementProbeTagWithBits tag;
+        string tagged = "0";
+        if (packet->PeekPacketTag(tag)) {
+            if (tag.GetFlag()) {
+                tagged = "1";
+            }
+            vector<uint32_t> bits = tag.GetBitsFlag();
+            for (const auto &bit : bits) {
+                tagged += ":" + std::to_string(bit);
+            }
+            // const Ptr<Packet> &pktCopy = packet->Copy();
+            // PppHeader pppHeader;
+            // pktCopy->RemoveHeader(pppHeader);
+            // Ipv4Header IPHeader;
+            // pktCopy->RemoveHeader(IPHeader);
+            // cout << "### E2E ### End of tx time of : " << IPHeader.GetIdentification() << " Time: " << Simulator::Now().GetNanoSeconds() << endl;
+        }
+        packetEvent->GetPacketKey()->SetTagged(tagged);
+    }
 }
 
 void E2EMonitor::Capture(Ptr< const Packet > packet) {
@@ -126,7 +162,8 @@ void E2EMonitor::Capture(Ptr< const Packet > packet) {
         uint64_t hash = GetHashValue(packetKey->GetSrcIp(), packetKey->GetDstIp(), packetKey->GetSrcPort(), packetKey->GetDstPort(), IPHeader.GetProtocol());
         pktCopy->AddHeader(IPHeader);
         pktCopy->AddHeader(pppHeader);
-        packetKey->SetPath(hash % numOfPaths);
+        // packetKey->SetPath(hash % numOfPaths);
+        // cout << "### E2E ### Start tx time of : " << IPHeader.GetIdentification() << " Time: " << Simulator::Now().GetNanoSeconds() << " Size: " << packet->GetSize() << endl;
         sentPackets_onlink[hash % numOfPaths] += 1;
     }
 }
@@ -281,6 +318,8 @@ void E2EMonitor::RecordIpv4PacketReceived(Ptr<const Packet> packet, Ptr<Ipv4> ip
             if (_isDifferentiate){
                 packetKeyEventPair->second->SetReceived(packetKeyEventPair->second->GetReceivedTime() + additionalDeprioritizationDelay);
             }
+
+            // cout << "### E2E ### Receiving Time of tx time of : " << header.GetIdentification() << " Time: " << Simulator::Now().GetNanoSeconds() << endl;
         }
     }
 }
@@ -339,7 +378,7 @@ void E2EMonitor::SaveMonitorRecords(const string& filename) {
 
     ofstream packetsFile;
     packetsFile.open(filename.substr(0, filename.size() - 4) + "_packets.csv");
-    packetsFile << "SourceIp,SourcePort,DestinationIp,DestinationPort,SequenceNb,Id,PayloadSize,Path,TxEnqueueTime,TxDequeueTime,SentTime,IsReceived,ReceiveTime,transmissionDelay,ECN" << endl;
+    packetsFile << "SourceIp,SourcePort,DestinationIp,DestinationPort,SequenceNb,Id,PayloadSize,Path,TxEnqueueTime,TxDequeueTime,SentTime,IsReceived,ReceiveTime,transmissionDelay,ECN,Tagged" << endl;
     for (auto& packetKeyEventPair: _recordedPackets) {
         PacketKey key = packetKeyEventPair.first;
         E2EMonitorEvent* event = packetKeyEventPair.second;
@@ -358,7 +397,7 @@ void E2EMonitor::SaveMonitorRecords(const string& filename) {
         packetsFile << event->GetPath() << ",";
         packetsFile << event->GetTxEnqueueTime().GetNanoSeconds() << "," << event->GetTxDequeueTime().GetNanoSeconds() << ",";
         packetsFile << event->GetSentTime().GetNanoSeconds() << ",";
-        packetsFile << event->IsReceived() << "," << event->GetReceivedTime().GetNanoSeconds() << "," << transmissionDelay.GetNanoSeconds() << "," << event->GetEcn() << endl;
+        packetsFile << event->IsReceived() << "," << event->GetReceivedTime().GetNanoSeconds() << "," << transmissionDelay.GetNanoSeconds() << "," << event->GetEcn() << "," << event->GetPacketKey()->IsTagged() << endl;
     }
     packetsFile.close();
 

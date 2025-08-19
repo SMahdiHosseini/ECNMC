@@ -89,8 +89,8 @@ void PoissonSampler::RecordIncomingPacket(Ptr<const Packet> packet) {
     pktCopy->RemoveHeader(pppHeader);
     Ipv4Header ipHeader;
     pktCopy->RemoveHeader(ipHeader);
-    // if (ipHeader.GetSource() != Ipv4Address("10.1.1.1")) {
-    //     return;
+    // if (ipHeader.GetSource() == Ipv4Address("10.1.1.1")) {
+    //     cout << "### POISSON ### Receiving Time at switch of : " << ipHeader.GetIdentification() << " Time: " << Simulator::Now().GetNanoSeconds() << endl;
     // }
     if (ipHeader.GetSource() == Ipv4Address("10.3.1.1")) {
         return;
@@ -207,6 +207,9 @@ void PoissonSampler::EnqueueQueueDisc(Ptr<const QueueDiscItem> item) {
     event.SetEventAction("E");
     queueSizeProcess.push_back(std::make_tuple(Simulator::Now(), event));
     // cout << "### POISSON ### Time: " << Simulator::Now().GetNanoSeconds() << " *** Enqueue *** " << " Queue Size: " << REDQueueDisc->GetNBytes() + NetDeviceQueue->GetNBytes() << " Total Queue Size: " << ComputeQueueSize() << " Queuing Delay: " << queuingDelay.GetNanoSeconds() << " packet size: " << item->GetSize() << endl;
+    // if (ipHeader.GetSource() == Ipv4Address("10.1.1.1")) {
+    //     cout << "### POISSON ### Enqueuing Time at switch of : " << ipHeader.GetIdentification() << " Time: " << Simulator::Now().GetNanoSeconds() << endl;
+    // }
     updateGTCounters();
 }
 
@@ -406,6 +409,11 @@ void PoissonSampler::RecordPacket(Ptr<const Packet> packet) {
         lastLeftTime = Simulator::Now();
         lastLeftSize = packet->GetSize();
     }
+    // if (ipHeader.GetSource() == Ipv4Address("10.1.1.1")) {
+    //     if (!(Simulator::Now() < _steadyStartTime || Simulator::Now() > _steadyStopTime)) {
+    //         cout << "### POISSON ### Start tx Time at switch of : " << ipHeader.GetIdentification() << " Time: " << Simulator::Now().GetNanoSeconds() << endl;
+    //     }
+    // }
     PacketKey* packetKey = PacketKey::Packet2PacketKey(packet, FIRST_HEADER_PPP);
     if (_recordedSamples.find(*packetKey) != _recordedSamples.end()) {
         _recordedSamples[*packetKey]->SetDepartureTime();

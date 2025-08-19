@@ -30,7 +30,7 @@ DCWorkloadGenerator::establishPairConnections(uint32_t receiverId) {
 
 
 void 
-DCWorkloadGenerator::GenrateTraffic(bool pctPacedBack) {
+DCWorkloadGenerator::GenrateTraffic(bool pctPacedBack, bool probe, Time probeInterval) {
     for (uint32_t i = 0; i < _receivers.size(); i++) {
         receiversAddresses.push_back(establishPairConnections(i));
     }
@@ -43,6 +43,8 @@ DCWorkloadGenerator::GenrateTraffic(bool pctPacedBack) {
     factory.Set("Rate", DoubleValue(_avgRate));
     factory.Set("WorkloadPath", StringValue(_workloadPath + ".txt"));
     factory.Set("EnablePacing", BooleanValue(pctPacedBack));
+    factory.Set("Probe", BooleanValue(probe));
+    factory.Set("ProbeInterval", DoubleValue(probeInterval.GetSeconds()));
     Ptr<WorkloadApp> nodeAppsHandler = factory.Create<WorkloadApp>();
     nodeAppsHandler->SetReceiverAddress(receiversAddresses);
     _sender->AddApplication(nodeAppsHandler);

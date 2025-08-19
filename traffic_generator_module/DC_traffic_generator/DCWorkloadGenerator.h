@@ -34,7 +34,7 @@ private:
 public:
     DCWorkloadGenerator(const Ptr<Node>& sender, const vector<Ptr<Node>>& receivers, double avgRate, uint32_t poolSize, const string workloadPath, const string protocol, Time trafficStartTime, Time trafficEndTime);
 
-    void GenrateTraffic(bool pctPacedBack);
+    void GenrateTraffic(bool pctPacedBack, bool probe, Time probeInterval);
 };
 
 

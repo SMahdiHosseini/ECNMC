@@ -226,6 +226,102 @@ PointToPointNetDevice::GetDataRate()
     
     return m_bps;
 }
+
+bool
+PointToPointNetDevice::IsIdle()
+{
+    NS_LOG_FUNCTION(this);
+    return (m_txMachineState == READY && m_queue->IsEmpty());
+}
+
+void
+PointToPointNetDevice::TagCurrPacket()
+{   
+    NS_LOG_FUNCTION(this);
+    NS_ASSERT_MSG(m_currentPkt, "PointToPointNetDevice::TagCurrPacket(): m_currentPkt zero");
+    NS_ASSERT_MSG(m_lastTxStart != Seconds(0), "PointToPointNetDevice::TagCurrPacket(): m_lastTxStart zero");
+    MeasurementProbeTagWithBits tag;
+    uint32_t transmittedBits = m_bps.GetBitRate() * (Simulator::Now() - m_lastTxStart).GetSeconds();
+    // check if the current packet already has a tag
+    if (m_currentPkt->PeekPacketTag(tag))
+    {
+        MeasurementProbeTagWithBits newTag = tag; // Copy existing tag
+        newTag.SetBitFlag(transmittedBits);
+        m_currentPkt->RemovePacketTag(tag); // Remove old tag
+        // Add the new tag with updated bits
+        m_currentPkt->AddPacketTag(newTag);
+    }
+    else
+    {
+        tag.SetFlag(true);
+        tag.SetBitFlag(transmittedBits);
+        m_currentPkt->AddPacketTag(tag);
+    }
+}
+
+void
+PointToPointNetDevice::ManageNextSend(uint32_t mss)
+{
+    if (!m_isHalted) 
+    {
+        m_remainedHaltTime = m_bps.CalculateBytesTxTime(mss) + m_channel->GetDelay();
+        m_haltStartTime = Simulator::Now();
+        m_isHalted = true;
+        m_tagNext = true;
+        // std::cout << " ### PointToPointNetDevice ### Device is halted for " << m_remainedHaltTime.GetNanoSeconds() << " at time: " << Simulator::Now().GetNanoSeconds() << std::endl;
+        Simulator::Schedule(m_bps.CalculateBytesTxTime(mss / 2), &PointToPointNetDevice::ResumeTransmission, this);
+    }
+}
+
+void
+PointToPointNetDevice::ResumeTransmission()
+{
+    NS_LOG_FUNCTION(this);
+    Ptr<const Packet> p = m_queue->Peek();
+    if (p)
+    {
+        m_remainedHaltTime -= (Simulator::Now() - m_haltStartTime);
+        m_remainedHaltTime -= (m_bps.CalculateBytesTxTime(p->GetSize()) + m_channel->GetDelay());
+        if (m_remainedHaltTime <= Seconds(0))
+        {
+            m_isHalted = false;
+            m_haltStartTime = Seconds(0);
+            m_remainedHaltTime = Seconds(0);
+            // std::cout << " ### PointToPointNetDevice ### Device is resumed at time: " << Simulator::Now().GetNanoSeconds() << std::endl;
+            Ptr<Packet> pkt = m_queue->Dequeue();
+            if (m_tagNext)
+            {
+                MeasurementProbeTagWithBits tag;
+                tag.SetFlag(true);
+                tag.SetBitFlag(0);
+                pkt->AddPacketTag(tag);
+                m_tagNext = false;
+            }
+            m_snifferTrace(pkt);
+            m_promiscSnifferTrace(pkt);
+            TransmitStart(pkt);
+        }
+        else
+        {
+            // std::cout << " ### PointToPointNetDevice ### Device is still halted, remaining time: " << m_remainedHaltTime.GetNanoSeconds() << " at time: " << Simulator::Now().GetNanoSeconds() << std::endl;
+            Simulator::Schedule(m_remainedHaltTime, &PointToPointNetDevice::ResumeTransmission, this);
+        }
+    }
+    else
+    {
+        m_isHalted = false;
+        m_haltStartTime = Seconds(0);
+        m_remainedHaltTime = Seconds(0);
+        // std::cout << " ### PointToPointNetDevice ### No packet to resume transmission at time: " << Simulator::Now().GetNanoSeconds() << std::endl;
+    }
+}
+
+void
+PointToPointNetDevice::TagNextPacket()
+{
+    NS_LOG_FUNCTION(this);
+    m_tagNext = true;
+}
 // ****** Mahdi Change ***** (END) ***** //
 
 void
@@ -249,7 +345,7 @@ bool
 PointToPointNetDevice::TransmitStart(Ptr<Packet> p)
 {
     NS_LOG_FUNCTION(this << p);
-    NS_LOG_LOGIC("UID is " << p->GetUid() << ")");
+    NS_LOG_LOGIC("UID is " << p->GetUid() << ")"); 
 
     //
     // This function is called to start the process of transmitting a packet.
@@ -263,6 +359,10 @@ PointToPointNetDevice::TransmitStart(Ptr<Packet> p)
 
     Time txTime = m_bps.CalculateBytesTxTime(p->GetSize());
     Time txCompleteTime = txTime + m_tInterframeGap;
+
+    // ****** Mahdi Change ***** (START) ***** // 
+    m_lastTxStart = Simulator::Now();
+    // ****** Mahdi Change ***** (END) ***** //
 
     NS_LOG_LOGIC("Schedule TransmitCompleteEvent in " << txCompleteTime.As(Time::S));
     Simulator::Schedule(txCompleteTime, &PointToPointNetDevice::TransmitComplete, this);
@@ -293,20 +393,26 @@ PointToPointNetDevice::TransmitComplete()
 
     m_phyTxEndTrace(m_currentPkt);
     m_currentPkt = nullptr;
-
-    Ptr<Packet> p = m_queue->Dequeue();
-    if (!p)
+    
+    // ****** Mahdi Change ***** (START) ***** // 
+    m_lastTxStart = Seconds(0); // Reset the last transmission start time
+    if (!m_isHalted) // start transmitting the next packet, if there is any, if we are not halted
     {
-        NS_LOG_LOGIC("No pending packets in device queue after tx complete");
-        return;
-    }
+        Ptr<Packet> p = m_queue->Dequeue();
+        if (!p)
+        {
+            NS_LOG_LOGIC("No pending packets in device queue after tx complete");
+            return;
+        }
 
-    //
-    // Got another packet off of the queue, so start the transmit process again.
-    //
-    m_snifferTrace(p);
-    m_promiscSnifferTrace(p);
-    TransmitStart(p);
+        //
+        // Got another packet off of the queue, so start the transmit process again.
+        //
+        m_snifferTrace(p);
+        m_promiscSnifferTrace(p);
+        TransmitStart(p);
+    }
+    // ****** Mahdi Change ***** (END) ***** //
 }
 
 bool
@@ -555,7 +661,7 @@ PointToPointNetDevice::Send(Ptr<Packet> packet, const Address& dest, uint16_t pr
         //
         // If the channel is ready for transition we send the packet right now
         //
-        if (m_txMachineState == READY)
+        if (m_txMachineState == READY && (!m_isHalted)) // mahdi
         {
             packet = m_queue->Dequeue();
             m_snifferTrace(packet);
