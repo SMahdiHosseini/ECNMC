@@ -560,6 +560,12 @@ QueueDisc::SetSendCallback(SendCallback func)
 {
     NS_LOG_FUNCTION(this);
     m_send = func;
+    // ****** Mahdi Change ***** (START) ***** // 
+    for (const auto& m_class : m_classes)
+    {
+        m_class->GetQueueDisc()->SetSendCallback(func);
+    }
+    // ****** Mahdi Change ***** (END) ***** // 
 }
 
 QueueDisc::SendCallback
