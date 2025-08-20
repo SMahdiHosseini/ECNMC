@@ -65,19 +65,33 @@ void ConnectionPool::ScheduleNextProbe() {
 void ConnectionPool::ProbeNetwork() {
     NS_LOG_FUNCTION(this);
     ScheduleNextProbe();
-    // Probing with monitoring TX queue, but making sure the next observation will happen in 2 MSSs
+    // Probing with monitoring TX queue, but send the probe only if the remained byted of the current packet is larger than trsh
     Ptr<PointToPointNetDevice> netDevice = DynamicCast<PointToPointNetDevice>(senderNode->GetDevice(0));
-    // cout << "Clock tick at: " << Simulator::Now().GetNanoSeconds() << endl;
-    netDevice->ManageNextSend(1502 * 2);
-    if (netDevice->GetQueue()->GetNPackets() == 0) {
-        // cout << "Probing: NetDevice is idle, sending probe." << endl;
+    cout << "Clock tick at: " << Simulator::Now().GetNanoSeconds() << endl;
+    if (netDevice->IsProbeNeeded())
+    {   
         uint32_t socketIndex = m_uniform->GetInteger(0, sockets.size() - 1);
         DynamicCast<TcpSocketBase>(sockets[socketIndex])->SendProbe();
-    } 
-    // else {
-    //     cout << "Probing: NetDevice is busy, tagging next packet." << endl;
-    //     // netDevice->TagNextPacket();
-    // }
+        cout << "Probe sent from socket index: " << socketIndex << endl;
+    }
+    else
+    {
+        cout << "No probe sent, current packet is sufficient for probing." << endl;
+    }
+    // // Probing with monitoring TX queue, but making sure the next observation will happen in 2 MSSs
+    // Ptr<PointToPointNetDevice> netDevice = DynamicCast<PointToPointNetDevice>(senderNode->GetDevice(0));
+    // // cout << "Clock tick at: " << Simulator::Now().GetNanoSeconds() << endl;
+    // netDevice->ManageNextSend(1502 * 2);
+    // if (netDevice->GetQueue()->GetNPackets() == 0) {
+    //     // cout << "Probing: NetDevice is idle, sending probe." << endl;
+    //     uint32_t socketIndex = m_uniform->GetInteger(0, sockets.size() - 1);
+    //     DynamicCast<TcpSocketBase>(sockets[socketIndex])->SendProbe();
+    // } 
+    // // else {
+    // //     cout << "Probing: NetDevice is busy, tagging next packet." << endl;
+    // //     // netDevice->TagNextPacket();
+    // // }
+
     // Probing with monitoring NetDevice state
     // Ptr<PointToPointNetDevice> netDevice = DynamicCast<PointToPointNetDevice>(senderNode->GetDevice(0));
     // if (netDevice->IsIdle()) {

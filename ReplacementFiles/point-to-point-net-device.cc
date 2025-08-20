@@ -81,6 +81,13 @@ PointToPointNetDevice::GetTypeId()
                           PointerValue(),
                           MakePointerAccessor(&PointToPointNetDevice::m_queue),
                           MakePointerChecker<Queue<Packet>>())
+            // ****** Mahdi Change ***** (START) ***** //
+            .AddAttribute("ProbeTrsh",
+                            "The threshold for probing the channel",
+                            UintegerValue(100),
+                            MakeUintegerAccessor(&PointToPointNetDevice::m_probeThreshold),
+                            MakeUintegerChecker<uint32_t>())
+            // ****** Mahdi Change ***** (END) ***** //
 
             //
             // Trace sources at the "top" of the net device, where packets transition
@@ -321,6 +328,26 @@ PointToPointNetDevice::TagNextPacket()
 {
     NS_LOG_FUNCTION(this);
     m_tagNext = true;
+}
+
+bool
+PointToPointNetDevice::IsProbeNeeded()
+{
+    NS_LOG_FUNCTION(this);
+    // Check if the current packet is not null
+    if (m_currentPkt)
+    {
+        uint32_t remainedBytes = m_currentPkt->GetSize() - (m_bps.GetBitRate() * (Simulator::Now() - m_lastTxStart).GetSeconds() / 8);
+        if (remainedBytes > m_probeThreshold)
+        {
+            std::cout << "Probe needed: " << remainedBytes << " bytes remaining." << std::endl;
+            return true;
+        }
+        std::cout << "No probe needed, current packet is sufficient." << std::endl;
+        TagCurrPacket(); // Tag the current packet if it is not needed for probing
+    }
+    std::cout << "no packet is sent, probe needed." << std::endl;
+    return true;
 }
 // ****** Mahdi Change ***** (END) ***** //
 

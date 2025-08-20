@@ -19,6 +19,7 @@ def readResults(results_dir, serviceRateScales, results_dir_file, selectedVarMet
     CVS = {}
     bias = {}
     erors = {}
+    errors_bounds = {}
     e2e_samples_rtt = {}
     avgRtt = {}
     avgInterArrivals= {}
@@ -62,6 +63,7 @@ def readResults(results_dir, serviceRateScales, results_dir_file, selectedVarMet
         CVS[rate] = {}
         bias[rate] = {}
         erors[rate] = {}
+        errors_bounds[rate] = {}
         e2e_samples_rtt[rate] = {}
         e2e_delay[rate] = {}
         e2e_stds[rate] = {}
@@ -137,6 +139,7 @@ def readResults(results_dir, serviceRateScales, results_dir_file, selectedVarMet
                         # CVS[rate]['SubSamplesDelayCV'] = np.mean([temp['EndToEndDelayMean']['event_poisson_eventAvg'][flow][path][i][1] / temp['EndToEndDelayMean']['event_poisson_eventAvg'][flow][path][i][0] * np.sqrt(temp['EndToEndSampleSizeDelay'][flow][path][i]) for i in range(temp['experiments'])])
                         # CVS[rate]['SubSamplesSuccessProbCV'] = np.mean([temp['EndToEndSuccessProb']['event_poisson_eventAvg'][flow][path][i][1] / temp['EndToEndSuccessProb']['event_poisson_eventAvg'][flow][path][i][0] * np.sqrt(temp['EndToEndSampleSizeSuccess'][flow][path][i]) for i in range(temp['experiments'])])
                         # CVS[rate]['SubSamplesNonMarkingProbCV'] = np.mean([temp['EndToEndNonMarkingProb']['event_poisson_eventAvg'][flow][path][i][1] / temp['EndToEndNonMarkingProb']['event_poisson_eventAvg'][flow][path][i][0] * np.sqrt(temp['EndToEndSampleSizeMarking'][flow][path][i]) for i in range(temp['experiments'])])
+                        errors_bounds[rate]['delay'] = np.mean([])
                         stds[rate]['delay'] = np.sqrt(sum(temp['SD0Delaystd'][i] ** 2 for i in range(len(temp['SD0Delaystd'])))) / len(temp['SD0Delaystd'])
                         stds[rate]['success'] = np.sqrt(sum(temp['SD0SuccessProbStd'][i] ** 2 for i in range(len(temp['SD0SuccessProbStd'])))) / len(temp['SD0SuccessProbStd'])
                         stds[rate]['nonMarking'] = np.sqrt(sum(temp['SD0NonMarkingProbStd'][i] ** 2 for i in range(len(temp['SD0NonMarkingProbStd'])))) / len(temp['SD0NonMarkingProbStd'])

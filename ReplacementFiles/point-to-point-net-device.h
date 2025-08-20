@@ -204,6 +204,7 @@ class PointToPointNetDevice : public NetDevice
     void TagNextPacket();
     void ManageNextSend(uint32_t mss);
     void ResumeTransmission();
+    bool IsProbeNeeded();
     // ****** Mahdi Change ***** (END) ***** //
 
   protected:
@@ -458,6 +459,7 @@ class PointToPointNetDevice : public NetDevice
     Time m_haltStartTime = Seconds(0); //!< Start time of the halt period
     bool m_isHalted = false; //!< Whether transmission is halted
     bool m_tagNext = false; //!< Whether to tag the next packet
+    uint32_t m_probeThreshold = 100; //!< The threshold for probing the channel
     // ****** Mahdi Change ***** (END) ***** // 
 
     /**

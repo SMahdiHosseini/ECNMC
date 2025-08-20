@@ -631,8 +631,8 @@ Time TcpSocketBase::GetProbeClockInterval() const
 
 void TcpSocketBase::SendProbe()
 {
-    // SendEmptyPacketWithMyTag(TcpHeader::NONE, true);
-    SendEmptyPacketWithMyTag(TcpHeader::NONE, false);
+    SendEmptyPacketWithMyTag(TcpHeader::NONE, true);
+    // SendEmptyPacketWithMyTag(TcpHeader::NONE, false);
 }
 // mahdi end
 
