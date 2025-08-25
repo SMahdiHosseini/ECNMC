@@ -59,25 +59,42 @@ ConnectionPool::CreateSockets(vector<Address> receiverAddresses, bool enablePaci
 }
 
 void ConnectionPool::ScheduleNextProbe() {
-    _probeEvent = Simulator::Schedule(Seconds(m_varProbe->GetValue()), &ConnectionPool::ProbeNetwork, this);
+    m_nextPoissonTick = Seconds(m_varProbe->GetValue());
+    _probeEvent = Simulator::Schedule(m_nextPoissonTick, &ConnectionPool::ProbeNetwork, this);
 }
 
 void ConnectionPool::ProbeNetwork() {
     NS_LOG_FUNCTION(this);
     ScheduleNextProbe();
-    // Probing with monitoring TX queue, but send the probe only if the remained byted of the current packet is larger than trsh
+    // cout << "Clock tick at: " << Simulator::Now().GetNanoSeconds() << endl;
+    // fragmenting next packet, if needed. Otherwise, send a probe
     Ptr<PointToPointNetDevice> netDevice = DynamicCast<PointToPointNetDevice>(senderNode->GetDevice(0));
-    cout << "Clock tick at: " << Simulator::Now().GetNanoSeconds() << endl;
-    if (netDevice->IsProbeNeeded())
-    {   
+    netDevice->SetNextPoissonTick(m_nextPoissonTick);
+    if (netDevice->IsIdle())
+    {
         uint32_t socketIndex = m_uniform->GetInteger(0, sockets.size() - 1);
         DynamicCast<TcpSocketBase>(sockets[socketIndex])->SendProbe();
-        cout << "Probe sent from socket index: " << socketIndex << endl;
+        // cout << "Probe sent from socket index: " << socketIndex << endl; 
     }
     else
     {
-        cout << "No probe sent, current packet is sufficient for probing." << endl;
+        netDevice->TagCurrPacket();
+        // cout << "No probe sent, NetDevice is busy, tagging current packet." << endl;
     }
+    // netDevice->fragmentNext();
+    // // Probing with monitoring TX queue, but send the probe only if the remained byted of the current packet is larger than trsh
+    // Ptr<PointToPointNetDevice> netDevice = DynamicCast<PointToPointNetDevice>(senderNode->GetDevice(0));
+    // cout << "Clock tick at: " << Simulator::Now().GetNanoSeconds() << endl;
+    // if (netDevice->IsProbeNeeded())
+    // {   
+    //     uint32_t socketIndex = m_uniform->GetInteger(0, sockets.size() - 1);
+    //     DynamicCast<TcpSocketBase>(sockets[socketIndex])->SendProbe();
+    //     cout << "Probe sent from socket index: " << socketIndex << endl;
+    // }
+    // else
+    // {
+    //     cout << "No probe sent, current packet is sufficient for probing." << endl;
+    // }
     // // Probing with monitoring TX queue, but making sure the next observation will happen in 2 MSSs
     // Ptr<PointToPointNetDevice> netDevice = DynamicCast<PointToPointNetDevice>(senderNode->GetDevice(0));
     // // cout << "Clock tick at: " << Simulator::Now().GetNanoSeconds() << endl;

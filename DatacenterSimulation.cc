@@ -257,7 +257,7 @@ void run_single_queue_simulation(int argc, char* argv[]) {
     Config::SetDefault("ns3::RedQueueDisc::Wait", BooleanValue(false));
     Config::SetDefault("ns3::RedQueueDisc::LInterm", DoubleValue(1));
     Config::SetDefault("ns3::WorkloadApp::ProbeStartTime", TimeValue(Seconds(stof(steadyStartTime))));
-    // Config::SetDefault("ns3::PointToPointNetDevice::ProbeTrsh", UintegerValue(100));
+    Config::SetDefault("ns3::PointToPointNetDevice::ProbeTrsh", UintegerValue(56));
     if (isDifferentating) {
         Config::SetDefault("ns3::PrioQueueDisc::ErrorRate", DoubleValue(errorRate));
     }
