@@ -461,7 +461,7 @@ def analyze_single_experiment(return_dict, rate, queues_names, confidenceValue, 
     bottleneckLinkRate = convert_to_float(config.get('SingleQueue', 'bottleneckLinkRate')) * rate * 1e-3
     linkDelay = convert_to_float(config.get('Settings', 'hostToTorLinkDelay')) * 1e6
     swtichDstREDQueueDiscMaxSize = convert_to_float(config.get('Settings', 'swtichDstREDQueueDiscMaxSize'))
-    passiveProbe = bool(config.get('Settings', 'PassiveProbe'))
+    passiveProbe = False if config.get('Settings', 'PassiveProbe') == "0" else True
     num_of_paths = 1
     paths = range(num_of_paths)
     # if differentiationDelay is not None and errorRate is not None:
