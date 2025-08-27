@@ -76,7 +76,7 @@ uint64_t E2EMonitor::GetHashValue(const Ipv4Address src, const Ipv4Address dst, 
 }
 
 void E2EMonitor::Connect(const Ptr<PointToPointNetDevice> netDevice, uint32_t rxNodeId, uint32_t txNodeId) {
-    netDevice->GetQueue()->TraceConnectWithoutContext("Enqueue", MakeCallback(&E2EMonitor::Enqueue, this));
+    // netDevice->GetQueue()->TraceConnectWithoutContext("Enqueue", MakeCallback(&E2EMonitor::Enqueue, this));
     netDevice->TraceConnectWithoutContext("PromiscSniffer", MakeCallback(&E2EMonitor::Capture, this));
     netDevice->TraceConnectWithoutContext("PhyTxEnd",MakeCallback(&E2EMonitor::TxComplete, this));
     Config::ConnectWithoutContext("/NodeList/" + to_string(rxNodeId) + "/$ns3::Ipv4L3Protocol/Rx", MakeCallback(
@@ -86,7 +86,7 @@ void E2EMonitor::Connect(const Ptr<PointToPointNetDevice> netDevice, uint32_t rx
 }
 
 void E2EMonitor::Disconnect(const Ptr<PointToPointNetDevice> netDevice, uint32_t rxNodeId, uint32_t txNodeId) {
-    netDevice->GetQueue()->TraceDisconnectWithoutContext("Enqueue", MakeCallback(&E2EMonitor::Enqueue, this));
+    // netDevice->GetQueue()->TraceDisconnectWithoutContext("Enqueue", MakeCallback(&E2EMonitor::Enqueue, this));
     Config::DisconnectWithoutContext("/NodeList/" + to_string(rxNodeId) + "/$ns3::Ipv4L3Protocol/Rx", MakeCallback(
             &E2EMonitor::RecordIpv4PacketReceived, this));
     // Config::DisconnectWithoutContext("/NodeList/" + to_string(txNodeId) + "/$ns3::Ipv4L3Protocol/Tx", MakeCallback(
@@ -152,7 +152,7 @@ void E2EMonitor::Capture(Ptr< const Packet > packet) {
         packetEvent->SetSent();
         packetEvent->SetTxDequeueTime(Simulator::Now());
         // uncomment the following line to record the packets when they are sent over the link
-        // _recordedPackets[*packetKey] = packetEvent;
+        _recordedPackets[*packetKey] = packetEvent;
 
         const Ptr<Packet> &pktCopy = packet->Copy();
         PppHeader pppHeader;
@@ -378,7 +378,7 @@ void E2EMonitor::SaveMonitorRecords(const string& filename) {
 
     ofstream packetsFile;
     packetsFile.open(filename.substr(0, filename.size() - 4) + "_packets.csv");
-    packetsFile << "SourceIp,SourcePort,DestinationIp,DestinationPort,SequenceNb,Id,PayloadSize,Path,TxEnqueueTime,TxDequeueTime,SentTime,IsReceived,ReceiveTime,transmissionDelay,ECN,Tagged" << endl;
+    packetsFile << "SourceIp,SourcePort,DestinationIp,DestinationPort,SequenceNb,Id,PayloadSize,Path,SentTime,IsReceived,ReceiveTime,transmissionDelay,ECN,Tagged" << endl;
     for (auto& packetKeyEventPair: _recordedPackets) {
         PacketKey key = packetKeyEventPair.first;
         E2EMonitorEvent* event = packetKeyEventPair.second;
@@ -395,7 +395,7 @@ void E2EMonitor::SaveMonitorRecords(const string& filename) {
         packetsFile << key.GetSrcIp() << "," << key.GetSrcPort() << ",";
         packetsFile << key.GetDstIp() << "," << key.GetDstPort() << "," << key.GetSeqNb() << "," << key.GetId()  << "," << key.GetPacketSize() << ",";
         packetsFile << event->GetPath() << ",";
-        packetsFile << event->GetTxEnqueueTime().GetNanoSeconds() << "," << event->GetTxDequeueTime().GetNanoSeconds() << ",";
+        // packetsFile << event->GetTxEnqueueTime().GetNanoSeconds() << "," << event->GetTxDequeueTime().GetNanoSeconds() << ",";
         packetsFile << event->GetSentTime().GetNanoSeconds() << ",";
         packetsFile << event->IsReceived() << "," << event->GetReceivedTime().GetNanoSeconds() << "," << transmissionDelay.GetNanoSeconds() << "," << event->GetEcn() << "," << event->GetPacketKey()->IsTagged() << endl;
     }

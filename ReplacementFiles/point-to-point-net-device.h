@@ -30,6 +30,8 @@
 #include "ns3/queue-fwd.h"
 #include "ns3/traced-callback.h"
 #include "ns3/MeasurementProbeTag.h" // mahdi
+#include "ns3/ipv4-header.h" // mahdi
+#include "ns3/tcp-header.h" // mahdi
 #include <cstring>
 
 namespace ns3
@@ -205,6 +207,15 @@ class PointToPointNetDevice : public NetDevice
     void ManageNextSend(uint32_t mss);
     void ResumeTransmission();
     bool IsProbeNeeded();
+    Ptr<Packet> CheckForFragmentation(Ptr<Packet> p);
+    void FragmentPacket(Ptr<Packet> p, uint32_t firstFragmentSize);
+    void SetNextPoissonTick(Time nextTick);
+    std::vector<Ptr<Packet>> PrioPackets;
+    /**
+     * \brief Pair of a packet and an Ipv4 header.
+     */
+    typedef std::pair<Ptr<Packet>, Ipv4Header> Ipv4PayloadHeaderPair;
+    void DoFragmentation(Ptr<Packet> packet, Ipv4Header& ipv4Header, uint32_t firstFragmentSize, std::list<Ipv4PayloadHeaderPair>& listFragments);
     // ****** Mahdi Change ***** (END) ***** //
 
   protected:
@@ -457,6 +468,7 @@ class PointToPointNetDevice : public NetDevice
     Time m_lastTxStart = Seconds(0); //!< Last time a packet was started to be transmitted
     Time m_remainedHaltTime = Seconds(0); //!< Remaining halt time for transmission
     Time m_haltStartTime = Seconds(0); //!< Start time of the halt period
+    Time m_nextPoissonTick = Seconds(0); //!< Next Poisson observation time
     bool m_isHalted = false; //!< Whether transmission is halted
     bool m_tagNext = false; //!< Whether to tag the next packet
     uint32_t m_probeThreshold = 100; //!< The threshold for probing the channel

@@ -39,6 +39,7 @@ private:
     Ptr<ExponentialRandomVariable> m_varProbe;
     Ptr<Socket> findIdleSocket();
     EventId _probeEvent;
+    Time m_nextPoissonTick;
     double _probeInterval;
     void ScheduleNextProbe();
 };

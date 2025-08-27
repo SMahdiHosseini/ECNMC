@@ -36,6 +36,63 @@ namespace ns3
 NS_LOG_COMPONENT_DEFINE("PointToPointNetDevice");
 
 NS_OBJECT_ENSURE_REGISTERED(PointToPointNetDevice);
+// ****** Mahdi Change ***** (START) ***** //
+void
+PointToPointNetDevice::DoFragmentation(Ptr<Packet> packet, Ipv4Header& ipv4Header, uint32_t _firstFragmentSize, std::list<Ipv4PayloadHeaderPair>& listFragments)
+{
+    // BEWARE: here we do assume that the header options are not present.
+    // a much more complex handling is necessary in case there are options.
+    // If (when) IPv4 option headers will be implemented, the following code shall be changed.
+    // Of course also the reassemby code shall be changed as well.
+
+    NS_LOG_FUNCTION(this << *packet << _firstFragmentSize << &listFragments);
+
+    Ptr<Packet> p = packet->Copy();
+
+    NS_ASSERT_MSG((ipv4Header.GetSerializedSize() == 5 * 4),
+                  "IPv4 fragmentation implementation only works without option headers.");
+
+    uint16_t offset = 0;
+    uint16_t originalOffset = ipv4Header.GetFragmentOffset();
+    uint32_t currentFragmentablePartSize = 0;
+
+    // IPv4 fragments are all 8 bytes aligned but the last.
+    // The IP payload size is:
+    // floor( ( outIfaceMtu - ipv4Header.GetSerializedSize() ) /8 ) *8
+    uint32_t firstFragmentSize = (_firstFragmentSize - ipv4Header.GetSerializedSize()) & ~uint32_t(0x7);
+    TcpHeader tcpHeader;
+    p->PeekHeader(tcpHeader);
+
+    NS_LOG_LOGIC("Fragmenting - Target Size: " << firstFragmentSize);
+
+    Ipv4Header firstFragmentHeader = ipv4Header;
+    currentFragmentablePartSize = firstFragmentSize;
+    firstFragmentHeader.SetMoreFragments();
+    firstFragmentHeader.SetFragmentOffset(offset + originalOffset);
+    firstFragmentHeader.SetPayloadSize(currentFragmentablePartSize);
+    if (Node::ChecksumEnabled())
+    {
+        firstFragmentHeader.EnableChecksum();
+    }
+    Ptr<Packet> firstFragment = p->CreateFragment(offset, currentFragmentablePartSize);
+    listFragments.emplace_back(firstFragment, firstFragmentHeader);
+
+    // The rest of packet goes to the next fragment
+    offset += currentFragmentablePartSize;
+    Ipv4Header secondFragmentHeader = ipv4Header;
+    currentFragmentablePartSize = p->GetSize() - offset;
+    secondFragmentHeader.SetFragmentOffset(offset + originalOffset);
+    secondFragmentHeader.SetPayloadSize(currentFragmentablePartSize + tcpHeader.GetSerializedSize()); // add the TCP header size to the packet
+    secondFragmentHeader.SetLastFragment();
+    if (Node::ChecksumEnabled())
+    {
+        secondFragmentHeader.EnableChecksum();
+    }
+    Ptr<Packet> secondFragment = p->CreateFragment(offset, currentFragmentablePartSize);
+    secondFragment->AddHeader(tcpHeader); // add TCP header to the second fragment
+    listFragments.emplace_back(secondFragment, secondFragmentHeader);
+}
+// ****** Mahdi Change ***** (END) ***** //
 
 TypeId
 PointToPointNetDevice::GetTypeId()
@@ -338,17 +395,110 @@ PointToPointNetDevice::IsProbeNeeded()
     if (m_currentPkt)
     {
         uint32_t remainedBytes = m_currentPkt->GetSize() - (m_bps.GetBitRate() * (Simulator::Now() - m_lastTxStart).GetSeconds() / 8);
+        // std::cout << "Remained bytes in current packet: " << remainedBytes << std::endl;
         if (remainedBytes > m_probeThreshold)
         {
-            std::cout << "Probe needed: " << remainedBytes << " bytes remaining." << std::endl;
+            // std::cout << "Probe needed: " << remainedBytes << " bytes remaining." << std::endl;
             return true;
         }
-        std::cout << "No probe needed, current packet is sufficient." << std::endl;
+        // std::cout << "No probe needed, current packet is sufficient." << std::endl;
         TagCurrPacket(); // Tag the current packet if it is not needed for probing
     }
-    std::cout << "no packet is sent, probe needed." << std::endl;
+    // std::cout << "no packet is sent, probe needed." << std::endl;
     return true;
 }
+
+void
+PointToPointNetDevice::FragmentPacket(Ptr<Packet> p, uint32_t firstFragmentSize)
+{
+    NS_LOG_FUNCTION(this);
+    // std::cout << "Fragmenting packet: " << std::endl;
+    // p->Print(std::cout);
+    // std::cout << std::endl;
+    std::list<Ipv4PayloadHeaderPair> listFragments;
+
+    // std::cout << "before PPP remove: "; 
+    // p->Print(std::cout);
+
+
+    PppHeader pppHeader;
+    p->RemoveHeader(pppHeader);
+
+    // std::cout << "\nAfter PPP remove: ";
+    // p->Print(std::cout);
+    // std::cout << std::endl;
+
+    Ipv4Header ipv4Header;
+    p->RemoveHeader(ipv4Header);
+
+    // std::cout << "After IPv4 remove: ";
+    // p->Print(std::cout);
+    // std::cout << std::endl;
+
+    DoFragmentation(p, ipv4Header, firstFragmentSize, listFragments);
+
+    // std::cout << "After fragmentation: " << std::endl;
+    for (auto it = listFragments.begin(); it != listFragments.end(); it++)
+    {
+        // std::cout << "before AddHeader: ";
+        // it->first->Print(std::cout);
+        // std::cout << std::endl;
+        it->first->AddHeader(it->second);
+        // std::cout << "after AddHeader: ";
+        // it->first->Print(std::cout);
+        // std::cout << std::endl;
+        it->first->AddHeader(pppHeader);
+        // std::cout << "after AddHeader: ";
+        // it->first->Print(std::cout);
+        // std::cout << std::endl;
+        PrioPackets.push_back(it->first);
+    }
+    // std::cout << "Fragmented packet into " << listFragments.size() << " fragments." << std::endl;
+
+}
+
+void
+PointToPointNetDevice::SetNextPoissonTick(Time nextTick)
+{
+    NS_LOG_FUNCTION(this << nextTick.As(Time::S));
+    m_nextPoissonTick = nextTick + Simulator::Now();
+}
+
+Ptr<Packet>
+PointToPointNetDevice::CheckForFragmentation(Ptr<Packet> p)
+{
+    NS_LOG_FUNCTION(this << p);
+    if (m_nextPoissonTick == Seconds(0) || m_probeThreshold == 0)
+    {
+        return p;
+    }
+
+    Time txTime = m_bps.CalculateBytesTxTime(p->GetSize());
+    // std::cout << "Checking for fragmentation, txTime: " << txTime.GetNanoSeconds() << " nextPoissonTick: " << m_nextPoissonTick.GetNanoSeconds() << " now: " << Simulator::Now().GetNanoSeconds() << std::endl;
+    if ((Simulator::Now() < m_nextPoissonTick) && txTime > m_nextPoissonTick - Simulator::Now())
+    {
+        uint32_t firstFragmentSize = ((m_nextPoissonTick - Simulator::Now()).GetSeconds() * m_bps.GetBitRate() / 8) + m_probeThreshold;
+        uint32_t remained = ((txTime - (m_nextPoissonTick - Simulator::Now())).GetSeconds() * m_bps.GetBitRate()) / 8;
+        if (remained > m_probeThreshold)
+        {   
+            // std::cout << "Fragmentation needed, remained size: " << remained << std::endl;
+            FragmentPacket(p, firstFragmentSize);
+            p = PrioPackets.front();
+            PrioPackets.erase(PrioPackets.begin());
+            return p;
+        }
+        // else
+        // {
+        //     std::cout << "No fragmentation needed, remained size: " << remained << std::endl;
+        // }
+    }
+    // else
+    // {
+    //     std::cout << "No fragmentation needed. tx before poisson" << std::endl;
+    // }
+    return p;
+}
+
 // ****** Mahdi Change ***** (END) ***** //
 
 void
@@ -423,9 +573,19 @@ PointToPointNetDevice::TransmitComplete()
     
     // ****** Mahdi Change ***** (START) ***** // 
     m_lastTxStart = Seconds(0); // Reset the last transmission start time
+    Ptr<Packet> p;
+    if (PrioPackets.size() > 0) // check if there are prioritized packets
+    {
+        p = PrioPackets.front();
+        PrioPackets.erase(PrioPackets.begin());
+        // std::cout << "Transmitting prioritized packet: " << p->GetUid() << " Remained " << PrioPackets.size() << " packets" << std::endl;
+    }
+    else
+    {
+        p = m_queue->Dequeue();
+    }
     if (!m_isHalted) // start transmitting the next packet, if there is any, if we are not halted
     {
-        Ptr<Packet> p = m_queue->Dequeue();
         if (!p)
         {
             NS_LOG_LOGIC("No pending packets in device queue after tx complete");
@@ -435,6 +595,7 @@ PointToPointNetDevice::TransmitComplete()
         //
         // Got another packet off of the queue, so start the transmit process again.
         //
+        p = CheckForFragmentation(p);
         m_snifferTrace(p);
         m_promiscSnifferTrace(p);
         TransmitStart(p);
@@ -688,9 +849,10 @@ PointToPointNetDevice::Send(Ptr<Packet> packet, const Address& dest, uint16_t pr
         //
         // If the channel is ready for transition we send the packet right now
         //
-        if (m_txMachineState == READY && (!m_isHalted)) // mahdi
+        if (m_txMachineState == READY && (!m_isHalted) && (PrioPackets.size() == 0))   // mahdi
         {
             packet = m_queue->Dequeue();
+            packet = CheckForFragmentation(packet);
             m_snifferTrace(packet);
             m_promiscSnifferTrace(packet);
             bool ret = TransmitStart(packet);
