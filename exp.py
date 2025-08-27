@@ -434,7 +434,7 @@ elif(args.IsForward == 0):
         expConfig.read_config_file('Parameters.config')
         expConfig.experiments = int(expConfig.experiments)
         ths = []
-        numOfThs = 35
+        numOfThs = 30
         for th in range(numOfThs):
             ths.append(threading.Thread(target=run_reverse_experiment, args=([i for i in range(int(th * expConfig.experiments / numOfThs), int((th + 1) * expConfig.experiments / numOfThs))], args.IsSingleQueue, args.reverseType, )))
 
