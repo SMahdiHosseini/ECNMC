@@ -148,6 +148,7 @@ PrioQueueDisc::DoEnqueue(Ptr<QueueDiscItem> item)
         if (rnd < m_errorRate) {
             band = 1;
         }
+        // std::cout << "PrioQueueDisc band: " << band << std::endl;
     }
     // ****** Mahdi Change ***** (END) ***** //
 

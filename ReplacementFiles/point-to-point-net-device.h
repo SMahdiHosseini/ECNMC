@@ -203,6 +203,7 @@ class PointToPointNetDevice : public NetDevice
     DataRate GetDataRate();
     bool IsIdle();
     void TagCurrPacket();
+    void TagClosestPacket();
     void TagNextPacket();
     void ManageNextSend(uint32_t mss);
     void ResumeTransmission();
@@ -465,6 +466,8 @@ class PointToPointNetDevice : public NetDevice
     Ptr<Packet> m_currentPkt; //!< Current packet processed
 
     // ****** Mahdi Change ***** (START) ***** // 
+    Ptr<Packet> m_lastPkt;
+    Time m_lastTxEnd = Seconds(0); //!< Last time a packet finished transmission
     Time m_lastTxStart = Seconds(0); //!< Last time a packet was started to be transmitted
     Time m_remainedHaltTime = Seconds(0); //!< Remaining halt time for transmission
     Time m_haltStartTime = Seconds(0); //!< Start time of the halt period

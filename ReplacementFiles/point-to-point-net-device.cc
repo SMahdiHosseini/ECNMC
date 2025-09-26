@@ -324,6 +324,60 @@ PointToPointNetDevice::TagCurrPacket()
 }
 
 void
+PointToPointNetDevice::TagClosestPacket()
+{
+    NS_LOG_FUNCTION(this);
+    NS_ASSERT_MSG(m_currentPkt, "PointToPointNetDevice::TagCurrPacket(): m_currentPkt zero");
+    NS_ASSERT_MSG(m_lastTxStart != Seconds(0), "PointToPointNetDevice::TagCurrPacket(): m_lastTxStart zero");
+
+    MeasurementProbeTagWithBits tag;
+    Time fromTheLast = Simulator::Now() - m_lastTxEnd;
+    Time toTheNext = m_bps.CalculateBytesTxTime(m_currentPkt->GetSize()) - (Simulator::Now() - m_lastTxStart);
+    // std::cout << "fromTheLast: " << fromTheLast.GetNanoSeconds() << ", toTheNext: " << toTheNext.GetNanoSeconds() << std::endl;
+    if (fromTheLast > toTheNext)
+    {
+        // std::cout << "Tagging current packet: ";
+        // m_currentPkt->Print(std::cout);
+        // std::cout << std::endl;
+        if (m_currentPkt->PeekPacketTag(tag))
+        {
+            MeasurementProbeTagWithBits newTag = tag; // Copy existing tag
+            newTag.SetBitFlag(1);
+            m_currentPkt->RemovePacketTag(tag); // Remove old tag
+            // Add the new tag with updated bits
+            m_currentPkt->AddPacketTag(newTag);
+        }
+        else
+        {
+            tag.SetFlag(true);
+            tag.SetBitFlag(1);
+            m_currentPkt->AddPacketTag(tag);
+        }
+    }
+    else
+    {
+        // std::cout << "Tagging last packet: ";
+        // m_lastPkt->Print(std::cout);
+        // std::cout << std::endl;
+        if (m_lastPkt->PeekPacketTag(tag))
+        {
+            MeasurementProbeTagWithBits newTag = tag; // Copy existing tag
+            newTag.SetBitFlag(1);
+            m_lastPkt->RemovePacketTag(tag); // Remove old tag
+            // Add the new tag with updated bits
+            m_lastPkt->AddPacketTag(newTag);
+        }
+        else
+        {
+            tag.SetFlag(true);
+            tag.SetBitFlag(1);
+            m_lastPkt->AddPacketTag(tag);
+        }
+        // overriwting the tag
+        m_phyTxEndTrace(m_lastPkt);
+    }
+}
+void
 PointToPointNetDevice::ManageNextSend(uint32_t mss)
 {
     if (!m_isHalted) 
@@ -567,6 +621,11 @@ PointToPointNetDevice::TransmitComplete()
     m_txMachineState = READY;
 
     NS_ASSERT_MSG(m_currentPkt, "PointToPointNetDevice::TransmitComplete(): m_currentPkt zero");
+
+    // ****** Mahdi Change ***** (START) ***** //
+    m_lastPkt = m_currentPkt;
+    m_lastTxEnd = Simulator::Now();
+    // ****** Mahdi Change ***** (END) ***** //
 
     m_phyTxEndTrace(m_currentPkt);
     m_currentPkt = nullptr;
