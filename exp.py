@@ -200,7 +200,7 @@ def run_forward_experiment(exp, singleQueue=False):
                             '--dirName=' + 'forward '
                         )
                     output_file = '{}/scratch/ECNMC/Results/results_forward/result_{}.txt'.format(get_ns3_path(), i)
-                    run_ns3_with_timeout(cmd, output_file, timeout_seconds=600, initial_seed=i + 1)
+                    run_ns3_with_timeout(cmd, output_file, timeout_seconds=900, initial_seed=i + 1)
                     os.system('mkdir -p {}/scratch/Results_forward/{}/{}/{}/{}'.format(get_ns3_path(), traffic, rate, load, i))
                     os.system('mv {}/scratch/ECNMC/Results/results_forward/{}/*.csv {}/scratch/Results_forward/{}/{}/{}/{}'.format(get_ns3_path(), i + 1, get_ns3_path(), traffic, rate, load, i))
                     # os.system('mv {}/scratch/ECNMC/Results/*_cwnd.csv {}/scratch/Results_forward/{}/{}'.format(get_ns3_path(), get_ns3_path(), rate, i))
@@ -411,7 +411,7 @@ args.reverseType = ReverseType(int(args.reverseType))
 # rebuild_project()
 if (args.IsForward == 1):
     if (args.IsTest):
-        run_forward_experiment([0], args.IsSingleQueue)
+        run_forward_experiment([0 + 90], args.IsSingleQueue)
     else:
         expConfig = ExperimentConfig()
         expConfig.read_config_file('Parameters.config')
@@ -419,7 +419,7 @@ if (args.IsForward == 1):
         ths = []
         numOfThs = 30
         for th in range(numOfThs):
-            ths.append(threading.Thread(target=run_forward_experiment, args=([i for i in range(int(th * expConfig.experiments / numOfThs), int((th + 1) * expConfig.experiments / numOfThs))], args.IsSingleQueue, )))
+            ths.append(threading.Thread(target=run_forward_experiment, args=([i + 90 for i in range(int(th * expConfig.experiments / numOfThs), int((th + 1) * expConfig.experiments / numOfThs))], args.IsSingleQueue, )))
 
         for th in ths:
             th.start()
