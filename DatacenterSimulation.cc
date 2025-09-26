@@ -266,8 +266,7 @@ void run_single_queue_simulation(int argc, char* argv[]) {
     // Config::SetDefault("ns3::RedQueueDisc::MinTh", DoubleValue(minTh));
     // Config::SetDefault("ns3::RedQueueDisc::MaxTh", DoubleValue(maxTh));
 
-
-    int nSrcHosts = 2;
+    int nSrcHosts = 6;
     if (activeProbe) {
         nSrcHosts += 1; // one more host for the probe traffic
     }
@@ -301,9 +300,12 @@ void run_single_queue_simulation(int argc, char* argv[]) {
     p2pCtHostToSwitch.SetChannelAttribute("Delay", StringValue(hostToSwitchLinkDelay));
     p2pCtHostToSwitch.SetQueue("ns3::DropTailQueue<Packet>", "MaxSize", QueueSizeValue(QueueSize(senderTxMaxSize)));
 
-    ctHostsToSwitchNetDevices.push_back(p2pCtHostToSwitch.Install(srcHosts.Get(1), switches.Get(0)));
-    DynamicCast<PointToPointNetDevice>(ctHostsToSwitchNetDevices[0].Get(1))->GetQueue()->SetMaxSize(QueueSize(switchTXMaxSize));    
-    
+    // ctHostsToSwitchNetDevices.push_back(p2pCtHostToSwitch.Install(srcHosts.Get(1), switches.Get(0)));
+    // DynamicCast<PointToPointNetDevice>(ctHostsToSwitchNetDevices[0].Get(1))->GetQueue()->SetMaxSize(QueueSize(switchTXMaxSize));
+    for (int i = 1; i < nSrcHosts; i++) {
+        ctHostsToSwitchNetDevices.push_back(p2pCtHostToSwitch.Install(srcHosts.Get(i), switches.Get(0)));
+        DynamicCast<PointToPointNetDevice>(ctHostsToSwitchNetDevices[i - 1].Get(1))->GetQueue()->SetMaxSize(QueueSize(switchTXMaxSize));
+    }
     // connecting the probe host to the ToR switch
     PointToPointHelper p2pProbeHostToSwitch;
     NetDeviceContainer probeHostToSwitchNetDevices;
@@ -368,7 +370,10 @@ void run_single_queue_simulation(int argc, char* argv[]) {
                                   "MinTh", DoubleValue(minTh * QueueSize(switchSrcREDQueueDiscMaxSize).GetValue()),
                                   "MaxTh", DoubleValue(maxTh * QueueSize(switchSrcREDQueueDiscMaxSize).GetValue()));
     vector<QueueDiscContainer> switchToCtHostQueueDiscs;
-    switchToCtHostQueueDiscs.push_back(switchToCtHostTCH.Install(ctHostsToSwitchNetDevices[0].Get(1)));
+    // switchToCtHostQueueDiscs.push_back(switchToCtHostTCH.Install(ctHostsToSwitchNetDevices[0].Get(1)));
+    for (int i = 1; i < nSrcHosts; i++) {
+        switchToCtHostQueueDiscs.push_back(switchToCtHostTCH.Install(ctHostsToSwitchNetDevices[i - 1].Get(1)));
+    }
     // switchToCtHostQueueDiscs.push_back(switchToCtHostTCH.Install(ctHostsToSwitchNetDevices[0]));
 
     // Install RED Queue Discs on the switches to dst hosts links
@@ -410,9 +415,14 @@ void run_single_queue_simulation(int argc, char* argv[]) {
     // set the ips between the cross traffic hosts and the switch
     vector<Ipv4InterfaceContainer> ctHostsToSwitchIps;
     ctHostsToSwitchIps.reserve(1);
-    address.SetBase(("10." + to_string(++nbSubnet) + ".1.0").c_str(), "255.255.255.0");
-    ctHostsToSwitchIps.push_back(address.Assign(ctHostsToSwitchNetDevices[0]));
-    address.NewNetwork();
+    // address.SetBase(("10." + to_string(++nbSubnet) + ".1.0").c_str(), "255.255.255.0");
+    // ctHostsToSwitchIps.push_back(address.Assign(ctHostsToSwitchNetDevices[0]));
+    // address.NewNetwork();
+    for (int i = 1; i < nSrcHosts; i++) {
+        address.SetBase(("10." + to_string(++nbSubnet) + ".1.0").c_str(), "255.255.255.0");
+        ctHostsToSwitchIps.push_back(address.Assign(ctHostsToSwitchNetDevices[i - 1]));
+        address.NewNetwork();
+    }
 
     // set the ips between the switche and the dst hosts
     address.SetBase(("10." + to_string(++nbSubnet) + ".1.0").c_str(), "255.255.255.0");
@@ -454,8 +464,13 @@ void run_single_queue_simulation(int argc, char* argv[]) {
     auto* dcTrafficGenerator = new DCWorkloadGenerator(srcHosts.Get(0), receivers, hostTrafficRate, poolSize, "scratch/ECNMC/DCWorkloads/" + traffic, "ns3::TcpSocketFactory", Time(Seconds(0)), stopTime - Seconds(0.002));
     dcTrafficGenerator->GenrateTraffic(pctPacedBack, passiveProbe, Time(probeInterval));
 
-    auto* dcTrafficGeneratorCross = new DCWorkloadGenerator(srcHosts.Get(1), receivers, ctTrafficRate, poolSize, "scratch/ECNMC/DCWorkloads/" + traffic, "ns3::TcpSocketFactory", Time(Seconds(0)), stopTime - Seconds(0.002));
-    dcTrafficGeneratorCross->GenrateTraffic(pctPacedBack, false, Time(probeInterval));
+    // auto* dcTrafficGeneratorCross = new DCWorkloadGenerator(srcHosts.Get(1), receivers, ctTrafficRate, poolSize, "scratch/ECNMC/DCWorkloads/" + traffic, "ns3::TcpSocketFactory", Time(Seconds(0)), stopTime - Seconds(0.002));
+    // dcTrafficGeneratorCross->GenrateTraffic(pctPacedBack, false, Time(probeInterval));
+    for (int i = 1; i < nSrcHosts; i++) {
+        auto* dcTrafficGeneratorCross = new DCWorkloadGenerator(srcHosts.Get(i), receivers, ctTrafficRate, poolSize, "scratch/ECNMC/DCWorkloads/" + traffic, "ns3::TcpSocketFactory", Time(Seconds(0)), stopTime - Seconds(0.002));
+        dcTrafficGeneratorCross->GenrateTraffic(pctPacedBack, false, Time(probeInterval));
+    }
+
 
     // Install Probe application
     if (activeProbe) {
@@ -539,7 +554,10 @@ void run_single_queue_simulation(int argc, char* argv[]) {
 
     cout << "Hosts and Switches IP addresses" << endl;
     cout << "Src: " << 0 << " Id:" << srcHosts.Get(0)->GetId() << " IP: " << srcHostsToSwitchIps[0].GetAddress(0) << endl;
-    cout << "Src CT: " << 1 << " Id:" << srcHosts.Get(1)->GetId() << " IP: " << ctHostsToSwitchIps[0].GetAddress(0) << endl;
+    cout << "Src CTs: " << endl;
+    for (int i = 1; i < nSrcHosts; i++) {
+        cout << "Src CT: " << i << " Id:" << srcHosts.Get(i)->GetId() << " IP: " << ctHostsToSwitchIps[i - 1].GetAddress(0) << endl;
+    }
     if (activeProbe) {
         cout << "Probe: " << 2 << " Id:" << srcHosts.Get(2)->GetId() << " IP: " << probeHostToSwitchIps.GetAddress(0) << endl;
     }
