@@ -310,7 +310,7 @@ def calculate_offline_E2E_workload(full_df, df_res, steadyStart, steadyEnd):
     full_df_ = None
     return df_res
 
-def calculate_offline_E2E_lossRates(__ns3_path, full_df, df_res, checkColumn, txDelay, linksRate, swtichDstREDQueueDiscMaxSize, df_name, passiveProbe):
+def calculate_offline_E2E_lossRates(__ns3_path, full_df, df_res, checkColumn, txDelay, linksRate, swtichDstREDQueueDiscMaxSize, df_name, passiveProbe, samplingMethod):
     df_res['successProb'] = {}
     for var in ['event', 'probability']:
         for method in ['rightCont_timeAvg', 'leftCont_timeAvg', 'linearInterp_timeAvg', 'poisson_eventAvg', 'eventAvg']:
@@ -350,7 +350,7 @@ def calculate_offline_E2E_lossRates(__ns3_path, full_df, df_res, checkColumn, tx
                 print("Sample times are 'NOT' exponentially distributed.")
                 samples_times = []
         else:
-            samples_times = find_samples_path(time, txDelay, df_res['RTT'][path], df_name)
+            samples_times = find_samples_path(time, txDelay, df_res['RTT'][path], df_name, samplingMethod)
         df_res['sampleSize']['successProb'][path] = len(samples_times)
         samples_values = df[df['SentTime'].isin(samples_times)]['nonDropEvent'].values
         if df_res['sampleSize']['successProb'][path] == 0:
@@ -510,10 +510,86 @@ def find_samples_path_new(time, txDelay, maxLength):
     print("Failed to find exponentially distributed interarrival times after 20 tries.")
     return []
 
+# def calculate_Poisson_bias
+# f = lambda rate: 1 - (np.sum(-np.expm1(-rate * interarrivals)) / np.sum(rate * interarrivals))
+def distanceAwareSampling(time, rate):
+    interarrival = np.diff(time)
+    probabilities = -np.expm1(-interarrival * rate)
+    tries = 20
+    while tries > 0:
+        selected_mask = bernoulli.rvs(probabilities, size=len(probabilities))
+        selected_times = time[1:][selected_mask == 1]
+        # check if the interarrival of selected times is exponential
+        if len(selected_times) > 1:
+            anderson_statistic, anderson_critical_values, _ = anderson(np.diff(selected_times), 'expon')
+            if anderson_statistic <= anderson_critical_values[2]:
+                return selected_times
+        tries -= 1
+    print("Failed to find exponentially distributed interarrival times after 20 tries.")
+    return []
 
-def find_samples_path(time, txDelay, avg_interarrival_=None, df_name=None):
+def poissonLikeSampling(time, rate, trsh):
+    tries = 1
+    interarrival = np.diff(time)
+    probabilities = -np.expm1(-interarrival * rate)
+    selected_mask = bernoulli.rvs(probabilities, size=len(probabilities))
+    selected_times = time[1:][selected_mask == 1]
+    print("Initial probabilities and interarrivals:")
+    print(np.mean(probabilities), np.mean(interarrival), len(selected_times), len(time))
+    
+    while tries > 0:
+        samples = [time[0]]
+        selected_mask = []
+        probabilities = []
+        interarrival = []
+        for t in time[1:]:
+            probabilities.append(-np.expm1(-rate * (t - samples[-1])))
+            interarrival.append(t - samples[-1])
+            selected_mask.append(bernoulli.rvs(probabilities[-1], size=1)[0])
+            if selected_mask[-1] == 1 or t - samples[-1] > trsh:
+                samples.append(t)
+        print("Initial probabilities and interarrivals 22:")
+        print(np.mean(probabilities), np.mean(interarrival), len(samples), len(time))
+        samples = samples[1:]  # remove the first element which is always selected
+        if len(samples) > 1:
+            anderson_statistic, anderson_critical_values, _ = anderson(np.diff(samples), 'expon')
+            if anderson_statistic <= anderson_critical_values[2]:
+                return np.array(samples)
+        tries -= 1
+    print("Failed to find exponentially distributed interarrival times after 20 tries.")
+    return []
+
+def randomSampling(time):
+    tries = 20
+    while tries > 0:
+        selected = np.random.choice(time, size=int(0.05 * len(time)), replace=False)
+        selected = np.sort(selected)
+        anderson_statistic, anderson_critical_values, _ = anderson(np.diff(selected), 'expon')
+        if anderson_statistic <= anderson_critical_values[2]:
+            return selected
+        tries -= 1
+    print("Failed to find exponentially distributed interarrival times after 20 tries.")
+    return []
+
+def find_samples_path(time, txDelay, avg_interarrival_=None, df_name=None, samplingMethod='Orig'):
     if "P0D0" in df_name:
         return time
+    # check the 99 percentile of the interarrival times
+    # interarrival_99 = np.percentile(np.diff(time), 99)
+    # # print("99 percentile of interarrival times:", interarrival_99, "txDelay:", txDelay * 1.05, "we use DA:", interarrival_99 < txDelay * 1.05)
+    # if interarrival_99 < txDelay * 1.05:
+    #     return distanceAwareSampling(time, 5e-7)
+    interarrival_99 = np.percentile(np.diff(time), 99)
+    if interarrival_99 > txDelay * 1.05:
+        return distanceAwareSampling(time, 3e-7)
+    
+    # if samplingMethod == 'DA':
+    #     # rate = find_sampling_rate(time, 0.0075)
+    #     sampling_rate = 0.1 / np.quantile(np.diff(time), 0.99)
+    #     return distanceAwareSampling(time, sampling_rate)
+
+    # return poissonLikeSampling(time, 3e-10, 3e6)
+    # return randomSampling(time)
     # return find_samples_path_new(time, txDelay, 480*1e3)  
     # Step 1: Compute interarrival times
     interarrival = np.diff(time)
@@ -586,6 +662,7 @@ def find_samples_path(time, txDelay, avg_interarrival_=None, df_name=None):
                     break
             tries -= 1
             # print("Tries left:", tries, "with brnval:", brnval)
+        # print("after brnval:", brnval, "max_sample_size:", max_sample_size)
     if max_sample_size:
         # print("Max sample size found:", max_sample_size, len(max_sample_size_times))
         return max_sample_size_times
@@ -651,7 +728,7 @@ def calculate_offline_markingProbMean_at_receiver_poisson(df, swtichDstREDQueueD
         markingProbs.append(1 - (df_sample['ECN'].sum() / len(df_sample)))
     return np.mean(markingProbs)
 
-def calculate_offline_E2E_markingProb(full_df, df_res, checkColumn, txDelay, swtichDstREDQueueDiscMaxSize, linkRate, __ns3_path, tsh, df_name, passiveProbe):
+def calculate_offline_E2E_markingProb(full_df, df_res, checkColumn, txDelay, swtichDstREDQueueDiscMaxSize, linkRate, __ns3_path, tsh, df_name, passiveProbe, samplingMethod):
     # timeAvg_methods = ['rightCont_timeAvg', 'leftCont_timeAvg', 'linearInterp_timeAvg']
     # nonMarkingProb_timeAvg_vars = ['event_currentProb', 'event_lastProb']
     df_res['nonMarkingProb'] = {}
@@ -688,7 +765,7 @@ def calculate_offline_E2E_markingProb(full_df, df_res, checkColumn, txDelay, swt
                 print("Sample times are 'NOT' exponentially distributed.")
                 samples_times = []
         else:
-            samples_times = find_samples_path(time, txDelay, df_res['RTT'][path], df_name)
+            samples_times = find_samples_path(time, txDelay, df_res['RTT'][path], df_name, samplingMethod)
         df_res['sampleSize']['nonMarkingProb'][path] = len(samples_times)
         samples_values = df[df['SentTime'].isin(samples_times)]['nonMarking'].values
         if df_res['sampleSize']['nonMarkingProb'][path] == 0:
@@ -701,7 +778,7 @@ def calculate_offline_E2E_markingProb(full_df, df_res, checkColumn, txDelay, swt
     full_df_ = None
     return df_res
 
-def calculate_offline_E2E_delays(full_df, removeDrops, checkColumn, txDelay, df_res, df_name, passiveProbe):
+def calculate_offline_E2E_delays(full_df, removeDrops, checkColumn, txDelay, df_res, df_name, passiveProbe, samplingMethod):
     df_res['delay'] = {}
     for var in ['event']:
         for method in ['rightCont_timeAvg', 'leftCont_timeAvg', 'linearInterp_timeAvg', 'poisson_eventAvg', 'eventAvg']:
@@ -711,6 +788,7 @@ def calculate_offline_E2E_delays(full_df, removeDrops, checkColumn, txDelay, df_
     if removeDrops:
         full_df_ = full_df_[full_df_[checkColumn] == 1]
     df_res['sampleSize']['delay'] = {}
+    # df_res['biad']['delay'] = {}
     for path in full_df_['Path'].unique():
         df = full_df_[full_df_['Path'] == path]
         df = df.sort_values(by='SentTime').reset_index(drop=True)
@@ -736,7 +814,8 @@ def calculate_offline_E2E_delays(full_df, removeDrops, checkColumn, txDelay, df_
                 print("Sample times are 'NOT' exponentially distributed.")
                 samples_times = []
         else:
-            samples_times = find_samples_path(time, txDelay, df_res['RTT'][path], df_name)
+            # df_res['bias']['delay'][path] = 
+            samples_times = find_samples_path(time, txDelay, df_res['RTT'][path], df_name, samplingMethod)
 
         # print("Calculating delay for path:", path, "with", len(time), "packets. is done! ")
         df_res['sampleSize']['delay'][path] = len(samples_times)
@@ -780,6 +859,7 @@ def addExtraDelay(full_df, differentiationDelay, errorRate):
 def addRemoveTransmission_data(full_df, linkDelays, linksRates):
     full_df['Delay'] = abs(full_df['ReceiveTime'] - full_df['SentTime'] - full_df['transmissionDelay'])
     # full_df['Delay'] = abs(full_df['ReceiveTime'] - full_df['TxEnqueueTime'] - full_df['transmissionDelay'])
+    # full_df['Time'] = full_df['SentTime']
     full_df['SentTime'] = full_df['SentTime'] + linkDelays[0] + (full_df['PayloadSize'] * 8) / linksRates[0]
     # full_df['SentTime'] = full_df['TxEnqueueTime']
     return full_df
@@ -881,33 +961,113 @@ def manipulate_for_delay_Q_m(full_df, linkRate):
     linearInterp_time_average = linear_sum / (time[-1] - time[0])
     return full_df, linearInterp_time_average  
 
-def plot_queuingDelay_distribution(__ns3_path, results_folder, rate, experiment, segment, steadyStart, steadyEnd, paths, linkRate, onlyMeasurement):
+def plot_queuingDelay_distribution(__ns3_path, results_folder, rate, experiment, segment, steadyStart, steadyEnd, paths, linksRates, linkDelays, ks_dict):
     file_paths = glob.glob('{}/scratch/{}/{}/{}/*_{}.csv'.format(__ns3_path, results_folder, rate, experiment, segment))
     dfs = {}
     for file_path in file_paths:
-        full_df = pd.read_csv(file_path)
-        full_df = prune_data(full_df, 'Time', steadyStart, steadyEnd)
-        if onlyMeasurement:
-            full_df = full_df[full_df['Label'].str.contains('10.1.1.1', na=False)]
-        full_df = full_df.sort_values(by=['Time', 'TotalQueueSize'], ascending=[True, True]).reset_index(drop=True)
-        full_df['Delay'] = ((full_df['TotalQueueSize'] * 8) / linkRate).astype(int)
-        # plot the distribution of the queuing delay
+        file_M = "/".join(file_path.split('/')[:-1] + ['A0D0_EndToEnd_packets.csv'])
+        file_switch = "/".join(file_path.split('/')[:-1] + ['SD0_PoissonSampler_events.csv'])
+        # file_switch = "/".join(file_path.split('/')[:-1] + ['SD0_PoissonSampler_queueSize.csv'])
+        full_df_switch = pd.read_csv(file_switch)
+        # full_df_switch = full_df_switch[full_df_switch['Action'] == 'E'].copy().reset_index(drop=True)
+        full_df_switch = full_df_switch.sort_values(by=['Time', 'TotalQueueSize'], ascending=[True, True]).reset_index(drop=True)
+        full_df_switch['Delay'] = ((full_df_switch['TotalQueueSize'] * 8) / linksRates[1]).astype(int)
+
+        full_df_M = pd.read_csv(file_M)
+        full_df_M = addRemoveTransmission_data(full_df_M, linkDelays, linksRates)
+        full_df_M = prune_data(full_df_M, 'SentTime', steadyStart, steadyEnd)
+        full_df_M = full_df_M.sort_values(by=['SentTime'], ascending=[True]).reset_index(drop=True)
+        
+        time = full_df_M['SentTime'].values
+        # full_df_M = full_df_switch[full_df_switch['Label'].str.contains('10.1.1.1', na=False)]
+        # time = full_df_M['Time'].values
+
+        samples_times = find_samples_path(time, 0, 200000, "Poisson", samplingMethod='Orig')
+        samples_values = full_df_M[full_df_M['SentTime'].isin(samples_times)]['Delay'].values
+        # samples_values = full_df_M[full_df_M['Time'].isin(samples_times)]['Delay'].values
+        d3 = np.asarray(samples_values, dtype=float)
+        d3 = d3[np.isfinite(d3)]
+
+        distanceAwareSampling_samples_times = find_samples_path(time, 0, 200000, "Poisson", samplingMethod='DA')
+        distanceAwareSampling_samples_values = full_df_M[full_df_M['SentTime'].isin(distanceAwareSampling_samples_times)]['Delay'].values
+        d4 = np.asarray(distanceAwareSampling_samples_values, dtype=float)
+        d4 = d4[np.isfinite(d4)]
+
+        d1 = np.asarray(full_df_switch['Delay'], dtype=float)
+        d1 = d1[np.isfinite(d1)]
+        d2 = np.asarray(full_df_M['Delay'], dtype=float)
+        d2 = d2[np.isfinite(d2)]
+        p_value_all = ks_2samp(d1, d2).pvalue
+        p_value_sampling = ks_2samp(d1, d3).pvalue
+        p_value_sampling_da = ks_2samp(d1, d4).pvalue
+        # ks_dict[str(experiment) + "_da"] = int(p_value_sampling_da > 0.05)
+        # ks_dict[str(experiment)] = int(p_value_sampling > 0.05)
+        # print(experiment, "KS p-value (Switch vs samples):", p_value_sampling > 0.05, "KS p-value (Switch vs Distance Aware samples):", p_value_sampling_da > 0.05)
+        # print(experiment, "is from the same dist: ", p_value_all > 0.05, p_value_all, " After Sampling: ", p_value > 0.05, p_value)
+        # ---------------- CDF with percentile zoom + tail annotation ----------------
         plt.figure(figsize=(10, 6))
-        plt.hist(full_df['Delay'], bins=200, density=True, color='g')
-        # plot the mean as a vertical line with its value
-        mean = full_df['Delay'].mean()
-        plt.axvline(mean, color='r', linestyle='dashed', linewidth=1)
-        plt.text(mean, 0, 'Mean: {:.2f}'.format(mean), color='r', fontsize=12)
-        plt.title('Queuing Delay Distribution', fontsize=16)
-        plt.xlabel('Delay (ns)', fontsize=16)
-        plt.ylabel('Density', fontsize=16)
+
+        # Build CDFs (sorted values + empirical probabilities)
+        x1 = np.sort(np.asarray(full_df_switch['Delay'].values, dtype=float))
+        x1 = x1[np.isfinite(x1)]
+        y1 = np.arange(1, len(x1) + 1) / max(len(x1), 1)
+
+        x2 = np.sort(np.asarray(full_df_M['Delay'].values, dtype=float))
+        x2 = x2[np.isfinite(x2)]
+        y2 = np.arange(1, len(x2) + 1) / max(len(x2), 1)
+
+        x3 = np.sort(d3)
+        y3 = np.arange(1, len(x3) + 1) / max(len(x3), 1)
+
+        x4 = np.sort(d4)
+        y4 = np.arange(1, len(x4) + 1) / max(len(x4), 1)
+
+        # Plot CDFs
+        plt.step(x1, y1, where='post', label="Samples at the switch", color='b', alpha=0.9)
+        plt.step(x2, y2, where='post', label="Measurement Traffic", color='r', alpha=0.9)
+        plt.step(x3, y3, where='post', label="Samples from Measurement", color='g', alpha=0.9)
+        plt.step(x4, y4, where='post', label="Distance Aware Sampling from Measurement", color='m', alpha=0.9)
+        # Percentile to show (zoom)
+        p = 0.995  # 99.5th percentile; adjust (e.g., 0.99 or 0.999) as needed
+
+        # Use a common x-limit based on both datasets so scales match
+        combined = np.concatenate([x1, x2, x3]) if (len(x1) and len(x2) and len(x3)) else (x1 if len(x1) else x2)
+        if combined.size:
+            x_right = np.quantile(combined, p)
+            plt.xlim(left=0, right=x_right)
+
+            # Tail fractions beyond x_right for each series
+            # tail1 = (x1 > x_right).sum() / max(len(x1), 1)
+            # tail2 = (x2 > x_right).sum() / max(len(x2), 1)
+            # tail3 = (x3 > x_right).sum() / max(len(x3), 1)
+            # Annotate tails (place inside axes, bottom-right corner)
+            # txt = (f"{(1-p)*100:.2f}% > {x_right:.3g} (combined cutoff)\n"
+            #        f"Switch tail: {tail1*100:.2f}%\n"
+            #        f"Meas. tail: {tail2*100:.2f}%\n"
+            #        f"Samples tail: {tail3*100:.2f}%\n"
+            #        f"KS p-val (Switch vs Meas.): {p_value_all:.3f}\n"
+            #          f"KS p-val (Switch vs Samples): {p_value:.3f}")
+            txt = (f"{(1-p)*100:.2f}% > {x_right:.3g} (combined cutoff)\n"
+                   f"KS p-val (Switch vs Meas.): {p_value_all:.3f}\n"
+                     f"KS p-val (Switch vs Samples): {p_value_sampling:.3f}"
+                     f"\nKS p-val (Switch vs Distance Aware Samples): {p_value_sampling_da:.3f}")
+            plt.text(0.98, 0.05, txt, ha='right', va='bottom',
+                     transform=plt.gca().transAxes, fontsize=11,
+                     bbox=dict(boxstyle='round', facecolor='white', alpha=0.8, lw=0))
+        else:
+            # No data: keep defaults to avoid errors
+            plt.xlim(auto=True)
+
+        plt.ylim(0, 1.05)
+        plt.title('Queuing Delay CDF', fontsize=16)
+        plt.xlabel('Delay', fontsize=16)  # not normalized anymore; add units if known (e.g., 'Delay (s)')
+        plt.ylabel('Cumulative Probability', fontsize=16)
         plt.xticks(fontsize=14)
         plt.yticks(fontsize=14)
-        plt.grid()
-        if onlyMeasurement:
-            plt.savefig('{}/scratch/{}/{}/{}/queuingDelayOfMeasurmentTraffic_distribution.png'.format(__ns3_path, results_folder, rate, experiment, segment))
-        else:
-            plt.savefig('{}/scratch/{}/{}/{}/queuingDelay_distribution.png'.format(__ns3_path, results_folder, rate, experiment, segment))
+        plt.grid(True, which='both', axis='both', alpha=0.5)
+        plt.legend(fontsize=12)
+        plt.savefig('{}/scratch/{}/{}/{}/queuingDelay_distribution.png'.format(__ns3_path, results_folder, rate, experiment, segment))
+        plt.close()
 
 def plot_interarrival_distribution(__ns3_path, results_folder, rate, experiment, segment, steadyStart, steadyEnd, onlyMeasurement):
     file_paths = glob.glob('{}/scratch/{}/{}/{}/*_{}.csv'.format(__ns3_path, results_folder, rate, experiment, segment))
@@ -1164,7 +1324,63 @@ def computeMixingRate(__ns3_path, results_folder, rate, experiment, segment, ste
         # dfs[df_name]['SigneChangeRateE2EPoisson'] = compute_mixing_poisson_e2e(full_df, full_df_M, 2 * np.sum(linkDelays))
     return dfs
 
+def plot_queuingDelay_time_new(__ns3_path, results_folder, rate, experiment, segment, steadyStart, steadyEnd, paths, linkRate):
+    file_paths = glob.glob('{}/scratch/{}/{}/{}/*_{}.csv'.format(__ns3_path, results_folder, rate, experiment, segment))
+    dfs = {}
+    for file_path in file_paths:
+        full_df = pd.read_csv(file_path)
+        full_df = prune_data(full_df, 'Time', steadyStart, steadyEnd)
+        full_df = full_df[full_df['Action'] == 'E'].copy().reset_index(drop=True)
+        full_df = full_df.sort_values(by=['Time', 'TotalQueueSize'], ascending=[True, True]).reset_index(drop=True)
+
+        # --- plot all traffic classes (each Label) ---
+        plt.figure(figsize=(10, 6))
+        full_df['Label'] = full_df['Label'].str.split(':').str[0]
+        labels = (
+            full_df['Label']
+            .dropna()
+            .astype(str)
+            .unique()
+        )
+        cmap = plt.get_cmap('tab20')
+        color_map = {lab: cmap(i % 20) for i, lab in enumerate(sorted(labels))}
+
+        for lab in sorted(labels):
+            g = full_df[full_df['Label'].str.contains(lab, na=False)]
+            plt.scatter(g['Time'], g['TotalQueueSize'],
+                        s=3,
+                        marker='o',
+                        color=color_map[lab],
+                        label=lab)
+
+        # (optional) keep your sampling logic for a specific label, or do it per label
+        # Example: sample on 10.1.1.1 if present
+        target_label = '10.1.1.1'
+        if target_label in labels:
+            g = full_df[full_df['Label'].str.contains(target_label, na=False)]
+            time = g['Time'].values.astype(float)
+            samples_times = find_samples_path(time, 0, 200000, "Poisson")
+            samples_values = g[g['Time'].isin(samples_times)]['TotalQueueSize'].values
+            plt.scatter(samples_times, samples_values, color='k', marker='^', s=10, label=f'Sampled {target_label}')
+
+        # axes/limits/grids (as before)
+        plt.ylim(0, 19000)
+        steadyStart_plot = 0.3 * 1e9
+        steadyEnd_plot   = 0.8 * 1e9
+        plt.xlim(steadyStart_plot, steadyEnd_plot)
+        plt.yticks(np.linspace(0, 19000, 20))
+        plt.grid(axis='y')
+        plt.title('Queue Size per time', fontsize=16)
+        plt.xlabel('Time (ns)', fontsize=16)
+        plt.ylabel('Size (B)', fontsize=16)
+        plt.xticks(fontsize=14)
+        plt.yticks(fontsize=14)
+        plt.legend(ncol=2, fontsize=9)  # multi-column legend for many labels
+        plt.savefig('{}/scratch/{}/{}/{}/queuingDelay_time_{}_{}.png'.format(__ns3_path, results_folder, rate, experiment, segment, steadyStart_plot, steadyEnd_plot))
+
 def plot_queuingDelay_time(__ns3_path, results_folder, rate, experiment, segment, steadyStart, steadyEnd, paths, linkRate):
+    # plot_queuingDelay_time_new(__ns3_path, results_folder, rate, experiment, segment, steadyStart, steadyEnd, paths, linkRate)
+    # return
     file_paths = glob.glob('{}/scratch/{}/{}/{}/*_{}.csv'.format(__ns3_path, results_folder, rate, experiment, segment))
     dfs = {}
     for file_path in file_paths:
@@ -1175,6 +1391,13 @@ def plot_queuingDelay_time(__ns3_path, results_folder, rate, experiment, segment
         full_df_M = full_df[full_df['Label'].str.contains('10.1.1.1', na=False)]
         full_df_CT = full_df[~full_df['Label'].str.contains('10.1.1.1', na=False)]
         full_df_M = full_df_M.sort_values(by=['Time', 'TotalQueueSize'], ascending=[True, True]).reset_index(drop=True)
+
+        time = full_df_M['Time'].values.astype(float)
+        samples_times = distanceAwareSampling(time, 3e-7)
+        samples_values = full_df_M[full_df_M['Time'].isin(samples_times)]['TotalQueueSize'].values
+        # samples_times = full_df[full_df['Label'].str.contains('10.4.1.1', na=False)]['Time'].values
+        # samples_values = full_df[full_df['Label'].str.contains('10.4.1.1', na=False)]['TotalQueueSize'].values
+
         full_df_CT = full_df_CT.sort_values(by=['Time', 'TotalQueueSize'], ascending=[True, True]).reset_index(drop=True)
         # full_df_M['Delay'] = ((full_df_M['TotalQueueSize'] * 8) / linkRate).astype(int)
         # full_df_CT['Delay'] = ((full_df_CT['TotalQueueSize'] * 8) / linkRate).astype(int)
@@ -1186,6 +1409,7 @@ def plot_queuingDelay_time(__ns3_path, results_folder, rate, experiment, segment
         # plt.scatter(full_df_CT['Time'], full_df_CT['Delay'], color='b', label='Cross Traffic', marker='x', s=1)
         plt.scatter(full_df_M['Time'], full_df_M['TotalQueueSize'], color='r', label='Measurement Traffic', marker='o', s=3)
         plt.scatter(full_df_CT['Time'], full_df_CT['TotalQueueSize'], color='b', label='Cross Traffic', marker='x', s=1)
+        plt.scatter(samples_times, samples_values, color='g', label='Sampled Traffic', marker='^', s=10)
         plt.ylim(0, 19000)
         # add the mean and variance of all the delays
         mean_full = full_df['TotalQueueSize'].mean()
@@ -1193,6 +1417,13 @@ def plot_queuingDelay_time(__ns3_path, results_folder, rate, experiment, segment
         # plt.axhline(mean_full, color='g', linestyle='dashed', linewidth=1, label='Mean: {:.2f} B'.format(mean_full))
         # plt.axhline(mean_full + std_full, color='g', linestyle='dotted', linewidth=1, label='Mean + Std: {:.2f} B'.format(mean_full + std_full))
         # plt.axhline(mean_full - std_full, color='g', linestyle='dotted', linewidth=1, label='Mean - Std: {:.2f} B'.format(mean_full - std_full))
+        steadyStart_plot = 0.505 * 1e9
+        steadyEnd_plot = 0.507 * 1e9
+        plt.xlim(steadyStart_plot, steadyEnd_plot)
+        # set 100 ticks in y-axis
+        plt.yticks(np.linspace(0, 19000, 20))
+        # enable grids in y-axis
+        plt.grid(axis='y')
         plt.legend()
         plt.title('Queue Size per time', fontsize=16)
         plt.grid()
@@ -1201,7 +1432,7 @@ def plot_queuingDelay_time(__ns3_path, results_folder, rate, experiment, segment
         plt.ylabel('Size (B)', fontsize=16)
         plt.xticks(fontsize=14)
         plt.yticks(fontsize=14)
-        plt.savefig('{}/scratch/{}/{}/{}/queuingDelay_time_{}_{}.png'.format(__ns3_path, results_folder, rate, experiment, segment, steadyStart, steadyEnd))
+        plt.savefig('{}/scratch/{}/{}/{}/queuingDelay_DASampling_time_{}_{}.png'.format(__ns3_path, results_folder, rate, experiment, segment, steadyStart, steadyEnd))
         # lags, corr = cross_correlation_delay_time_series(full_df_M['Time'].values, full_df_M['TotalQueueSize'].values, full_df_CT['Time'].values, full_df_CT['TotalQueueSize'].values, bin_width=1000000, max_lag=100000000, normalize=True, plot=False)
         # print(f"Cross-correlation lags: {lags}")
         # print(f"Cross-correlation values: {corr}")
@@ -1572,6 +1803,22 @@ def calculate_reconstructedSignal_delays(reconstructedSignal_df, df_res, linkRat
     reconstructedSignal_df = None
     return df_res
 
+def find_sampling_rate(time, maxError):
+    """Solve for rate >= 0 so 1 - sum(1 - exp(-rate * interarrivals)) / sum(rate * interarrivals) <= maxError using binary search."""
+    if maxError <= 0 or time.size == 0:
+        return 0.0
+    
+    interarrivals = np.diff(time)
+    total_time = float(interarrivals.sum())
+    low, high = 0.0, 1e-6
+    f = lambda rate: 1 - (np.sum(-np.expm1(-rate * interarrivals)) / np.sum(rate * interarrivals))
+    
+    for _ in range(60):
+        mid = (low + high) / 2
+        if f(mid) > maxError: high = mid
+        else: low = mid
+
+    return (high + low) / 2
 
 def calculate_offline_computations(__ns3_path, rate, segment, experiment, results_folder, steadyStart, steadyEnd, projectColumn, removeDrops=True, checkColumn="", linksRates=[], linkDelays=[], swtichDstREDQueueDiscMaxSize=0, stats=None, tsh=0.15, differentiationDelay=None, errorRate=None, load=None, passiveProbe=False):
     if differentiationDelay == 0.0 and errorRate is not None:
@@ -1601,16 +1848,17 @@ def calculate_offline_computations(__ns3_path, rate, segment, experiment, result
             df_res['totalPckts'] = {}
             df_res['RTT'] = {}
             df_res['InterArrivals'] = {}
+            df_res['bias'] = {}
             txDelay = (1502 * 8 / linksRates[0])
             full_df = addRemoveTransmission_data(full_df, linkDelays, linksRates)
             
             if passiveProbe:
                 full_df = full_df[full_df['Tagged'] != "0"]
-                full_df['BitsTag'] = full_df['Tagged'].apply(lambda x: x.split(':')[1:] if isinstance(x, str) else [])
-                full_df = full_df.explode('BitsTag')
-                full_df['BitsTag'] = full_df['BitsTag'].astype(int)
-                full_df['Delay'] = full_df['Delay'] + full_df['BitsTag'] / linksRates[1]
-                full_df['SentTime'] = full_df['SentTime'] + full_df['BitsTag'] / linksRates[0]
+                # full_df['BitsTag'] = full_df['Tagged'].apply(lambda x: x.split(':')[1:] if isinstance(x, str) else [])
+                # full_df = full_df.explode('BitsTag')
+                # full_df['BitsTag'] = full_df['BitsTag'].astype(int)
+                # full_df['Delay'] = full_df['Delay'] + full_df['BitsTag'] / linksRates[1]
+                # full_df['SentTime'] = full_df['SentTime'] + full_df['BitsTag'] / linksRates[0]
                 full_df = full_df.sort_values(by=['SentTime'])
                 # interarrival = np.diff(full_df['SentTime'].values)
                 # print(full_df)
@@ -1628,11 +1876,18 @@ def calculate_offline_computations(__ns3_path, rate, segment, experiment, result
             # for the reconstructed signal:
             # reconstructedSignal_df = reconstructSignal(full_df, linksRates, file_path.replace(f'{df_name}_EndToEnd_packets.csv', ''))
             # df_res = calculate_reconstructedSignal_delays(reconstructedSignal_df, df_res, linksRates[1])
+            # avgPacktSize = 1502
+            # PacktsInQueue = (full_df["Delay"].mean() * linksRates[1]) / (avgPacktSize * 8)
+            # samplingMethod = "Orig" if PacktsInQueue > 1 else "DA"
+            # interarrival_99 = np.percentile(np.diff(full_df['SentTime'].values), 99)
+            # if interarrival_99 < txDelay * 1.05 and samplingMethod == "DA":
+            #     samplingMethod = "Orig"
+            samplingMethod = "DA"
 
-            df_res = calculate_offline_E2E_lossRates(__ns3_path, full_df, df_res, checkColumn, txDelay, linksRates[1], swtichDstREDQueueDiscMaxSize, df_name, passiveProbe)
-            df_res = calculate_offline_E2E_delays(full_df, removeDrops, checkColumn, txDelay, df_res, df_name, passiveProbe)
+            df_res = calculate_offline_E2E_lossRates(__ns3_path, full_df, df_res, checkColumn, txDelay, linksRates[1], swtichDstREDQueueDiscMaxSize, df_name, passiveProbe, samplingMethod)
+            df_res = calculate_offline_E2E_delays(full_df, removeDrops, checkColumn, txDelay, df_res, df_name, passiveProbe, samplingMethod)
             df_res = calculate_offline_E2E_workload(full_df, df_res, steadyStart, steadyEnd)
-            df_res = calculate_offline_E2E_markingProb(full_df, df_res, checkColumn, txDelay, swtichDstREDQueueDiscMaxSize, linksRates[1], __ns3_path, tsh, df_name, passiveProbe)
+            df_res = calculate_offline_E2E_markingProb(full_df, df_res, checkColumn, txDelay, swtichDstREDQueueDiscMaxSize, linksRates[1], __ns3_path, tsh, df_name, passiveProbe, samplingMethod)
         if 'Poisson' in segment:
             packets_cfd = PacketCDF()
             packets_cfd.load_cdf_data('{}/scratch/ECNMC/DCWorkloads/packet_size_cdf_{}.csv'.format(__ns3_path, results_folder.split('/')[-1]))

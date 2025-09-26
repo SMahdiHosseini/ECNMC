@@ -1242,36 +1242,27 @@ def analyse_forward_exp(results_dir, results_dir_file, rateScales, loads, select
                 
             # results[traffic][load]['DropRate'] = DropRates[traffic][load]
     selectedRates = rateScales
-    # plot_metric_per_loads_traffic(list(results.keys()), avgInterArrivals, loads, selectedRates, results_dir, results_dir_file, 'Avg Inter Arrival Time(ns)')
-    # plot_metric_per_loads_traffic(list(results.keys()), e2e_samples_rtt, loads, selectedRates, results_dir, results_dir_file, '#end-to-end samples per RTT')
-    # plot_metric_per_loads_traffic(list(results.keys()), switch_samples_rtt, loads, selectedRates, results_dir, results_dir_file, '#switch samples per RTT')
-    # plot_metric_per_loads_traffic(list(results.keys()), CVS_all['delay'], loads, selectedRates, results_dir, results_dir_file, 'CV of Delay')
-    # plot_metric_per_loads_traffic(list(results.keys()), CVS_all['success'], loads, selectedRates, results_dir, results_dir_file, 'CV of Success Probability')
-    # plot_metric_per_loads_traffic(list(results.keys()), CVS_all['nonMarking'], loads, selectedRates, results_dir, results_dir_file, 'CV of Non Marking Probability')
+    plot_metric_per_loads_traffic(list(results.keys()), avgInterArrivals, loads, selectedRates, results_dir, results_dir_file, 'Avg Inter Arrival Time(ns)')
+    plot_metric_per_loads_traffic(list(results.keys()), e2e_samples_rtt, loads, selectedRates, results_dir, results_dir_file, '#end-to-end samples per RTT')
+    plot_metric_per_loads_traffic(list(results.keys()), switch_samples_rtt, loads, selectedRates, results_dir, results_dir_file, '#switch samples per RTT')
+    plot_metric_per_loads_traffic(list(results.keys()), CVS_all['delay'], loads, selectedRates, results_dir, results_dir_file, 'CV of Delay')
+    plot_metric_per_loads_traffic(list(results.keys()), CVS_all['success'], loads, selectedRates, results_dir, results_dir_file, 'CV of Success Probability')
+    plot_metric_per_loads_traffic(list(results.keys()), CVS_all['nonMarking'], loads, selectedRates, results_dir, results_dir_file, 'CV of Non Marking Probability')
     plot_metric_per_loads_traffic(list(results.keys()), errors_all['delay'], loads, selectedRates, results_dir, results_dir_file, 'Relative Error of Delay')
     plot_metric_per_loads_traffic(list(results.keys()), errors_all['success'], loads, selectedRates, results_dir, results_dir_file, 'Relative Error of Success Probability')
     plot_metric_per_loads_traffic(list(results.keys()), errors_all['nonMarking'], loads, selectedRates, results_dir, results_dir_file, 'Relative Error of Non Marking Probability')
-    # plot_metric_per_loads_traffic(list(results.keys()), errors_bounds['delay'], loads, selectedRates, results_dir, results_dir_file, 'Error bounds of Delay(ns)')
-    # plot_metric_per_loads_traffic(list(results.keys()), errors_bounds['success'], loads, selectedRates, results_dir, results_dir_file, 'Error bounds of Success Probability')
-    # plot_metric_per_loads_traffic(list(results.keys()), errors_bounds['nonMarking'], loads, selectedRates, results_dir, results_dir_file, 'Error bounds of Non Marking Probability')
+    plot_metric_per_loads_traffic(list(results.keys()), errors_bounds['delay'], loads, selectedRates, results_dir, results_dir_file, 'Error bounds of Delay(ns)')
+    plot_metric_per_loads_traffic(list(results.keys()), errors_bounds['success'], loads, selectedRates, results_dir, results_dir_file, 'Error bounds of Success Probability')
+    plot_metric_per_loads_traffic(list(results.keys()), errors_bounds['nonMarking'], loads, selectedRates, results_dir, results_dir_file, 'Error bounds of Non Marking Probability')
+    plot_metric_per_loads_traffic(list(results.keys()), e2e_stds_all['delay'], loads, selectedRates, results_dir, results_dir_file, 'End-to-end STD of Delay(ns)')
+    plot_metric_per_loads_traffic(list(results.keys()), stdsRatios_all['delay'], loads, selectedRates, results_dir, results_dir_file, 'End-to-end STD of Delay(ns) over Switch STD of Delay(ns)')
+    plot_metric_per_loads_traffic(list(results.keys()), switch_delay, loads, selectedRates, results_dir, results_dir_file, 'Switch Delay(ns)')
+    plot_metric_per_loads_traffic(list(results.keys()), switch_nonMarking, loads, selectedRates, results_dir, results_dir_file, 'Switch Non Marking Probability')
+    plot_metric_per_loads_traffic(list(results.keys()), queueOccupancy, loads, selectedRates, results_dir, results_dir_file, 'Queue Occupancy(%)')
+    plot_metric_per_loads_traffic(list(results.keys()), PacktsInQueue, loads, selectedRates, results_dir, results_dir_file, '#Packets in Queue')
+    plot_metric_per_loads_traffic(list(results.keys()), EmptyFrac, loads, selectedRates, results_dir, results_dir_file, 'Empty Fraction')
+    plot_metric_per_loads_traffic(list(results.keys()), GT1PktsFrac, loads, selectedRates, results_dir, results_dir_file, 'Fraction of Loads with >1 Packet')
     # plot_metric_per_loads_traffic(list(results.keys()), bias_all['delay'], loads, selectedRates, results_dir, results_dir_file, 'Bias of Delay(ns)')
-    # plot_metric_per_loads_traffic(list(results.keys()), e2e_stds_all['delay'], loads, selectedRates, results_dir, results_dir_file, 'End-to-end STD of Delay(ns)')
-    # plot_metric_per_loads_traffic(list(results.keys()), stdsRatios_all['delay'], loads, selectedRates, results_dir, results_dir_file, 'End-to-end STD of Delay(ns) over Switch STD of Delay(ns)')
-    # plot_metric_per_loads_traffic(list(results.keys()), switch_delay, loads, selectedRates, results_dir, results_dir_file, 'Switch Delay(ns)')
-    # plot_metric_per_loads_traffic(list(results.keys()), switch_nonMarking, loads, selectedRates, results_dir, results_dir_file, 'Switch Non Marking Probability')
-    # plot_metric_per_loads_traffic(list(results.keys()), queueOccupancy, loads, selectedRates, results_dir, results_dir_file, 'Queue Occupancy(%)')
-    # plot_metric_per_loads_traffic(list(results.keys()), PacktsInQueue, loads, selectedRates, results_dir, results_dir_file, '#Packets in Queue')
-    # plot_metric_per_loads_traffic(list(results.keys()), EmptyFrac, loads, selectedRates, results_dir, results_dir_file, 'Empty Fraction')
-    # plot_metric_per_loads_traffic(list(results.keys()), GT1PktsFrac, loads, selectedRates, results_dir, results_dir_file, 'Fraction of Loads with >1 Packet')
-    # plot_metric_per_loads_traffic(list(results.keys()), bias_all['delay'], loads, selectedRates, results_dir, results_dir_file, 'Bias of Delay(ns)')
-    # plot_metric_per_loads_traffic(list(results.keys()), e2e_stds_all['delay'], loads, selectedRates, results_dir, results_dir_file, 'End-to-end STD of Delay(ns)')
-    # plot_metric_per_loads_traffic(list(results.keys()), stdsRatios_all['delay'], loads, selectedRates, results_dir, results_dir_file, 'End-to-end STD of Delay(ns) over Switch STD of Delay(ns)')
-    # plot_metric_per_loads_traffic(list(results.keys()), switch_delay, loads, selectedRates, results_dir, results_dir_file, 'Switch Delay(ns)')
-    # plot_metric_per_loads_traffic(list(results.keys()), switch_nonMarking, loads, selectedRates, results_dir, results_dir_file, 'Switch Non Marking Probability')
-    # plot_metric_per_loads_traffic(list(results.keys()), queueOccupancy, loads, selectedRates, results_dir, results_dir_file, 'Queue Occupancy(%)')
-    # plot_metric_per_loads_traffic(list(results.keys()), PacktsInQueue, loads, selectedRates, results_dir, results_dir_file, '#Packets in Queue')
-    # plot_metric_per_loads_traffic(list(results.keys()), EmptyFrac, loads, selectedRates, results_dir, results_dir_file, 'Empty Fraction')
-    # plot_metric_per_loads_traffic(list(results.keys()), GT1PktsFrac, loads, selectedRates, results_dir, results_dir_file, 'Fraction of Loads with >1 Packet')
     # plot_metric_per_loads_traffic(list(results.keys()), ks_statistic, loads, selectedRates, results_dir, results_dir_file, 'KS Statistic')
     # plot_metric_per_loads_traffic(list(results.keys()), ks_statisticMean, loads, selectedRates, results_dir, results_dir_file, 'KS Statistic Mean')
     # plot_metric_per_loads_traffic(list(results.keys()), mixingRate, loads, selectedRates, results_dir, results_dir_file, 'Mixing Rate')
@@ -1281,21 +1272,21 @@ def analyse_forward_exp(results_dir, results_dir_file, rateScales, loads, select
     # plot_metric_per_loads_traffic(list(results.keys()), mixingRateMonly, loads, selectedRates, results_dir, results_dir_file, 'Mixing Rate M only')
     # plot_metric_per_loads_traffic(list(results.keys()), mixingRatePoisson, loads, selectedRates, results_dir, results_dir_file, 'Mixing Rate Poisson')
     # plot_metric_per_loads_traffic(list(results.keys()), mixingRateE2EPoisson, loads, selectedRates, results_dir, results_dir_file, 'Mixing Rate E2E Poisson')
-    # plot_metric_per_loads_traffic(list(results.keys()), e2e_delay, loads, selectedRates, results_dir, results_dir_file, 'End-to-End Delay(ns)')
-    # plot_metric_per_loads_traffic(list(results.keys()), pcktsRatio, loads, selectedRates, results_dir, results_dir_file, '#end-to-end Packets Ratio')
-    # plot_metric_per_loads_traffic(list(results.keys()), stds_all['delay'], loads, selectedRates, results_dir, results_dir_file, 'STD of Delay(ns)')
-    # plot_metric_per_loads_traffic(list(results.keys()), stds_all['success'], loads, selectedRates, results_dir, results_dir_file, 'STD of Success Probability')
-    # plot_metric_per_loads_traffic(list(results.keys()), stds_all['nonMarking'], loads, selectedRates, results_dir, results_dir_file, 'STD of Non Marking Probability')
-    # plot_metric_per_loads_traffic(list(results.keys()), workload, loads, selectedRates, results_dir, results_dir_file, 'Workload(Mbps)')
-    # plot_metric_per_loads_traffic(list(results.keys()), totalPkts, loads, selectedRates, results_dir, results_dir_file, '#end-to-end Packets')
-    # plot_metric_per_loads_traffic(list(results.keys()), sampleSizes, loads, selectedRates, results_dir, results_dir_file, '#Delay Samples')
-    # plot_metric_per_loads_traffic(list(results.keys()), avgRtt, loads, selectedRates, results_dir, results_dir_file, 'Avg RTT(ns)')
+    plot_metric_per_loads_traffic(list(results.keys()), e2e_delay, loads, selectedRates, results_dir, results_dir_file, 'End-to-End Delay(ns)')
+    plot_metric_per_loads_traffic(list(results.keys()), pcktsRatio, loads, selectedRates, results_dir, results_dir_file, '#end-to-end Packets Ratio')
+    plot_metric_per_loads_traffic(list(results.keys()), stds_all['delay'], loads, selectedRates, results_dir, results_dir_file, 'STD of Delay(ns)')
+    plot_metric_per_loads_traffic(list(results.keys()), stds_all['success'], loads, selectedRates, results_dir, results_dir_file, 'STD of Success Probability')
+    plot_metric_per_loads_traffic(list(results.keys()), stds_all['nonMarking'], loads, selectedRates, results_dir, results_dir_file, 'STD of Non Marking Probability')
+    plot_metric_per_loads_traffic(list(results.keys()), workload, loads, selectedRates, results_dir, results_dir_file, 'Workload(Mbps)')
+    plot_metric_per_loads_traffic(list(results.keys()), totalPkts, loads, selectedRates, results_dir, results_dir_file, '#end-to-end Packets')
+    plot_metric_per_loads_traffic(list(results.keys()), sampleSizes, loads, selectedRates, results_dir, results_dir_file, '#Delay Samples')
+    plot_metric_per_loads_traffic(list(results.keys()), avgRtt, loads, selectedRates, results_dir, results_dir_file, 'Avg RTT(ns)')
     # plot_forward_success_per_loads_traffic(results, loads, selectedRates, results_dir, results_dir_file, selectedVarMethods, 'WithBias')
     plot_forward_success_per_loads_traffic(results_WOBias, loads, selectedRates, results_dir, results_dir_file, selectedVarMethods, 'WithoutBias')
     # # plot_forward_success_per_loads_traffic(results_WOBias_mixingRate_filter, loads, selectedRates, results_dir, results_dir_file, selectedVarMethods, 'WithoutBias_MixingRateFilter')
     # # plot_forward_success_per_loads_traffic(results_WOBias_packetsInQueue_filter, loads, selectedRates, results_dir, results_dir_file, selectedVarMethods, 'WithoutBias_PacketsInQueueFilter')
     # # plot_forward_success_per_loads_traffic(results_WOBias_mixingRate_packetsInQueue_filter, loads, selectedRates, results_dir, results_dir_file, selectedVarMethods, 'WithoutBias_MixingRate_PacketsInQueueFilter')
-    # plot_droprate_vs_load(list(results.keys()), loads, selectedRates, results_dir, DropRates, results_dir_file)
+    plot_droprate_vs_load(list(results.keys()), loads, selectedRates, results_dir, DropRates, results_dir_file)
     plot_metric_per_loads_traffic_with_std(list(results.keys()), switch_delay, stds_all['delay'], loads, selectedRates, results_dir, results_dir_file, 'Switch Delay(ns)')
 
 def analyse_reverse_exp(results_dir, results_dir_file, rateScales, differentiationDelays, errorRates, selectedVarMethods, type, traffics, loads):
@@ -1389,7 +1380,7 @@ def __main__():
     # results_dir_file = args.file
     start = 0.3 * 1e9
     end = 0.8 * 1e9
-    results_dir_file = "Q_e_m_e2e_5RTT_switch_1.0_100_{}_to_{}".format(start, end)
+    results_dir_file = "Q_e_m_e2e_DA_Merged_Orig_less99InterArrivals_switch_1.0_150_{}_to_{}".format(start, end)
     config = configparser.ConfigParser()
     config.read('../Results/results_{}/Parameters.config'.format(args.dir))
     rateScales = [float(x) for x in config.get('Settings', 'serviceRateScales').split(',')]
@@ -1403,7 +1394,7 @@ def __main__():
     # differentiationDelays = [0.10, 0.20]
     selectedVarMethods = ['event_poisson_eventAvg']
     # serviceRateScales = [0.75]
-    # traffics = ["Google_AllRPC", "Fabricated_Heavy_Head"]
+    # traffics = ["Google_AllRPC","Fabricated_Heavy_Head","Fabricated_Heavy_Middle","Google_SearchRPC"]
     # traffics = ["Google_AllRPC","Fabricated_Heavy_Head","Fabricated_Heavy_Middle","Google_SearchRPC", "Facebook_HadoopDist_All"]
     # loads = [0.05, 0.07, 0.1, 0.2, 0.3]
     # selectedVarMethods = []

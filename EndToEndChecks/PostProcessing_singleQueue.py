@@ -187,6 +187,7 @@ def prepare_results(flows, queues, num_of_paths):
     rounds_results['experiments'] = 0
     rounds_results['TrafficsComptDelay'] = {}
     rounds_results['TrafficsComptDelay']['event_poisson_eventAvg'] = {}
+    rounds_results['expSuccessDelay'] = []
     for var in delay_timeAvg_vars:
         for method in timeAvg_methods:
             rounds_results['MaxEpsilonIneqDelay'][var + '_' + method] = {}
@@ -400,61 +401,6 @@ def compatibility_check(rounds_results, samples_paths_aggregated_statistics, end
             #     if lastNonMarkingProb_results_noBias['MaxEpsilonIneq'][flow][path][var_method]:
             #         rounds_results['MaxEpsilonIneqLastNonMarkingProb'][var_method][flow][path][0]['WOBias'] += 1
 
-def sample_endToEnd_packets(ns3_path, rate, segment, experiment, results_folder, _sample_rate, e2e_delays):
-    file_paths = glob.glob('{}/scratch/{}/{}/{}/*_{}.csv'.format(__ns3_path, results_folder, rate, experiment, segment))
-    dfs = {}
-    for file_path in file_paths:
-        df_name = file_path.split('/')[-1].split('_')[0]
-        full_df = pd.read_csv(file_path)
-        # remove all columns other than path, sentTime, receivedTime
-        # first rename the columns Path to path, SentTime to sentTime, ReceiveTime to receivedTime
-        full_df = full_df.rename(columns={'Path': 'path', 'SentTime': 'sentTime', 'ReceiveTime': 'receivedTime'})
-        full_df = full_df[['path', 'sentTime', 'receivedTime']]
-        dfs[df_name] = {}
-        dfs[df_name]['timeAvgSuccessProb'] = {}
-        for path in full_df['path'].unique():
-            lossProbs = []
-            df = full_df[full_df['path'] == path]
-            df = df.sort_values(by='sentTime').reset_index(drop=True)
-            df['sentTime'] = df['sentTime'] - df['sentTime'].min()
-            rtt = e2e_delays[df_name]['timeAverage'][path] + 4 * propagationDelay
-            # generate sample times that are from a poisson distribution, the rate of samples is 4500 samples per second and the actual times are in nanoseconds
-            sample_times = np.cumsum(np.random.exponential((_sample_rate * rtt), int(df['sentTime'].max() / (_sample_rate * rtt))))
-            # print(_sample_rate, len(sample_times), sample_times.max(), rtt)
-            # now for each sample time, pick the closest packet that was sent before or after the sample time. Then check if the packet was received or not. Then the lossProb is 0 or 1
-            for sample_time in sample_times:
-                if sample_time > df['sentTime'].max():
-                    break
-                # pick the closest packet that was sent after sample time
-                closest_packet_after = df[df['sentTime'] > sample_time].iloc[0]
-                # pick the closest packet that was sent before sample time
-                closest_packet_before = df[df['sentTime'] < sample_time].iloc[-1]
-                # now check if the difference between the closest packet and the sample time is less than the average delay of the path
-                if abs(closest_packet_after['sentTime'] - sample_time) > (rtt / 2) or abs(closest_packet_before['sentTime'] - sample_time) > (rtt / 2):
-                    continue
-                if closest_packet_after['receivedTime'] != -1 and closest_packet_before['receivedTime'] != -1:
-                    lossProbs.append(0)
-                elif closest_packet_after['receivedTime'] == -1 and closest_packet_before['receivedTime'] == -1:
-                    lossProbs.append(1)
-                elif closest_packet_after['receivedTime'] != -1 and closest_packet_before['receivedTime'] == -1:
-                    lossProbs.append(abs(closest_packet_before['sentTime'] - sample_time) / abs(closest_packet_after['sentTime'] - closest_packet_before['sentTime']))
-                else:
-                    lossProbs.append(abs(closest_packet_after['sentTime'] - sample_time) / abs(closest_packet_after['sentTime'] - closest_packet_before['sentTime']))
-
-                # closest_packet = df.iloc[(df['sentTime'] - sample_time).abs().argsort()[:1]]
-                # # now check if the difference between the closest packet and the sample time is less than the average delay of the path
-                # if abs(closest_packet['sentTime'].values[0] - sample_time) > (rtt / 2):
-                #     # print(_sample_rate, df_name, path, closest_packet['sentTime'].values[0], sample_time, e2e_delays[df_name]['timeAverage'][path])
-                #     continue
-
-                # if closest_packet['receivedTime'].values[0] != -1:
-                #     lossProbs.append(0)
-                # else:
-                #     lossProbs.append(1)
-            # now compute the time average of the lossProbs
-            dfs[df_name]['timeAvgSuccessProb']['A' + str(path)] = 1 - np.mean(lossProbs)
-    return dfs
-
             
 def analyze_single_experiment(return_dict, rate, queues_names, confidenceValue, steadyStart, steadyEnd, rounds_results, results_folder, config, experiment=0, ns3_path=__ns3_path, differentiationDelay=None, errorRate=None, load=None):
     srcHostToSwitchLinkRate = convert_to_float(config.get('SingleQueue', 'srcHostToSwitchLinkRate')) * 1e-3
@@ -546,6 +492,7 @@ def analyze_single_experiment(return_dict, rate, queues_names, confidenceValue, 
     rounds_results['experiments'] += 1
     number_of_segments = 1
     compatibility_check(rounds_results, samples_paths_aggregated_statistics, endToEndStats, endToEndStats.keys(), range(num_of_paths), number_of_segments, None)
+    rounds_results['expSuccessDelay'].append((experiment, rounds_results['MaxEpsilonIneqDelay']["event_poisson_eventAvg"]["A0D0"][0][0]['WOBias'], rounds_results['MaxEpsilonIneqDelay']["event_poisson_eventAvg"]["A0D0"][0][1]))
     # traffics_compatibility_check(rounds_results, endToEndStats, range(num_of_paths), samples_paths_aggregated_statistics)
               
     for q in queues_names:
@@ -586,6 +533,7 @@ def analyze_single_experiment(return_dict, rate, queues_names, confidenceValue, 
 
 def merge_results(return_dict, merged_results, flows, queues, num_of_paths):
     for exp in return_dict.keys():
+        merged_results['expSuccessDelay'] += return_dict[exp]['expSuccessDelay']
         for q in queues:
             # if q[0] == 'S' and q[1] == 'D':
             merged_results[q+'Delaystd'] += return_dict[exp][q+'Delaystd']
@@ -696,9 +644,11 @@ def analyze_all_experiments(rate, steadyStart, steadyEnd, confidenceValue, dir, 
     rounds_results = prepare_results(flows_name, queues_names, num_of_paths)
     merged_results = prepare_results(flows_name, queues_names, num_of_paths)
     batch_size = 50
+    ks_final_dict = {}
     for i in range(int(experiments_end / batch_size) + 1):
         ths = []
         return_dict = multiprocessing.Manager().dict()
+        ks_dict = multiprocessing.Manager().dict()
         for experiment in range(batch_size * i, min(experiments_end, batch_size * (i + 1))):
             if differentiationDelay is not None and errorRate is not None and ("delay" not in dir):
                 if len(os.listdir('{}/scratch/{}/{}/{}/D_{}/f_{}/{}'.format(__ns3_path, results_folder, rate, load, differentiationDelay, errorRate, experiment))) == 0:
@@ -711,31 +661,35 @@ def analyze_all_experiments(rate, steadyStart, steadyEnd, confidenceValue, dir, 
             print("Analyzing experiment: ", experiment)
             paths = range(num_of_paths)
             bottleneckLinkRate = convert_to_float(config.get('SingleQueue', 'bottleneckLinkRate')) * rate * 1e-3
+            srcHostToSwitchLinkRate = convert_to_float(config.get('SingleQueue', 'srcHostToSwitchLinkRate')) * 1e-3
+            LinkDelay = convert_to_float(config.get('Settings', 'hostToTorLinkDelay')) * 1e6
             # steadyStart_plot = convert_to_float(config.get('Settings', 'steadyStart')) * 1e9
             # steadyEnd_plot = convert_to_float(config.get('Settings', 'steadyEnd')) * 1e9
             steadyStart_plot = 0.3 * 1e9
             steadyEnd_plot = 0.8 * 1e9
             # ths.append(multiprocessing.Process(target=plot_queuingDelay_distribution, args=(__ns3_path, results_folder, str(rate) + "/" + str(load), experiment, 'PoissonSampler_queueSize', steadyStart_plot, steadyEnd_plot, paths, bottleneckLinkRate, False)))
-            # ths.append(multiprocessing.Process(target=plot_queuingDelay_distribution, args=(__ns3_path, results_folder, str(rate) + "/" + str(load), experiment, 'PoissonSampler_queueSize', steadyStart_plot, steadyEnd_plot, paths, bottleneckLinkRate, True)))
+            # ths.append(multiprocessing.Process(target=plot_queuingDelay_distribution, args=(__ns3_path, results_folder, str(rate) + "/" + str(load), experiment, 'PoissonSampler_queueSize', steadyStart_plot, steadyEnd_plot, paths, [srcHostToSwitchLinkRate, bottleneckLinkRate], [LinkDelay, LinkDelay], ks_dict)))
             # ths.append(multiprocessing.Process(target=plot_interarrival_distribution, args=(__ns3_path, results_folder, str(rate) + "/" + str(load), experiment, 'PoissonSampler_queueSize', steadyStart_plot, steadyEnd_plot, False)))
             # ths.append(multiprocessing.Process(target=plot_interarrival_distribution, args=(__ns3_path, results_folder, str(rate) + "/" + str(load), experiment, 'PoissonSampler_queueSize', steadyStart_plot, steadyEnd_plot, True)))
-            ths.append(multiprocessing.Process(target=plot_queuingDelay_time, args=(__ns3_path, results_folder, str(rate) + "/" + str(load), experiment, 'PoissonSampler_queueSize', steadyStart_plot, steadyEnd_plot, paths, bottleneckLinkRate)))
+            # ths.append(multiprocessing.Process(target=plot_queuingDelay_time, args=(__ns3_path, results_folder, str(rate) + "/" + str(load), experiment, 'PoissonSampler_queueSize', steadyStart_plot, steadyEnd_plot, paths, bottleneckLinkRate)))
             ths.append(multiprocessing.Process(target=analyze_single_experiment, args=(return_dict, rate, queues_names, confidenceValue, steadyStart, steadyEnd, rounds_results, results_folder, config, experiment, ns3_path, differentiationDelay, errorRate, load)))
         
         for th in ths:
             th.start()
         for th in ths:
             th.join()
+        ks_final_dict.update(ks_dict)
         merge_results(return_dict, merged_results, flows_name, queues_names, num_of_paths)
         print("{} joind".format(i))
+    # print("KS final dict:", ks_final_dict)
     merged_results['AverageWorkLoad'] = sum(merged_results['AverageWorkLoad']) / merged_results['experiments']
     if differentiationDelay is not None and errorRate is not None:
         if differentiationDelay != 0.0:
             os.system('mkdir -p ../Results/results_{}/{}/{}/D_{}/f_{}/'.format(dir, rate, load, differentiationDelay, errorRate))
-        with open('../Results/results_{}/{}/{}/D_{}/f_{}/Q_e_m_e2e_5RTT_switch_1.0_{}_{}_to_{}.json'.format(dir, rate, load, differentiationDelay, errorRate, experiments_end, steadyStart, steadyEnd), 'w') as f:
+        with open('../Results/results_{}/{}/{}/D_{}/f_{}/Q_e_m_e2e_DA_Merged_Orig_less99InterArrivals_switch_1.0_{}_{}_to_{}.json'.format(dir, rate, load, differentiationDelay, errorRate, experiments_end, steadyStart, steadyEnd), 'w') as f:
             js.dump(merged_results, f, indent=4)
     else:
-        with open('../Results/results_{}/{}/{}/Q_e_m_e2e_5RTT_switch_1.0_{}_{}_to_{}.json'.format(dir, rate, load, experiments_end, steadyStart, steadyEnd), 'w') as f:
+        with open('../Results/results_{}/{}/{}/Q_e_m_e2e_DA_Merged_Orig_less99InterArrivals_switch_1.0_{}_{}_to_{}.json'.format(dir, rate, load, experiments_end, steadyStart, steadyEnd), 'w') as f:
             js.dump(merged_results, f, indent=4)
 
 # main function
@@ -759,15 +713,15 @@ def __main__():
     serviceRateScales = [float(x) for x in config.get('Settings', 'serviceRateScales').split(',')]
     loads = [float(x) for x in config.get('Settings', 'load').split(',')]
     traffics = config.get('Settings', 'traffic').split(',')
-    # serviceRateScales = [0.5]
+    # serviceRateScales = [1.0]
     traffics = ["Facebook_HadoopDist_All", "FacebookKeyValue_Sampled"]
     # traffics = ["Google_AllRPC", "Fabricated_Heavy_Head", "Fabricated_Heavy_Middle", "Google_SearchRPC", "Facebook_HadoopDist_All", "FacebookKeyValue_Sampled"]
-    # loads = [0.05]
+    # loads = [0.4]
     # elif "param" in args.dir:
     #     serviceRateScales = [float(x) for x in config.get('Settings', 'sampleRateScales').split(',')]
     # else:
     #     serviceRateScales = [float(x) for x in config.get('Settings', 'errorRateScale').split(',')]
-    # experiments = 1
+    experiments = 150
     errorRates = [float(x) for x in config.get('Settings', 'errorRate').split(',')]
     # errorRates = [0.001]
     differentiationDelays = [float(x) for x in config.get('Settings', 'differentiationDelay').split(',')]
