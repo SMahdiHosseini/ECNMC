@@ -73,7 +73,10 @@ def check_all_delayConsistency(endToEnd_statistics, samples_paths_aggregated_sta
                         continue
                     sigma_e = sigma * np.sqrt(samples_paths_aggregated_statistics[flow][path]['SampleSize']) / np.sqrt(endToEnd_statistics[flow]['sampleSize']['delay'][path])
                     # e = confidenceValue * np.sqrt((sigma**2) + (sigma_e**2))
-                    e = confidenceValue * np.sqrt((sigma**2) + (sigma_e**2)) + bias
+                    if bias:
+                        e = confidenceValue * np.sqrt((sigma**2) + (sigma_e**2)) + endToEnd_statistics[flow]['bias']['delay'][path]
+                    else:
+                        e = confidenceValue * np.sqrt((sigma**2) + (sigma_e**2))
                     res['MaxEpsilonIneq'][flow][path][var_method] = (abs(endToEnd_statistics[flow]['delay'][var_method][path][0] - samples_paths_aggregated_statistics[flow][path][last + 'DelayMean']) <= e)
     return res
 
@@ -344,8 +347,8 @@ def traffics_compatibility_check(rounds_results, endToEnd_statistics, paths, sam
 
 def compatibility_check(rounds_results, samples_paths_aggregated_statistics, endToEnd_statistics, flows_name, paths, number_of_segments, biasCalculator):
     # End to End and Persegment Compatibility Check
-    # delay_results = check_all_delayConsistency(endToEnd_statistics, samples_paths_aggregated_statistics, paths, bias=biasCalculator.GTBias['QueuingDelay'][1.0][0])
-    delay_results_noBias = check_all_delayConsistency(endToEnd_statistics, samples_paths_aggregated_statistics, paths, bias=0)
+    delay_results = check_all_delayConsistency(endToEnd_statistics, samples_paths_aggregated_statistics, paths, bias=1.0)
+    delay_results_noBias = check_all_delayConsistency(endToEnd_statistics, samples_paths_aggregated_statistics, paths, bias=None)
     # lastDelay_results = check_all_delayConsistency(endToEnd_statistics, samples_paths_aggregated_statistics, paths, 'Last', biasCalculator.GTBias['QueuingDelay'][1.0][0])
     # lastDelay_results_noBias = check_all_delayConsistency(endToEnd_statistics, samples_paths_aggregated_statistics, paths, 'Last', 0)
     # successProb_results = check_all_successProbConsistency(endToEnd_statistics, samples_paths_aggregated_statistics, paths, number_of_segments, bias=biasCalculator.GTBias['DropProb'][1.0][0])
@@ -364,8 +367,8 @@ def compatibility_check(rounds_results, samples_paths_aggregated_statistics, end
                     continue
                 rounds_results['MaxEpsilonIneqDelay'][var_method][flow][path][1] += 1
                 # rounds_results['MaxEpsilonIneqLastDelay'][var_method][flow][path][1] += 1
-                # if delay_results['MaxEpsilonIneq'][flow][path][var_method]:
-                #     rounds_results['MaxEpsilonIneqDelay'][var_method][flow][path][0]['WBias'] += 1
+                if delay_results['MaxEpsilonIneq'][flow][path][var_method]:
+                    rounds_results['MaxEpsilonIneqDelay'][var_method][flow][path][0]['WBias'] += 1
                 # if lastDelay_results['MaxEpsilonIneq'][flow][path][var_method]:
                     # rounds_results['MaxEpsilonIneqLastDelay'][var_method][flow][path][0]['WBias'] += 1
                 if delay_results_noBias['MaxEpsilonIneq'][flow][path][var_method]:
@@ -409,17 +412,18 @@ def analyze_single_experiment(return_dict, rate, queues_names, confidenceValue, 
     swtichDstREDQueueDiscMaxSize = convert_to_float(config.get('Settings', 'swtichDstREDQueueDiscMaxSize'))
     passiveProbe = False if config.get('Settings', 'PassiveProbe') == "0" else True
     num_of_paths = 1
+    nHosts = 2
     paths = range(num_of_paths)
     # if differentiationDelay is not None and errorRate is not None:
     #     biasCalculator = BiasCalculator(results_folder, str(rate) + "/D_" + str(differentiationDelay) + "/f_" + str(errorRate), [experiment], steadyStart, steadyEnd, rounds_results, bottleneckLinkRate)
     # else:
     #     biasCalculator = BiasCalculator(results_folder, str(rate) + "/" + str(load), [experiment], steadyStart, steadyEnd, rounds_results, bottleneckLinkRate)
     # biasCalculator.calculateBias(['MarkingProb', 'DropProb', 'QueuingDelay', 'LastMarkingProb'])
-    endToEndStats = calculate_offline_computations(__ns3_path, rate, 'EndToEnd_packets', str(experiment), results_folder, steadyStart, steadyEnd, "SentTime", True, "IsReceived", [srcHostToSwitchLinkRate, bottleneckLinkRate], [linkDelay, linkDelay], swtichDstREDQueueDiscMaxSize, differentiationDelay=differentiationDelay, errorRate=errorRate, load=load, passiveProbe=passiveProbe)
+    endToEndStats = calculate_offline_computations(__ns3_path, rate, 'EndToEnd_packets', str(experiment), results_folder, steadyStart, steadyEnd, "SentTime", nHosts, True, "IsReceived", [srcHostToSwitchLinkRate, bottleneckLinkRate], [linkDelay, linkDelay], swtichDstREDQueueDiscMaxSize, differentiationDelay=differentiationDelay, errorRate=errorRate, load=load, passiveProbe=passiveProbe)
     # endToEndStats = calculate_offline_computations_on_switch(__ns3_path, results_folder, rate, experiment, 'PoissonSampler_queueSize', steadyStart, steadyEnd, paths, bottleneckLinkRate, load)
     # plot_queuingDelay_distribution(__ns3_path, results_folder, str(rate) + "/" + str(load), experiment, 'PoissonSampler_queueSize', steadyStart, steadyEnd, paths, bottleneckLinkRate)
     # calculate_offline_computations(__ns3_path, rate, 'EndToEnd_markings', str(experiment), results_folder, endToEndStats['A0D0']['first'][0], endToEndStats['A0D0']['last'][0], "Time", linksRates=[srcHostToSwitchLinkRate, bottleneckLinkRate], linkDelays=[linkDelay, linkDelay], stats=endToEndStats)
-    samplesSats = calculate_offline_computations(__ns3_path, rate, 'PoissonSampler_events', str(experiment), results_folder, endToEndStats['A0D0']['first'][0], endToEndStats['A0D0']['last'][0], "Time", linksRates=[bottleneckLinkRate], swtichDstREDQueueDiscMaxSize=swtichDstREDQueueDiscMaxSize, differentiationDelay=differentiationDelay, errorRate=errorRate, load=load)
+    samplesSats = calculate_offline_computations(__ns3_path, rate, 'PoissonSampler_events', str(experiment), results_folder, endToEndStats['A0D0']['first'][0], endToEndStats['A0D0']['last'][0], "Time", nHosts, linksRates=[bottleneckLinkRate], swtichDstREDQueueDiscMaxSize=swtichDstREDQueueDiscMaxSize, differentiationDelay=differentiationDelay, errorRate=errorRate, load=load)
     # mixingRate = computeMixingRate(__ns3_path, results_folder, str(rate) + "/" + str(load), experiment, 'PoissonSampler_queueSize', endToEndStats['A0D0']['first'][0], endToEndStats['A0D0']['last'][0], [srcHostToSwitchLinkRate, bottleneckLinkRate], [linkDelay, linkDelay])
     # rounds_results['DropRate'].append(calculate_avgDrop_rate_offline(endToEndStats, paths))
     # samples_paths_statistics
@@ -481,9 +485,9 @@ def analyze_single_experiment(return_dict, rate, queues_names, confidenceValue, 
             rounds_results['EndToEndSampleSizeMarking'][flow][path].append(endToEndStats[flow]['sampleSize']['nonMarkingProb'][path])
             rounds_results['totalPckts'][flow][path].append(endToEndStats[flow]['totalPckts'][path])
             rounds_results['InterArrivals'][flow][path].append(endToEndStats[flow]['InterArrivals'][path])
-            # rounds_results['DelayBias'][flow][path].append(biasCalculator.GTBias['QueuingDelay'][1.0][0])
-            # rounds_results['SuccessProbBias'][flow][path].append(biasCalculator.GTBias['DropProb'][1.0][0])
-            # rounds_results['NonMarkingProbBias'][flow][path].append(biasCalculator.GTBias['MarkingProb'][1.0][0])
+            rounds_results['DelayBias'][flow][path].append(endToEndStats[flow]['bias']['delay'][path])
+            rounds_results['SuccessProbBias'][flow][path].append(endToEndStats[flow]['bias']['successProb'][path])
+            rounds_results['NonMarkingProbBias'][flow][path].append(endToEndStats[flow]['bias']['nonMarkingProb'][path])
             AverageWorkLoad += (endToEndStats[flow]['workload'][path])
     
         rounds_results['workLoad'][flow][path].append(endToEndStats[flow]['workload'][path])
@@ -686,10 +690,10 @@ def analyze_all_experiments(rate, steadyStart, steadyEnd, confidenceValue, dir, 
     if differentiationDelay is not None and errorRate is not None:
         if differentiationDelay != 0.0:
             os.system('mkdir -p ../Results/results_{}/{}/{}/D_{}/f_{}/'.format(dir, rate, load, differentiationDelay, errorRate))
-        with open('../Results/results_{}/{}/{}/D_{}/f_{}/Q_e_m_e2e_DA_Merged_Orig_less99InterArrivals_switch_1.0_{}_{}_to_{}.json'.format(dir, rate, load, differentiationDelay, errorRate, experiments_end, steadyStart, steadyEnd), 'w') as f:
+        with open('../Results/results_{}/{}/{}/D_{}/f_{}/Q_e_m_activePassive_WBiasDelayOnly_switch_1.0_{}_{}_to_{}.json'.format(dir, rate, load, differentiationDelay, errorRate, experiments_end, steadyStart, steadyEnd), 'w') as f:
             js.dump(merged_results, f, indent=4)
     else:
-        with open('../Results/results_{}/{}/{}/Q_e_m_e2e_DA_Merged_Orig_less99InterArrivals_switch_1.0_{}_{}_to_{}.json'.format(dir, rate, load, experiments_end, steadyStart, steadyEnd), 'w') as f:
+        with open('../Results/results_{}/{}/{}/Q_e_m_activePassive_WBiasDelayOnly_switch_1.0_{}_{}_to_{}.json'.format(dir, rate, load, experiments_end, steadyStart, steadyEnd), 'w') as f:
             js.dump(merged_results, f, indent=4)
 
 # main function
@@ -713,15 +717,15 @@ def __main__():
     serviceRateScales = [float(x) for x in config.get('Settings', 'serviceRateScales').split(',')]
     loads = [float(x) for x in config.get('Settings', 'load').split(',')]
     traffics = config.get('Settings', 'traffic').split(',')
-    # serviceRateScales = [1.0]
+    # serviceRateScales = [0.5]
     traffics = ["Facebook_HadoopDist_All", "FacebookKeyValue_Sampled"]
     # traffics = ["Google_AllRPC", "Fabricated_Heavy_Head", "Fabricated_Heavy_Middle", "Google_SearchRPC", "Facebook_HadoopDist_All", "FacebookKeyValue_Sampled"]
-    # loads = [0.4]
+    # loads = [0.05]
     # elif "param" in args.dir:
     #     serviceRateScales = [float(x) for x in config.get('Settings', 'sampleRateScales').split(',')]
     # else:
     #     serviceRateScales = [float(x) for x in config.get('Settings', 'errorRateScale').split(',')]
-    experiments = 150
+    # experiments = 1
     errorRates = [float(x) for x in config.get('Settings', 'errorRate').split(',')]
     # errorRates = [0.001]
     differentiationDelays = [float(x) for x in config.get('Settings', 'differentiationDelay').split(',')]

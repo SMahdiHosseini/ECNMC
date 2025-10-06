@@ -1281,7 +1281,7 @@ def analyse_forward_exp(results_dir, results_dir_file, rateScales, loads, select
     plot_metric_per_loads_traffic(list(results.keys()), totalPkts, loads, selectedRates, results_dir, results_dir_file, '#end-to-end Packets')
     plot_metric_per_loads_traffic(list(results.keys()), sampleSizes, loads, selectedRates, results_dir, results_dir_file, '#Delay Samples')
     plot_metric_per_loads_traffic(list(results.keys()), avgRtt, loads, selectedRates, results_dir, results_dir_file, 'Avg RTT(ns)')
-    # plot_forward_success_per_loads_traffic(results, loads, selectedRates, results_dir, results_dir_file, selectedVarMethods, 'WithBias')
+    plot_forward_success_per_loads_traffic(results, loads, selectedRates, results_dir, results_dir_file, selectedVarMethods, 'WithBias')
     plot_forward_success_per_loads_traffic(results_WOBias, loads, selectedRates, results_dir, results_dir_file, selectedVarMethods, 'WithoutBias')
     # # plot_forward_success_per_loads_traffic(results_WOBias_mixingRate_filter, loads, selectedRates, results_dir, results_dir_file, selectedVarMethods, 'WithoutBias_MixingRateFilter')
     # # plot_forward_success_per_loads_traffic(results_WOBias_packetsInQueue_filter, loads, selectedRates, results_dir, results_dir_file, selectedVarMethods, 'WithoutBias_PacketsInQueueFilter')
@@ -1380,7 +1380,7 @@ def __main__():
     # results_dir_file = args.file
     start = 0.3 * 1e9
     end = 0.8 * 1e9
-    results_dir_file = "Q_e_m_e2e_DA_Merged_Orig_less99InterArrivals_switch_1.0_150_{}_to_{}".format(start, end)
+    results_dir_file = "Q_e_m_activePassive_WBiasDelayOnly_switch_1.0_100_{}_to_{}".format(start, end)
     config = configparser.ConfigParser()
     config.read('../Results/results_{}/Parameters.config'.format(args.dir))
     rateScales = [float(x) for x in config.get('Settings', 'serviceRateScales').split(',')]

@@ -319,8 +319,10 @@ def calculate_offline_E2E_lossRates(__ns3_path, full_df, df_res, checkColumn, tx
     packets_cfd = PacketCDF()
     packets_cfd.load_cdf_data('{}/scratch/ECNMC/Helpers/packet_size_cdf_singleQueue.csv'.format(__ns3_path))
     df_res['sampleSize']['successProb'] = {}
+    df_res['bias']['successProb'] = {}
     full_df_ = full_df[full_df['SentTime'] != -1].copy()
     for path in full_df_['Path'].unique():
+        df_res['bias']['successProb'][path] = 0
         df = full_df_[full_df_['Path'] == path]
         df = df.sort_values(by='SentTime').reset_index(drop=True)
 
@@ -738,8 +740,10 @@ def calculate_offline_E2E_markingProb(full_df, df_res, checkColumn, txDelay, swt
     
     full_df_ = full_df[full_df['SentTime'] != -1].copy()
     df_res['sampleSize']['nonMarkingProb'] = {}
+    df_res['bias']['nonMarkingProb'] = {}
     for path in full_df_['Path'].unique():
         df = full_df_[full_df_['Path'] == path]
+        df_res['bias']['nonMarkingProb'][path] = 0
         df['ECN'] = df.apply(lambda x: x['ECN'] if x[checkColumn] != 0 else 1, axis=1)
         df['nonMarking'] = 1.0 - df['ECN']
         df = df.sort_values(by='SentTime').reset_index(drop=True)
@@ -788,7 +792,7 @@ def calculate_offline_E2E_delays(full_df, removeDrops, checkColumn, txDelay, df_
     if removeDrops:
         full_df_ = full_df_[full_df_[checkColumn] == 1]
     df_res['sampleSize']['delay'] = {}
-    # df_res['biad']['delay'] = {}
+    df_res['bias']['delay'] = {}
     for path in full_df_['Path'].unique():
         df = full_df_[full_df_['Path'] == path]
         df = df.sort_values(by='SentTime').reset_index(drop=True)
@@ -817,6 +821,8 @@ def calculate_offline_E2E_delays(full_df, removeDrops, checkColumn, txDelay, df_
             # df_res['bias']['delay'][path] = 
             samples_times = find_samples_path(time, txDelay, df_res['RTT'][path], df_name, samplingMethod)
 
+        samples = df[df['SentTime'].isin(samples_times)]
+        df_res['bias']['delay'][path] = (samples['PayloadSize'] - (samples['BitsTag'] / 8)).mean()
         # print("Calculating delay for path:", path, "with", len(time), "packets. is done! ")
         df_res['sampleSize']['delay'][path] = len(samples_times)
         samples_values = df[df['SentTime'].isin(samples_times)]['Delay'].values
@@ -1820,7 +1826,7 @@ def find_sampling_rate(time, maxError):
 
     return (high + low) / 2
 
-def calculate_offline_computations(__ns3_path, rate, segment, experiment, results_folder, steadyStart, steadyEnd, projectColumn, removeDrops=True, checkColumn="", linksRates=[], linkDelays=[], swtichDstREDQueueDiscMaxSize=0, stats=None, tsh=0.15, differentiationDelay=None, errorRate=None, load=None, passiveProbe=False):
+def calculate_offline_computations(__ns3_path, rate, segment, experiment, results_folder, steadyStart, steadyEnd, projectColumn, nHosts, removeDrops=True, checkColumn="", linksRates=[], linkDelays=[], swtichDstREDQueueDiscMaxSize=0, stats=None, tsh=0.15, differentiationDelay=None, errorRate=None, load=None, passiveProbe=False):
     if differentiationDelay == 0.0 and errorRate is not None:
         file_paths = glob.glob('{}/scratch/{}/{}/{}/D_{}/f_{}/{}/*_{}.csv'.format(__ns3_path, results_folder, rate, load, differentiationDelay, errorRate, experiment, segment))
     else:
@@ -1854,9 +1860,9 @@ def calculate_offline_computations(__ns3_path, rate, segment, experiment, result
             
             if passiveProbe:
                 full_df = full_df[full_df['Tagged'] != "0"]
-                # full_df['BitsTag'] = full_df['Tagged'].apply(lambda x: x.split(':')[1:] if isinstance(x, str) else [])
-                # full_df = full_df.explode('BitsTag')
-                # full_df['BitsTag'] = full_df['BitsTag'].astype(int)
+                full_df['BitsTag'] = full_df['Tagged'].apply(lambda x: x.split(':')[1:] if isinstance(x, str) else [])
+                full_df = full_df.explode('BitsTag')
+                full_df['BitsTag'] = full_df['BitsTag'].astype(int)
                 # full_df['Delay'] = full_df['Delay'] + full_df['BitsTag'] / linksRates[1]
                 # full_df['SentTime'] = full_df['SentTime'] + full_df['BitsTag'] / linksRates[0]
                 full_df = full_df.sort_values(by=['SentTime'])
@@ -1888,6 +1894,12 @@ def calculate_offline_computations(__ns3_path, rate, segment, experiment, result
             df_res = calculate_offline_E2E_delays(full_df, removeDrops, checkColumn, txDelay, df_res, df_name, passiveProbe, samplingMethod)
             df_res = calculate_offline_E2E_workload(full_df, df_res, steadyStart, steadyEnd)
             df_res = calculate_offline_E2E_markingProb(full_df, df_res, checkColumn, txDelay, swtichDstREDQueueDiscMaxSize, linksRates[1], __ns3_path, tsh, df_name, passiveProbe, samplingMethod)
+            # for all values in df_res['bias'], multiply them by 1000 to convert to ms
+            for metric in df_res['bias']:
+                for path in df_res['bias'][metric]:
+                    df_res['bias'][metric][path] = abs(df_res['bias'][metric][path] * ((load * (nHosts - 1)) - (nHosts * rate)))
+                    if metric == 'delay':
+                        df_res['bias'][metric][path] = (df_res['bias'][metric][path] * 8) / linksRates[1]
         if 'Poisson' in segment:
             packets_cfd = PacketCDF()
             packets_cfd.load_cdf_data('{}/scratch/ECNMC/DCWorkloads/packet_size_cdf_{}.csv'.format(__ns3_path, results_folder.split('/')[-1]))
