@@ -29,6 +29,7 @@
 #include "ns3/simulator.h"
 #include "ns3/trace-source-accessor.h"
 #include "ns3/uinteger.h"
+#include "ns3/ipv4.h"
 
 namespace ns3
 {
@@ -284,6 +285,19 @@ PointToPointNetDevice::DoDispose()
 }
 
 // ****** Mahdi Change ***** (START) ***** // 
+uint32_t
+PointToPointNetDevice::GetNBytesTotal()
+{
+    NS_LOG_FUNCTION(this);
+    uint32_t remainedBytes = 0;
+    if(m_currentPkt)
+    {
+        remainedBytes = m_currentPkt->GetSize() - ((Simulator::Now() - m_lastTxStart).GetSeconds() * m_bps.GetBitRate() / 8);
+    }
+    // std::cout << " ### PointToPointNetDevice ### Remained Bytes: " << remainedBytes << " BytesInQueue: " << m_queue->GetNBytes() << " at time: " << Simulator::Now().GetNanoSeconds() << std::endl;
+    return remainedBytes + m_queue->GetNBytes();
+}
+
 DataRate 
 PointToPointNetDevice::GetDataRate()
 {
@@ -306,6 +320,14 @@ PointToPointNetDevice::TagCurrPacket()
     NS_ASSERT_MSG(m_lastTxStart != Seconds(0), "PointToPointNetDevice::TagCurrPacket(): m_lastTxStart zero");
     MeasurementProbeTagWithBits tag;
     uint32_t transmittedBits = m_bps.GetBitRate() * (Simulator::Now() - m_lastTxStart).GetSeconds();
+    
+    Ptr<Packet> pktCopy = m_currentPkt->Copy();
+    PppHeader ppp;
+    pktCopy->RemoveHeader(ppp);
+    Ipv4Header ipv4;
+    pktCopy->RemoveHeader(ipv4);
+    // std::cout << " ### PointToPointNetDevice ### Tagging current packet: " << ipv4.GetIdentification() << std::endl;
+
     // check if the current packet already has a tag
     if (m_currentPkt->PeekPacketTag(tag))
     {
@@ -591,8 +613,18 @@ PointToPointNetDevice::TransmitStart(Ptr<Packet> p)
     Time txTime = m_bps.CalculateBytesTxTime(p->GetSize());
     Time txCompleteTime = txTime + m_tInterframeGap;
 
-    // ****** Mahdi Change ***** (START) ***** // 
+    // ****** Mahdi Change ***** (START) ***** //
+    // if (m_node->GetObject<ns3::Ipv4>()->GetAddress(1, 0).GetLocal() == Ipv4Address("10.1.1.1"))
+    // {
+    //     Ipv4Header ipv4Header;
+    //     PppHeader pppHeader;
+    //     Ptr<Packet> pktCopy = p->Copy();
+    //     pktCopy->RemoveHeader(pppHeader);
+    //     pktCopy->RemoveHeader(ipv4Header);
+    //     std::cout << "Start transmitting packet with ID: " << ipv4Header.GetIdentification() << " and " <<  pktCopy->GetUid() << " at time: " << Simulator::Now().GetNanoSeconds() << " with size: " << m_currentPkt->GetSize() << std::endl;
+    // }
     m_lastTxStart = Simulator::Now();
+    m_currTxEnd = txCompleteTime + Simulator::Now();
     // ****** Mahdi Change ***** (END) ***** //
 
     NS_LOG_LOGIC("Schedule TransmitCompleteEvent in " << txCompleteTime.As(Time::S));
@@ -625,6 +657,15 @@ PointToPointNetDevice::TransmitComplete()
     // ****** Mahdi Change ***** (START) ***** //
     m_lastPkt = m_currentPkt;
     m_lastTxEnd = Simulator::Now();
+    // if (m_node->GetObject<ns3::Ipv4>()->GetAddress(1, 0).GetLocal() == Ipv4Address("10.1.1.1"))
+    // {
+    //     Ipv4Header ipv4Header;
+    //     PppHeader pppHeader;
+    //     Ptr<Packet> pktCopy = m_currentPkt->Copy();
+    //     pktCopy->RemoveHeader(pppHeader);
+    //     pktCopy->RemoveHeader(ipv4Header);
+    //     std::cout << "Finished transmitting packet: " << ipv4Header.GetIdentification() << " and "  << pktCopy->GetUid() << " at time: " << m_lastTxEnd.GetNanoSeconds() << " with size: " << m_currentPkt->GetSize() << std::endl;
+    // }
     // ****** Mahdi Change ***** (END) ***** //
 
     m_phyTxEndTrace(m_currentPkt);

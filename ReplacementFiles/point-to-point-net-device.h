@@ -201,6 +201,7 @@ class PointToPointNetDevice : public NetDevice
     bool SupportsSendFrom() const override;
     // ****** Mahdi Change ***** (START) ***** // 
     DataRate GetDataRate();
+    uint32_t GetNBytesTotal();
     bool IsIdle();
     void TagCurrPacket();
     void TagClosestPacket();
@@ -467,6 +468,7 @@ class PointToPointNetDevice : public NetDevice
 
     // ****** Mahdi Change ***** (START) ***** // 
     Ptr<Packet> m_lastPkt;
+    Time m_currTxEnd = Seconds(0); //!< Current time a packet will finish transmission
     Time m_lastTxEnd = Seconds(0); //!< Last time a packet finished transmission
     Time m_lastTxStart = Seconds(0); //!< Last time a packet was started to be transmitted
     Time m_remainedHaltTime = Seconds(0); //!< Remaining halt time for transmission

@@ -40,6 +40,7 @@ private:
     bool _probe;
     double _probeInterval;
     Time _probeStartTime;
+    Time _probeStopTime;
 protected:
     void DoDispose() override;
 

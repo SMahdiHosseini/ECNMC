@@ -109,24 +109,37 @@ PacketKey* PacketKey::Packet2PacketKey(Ptr<const Packet> packet, uint8_t firstHe
     hash<string> hasher;
     size_t payloadHash = 0;
     if(ipHeader.GetProtocol() == 6 || firstHeaderType == FIRST_HEADER_TCP){
-        TcpHeader tcpHeader;
-        pktCopy->RemoveHeader(tcpHeader);
-        srcPort = tcpHeader.GetSourcePort();
-        dstPort = tcpHeader.GetDestinationPort();
-        seqNb = tcpHeader.GetSequenceNumber();
-        ackNb = tcpHeader.GetAckNumber();
+        if (ipHeader.GetFragmentOffset()){
+            srcPort = 0;
+            dstPort = 0;
+            seqNb = SequenceNumber32(0);
+        }
+        else {
+            TcpHeader tcpHeader;
+            pktCopy->RemoveHeader(tcpHeader);
+            srcPort = tcpHeader.GetSourcePort();
+            dstPort = tcpHeader.GetDestinationPort();
+            seqNb = tcpHeader.GetSequenceNumber();
+            ackNb = tcpHeader.GetAckNumber();
+            pktCopy->AddHeader(tcpHeader);
+        }
         size = pktCopy->GetSize();
         payloadHash = hasher(pktCopy->ToString());
-        pktCopy->AddHeader(tcpHeader);
     }
     else if (ipHeader.GetProtocol() == 17 || firstHeaderType == FIRST_HEADER_UDP) {
-        UdpHeader udpHeader;
-        pktCopy->RemoveHeader(udpHeader);
-        srcPort = udpHeader.GetSourcePort();
-        dstPort = udpHeader.GetDestinationPort();
+        if (ipHeader.GetFragmentOffset()){
+            srcPort = 0;
+            dstPort = 0;
+        }
+        else {
+            UdpHeader udpHeader;
+            pktCopy->RemoveHeader(udpHeader);
+            srcPort = udpHeader.GetSourcePort();
+            dstPort = udpHeader.GetDestinationPort();
+            pktCopy->AddHeader(udpHeader);
+        }
         size = pktCopy->GetSize();
         payloadHash = hasher(pktCopy->ToString());
-        pktCopy->AddHeader(udpHeader);
     }
 
     if (firstHeaderType <= FIRST_HEADER_IPV4){

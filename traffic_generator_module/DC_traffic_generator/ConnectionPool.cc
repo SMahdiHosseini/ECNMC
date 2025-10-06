@@ -18,7 +18,9 @@ ConnectionPool::~ConnectionPool() {
 void
 ConnectionPool::CloseConnections() {
     NS_LOG_FUNCTION(this);
-    Simulator::Cancel(_probeEvent);
+    for (auto& event : _probeEvents) {
+        Simulator::Cancel(event);
+    }
     for (auto& socket : sockets) {
         if (socket) {
             socket->Close();
@@ -29,7 +31,7 @@ ConnectionPool::CloseConnections() {
 }
 
 void 
-ConnectionPool::CreateSockets(vector<Address> receiverAddresses, bool enablePacing, bool enableProbe, Time probeStartTime) {
+ConnectionPool::CreateSockets(vector<Address> receiverAddresses, bool enablePacing, bool enableProbe, Time probeStartTime, Time probeStopTime) {
     NS_LOG_FUNCTION(this);
     for (const auto& receiverAddress : receiverAddresses) {
         NS_LOG_FUNCTION (this);
@@ -54,18 +56,35 @@ ConnectionPool::CreateSockets(vector<Address> receiverAddresses, bool enablePaci
     if (enableProbe) {
         cout << "Probing enabled with the rate: " << m_varProbe->GetMean() << " seconds." << endl;
         cout << "Probe Start Time: " << probeStartTime.GetSeconds() << " seconds." << endl;
-        _probeEvent = Simulator::Schedule(probeStartTime + Seconds(m_varProbe->GetValue()), &ConnectionPool::ProbeNetwork, this);
+        cout << "Probe Stop Time: " << probeStopTime.GetSeconds() << " seconds." << endl;
+        vector<Time> probeTimes = scheduleAllProbes(probeStartTime, probeStopTime);
+        senderNode->GetObject<Ipv4L3Protocol>()->SetPoissonArrivals(probeTimes);
     }
+}
+
+vector<Time> ConnectionPool::scheduleAllProbes(Time probeStartTime, Time probeStopTime) {
+    Time probeTime = probeStartTime;
+    vector<Time> probeTimes;
+    while (probeTime <= probeStopTime) {
+        m_nextPoissonTick = Seconds(m_varProbe->GetValue());
+        probeTime += m_nextPoissonTick;
+        if (probeTime <= probeStopTime) {
+            EventId event = Simulator::Schedule(probeTime, &ConnectionPool::ProbeNetwork, this);
+            _probeEvents.push_back(event);
+            probeTimes.push_back(probeTime);
+        }
+    }
+    return probeTimes;
 }
 
 void ConnectionPool::ScheduleNextProbe() {
     m_nextPoissonTick = Seconds(m_varProbe->GetValue());
-    _probeEvent = Simulator::Schedule(m_nextPoissonTick, &ConnectionPool::ProbeNetwork, this);
+    Simulator::Schedule(m_nextPoissonTick, &ConnectionPool::ProbeNetwork, this);
 }
 
 void ConnectionPool::ProbeNetwork() {
     NS_LOG_FUNCTION(this);
-    ScheduleNextProbe();
+    // ScheduleNextProbe();
     // cout << "Clock tick at: " << Simulator::Now().GetNanoSeconds() << endl;
     // fragmenting next packet, if needed. Otherwise, send a probe
     // Ptr<PointToPointNetDevice> netDevice = DynamicCast<PointToPointNetDevice>(senderNode->GetDevice(0));
@@ -108,7 +127,7 @@ void ConnectionPool::ProbeNetwork() {
     // //     cout << "Probing: NetDevice is busy, tagging next packet." << endl;
     // //     // netDevice->TagNextPacket();
     // // }
-
+    // std::cout << "Clock tick at: " << Simulator::Now().GetNanoSeconds() << std::endl;
     // Probing with monitoring NetDevice state
     Ptr<PointToPointNetDevice> netDevice = DynamicCast<PointToPointNetDevice>(senderNode->GetDevice(0));
     if (netDevice->IsIdle()) {

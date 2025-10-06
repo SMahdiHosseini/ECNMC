@@ -225,6 +225,12 @@ class Ipv4L3Protocol : public Ipv4
     Ptr<NetDevice> GetNetDevice(uint32_t i) override;
     // ***** Mahdi Change ***** (START) ***** //
     uint64_t GetHashValue_out(const Ipv4Address src, const Ipv4Address dst, const uint16_t srcPort, const uint16_t dstPort, const uint8_t protocol);
+    uint32_t CalculateMtu(Ptr<Ipv4Interface> outInterface, Ptr<Packet> packet, Ipv4Header ipHeader, uint32_t originalMtu);
+    uint32_t last_Mtu;
+    bool m_isProbing; //!< True if probing is enabled
+    void SetProbing(bool enable);
+    std::vector<Time> m_PoissonArrivals; //!< Vector of Poisson arrivals
+    void SetPoissonArrivals(std::vector<Time> arrivals);
     // ***** Mahdi Change ***** (END) ***** //
 
     /**
