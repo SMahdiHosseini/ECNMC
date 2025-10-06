@@ -41,6 +41,10 @@ TypeId WorkloadApp::GetTypeId() {
                             TimeValue(Seconds(0)),
                             MakeTimeAccessor(&WorkloadApp::_probeStartTime),
                             MakeTimeChecker())
+            .AddAttribute("ProbeStopTime", "Stop time for probe traffic generation",
+                            TimeValue(Seconds(1)),
+                            MakeTimeAccessor(&WorkloadApp::_probeStopTime),
+                            MakeTimeChecker())
     ;
     return tid;
 }
@@ -113,7 +117,7 @@ void WorkloadApp::PrepareConnections() {
     for (auto &addresses : _receiverAddress) {
         cout << "Connection Pool of: Sender Address: " << GetNode()->GetObject<Ipv4>()->GetAddress(1, 0).GetLocal() << " Receiver Address: " << InetSocketAddress::ConvertFrom(addresses[0]).GetIpv4() << endl;
         ConnectionPool* connectionPool = new ConnectionPool(addresses[0], _protocol, GetNode(), _probeInterval);
-        connectionPool->CreateSockets(addresses, _enablePacing, _probe, _probeStartTime);
+        connectionPool->CreateSockets(addresses, _enablePacing, _probe, _probeStartTime, _probeStopTime);
         _connectionPools.push_back(connectionPool);
     }
 }

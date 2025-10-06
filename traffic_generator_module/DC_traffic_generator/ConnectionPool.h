@@ -23,7 +23,7 @@ class ConnectionPool {
 public:
     ConnectionPool(const Address& address, const string& protocol, Ptr<Node> senderNode, double probeInterval);
     ~ConnectionPool();
-    void CreateSockets(vector<Address> receiverAddresses, bool enablePacing, bool enableProbe, Time probeStartTime);
+    void CreateSockets(vector<Address> receiverAddresses, bool enablePacing, bool enableProbe, Time probeStartTime, Time probeStopTime);
     void CloseConnections();
     void SendData(const Ptr<Packet>& packet);
     void SetSocketState(uint32_t socketId, bool state);
@@ -38,10 +38,11 @@ private:
     Ptr<UniformRandomVariable> m_uniform;
     Ptr<ExponentialRandomVariable> m_varProbe;
     Ptr<Socket> findIdleSocket();
-    EventId _probeEvent;
+    vector<EventId> _probeEvents;
     Time m_nextPoissonTick;
     double _probeInterval;
     void ScheduleNextProbe();
+    vector<Time> scheduleAllProbes(Time probeStartTime, Time probeStopTime);
 };
 
 #endif //CONNECTIONPOOL_H

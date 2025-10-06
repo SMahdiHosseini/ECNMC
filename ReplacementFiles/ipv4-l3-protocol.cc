@@ -40,6 +40,7 @@
 #include "ns3/string.h"
 #include "ns3/trace-source-accessor.h"
 #include "ns3/traffic-control-layer.h"
+#include "ns3/point-to-point-net-device.h"
 #include "ns3/uinteger.h"
 
 namespace ns3
@@ -987,6 +988,7 @@ Ipv4L3Protocol::SendRealOut(Ptr<Ipv4Route> route, Ptr<Packet> packet, const Ipv4
         m_dropTrace(ipHeader, packet, DROP_NO_ROUTE, this, 0);
         return;
     }
+    
     Ptr<NetDevice> outDev = route->GetOutputDevice();
     int32_t interface = GetInterfaceForDevice(outDev);
     NS_ASSERT(interface >= 0);
@@ -1010,10 +1012,17 @@ Ipv4L3Protocol::SendRealOut(Ptr<Ipv4Route> route, Ptr<Packet> packet, const Ipv4
     if (outInterface->IsUp())
     {
         NS_LOG_LOGIC("Send to " << targetLabel << " " << target);
-        if (packet->GetSize() + ipHeader.GetSerializedSize() > outInterface->GetDevice()->GetMtu())
+        // ***** Mahdi Change ***** (START) ***** //
+        uint16_t Mtu = outInterface->GetDevice()->GetMtu();
+        if (m_PoissonArrivals.size() > 0)
+        {
+            Mtu = CalculateMtu(outInterface, packet, ipHeader, outInterface->GetDevice()->GetMtu());
+        }
+        if (packet->GetSize() + ipHeader.GetSerializedSize() > Mtu)
         {
             std::list<Ipv4PayloadHeaderPair> listFragments;
-            DoFragmentation(packet, ipHeader, outInterface->GetDevice()->GetMtu(), listFragments);
+            DoFragmentation(packet, ipHeader, Mtu, listFragments);
+            // ***** Mahdi Change ***** (End) ***** //
             for (auto it = listFragments.begin(); it != listFragments.end(); it++)
             {
                 NS_LOG_LOGIC("Sending fragment " << *(it->first));
@@ -1089,6 +1098,7 @@ Ipv4L3Protocol::IpForward(Ptr<Ipv4Route> rtentry, Ptr<const Packet> p, const Ipv
         m_dropTrace(header, packet, DROP_TTL_EXPIRED, this, interface);
         return;
     }
+
     // in case the packet still has a priority tag attached, remove it
     SocketPriorityTag priorityTag;
     packet->RemovePacketTag(priorityTag);
@@ -1916,6 +1926,61 @@ Ipv4L3Protocol::GetHashValue_out(const Ipv4Address src, const Ipv4Address dst, c
     uint32_t hash = m_hasher.GetHash32(data);
     oss.str("");
     return hash;
+}
+
+uint32_t
+Ipv4L3Protocol::CalculateMtu(Ptr<Ipv4Interface> outInterface, Ptr<Packet> packet, Ipv4Header ipHeader, uint32_t originalMtu)
+{
+    NS_LOG_FUNCTION(this << outInterface << *packet << ipHeader);
+    uint32_t bytesInqueue = outInterface->GetBytesInQueue(packet, ipHeader, ipHeader.GetDestination());
+    Ptr<PointToPointNetDevice> device = DynamicCast<PointToPointNetDevice>(outInterface->GetDevice());
+    DataRate deviceDataRate = device->GetDataRate();
+    Time startTxTime = deviceDataRate.CalculateBytesTxTime(bytesInqueue) + Simulator::Now();
+    Time endTxTime = deviceDataRate.CalculateBytesTxTime((packet->GetSize() + ipHeader.GetSerializedSize() + 2 /* for PppHeader */)) + startTxTime;
+    // cout << "Bytes in Queue when sending packet with ID: " << ipHeader.GetIdentification() << " and size: " << packet->GetSize() + ipHeader.GetSerializedSize() << " is: " << bytesInqueue << " at time: " << Simulator::Now().GetNanoSeconds();
+    // cout << " StartTxTime: " << startTxTime.GetNanoSeconds() << " EndTxTime: " << endTxTime.GetNanoSeconds() << endl;
+    // return originalMtu;
+    // removing Poisson arrivals that are before Now
+    while (m_PoissonArrivals.size() > 0 && m_PoissonArrivals[0] < Simulator::Now())
+    {
+        m_PoissonArrivals.erase(m_PoissonArrivals.begin());
+    }
+    // std::cout << "The first Poisson arrival is: " << m_PoissonArrivals[0].GetNanoSeconds() << " Packet start time is: " << startTxTime.GetNanoSeconds() << " Packet end time is: " << endTxTime.GetNanoSeconds() << " with ID: " << ipHeader.GetIdentification() << " with size: " << packet->GetSize() + ipHeader.GetSerializedSize() << std::endl;
+    if (endTxTime <= m_PoissonArrivals[0])
+    {
+        // std::cout << "No Poisson arrival during packet transmission." << std::endl;
+        return originalMtu;
+    }
+
+    uint32_t Pidx = 0;
+    while (startTxTime > m_PoissonArrivals[Pidx])
+    {
+        Pidx++;
+        // std::cout << "The next Poisson arrival is: " << m_PoissonArrivals[Pidx].GetNanoSeconds() << std::endl;
+        if (Pidx >= m_PoissonArrivals.size() || endTxTime < m_PoissonArrivals[Pidx])
+        {
+            // std::cout << "No Poisson arrival during packet transmission." << std::endl;
+            return originalMtu;
+        }
+    }
+    uint32_t newMtu = std::min(((uint32_t)((m_PoissonArrivals[Pidx] - startTxTime) * deviceDataRate / 8) + 52), originalMtu);
+    newMtu = std::max(newMtu, (uint32_t) 68); // minimum IPv4 MTU is 68 bytes
+    // std::cout << "The Poisson arrival during packet transmission is: " << m_PoissonArrivals[Pidx].GetNanoSeconds() << " New MTU is: " << newMtu << std::endl;
+    return newMtu;
+}
+
+void
+Ipv4L3Protocol::SetProbing(bool enable)
+{
+    NS_LOG_FUNCTION(this << enable);
+    m_isProbing = enable;
+}
+
+void
+Ipv4L3Protocol::SetPoissonArrivals(std::vector<Time> arrivals)
+{
+    NS_LOG_FUNCTION(this);
+    m_PoissonArrivals = arrivals;
 }
 // ***** Mahdi Change ***** (END) ***** //
 

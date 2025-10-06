@@ -257,6 +257,8 @@ void run_single_queue_simulation(int argc, char* argv[]) {
     Config::SetDefault("ns3::RedQueueDisc::Wait", BooleanValue(false));
     Config::SetDefault("ns3::RedQueueDisc::LInterm", DoubleValue(1));
     Config::SetDefault("ns3::WorkloadApp::ProbeStartTime", TimeValue(Seconds(stof(steadyStartTime))));
+    Config::SetDefault("ns3::WorkloadApp::ProbeStopTime", TimeValue(Seconds(stof(steadyStopTime))));
+    // Config::SetDefault("ns3::PointToPointNetDevice::Mtu", UintegerValue(300));
     Config::SetDefault("ns3::PointToPointNetDevice::ProbeTrsh", UintegerValue(56));
     if (isDifferentating) {
         Config::SetDefault("ns3::PrioQueueDisc::ErrorRate", DoubleValue(errorRate));
@@ -336,6 +338,14 @@ void run_single_queue_simulation(int argc, char* argv[]) {
     // TrafficControlHelper srcToSwitchTCH;
     // srcToSwitchTCH.SetRootQueueDisc("ns3::FqCoDelQueueDisc");
     // srcToSwitchTCH.Install(srcHostsToSwitchNetDevices[0].Get(0));
+    // Install FifoQueueDisc on all srcs to switch link
+    TrafficControlHelper srcToSwitchTCH;
+    srcToSwitchTCH.SetRootQueueDisc("ns3::FifoQueueDisc",
+                                  "MaxSize", StringValue("10000p"));
+    srcToSwitchTCH.Install(srcHostsToSwitchNetDevices[0].Get(0));
+    for (int i = 1; i < nSrcHosts; i++) {
+        srcToSwitchTCH.Install(ctHostsToSwitchNetDevices[i - 1].Get(0));
+    }
     // // Install RED Queue Discs on the switche to src hosts links
     TrafficControlHelper switchToSrcHostTCH;
     switchToSrcHostTCH.SetRootQueueDisc("ns3::RedQueueDisc", 
@@ -539,7 +549,7 @@ void run_single_queue_simulation(int argc, char* argv[]) {
     Ptr<PointToPointNetDevice> switchToDstNetDevice = DynamicCast<PointToPointNetDevice>(dstHostsToSwitchNetDevices.Get(1));
     Ptr<PointToPointNetDevice> incomingNetDevice = DynamicCast<PointToPointNetDevice>(srcHostsToSwitchNetDevices[0].Get(1));
     Ptr<PointToPointNetDevice> incomingNetDevice_1 = DynamicCast<PointToPointNetDevice>(ctHostsToSwitchNetDevices[0].Get(1));
-    auto *switchToDstSampler = new PoissonSampler(Seconds(stof(steadyStartTime)), Seconds(stof(steadyStopTime)), DynamicCast<RedQueueDisc>(switchToDstHostQueueDisc.Get(0)->GetQueueDiscClass(0)->GetQueueDisc()), switchToDstNetDevice->GetQueue(), switchToDstNetDevice, "SD0", sampleRate, incomingNetDevice, incomingNetDevice_1, traffic);
+    auto *switchToDstSampler = new PoissonSampler(Seconds(stof(steadyStartTime)), Seconds(stof(steadyStopTime)), DynamicCast<RedQueueDisc>(switchToDstHostQueueDisc.Get(0)->GetQueueDiscClass(0)->GetQueueDisc()), switchToDstNetDevice->GetQueue(), switchToDstNetDevice, "SD0", sampleRate, incomingNetDevice, incomingNetDevice_1, traffic, GetNodeIP(dstHosts.Get(0), 1));
     // auto *switchToDstSampler = new PoissonSampler(Seconds(stof(steadyStartTime)), Seconds(stof(steadyStopTime)), DynamicCast<RedQueueDisc>(switchToDstHostQueueDisc.Get(0)), switchToDstNetDevice->GetQueue(), switchToDstNetDevice, "SD0", sampleRate);
     // auto *switchToDstSampler = new PoissonSampler(Seconds(stof(steadyStartTime)), Seconds(stof(steadyStopTime)), nullptr, switchToDstNetDevice->GetQueue(), switchToDstNetDevice, "SD0", sampleRate);
 

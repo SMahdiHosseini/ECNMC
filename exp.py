@@ -7,8 +7,8 @@ from enum import Enum
 import subprocess
 import random
 import psutil
-# __ns3_path = os.popen('locate "ns-3.41" | grep /ns-3.41$').read().splitlines()[0]
-__ns3_path = "/media/experiments/ns-allinone-3.41/ns-3.41"
+__ns3_path = os.popen('locate "ns-3.41" | grep /ns-3.41$').read().splitlines()[0]
+# __ns3_path = "/media/experiments/ns-allinone-3.41/ns-3.41"
 # __ns3_path = '/Users/shossein/Documents/NAL/Flwo-Path_Consistency/ns-allinone-3.41/ns-3.41'
 
 class ReverseType(Enum):
@@ -411,7 +411,7 @@ args.reverseType = ReverseType(int(args.reverseType))
 # rebuild_project()
 if (args.IsForward == 1):
     if (args.IsTest):
-        run_forward_experiment([0 + 90], args.IsSingleQueue)
+        run_forward_experiment([0], args.IsSingleQueue)
     else:
         expConfig = ExperimentConfig()
         expConfig.read_config_file('Parameters.config')
@@ -419,7 +419,7 @@ if (args.IsForward == 1):
         ths = []
         numOfThs = 30
         for th in range(numOfThs):
-            ths.append(threading.Thread(target=run_forward_experiment, args=([i + 90 for i in range(int(th * expConfig.experiments / numOfThs), int((th + 1) * expConfig.experiments / numOfThs))], args.IsSingleQueue, )))
+            ths.append(threading.Thread(target=run_forward_experiment, args=([i for i in range(int(th * expConfig.experiments / numOfThs), int((th + 1) * expConfig.experiments / numOfThs))], args.IsSingleQueue, )))
 
         for th in ths:
             th.start()

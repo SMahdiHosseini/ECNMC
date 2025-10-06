@@ -35,11 +35,11 @@ double samplingEvent::GetLastDropProb() const { return _lastLossProb; }
 uint32_t samplingEvent::GetLastQueueSize() const { return _lastQueueSize; }
 uint32_t samplingEvent::GetLastTotalQueueSize() const { return _lastTotalQueueSize; }
 PoissonSampler::PoissonSampler(const Time &steadyStartTime, const Time &steadyStopTime, Ptr<RedQueueDisc> queueDisc, Ptr<Queue<Packet>> queue, Ptr<PointToPointNetDevice>  outgoingNetDevice, const string &sampleTag, double sampleRate) 
-: PoissonSampler(steadyStartTime, steadyStopTime, queueDisc, queue, outgoingNetDevice, sampleTag, sampleRate, nullptr, nullptr, "") {
+: PoissonSampler(steadyStartTime, steadyStopTime, queueDisc, queue, outgoingNetDevice, sampleTag, sampleRate, nullptr, nullptr, "", Ipv4Address("10.3.1.1")) {
 
 }
 
-PoissonSampler::PoissonSampler(const Time &steadyStartTime, const Time &steadyStopTime, Ptr<RedQueueDisc> queueDisc, Ptr<Queue<Packet>> queue, Ptr<PointToPointNetDevice>  outgoingNetDevice, const string &sampleTag, double sampleRate, Ptr<PointToPointNetDevice> _incomingNetDevice, Ptr<PointToPointNetDevice> _incomingNetDevice_1, const string cdfFileName)
+PoissonSampler::PoissonSampler(const Time &steadyStartTime, const Time &steadyStopTime, Ptr<RedQueueDisc> queueDisc, Ptr<Queue<Packet>> queue, Ptr<PointToPointNetDevice>  outgoingNetDevice, const string &sampleTag, double sampleRate, Ptr<PointToPointNetDevice> _incomingNetDevice, Ptr<PointToPointNetDevice> _incomingNetDevice_1, const string cdfFileName, Ipv4Address _dstIpAddress)
 : Monitor(Seconds(0), steadyStopTime, steadyStartTime, steadyStopTime, sampleTag) {
     REDQueueDisc = queueDisc;
     NetDeviceQueue = queue;
@@ -66,6 +66,7 @@ PoissonSampler::PoissonSampler(const Time &steadyStartTime, const Time &steadySt
     outgoingDataRate = outgoingNetDevice->GetDataRate();
     incomingNetDevice = _incomingNetDevice;
     incomingNetDevice_1 = _incomingNetDevice_1;
+    DstIpAddress = _dstIpAddress;
     Simulator::Schedule(Seconds(0), &PoissonSampler::Connect, this, outgoingNetDevice);
     Simulator::Schedule(steadyStopTime, &PoissonSampler::Disconnect, this, outgoingNetDevice);
 }
@@ -92,19 +93,21 @@ void PoissonSampler::RecordIncomingPacket(Ptr<const Packet> packet) {
     // if (ipHeader.GetSource() == Ipv4Address("10.1.1.1")) {
     //     cout << "### POISSON ### Receiving Time at switch of : " << ipHeader.GetIdentification() << " Time: " << Simulator::Now().GetNanoSeconds() << endl;
     // }
-    if (ipHeader.GetSource() == Ipv4Address("10.3.1.1")) {
+    if (ipHeader.GetSource() == DstIpAddress) {
         return;
     }
     uint16_t sourcePort = 0;
-    if (ipHeader.GetProtocol() == 6) {
-        TcpHeader tcpHeader;
-        pktCopy->PeekHeader(tcpHeader);
-        sourcePort = tcpHeader.GetSourcePort();
-    }
-    else if (ipHeader.GetProtocol() == 17) {
-        UdpHeader udpHeader;
-        pktCopy->PeekHeader(udpHeader);
-        sourcePort = udpHeader.GetSourcePort();
+    if (ipHeader.GetFragmentOffset() == 0) {
+        if (ipHeader.GetProtocol() == 6) {
+            TcpHeader tcpHeader;
+            pktCopy->PeekHeader(tcpHeader);
+            sourcePort = tcpHeader.GetSourcePort();
+        }
+        else if (ipHeader.GetProtocol() == 17) {
+            UdpHeader udpHeader;
+            pktCopy->PeekHeader(udpHeader);
+            sourcePort = udpHeader.GetSourcePort();
+        }
     }
     // Time prev = lastPacketTime;
     // lastPacketTime = Simulator::Now();
@@ -189,15 +192,17 @@ void PoissonSampler::EnqueueQueueDisc(Ptr<const QueueDiscItem> item) {
     const Ptr<Packet> &pktCopy = item->GetPacket()->Copy();
     Ipv4Header ipHeader = DynamicCast<const Ipv4QueueDiscItem>(item)->GetHeader();
     uint16_t sourcePort = 0;
-    if (ipHeader.GetProtocol() == 6) {
-        TcpHeader tcpHeader;
-        pktCopy->PeekHeader(tcpHeader);
-        sourcePort = tcpHeader.GetSourcePort();
-    }
-    else if (ipHeader.GetProtocol() == 17) {
-        UdpHeader udpHeader;
-        pktCopy->PeekHeader(udpHeader);
-        sourcePort = udpHeader.GetSourcePort();
+    if (ipHeader.GetFragmentOffset() == 0) {
+        if (ipHeader.GetProtocol() == 6) {
+            TcpHeader tcpHeader;
+            pktCopy->PeekHeader(tcpHeader);
+            sourcePort = tcpHeader.GetSourcePort();
+        }
+        else if (ipHeader.GetProtocol() == 17) {
+            UdpHeader udpHeader;
+            pktCopy->PeekHeader(udpHeader);
+            sourcePort = udpHeader.GetSourcePort();
+        }
     }
     std::ostringstream oss;
     DynamicCast<const Ipv4QueueDiscItem>(item)->GetHeader().GetSource().Print(oss);
@@ -238,20 +243,19 @@ void PoissonSampler::DequeueQueueDisc(Ptr<const QueueDiscItem> item) {
     event.SetTotalQueueSize(ComputeQueueSize() + item->GetSize() + 2);
     event.SetLastMarkingProb(REDQueueDisc->_lastMarkingProb);
     const Ptr<Packet> &pktCopy = item->GetPacket()->Copy();
-    PppHeader pppHeader;
-    pktCopy->RemoveHeader(pppHeader);
-    Ipv4Header ipHeader;
-    pktCopy->RemoveHeader(ipHeader);
+    Ipv4Header ipHeader = DynamicCast<const Ipv4QueueDiscItem>(item)->GetHeader();
     uint16_t sourcePort = 0;
-    if (ipHeader.GetProtocol() == 6) {
-        TcpHeader tcpHeader;
-        pktCopy->PeekHeader(tcpHeader);
-        sourcePort = tcpHeader.GetSourcePort();
-    }
-    else if (ipHeader.GetProtocol() == 17) {
-        UdpHeader udpHeader;
-        pktCopy->PeekHeader(udpHeader);
-        sourcePort = udpHeader.GetSourcePort();
+    if (ipHeader.GetFragmentOffset() == 0) {
+        if (ipHeader.GetProtocol() == 6) {
+            TcpHeader tcpHeader;
+            pktCopy->PeekHeader(tcpHeader);
+            sourcePort = tcpHeader.GetSourcePort();
+        }
+        else if (ipHeader.GetProtocol() == 17) {
+            UdpHeader udpHeader;
+            pktCopy->PeekHeader(udpHeader);
+            sourcePort = udpHeader.GetSourcePort();
+        }
     }
     std::ostringstream oss;
     DynamicCast<const Ipv4QueueDiscItem>(item)->GetHeader().GetSource().Print(oss);
@@ -405,7 +409,7 @@ void PoissonSampler::RecordPacket(Ptr<const Packet> packet) {
     pktCopy->RemoveHeader(pppHeader);
     Ipv4Header ipHeader;
     pktCopy->RemoveHeader(ipHeader);
-    if (ipHeader.GetSource() != Ipv4Address("10.3.1.1")) {
+    if (ipHeader.GetSource() != DstIpAddress) {
         lastLeftTime = Simulator::Now();
         lastLeftSize = packet->GetSize();
     }
