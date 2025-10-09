@@ -1855,14 +1855,27 @@ def calculate_offline_computations(__ns3_path, rate, segment, experiment, result
             df_res['RTT'] = {}
             df_res['InterArrivals'] = {}
             df_res['bias'] = {}
+            df_res['ActiveFractionOfAll'] = {}
+            df_res['ActiveFractionOfAll']['Packets'] = 0
+            df_res['ActiveFractionOfAll']['Bytes'] = 0
+            df_res['ActiveFractionOfTagged'] = {}
+            df_res['ActiveFractionOfTagged']['Packets'] = 0
+            df_res['ActiveFractionOfTagged']['Bytes'] = 0
             txDelay = (1502 * 8 / linksRates[0])
             full_df = addRemoveTransmission_data(full_df, linkDelays, linksRates)
             
             if passiveProbe:
+                all_packets = len(full_df)
+                all_bytes = full_df['PayloadSize'].sum()
                 full_df = full_df[full_df['Tagged'] != "0"]
                 full_df['BitsTag'] = full_df['Tagged'].apply(lambda x: x.split(':')[1:] if isinstance(x, str) else [])
                 full_df = full_df.explode('BitsTag')
                 full_df['BitsTag'] = full_df['BitsTag'].astype(int)
+
+                df_res['ActiveFractionOfAll']['Packets'] = len(full_df[full_df['BitsTag'] == 0]) / all_packets
+                df_res['ActiveFractionOfAll']['Bytes'] = full_df[full_df['BitsTag'] == 0]['PayloadSize'].sum() / all_bytes
+                df_res['ActiveFractionOfTagged']['Packets'] = len(full_df[full_df['BitsTag'] == 0]) / len(full_df)
+                df_res['ActiveFractionOfTagged']['Bytes'] = full_df[full_df['BitsTag'] == 0]['PayloadSize'].sum() / full_df['PayloadSize'].sum()
                 # full_df['Delay'] = full_df['Delay'] + full_df['BitsTag'] / linksRates[1]
                 # full_df['SentTime'] = full_df['SentTime'] + full_df['BitsTag'] / linksRates[0]
                 full_df = full_df.sort_values(by=['SentTime'])

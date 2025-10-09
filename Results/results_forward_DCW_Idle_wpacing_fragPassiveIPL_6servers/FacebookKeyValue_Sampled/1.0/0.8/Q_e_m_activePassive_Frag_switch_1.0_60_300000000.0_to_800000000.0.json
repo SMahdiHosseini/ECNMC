@@ -1,0 +1,949 @@
+{
+    "MaxEpsilonIneqDelay": {
+        "event_rightCont_timeAvg": {
+            "A0D0": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 0
+                    },
+                    2
+                ]
+            }
+        },
+        "event_leftCont_timeAvg": {
+            "A0D0": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 0
+                    },
+                    2
+                ]
+            }
+        },
+        "event_linearInterp_timeAvg": {
+            "A0D0": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 0
+                    },
+                    2
+                ]
+            }
+        },
+        "event_poisson_eventAvg": {
+            "A0D0": {
+                "0": [
+                    {
+                        "WBias": 2,
+                        "WOBias": 1
+                    },
+                    2
+                ]
+            }
+        },
+        "event_eventAvg": {
+            "A0D0": {
+                "0": [
+                    {
+                        "WBias": 2,
+                        "WOBias": 1
+                    },
+                    2
+                ]
+            }
+        }
+    },
+    "MaxEpsilonIneqLastDelay": {
+        "event_rightCont_timeAvg": {
+            "A0D0": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 0
+                    },
+                    0
+                ]
+            }
+        },
+        "event_leftCont_timeAvg": {
+            "A0D0": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 0
+                    },
+                    0
+                ]
+            }
+        },
+        "event_linearInterp_timeAvg": {
+            "A0D0": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 0
+                    },
+                    0
+                ]
+            }
+        },
+        "event_poisson_eventAvg": {
+            "A0D0": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 0
+                    },
+                    0
+                ]
+            }
+        },
+        "event_eventAvg": {
+            "A0D0": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 0
+                    },
+                    0
+                ]
+            }
+        }
+    },
+    "MaxEpsilonIneqSuccessProb": {
+        "event_rightCont_timeAvg": {
+            "A0D0": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 2
+                    },
+                    2
+                ]
+            }
+        },
+        "event_leftCont_timeAvg": {
+            "A0D0": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 2
+                    },
+                    2
+                ]
+            }
+        },
+        "event_linearInterp_timeAvg": {
+            "A0D0": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 2
+                    },
+                    2
+                ]
+            }
+        },
+        "event_poisson_eventAvg": {
+            "A0D0": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 2
+                    },
+                    2
+                ]
+            }
+        },
+        "event_eventAvg": {
+            "A0D0": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 2
+                    },
+                    2
+                ]
+            }
+        },
+        "probability_rightCont_timeAvg": {
+            "A0D0": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 2
+                    },
+                    2
+                ]
+            }
+        },
+        "probability_leftCont_timeAvg": {
+            "A0D0": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 2
+                    },
+                    2
+                ]
+            }
+        },
+        "probability_linearInterp_timeAvg": {
+            "A0D0": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 2
+                    },
+                    2
+                ]
+            }
+        },
+        "probability_poisson_eventAvg": {
+            "A0D0": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 2
+                    },
+                    2
+                ]
+            }
+        },
+        "probability_eventAvg": {
+            "A0D0": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 2
+                    },
+                    2
+                ]
+            }
+        }
+    },
+    "MaxEpsilonIneqLastSuccessProb": {
+        "event_rightCont_timeAvg": {
+            "A0D0": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 0
+                    },
+                    0
+                ]
+            }
+        },
+        "event_leftCont_timeAvg": {
+            "A0D0": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 0
+                    },
+                    0
+                ]
+            }
+        },
+        "event_linearInterp_timeAvg": {
+            "A0D0": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 0
+                    },
+                    0
+                ]
+            }
+        },
+        "event_poisson_eventAvg": {
+            "A0D0": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 0
+                    },
+                    0
+                ]
+            }
+        },
+        "event_eventAvg": {
+            "A0D0": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 0
+                    },
+                    0
+                ]
+            }
+        },
+        "probability_rightCont_timeAvg": {
+            "A0D0": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 0
+                    },
+                    0
+                ]
+            }
+        },
+        "probability_leftCont_timeAvg": {
+            "A0D0": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 0
+                    },
+                    0
+                ]
+            }
+        },
+        "probability_linearInterp_timeAvg": {
+            "A0D0": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 0
+                    },
+                    0
+                ]
+            }
+        },
+        "probability_poisson_eventAvg": {
+            "A0D0": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 0
+                    },
+                    0
+                ]
+            }
+        },
+        "probability_eventAvg": {
+            "A0D0": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 0
+                    },
+                    0
+                ]
+            }
+        }
+    },
+    "MaxEpsilonIneqNonMarkingProb": {
+        "event_rightCont_timeAvg": {
+            "A0D0": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 0
+                    },
+                    2
+                ]
+            }
+        },
+        "event_leftCont_timeAvg": {
+            "A0D0": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 0
+                    },
+                    2
+                ]
+            }
+        },
+        "event_linearInterp_timeAvg": {
+            "A0D0": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 0
+                    },
+                    2
+                ]
+            }
+        },
+        "event_poisson_eventAvg": {
+            "A0D0": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 2
+                    },
+                    2
+                ]
+            }
+        },
+        "event_eventAvg": {
+            "A0D0": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 2
+                    },
+                    2
+                ]
+            }
+        }
+    },
+    "MaxEpsilonIneqLastNonMarkingProb": {
+        "event_rightCont_timeAvg": {
+            "A0D0": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 0
+                    },
+                    0
+                ]
+            }
+        },
+        "event_leftCont_timeAvg": {
+            "A0D0": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 0
+                    },
+                    0
+                ]
+            }
+        },
+        "event_linearInterp_timeAvg": {
+            "A0D0": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 0
+                    },
+                    0
+                ]
+            }
+        },
+        "event_poisson_eventAvg": {
+            "A0D0": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 0
+                    },
+                    0
+                ]
+            }
+        },
+        "event_eventAvg": {
+            "A0D0": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 0
+                    },
+                    0
+                ]
+            }
+        }
+    },
+    "EndToEndSampleSizeDelay": {
+        "A0D0": {
+            "0": [
+                97,
+                110
+            ]
+        }
+    },
+    "EndToEndSampleSizeSuccess": {
+        "A0D0": {
+            "0": [
+                97,
+                110
+            ]
+        }
+    },
+    "EndToEndSampleSizeMarking": {
+        "A0D0": {
+            "0": [
+                97,
+                110
+            ]
+        }
+    },
+    "totalPckts": {
+        "A0D0": {
+            "0": [
+                97,
+                110
+            ]
+        }
+    },
+    "InterArrivals": {
+        "A0D0": {
+            "0": [
+                5184015.899305556,
+                4450235.914373089
+            ]
+        }
+    },
+    "EndToEndDelayMean": {
+        "event_rightCont_timeAvg": {
+            "A0D0": {
+                "0": [
+                    [
+                        17128.70315040756,
+                        18378.270090478745
+                    ],
+                    2
+                ]
+            }
+        },
+        "event_leftCont_timeAvg": {
+            "A0D0": {
+                "0": [
+                    [
+                        17893.821756247307,
+                        19293.578523328455
+                    ],
+                    2
+                ]
+            }
+        },
+        "event_linearInterp_timeAvg": {
+            "A0D0": {
+                "0": [
+                    [
+                        17511.262453327432,
+                        18835.924306903595
+                    ],
+                    2
+                ]
+            }
+        },
+        "event_poisson_eventAvg": {
+            "A0D0": {
+                "0": [
+                    [
+                        [
+                            18318.525773195877,
+                            903.9372206651132
+                        ],
+                        [
+                            18492.50909090909,
+                            534.9980032009472
+                        ]
+                    ],
+                    2
+                ]
+            }
+        },
+        "event_eventAvg": {
+            "A0D0": {
+                "0": [
+                    [
+                        [
+                            18318.525773195877,
+                            903.9372206651132
+                        ],
+                        [
+                            18492.50909090909,
+                            534.9980032009472
+                        ]
+                    ],
+                    2
+                ]
+            }
+        }
+    },
+    "EndToEndSuccessProb": {
+        "event_rightCont_timeAvg": {
+            "A0D0": {
+                "0": [
+                    [
+                        1.0,
+                        1.0
+                    ],
+                    2
+                ]
+            }
+        },
+        "event_leftCont_timeAvg": {
+            "A0D0": {
+                "0": [
+                    [
+                        1.0,
+                        1.0
+                    ],
+                    2
+                ]
+            }
+        },
+        "event_linearInterp_timeAvg": {
+            "A0D0": {
+                "0": [
+                    [
+                        1.0,
+                        1.0
+                    ],
+                    2
+                ]
+            }
+        },
+        "event_poisson_eventAvg": {
+            "A0D0": {
+                "0": [
+                    [
+                        [
+                            1.0,
+                            0.0
+                        ],
+                        [
+                            1.0,
+                            0.0
+                        ]
+                    ],
+                    2
+                ]
+            }
+        },
+        "event_eventAvg": {
+            "A0D0": {
+                "0": [
+                    [
+                        [
+                            1.0,
+                            0.0
+                        ],
+                        [
+                            1.0,
+                            0.0
+                        ]
+                    ],
+                    2
+                ]
+            }
+        },
+        "probability_rightCont_timeAvg": {
+            "A0D0": {
+                "0": [
+                    [
+                        1.0,
+                        1.0
+                    ],
+                    2
+                ]
+            }
+        },
+        "probability_leftCont_timeAvg": {
+            "A0D0": {
+                "0": [
+                    [
+                        1.0,
+                        1.0
+                    ],
+                    2
+                ]
+            }
+        },
+        "probability_linearInterp_timeAvg": {
+            "A0D0": {
+                "0": [
+                    [
+                        1.0,
+                        1.0
+                    ],
+                    2
+                ]
+            }
+        },
+        "probability_poisson_eventAvg": {
+            "A0D0": {
+                "0": [
+                    [
+                        [
+                            1.0,
+                            0.0
+                        ],
+                        [
+                            1.0,
+                            0.0
+                        ]
+                    ],
+                    2
+                ]
+            }
+        },
+        "probability_eventAvg": {
+            "A0D0": {
+                "0": [
+                    [
+                        [
+                            1.0,
+                            0.0
+                        ],
+                        [
+                            1.0,
+                            0.0
+                        ]
+                    ],
+                    2
+                ]
+            }
+        }
+    },
+    "EndToEndNonMarkingProb": {
+        "event_rightCont_timeAvg": {
+            "A0D0": {
+                "0": [
+                    [
+                        0.9983544275756843,
+                        1.0
+                    ],
+                    2
+                ]
+            }
+        },
+        "event_leftCont_timeAvg": {
+            "A0D0": {
+                "0": [
+                    [
+                        0.9914794901884366,
+                        1.0
+                    ],
+                    2
+                ]
+            }
+        },
+        "event_linearInterp_timeAvg": {
+            "A0D0": {
+                "0": [
+                    [
+                        0.9949169588820604,
+                        1.0
+                    ],
+                    2
+                ]
+            }
+        },
+        "event_poisson_eventAvg": {
+            "A0D0": {
+                "0": [
+                    [
+                        [
+                            0.9896907216494846,
+                            0.010256000069563028
+                        ],
+                        [
+                            1.0,
+                            0.0
+                        ]
+                    ],
+                    2
+                ]
+            }
+        },
+        "event_eventAvg": {
+            "A0D0": {
+                "0": [
+                    [
+                        [
+                            0.9896907216494846,
+                            0.010256000069563028
+                        ],
+                        [
+                            1.0,
+                            0.0
+                        ]
+                    ],
+                    2
+                ]
+            }
+        }
+    },
+    "DelayBias": {
+        "A0D0": {
+            "0": [
+                379.3241695303551,
+                390.8787878787879
+            ]
+        }
+    },
+    "SuccessProbBias": {
+        "A0D0": {
+            "0": [
+                0.0,
+                0.0
+            ]
+        }
+    },
+    "NonMarkingProbBias": {
+        "A0D0": {
+            "0": [
+                0.0,
+                0.0
+            ]
+        }
+    },
+    "DropRate": [],
+    "maxEpsilonDelay": {
+        "A0D0": {
+            "0": [
+                0.012296349990780147,
+                0.007207596833279737
+            ]
+        }
+    },
+    "maxEpsilonLastDelay": {
+        "A0D0": {
+            "0": []
+        }
+    },
+    "maxEpsilonSuccessProb": {
+        "A0D0": {
+            "0": [
+                0.0,
+                0.0
+            ]
+        }
+    },
+    "maxEpsilonLastSuccessProb": {
+        "A0D0": {
+            "0": []
+        }
+    },
+    "maxEpsilonNonMarkingProb": {
+        "A0D0": {
+            "0": [
+                0.00339901865354052,
+                0.0011323091890781492
+            ]
+        }
+    },
+    "maxEpsilonLastNonMarkingProb": {
+        "A0D0": {
+            "0": []
+        }
+    },
+    "workLoad": {
+        "A0D0": {
+            "0": [
+                0.000545152,
+                0.000701552
+            ]
+        }
+    },
+    "RTT": {
+        "A0D0": {
+            "0": [
+                200000.0,
+                200000.0
+            ]
+        }
+    },
+    "AverageWorkLoad": 0.000623352,
+    "experiments": 2,
+    "TrafficsComptDelay": {
+        "event_poisson_eventAvg": {
+            "0": [
+                0,
+                0
+            ]
+        }
+    },
+    "expSuccessDelay": [
+        [
+            57,
+            1,
+            1
+        ],
+        [
+            53,
+            0,
+            1
+        ]
+    ],
+    "SD0Delaystd": [
+        8876.413962060684,
+        5516.915378113088
+    ],
+    "SD0DelayMean": [
+        18324.047858660404,
+        19789.795642170793
+    ],
+    "SD0LastDelaystd": [
+        8952.766623050044,
+        5466.614937115156
+    ],
+    "SD0LastDelayMean": [
+        18739.07935442991,
+        20125.236355199813
+    ],
+    "SD0SuccessProbStd": [
+        0.0,
+        0.0
+    ],
+    "SD0SuccessProbMean": [
+        1.0,
+        1.0
+    ],
+    "SD0LastSuccessProbStd": [
+        0.0,
+        0.0
+    ],
+    "SD0LastSuccessProbMean": [
+        1.0,
+        1.0
+    ],
+    "SD0NonMarkingProbStd": [
+        0.13154571770814877,
+        0.043711680621591024
+    ],
+    "SD0NonMarkingProbMean": [
+        0.9823884602482389,
+        0.9980859578910736
+    ],
+    "SD0LastNonMarkingProbStd": [
+        0.12843025956469825,
+        0.039545595272440254
+    ],
+    "SD0LastNonMarkingProbMean": [
+        0.9832271049983227,
+        0.9984339655472421
+    ],
+    "SD0SampleSize": [
+        5962,
+        5747
+    ],
+    "SD0InterArrivals": [
+        83450.1120617346,
+        84412.86286112078
+    ],
+    "SD0Occupancy": [
+        7.651922919229193,
+        8.501620942327397
+    ],
+    "SD0PacktsInQueue": [
+        5.321578803885832,
+        5.747253982030765
+    ],
+    "SD0EmptyFrac": [
+        1.7108352901710835,
+        0.08700191404210893
+    ],
+    "SD0GT1PktsFrac": [
+        93.30761489433075,
+        99.02557856272838
+    ],
+    "SD0mixingRate": [],
+    "SD0mixingSignalAvg": [],
+    "SD0mixingRateMonly": [],
+    "SD0mixingRatePoisson": [],
+    "SD0mixingRateE2EPoisson": [],
+    "SD0mixingRatePoissonEventAvg": [],
+    "SD0mixingDelayDiff": []
+}

@@ -23,6 +23,8 @@ def readResults(results_dir, serviceRateScales, results_dir_file, selectedVarMet
     e2e_samples_rtt = {}
     avgRtt = {}
     avgInterArrivals= {}
+    ActiveFractionOfAllPackets = {}
+    ActiveFractionOfAllBytes = {}
     e2e_delay = {}
     e2e_stds = {}
     stds = {}
@@ -87,6 +89,8 @@ def readResults(results_dir, serviceRateScales, results_dir_file, selectedVarMet
         stdsRatios[rate] = {}
         avgRtt[rate] = {}
         avgInterArrivals[rate] = {}
+        ActiveFractionOfAllPackets[rate] = {}
+        ActiveFractionOfAllBytes[rate] = {}
         if differentiationDelay == 0 and errorRate == 0:
             rate_dir = traffic + "/" + str(rate) + "/" + str(load)
         else:
@@ -149,6 +153,8 @@ def readResults(results_dir, serviceRateScales, results_dir_file, selectedVarMet
                         e2e_samples_rtt[rate] = np.mean([temp['RTT'][flow][path][i] / temp['InterArrivals'][flow][path][i] for i in range(temp['experiments']) if (str(temp['InterArrivals'][flow][path][i]) != 'nan' and temp['InterArrivals'][flow][path][i] != 0)])
                         avgRtt[rate] = np.mean(temp['RTT'][flow][path])
                         avgInterArrivals[rate] = np.nanmean(temp['InterArrivals'][flow][path])
+                        ActiveFractionOfAllPackets[rate] = np.mean(temp['ActiveFractionOfAll']['Packets'][flow][path])
+                        ActiveFractionOfAllBytes[rate] = np.mean(temp['ActiveFractionOfAll']['Bytes'][flow][path])
                         e2e_delay[rate] = np.mean([temp['EndToEndDelayMean']['event_poisson_eventAvg'][flow][path][0][i][0] for i in range(temp['EndToEndDelayMean']['event_poisson_eventAvg'][flow][path][1])])
                         e2e_stds[rate]['delay'] = np.mean([temp['EndToEndDelayMean']['event_poisson_eventAvg'][flow][path][0][i][1] for i in range(temp['EndToEndDelayMean']['event_poisson_eventAvg'][flow][path][1])])
                         e2e_stds[rate]['success'] = np.mean([temp['EndToEndSuccessProb']['event_poisson_eventAvg'][flow][path][0][i][1] for i in range(temp['EndToEndSuccessProb']['event_poisson_eventAvg'][flow][path][1])])
@@ -267,6 +273,8 @@ def readResults(results_dir, serviceRateScales, results_dir_file, selectedVarMet
     res['stdsRatios'] = stdsRatios
     res['avgRtt'] = avgRtt
     res['avgInterArrivals'] = avgInterArrivals
+    res['ActiveFractionOfAllPackets'] = ActiveFractionOfAllPackets
+    res['ActiveFractionOfAllBytes'] = ActiveFractionOfAllBytes
     return res
 
 def plot_CV_perRate(serviceRateScales, results_dir, results_dir_file, CVS, DropRates):
@@ -1057,6 +1065,8 @@ def analyse_forward_exp(results_dir, results_dir_file, rateScales, loads, select
     stdsRatios_all['nonMarking'] = {}
     avgRtt = {}
     avgInterArrivals = {}
+    ActiveFractionOfAllPackets = {}
+    ActiveFractionOfAllBytes = {}
     for traffic in traffics:
         results[traffic] = {}
         results_WOBias[traffic] = {}
@@ -1116,6 +1126,8 @@ def analyse_forward_exp(results_dir, results_dir_file, rateScales, loads, select
         pcktsRatio[traffic] = {}
         avgRtt[traffic] = {}
         avgInterArrivals[traffic] = {}
+        ActiveFractionOfAllPackets[traffic] = {}
+        ActiveFractionOfAllBytes[traffic] = {}
         for load in loads:
             results[traffic][load] = {}
             results_WOBias[traffic][load] = {}
@@ -1174,6 +1186,8 @@ def analyse_forward_exp(results_dir, results_dir_file, rateScales, loads, select
             stdsRatios_all['nonMarking'][traffic][load] = {}
             pcktsRatio[traffic][load] = {}
             avgInterArrivals[traffic][load] = {}
+            ActiveFractionOfAllPackets[traffic][load] = {}
+            ActiveFractionOfAllBytes[traffic][load] = {}
             res = readResults(results_dir, rateScales, results_dir_file, selectedVarMethods, load=load, traffic=traffic)
             results[traffic][load] = res['results']
             results_WOBias[traffic][load] = res['results_WOBias']
@@ -1212,6 +1226,8 @@ def analyse_forward_exp(results_dir, results_dir_file, rateScales, loads, select
             stdsRatios[traffic][load] = res['stdsRatios']
             avgRtt[traffic][load] = res['avgRtt']
             avgInterArrivals[traffic][load] = res['avgInterArrivals']
+            ActiveFractionOfAllPackets[traffic][load] = res['ActiveFractionOfAllPackets']
+            ActiveFractionOfAllBytes[traffic][load] = res['ActiveFractionOfAllBytes']
             for rate in rateScales:
                 CVS_all['delay'][traffic][load][rate] = CVS[traffic][load][rate]['DelayCV']
                 CVS_all['success'][traffic][load][rate] = CVS[traffic][load][rate]['SuccessProbCV']
@@ -1243,6 +1259,8 @@ def analyse_forward_exp(results_dir, results_dir_file, rateScales, loads, select
             # results[traffic][load]['DropRate'] = DropRates[traffic][load]
     selectedRates = rateScales
     plot_metric_per_loads_traffic(list(results.keys()), avgInterArrivals, loads, selectedRates, results_dir, results_dir_file, 'Avg Inter Arrival Time(ns)')
+    plot_metric_per_loads_traffic(list(results.keys()), ActiveFractionOfAllBytes, loads, selectedRates, results_dir, results_dir_file, 'Fraction of Active Probs over All Bytes')
+    plot_metric_per_loads_traffic(list(results.keys()), ActiveFractionOfAllPackets, loads, selectedRates, results_dir, results_dir_file, 'Fraction of Active Probs over All Packets')
     plot_metric_per_loads_traffic(list(results.keys()), e2e_samples_rtt, loads, selectedRates, results_dir, results_dir_file, '#end-to-end samples per RTT')
     plot_metric_per_loads_traffic(list(results.keys()), switch_samples_rtt, loads, selectedRates, results_dir, results_dir_file, '#switch samples per RTT')
     plot_metric_per_loads_traffic(list(results.keys()), CVS_all['delay'], loads, selectedRates, results_dir, results_dir_file, 'CV of Delay')
@@ -1380,7 +1398,7 @@ def __main__():
     # results_dir_file = args.file
     start = 0.3 * 1e9
     end = 0.8 * 1e9
-    results_dir_file = "Q_e_m_activePassive_WBiasDelayOnly_switch_1.0_100_{}_to_{}".format(start, end)
+    results_dir_file = "Q_e_m_activePassive_Frag_switch_1.0_100_{}_to_{}".format(start, end)
     config = configparser.ConfigParser()
     config.read('../Results/results_{}/Parameters.config'.format(args.dir))
     rateScales = [float(x) for x in config.get('Settings', 'serviceRateScales').split(',')]

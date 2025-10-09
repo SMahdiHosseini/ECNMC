@@ -191,6 +191,12 @@ def prepare_results(flows, queues, num_of_paths):
     rounds_results['TrafficsComptDelay'] = {}
     rounds_results['TrafficsComptDelay']['event_poisson_eventAvg'] = {}
     rounds_results['expSuccessDelay'] = []
+    rounds_results['ActiveFractionOfAll'] = {}
+    rounds_results['ActiveFractionOfAll']['Packets'] = {}
+    rounds_results['ActiveFractionOfAll']['Bytes'] = {}
+    rounds_results['ActiveFractionOfTagged'] = {}
+    rounds_results['ActiveFractionOfTagged']['Packets'] = {}
+    rounds_results['ActiveFractionOfTagged']['Bytes'] = {}
     for var in delay_timeAvg_vars:
         for method in timeAvg_methods:
             rounds_results['MaxEpsilonIneqDelay'][var + '_' + method] = {}
@@ -272,6 +278,10 @@ def prepare_results(flows, queues, num_of_paths):
         rounds_results['DelayBias'][flow] = {}
         rounds_results['SuccessProbBias'][flow] = {}
         rounds_results['NonMarkingProbBias'][flow] = {}
+        rounds_results['ActiveFractionOfAll']['Packets'][flow] = {}
+        rounds_results['ActiveFractionOfAll']['Bytes'][flow] = {}
+        rounds_results['ActiveFractionOfTagged']['Packets'][flow] = {}
+        rounds_results['ActiveFractionOfTagged']['Bytes'][flow] = {}
         for i in range(num_of_paths):
             rounds_results['TrafficsComptDelay']['event_poisson_eventAvg'][i] = [0, 0]
             for var_method in rounds_results['MaxEpsilonIneqDelay'].keys():
@@ -305,6 +315,10 @@ def prepare_results(flows, queues, num_of_paths):
             rounds_results['DelayBias'][flow][i] = []
             rounds_results['SuccessProbBias'][flow][i] = []
             rounds_results['NonMarkingProbBias'][flow][i] = []
+            rounds_results['ActiveFractionOfAll']['Packets'][flow][i] = []
+            rounds_results['ActiveFractionOfAll']['Bytes'][flow][i] = []
+            rounds_results['ActiveFractionOfTagged']['Packets'][flow][i] = []
+            rounds_results['ActiveFractionOfTagged']['Bytes'][flow][i] = []
 
     return rounds_results
 
@@ -412,7 +426,7 @@ def analyze_single_experiment(return_dict, rate, queues_names, confidenceValue, 
     swtichDstREDQueueDiscMaxSize = convert_to_float(config.get('Settings', 'swtichDstREDQueueDiscMaxSize'))
     passiveProbe = False if config.get('Settings', 'PassiveProbe') == "0" else True
     num_of_paths = 1
-    nHosts = 2
+    nHosts = 6
     paths = range(num_of_paths)
     # if differentiationDelay is not None and errorRate is not None:
     #     biasCalculator = BiasCalculator(results_folder, str(rate) + "/D_" + str(differentiationDelay) + "/f_" + str(errorRate), [experiment], steadyStart, steadyEnd, rounds_results, bottleneckLinkRate)
@@ -488,6 +502,10 @@ def analyze_single_experiment(return_dict, rate, queues_names, confidenceValue, 
             rounds_results['DelayBias'][flow][path].append(endToEndStats[flow]['bias']['delay'][path])
             rounds_results['SuccessProbBias'][flow][path].append(endToEndStats[flow]['bias']['successProb'][path])
             rounds_results['NonMarkingProbBias'][flow][path].append(endToEndStats[flow]['bias']['nonMarkingProb'][path])
+            rounds_results['ActiveFractionOfAll']['Packets'][flow][path].append(endToEndStats[flow]['ActiveFractionOfAll']['Packets'])
+            rounds_results['ActiveFractionOfAll']['Bytes'][flow][path].append(endToEndStats[flow]['ActiveFractionOfAll']['Bytes'])
+            rounds_results['ActiveFractionOfTagged']['Packets'][flow][path].append(endToEndStats[flow]['ActiveFractionOfTagged']['Packets'])
+            rounds_results['ActiveFractionOfTagged']['Bytes'][flow][path].append(endToEndStats[flow]['ActiveFractionOfTagged']['Bytes'])
             AverageWorkLoad += (endToEndStats[flow]['workload'][path])
     
         rounds_results['workLoad'][flow][path].append(endToEndStats[flow]['workload'][path])
@@ -623,6 +641,10 @@ def merge_results(return_dict, merged_results, flows, queues, num_of_paths):
                 merged_results['DelayBias'][flow][i] += return_dict[exp]['DelayBias'][flow][i]
                 merged_results['SuccessProbBias'][flow][i] += return_dict[exp]['SuccessProbBias'][flow][i]
                 merged_results['NonMarkingProbBias'][flow][i] += return_dict[exp]['NonMarkingProbBias'][flow][i]
+                merged_results['ActiveFractionOfAll']['Packets'][flow][i] += return_dict[exp]['ActiveFractionOfAll']['Packets'][flow][i]
+                merged_results['ActiveFractionOfAll']['Bytes'][flow][i] += return_dict[exp]['ActiveFractionOfAll']['Bytes'][flow][i]
+                merged_results['ActiveFractionOfTagged']['Packets'][flow][i] += return_dict[exp]['ActiveFractionOfTagged']['Packets'][flow][i]
+                merged_results['ActiveFractionOfTagged']['Bytes'][flow][i] += return_dict[exp]['ActiveFractionOfTagged']['Bytes'][flow][i]
     for exp in return_dict.keys():
         merged_results['experiments'] += return_dict[exp]['experiments']
         merged_results['DropRate'] += return_dict[exp]['DropRate']
@@ -690,10 +712,10 @@ def analyze_all_experiments(rate, steadyStart, steadyEnd, confidenceValue, dir, 
     if differentiationDelay is not None and errorRate is not None:
         if differentiationDelay != 0.0:
             os.system('mkdir -p ../Results/results_{}/{}/{}/D_{}/f_{}/'.format(dir, rate, load, differentiationDelay, errorRate))
-        with open('../Results/results_{}/{}/{}/D_{}/f_{}/Q_e_m_activePassive_WBiasDelayOnly_switch_1.0_{}_{}_to_{}.json'.format(dir, rate, load, differentiationDelay, errorRate, experiments_end, steadyStart, steadyEnd), 'w') as f:
+        with open('../Results/results_{}/{}/{}/D_{}/f_{}/Q_e_m_activePassive_Frag_switch_1.0_{}_{}_to_{}.json'.format(dir, rate, load, differentiationDelay, errorRate, experiments_end, steadyStart, steadyEnd), 'w') as f:
             js.dump(merged_results, f, indent=4)
     else:
-        with open('../Results/results_{}/{}/{}/Q_e_m_activePassive_WBiasDelayOnly_switch_1.0_{}_{}_to_{}.json'.format(dir, rate, load, experiments_end, steadyStart, steadyEnd), 'w') as f:
+        with open('../Results/results_{}/{}/{}/Q_e_m_activePassive_Frag_switch_1.0_{}_{}_to_{}.json'.format(dir, rate, load, experiments_end, steadyStart, steadyEnd), 'w') as f:
             js.dump(merged_results, f, indent=4)
 
 # main function
@@ -717,10 +739,10 @@ def __main__():
     serviceRateScales = [float(x) for x in config.get('Settings', 'serviceRateScales').split(',')]
     loads = [float(x) for x in config.get('Settings', 'load').split(',')]
     traffics = config.get('Settings', 'traffic').split(',')
-    # serviceRateScales = [0.5]
+    # serviceRateScales = [0.75]
     traffics = ["Facebook_HadoopDist_All", "FacebookKeyValue_Sampled"]
     # traffics = ["Google_AllRPC", "Fabricated_Heavy_Head", "Fabricated_Heavy_Middle", "Google_SearchRPC", "Facebook_HadoopDist_All", "FacebookKeyValue_Sampled"]
-    # loads = [0.05]
+    # loads = [0.4]
     # elif "param" in args.dir:
     #     serviceRateScales = [float(x) for x in config.get('Settings', 'sampleRateScales').split(',')]
     # else:
