@@ -35,11 +35,11 @@ double samplingEvent::GetLastDropProb() const { return _lastLossProb; }
 uint32_t samplingEvent::GetLastQueueSize() const { return _lastQueueSize; }
 uint32_t samplingEvent::GetLastTotalQueueSize() const { return _lastTotalQueueSize; }
 PoissonSampler::PoissonSampler(const Time &steadyStartTime, const Time &steadyStopTime, Ptr<RedQueueDisc> queueDisc, Ptr<Queue<Packet>> queue, Ptr<PointToPointNetDevice>  outgoingNetDevice, const string &sampleTag, double sampleRate) 
-: PoissonSampler(steadyStartTime, steadyStopTime, queueDisc, queue, outgoingNetDevice, sampleTag, sampleRate, nullptr, nullptr, "", Ipv4Address("10.3.1.1")) {
+: PoissonSampler(steadyStartTime, steadyStopTime, queueDisc, queue, outgoingNetDevice, sampleTag, sampleRate, nullptr, nullptr, "") {
 
 }
 
-PoissonSampler::PoissonSampler(const Time &steadyStartTime, const Time &steadyStopTime, Ptr<RedQueueDisc> queueDisc, Ptr<Queue<Packet>> queue, Ptr<PointToPointNetDevice>  outgoingNetDevice, const string &sampleTag, double sampleRate, Ptr<PointToPointNetDevice> _incomingNetDevice, Ptr<PointToPointNetDevice> _incomingNetDevice_1, const string cdfFileName, Ipv4Address _dstIpAddress)
+PoissonSampler::PoissonSampler(const Time &steadyStartTime, const Time &steadyStopTime, Ptr<RedQueueDisc> queueDisc, Ptr<Queue<Packet>> queue, Ptr<PointToPointNetDevice>  outgoingNetDevice, const string &sampleTag, double sampleRate, Ptr<PointToPointNetDevice> _incomingNetDevice, Ptr<PointToPointNetDevice> _incomingNetDevice_1, const string cdfFileName)
 : Monitor(Seconds(0), steadyStopTime, steadyStartTime, steadyStopTime, sampleTag) {
     REDQueueDisc = queueDisc;
     NetDeviceQueue = queue;
@@ -66,7 +66,6 @@ PoissonSampler::PoissonSampler(const Time &steadyStartTime, const Time &steadySt
     outgoingDataRate = outgoingNetDevice->GetDataRate();
     incomingNetDevice = _incomingNetDevice;
     incomingNetDevice_1 = _incomingNetDevice_1;
-    DstIpAddress = _dstIpAddress;
     Simulator::Schedule(Seconds(0), &PoissonSampler::Connect, this, outgoingNetDevice);
     Simulator::Schedule(steadyStopTime, &PoissonSampler::Disconnect, this, outgoingNetDevice);
 }
@@ -93,9 +92,6 @@ void PoissonSampler::RecordIncomingPacket(Ptr<const Packet> packet) {
     // if (ipHeader.GetSource() == Ipv4Address("10.1.1.1")) {
     //     cout << "### POISSON ### Receiving Time at switch of : " << ipHeader.GetIdentification() << " Time: " << Simulator::Now().GetNanoSeconds() << endl;
     // }
-    if (ipHeader.GetSource() == DstIpAddress) {
-        return;
-    }
     uint16_t sourcePort = 0;
     if (ipHeader.GetFragmentOffset() == 0) {
         if (ipHeader.GetProtocol() == 6) {
@@ -311,23 +307,27 @@ void PoissonSampler::Connect(Ptr<PointToPointNetDevice> outgoingNetDevice) {
     if (REDQueueDisc != nullptr) {
         REDQueueDisc->TraceConnectWithoutContext("Enqueue", MakeCallback(&PoissonSampler::EnqueueQueueDisc, this));
         REDQueueDisc->TraceConnectWithoutContext("Dequeue", MakeCallback(&PoissonSampler::DequeueQueueDisc, this));
-        incomingNetDevice->TraceConnectWithoutContext("PromiscSniffer", MakeCallback(&PoissonSampler::RecordIncomingPacket, this));
-        incomingNetDevice_1->TraceConnectWithoutContext("PromiscSniffer", MakeCallback(&PoissonSampler::RecordIncomingPacket, this));
+        if (incomingNetDevice != nullptr && incomingNetDevice_1 != nullptr) {
+            incomingNetDevice->TraceConnectWithoutContext("PromiscSniffer", MakeCallback(&PoissonSampler::RecordIncomingPacket, this));
+            incomingNetDevice_1->TraceConnectWithoutContext("PromiscSniffer", MakeCallback(&PoissonSampler::RecordIncomingPacket, this));
+        }
     }
     // NetDeviceQueue->TraceConnectWithoutContext("Enqueue", MakeCallback(&PoissonSampler::EnqueueNetDeviceQueue, this));
-    outgoingNetDevice->TraceConnectWithoutContext("PromiscSniffer", MakeCallback(&PoissonSampler::RecordPacket, this));
+    outgoingNetDevice->TraceConnectWithoutContext("StartTxOut", MakeCallback(&PoissonSampler::RecordPacket, this));
     // generate the first event
     double nextEvent = m_var->GetValue();
     Simulator::Schedule(Seconds(nextEvent), &PoissonSampler::EventHandler, this);
 }
 
 void PoissonSampler::Disconnect(Ptr<PointToPointNetDevice> outgoingNetDevice) {
-    outgoingNetDevice->TraceDisconnectWithoutContext("PromiscSniffer", MakeCallback(&PoissonSampler::RecordPacket, this));
+    outgoingNetDevice->TraceDisconnectWithoutContext("StartTxOut", MakeCallback(&PoissonSampler::RecordPacket, this));
     if (REDQueueDisc != nullptr) {
         REDQueueDisc->TraceDisconnectWithoutContext("Enqueue", MakeCallback(&PoissonSampler::EnqueueQueueDisc, this));
         REDQueueDisc->TraceDisconnectWithoutContext("Dequeue", MakeCallback(&PoissonSampler::DequeueQueueDisc, this));
-        incomingNetDevice->TraceDisconnectWithoutContext("PromiscSniffer", MakeCallback(&PoissonSampler::RecordIncomingPacket, this));
-        incomingNetDevice_1->TraceDisconnectWithoutContext("PromiscSniffer", MakeCallback(&PoissonSampler::RecordIncomingPacket, this));
+        if (incomingNetDevice != nullptr && incomingNetDevice_1 != nullptr) {
+            incomingNetDevice->TraceDisconnectWithoutContext("PromiscSniffer", MakeCallback(&PoissonSampler::RecordIncomingPacket, this));
+            incomingNetDevice_1->TraceDisconnectWithoutContext("PromiscSniffer", MakeCallback(&PoissonSampler::RecordIncomingPacket, this));
+        }
     }
     // NetDeviceQueue->TraceDisconnectWithoutContext("Enqueue", MakeCallback(&PoissonSampler::EnqueueNetDeviceQueue, this));
 }
@@ -409,10 +409,8 @@ void PoissonSampler::RecordPacket(Ptr<const Packet> packet) {
     pktCopy->RemoveHeader(pppHeader);
     Ipv4Header ipHeader;
     pktCopy->RemoveHeader(ipHeader);
-    if (ipHeader.GetSource() != DstIpAddress) {
-        lastLeftTime = Simulator::Now();
-        lastLeftSize = packet->GetSize();
-    }
+    lastLeftTime = Simulator::Now();
+    lastLeftSize = packet->GetSize();
     // if (ipHeader.GetSource() == Ipv4Address("10.1.1.1")) {
     //     if (!(Simulator::Now() < _steadyStartTime || Simulator::Now() > _steadyStopTime)) {
     //         cout << "### POISSON ### Start tx Time at switch of : " << ipHeader.GetIdentification() << " Time: " << Simulator::Now().GetNanoSeconds() << endl;
@@ -482,15 +480,15 @@ void PoissonSampler::SaveMonitorRecords(const string& filename) {
     }
     queueSizeFile.close();
 
-    ofstream queueSizeByPacketsFile;
-    queueSizeByPacketsFile.open(filename.substr(0, filename.size() - 4) + "_queueSizeByPackets.csv");
-    queueSizeByPacketsFile << "Time,QueuingDelay,DropProb,MarkingProb,QueueSize,TotalQueueSize,LastMarkingProb,Label,Action" << endl;
-    for (auto &item : queueSizeProcessByPackets) {
-        samplingEvent event = std::get<1>(item);
-        queueSizeByPacketsFile << std::get<0>(item).GetNanoSeconds() << "," << (event.GetDepartureTime() - event.GetSampleTime()).GetNanoSeconds() << "," << event.GetLossProb() << "," << event.GetMarkingProb() << "," << event.GetQueueSize() << 
-        "," << event.GetTotalQueueSize() << "," << event.GetLastMarkingProb() << "," << event.GetLabel() << "," << event.GetEventAction() << endl;
-    }
-    queueSizeByPacketsFile.close();
+    // ofstream queueSizeByPacketsFile;
+    // queueSizeByPacketsFile.open(filename.substr(0, filename.size() - 4) + "_queueSizeByPackets.csv");
+    // queueSizeByPacketsFile << "Time,QueuingDelay,DropProb,MarkingProb,QueueSize,TotalQueueSize,LastMarkingProb,Label,Action" << endl;
+    // for (auto &item : queueSizeProcessByPackets) {
+    //     samplingEvent event = std::get<1>(item);
+    //     queueSizeByPacketsFile << std::get<0>(item).GetNanoSeconds() << "," << (event.GetDepartureTime() - event.GetSampleTime()).GetNanoSeconds() << "," << event.GetLossProb() << "," << event.GetMarkingProb() << "," << event.GetQueueSize() << 
+    //     "," << event.GetTotalQueueSize() << "," << event.GetLastMarkingProb() << "," << event.GetLabel() << "," << event.GetEventAction() << endl;
+    // }
+    // queueSizeByPacketsFile.close();
 
     // if (_monitorTag == "SD0") {
     //     // packetCDF.printCDF();

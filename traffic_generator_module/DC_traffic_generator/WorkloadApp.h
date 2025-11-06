@@ -41,6 +41,7 @@ private:
     double _probeInterval;
     Time _probeStartTime;
     Time _probeStopTime;
+    Time _trafficStartTime;
 protected:
     void DoDispose() override;
 
@@ -49,7 +50,7 @@ public:
     void SetReceiverAddress(vector<vector<Address>> receiversAddresses);
     WorkloadApp();
     ~WorkloadApp() override;
-
+    void SetTrafficStartTime(Time startTime);
 };
 
 

@@ -54,6 +54,12 @@ WorkloadApp::WorkloadApp() {
     m_var = CreateObject<ExponentialRandomVariable>();
     m_erv = CreateObject<EmpiricalRandomVariable>();
     m_uniform = CreateObject<UniformRandomVariable>();
+    _trafficStartTime = Seconds(0);
+}
+
+void WorkloadApp::SetTrafficStartTime(Time startTime) {
+    NS_LOG_FUNCTION (this);
+    _trafficStartTime = startTime;
 }
 
 WorkloadApp::~WorkloadApp() {
@@ -108,17 +114,17 @@ void WorkloadApp::StartApplication() {
     ReadWorkloadFile();
     PrepareConnections();
     double nextEventTime = m_var->GetValue();
-    _sendEvent = Simulator::Schedule(Seconds(nextEventTime), &WorkloadApp::ScheduleNextSend, this);
+    _sendEvent = Simulator::Schedule(_trafficStartTime + Seconds(nextEventTime), &WorkloadApp::ScheduleNextSend, this);
 }
 
 void WorkloadApp::PrepareConnections() {
     NS_LOG_FUNCTION (this);
 
     for (auto &addresses : _receiverAddress) {
-        cout << "Connection Pool of: Sender Address: " << GetNode()->GetObject<Ipv4>()->GetAddress(1, 0).GetLocal() << " Receiver Address: " << InetSocketAddress::ConvertFrom(addresses[0]).GetIpv4() << endl;
         ConnectionPool* connectionPool = new ConnectionPool(addresses[0], _protocol, GetNode(), _probeInterval);
         connectionPool->CreateSockets(addresses, _enablePacing, _probe, _probeStartTime, _probeStopTime);
         _connectionPools.push_back(connectionPool);
+        cout << "Connection Pool of: Sender Address: " << GetNode()->GetObject<Ipv4>()->GetAddress(1, 0).GetLocal() << " Receiver Address: " << InetSocketAddress::ConvertFrom(addresses[0]).GetIpv4() << " created!" << endl;
     }
 }
 

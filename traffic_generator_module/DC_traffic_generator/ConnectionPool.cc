@@ -9,6 +9,7 @@ ConnectionPool::ConnectionPool(const Address& address, const string& protocol, P
     m_uniform = CreateObject<UniformRandomVariable>();
     m_varProbe = CreateObject<ExponentialRandomVariable>();
     m_varProbe->SetAttribute("Mean", DoubleValue(probeInterval));
+    establishedConnections = 0;
 }
 
 ConnectionPool::~ConnectionPool() {
@@ -30,6 +31,10 @@ ConnectionPool::CloseConnections() {
     socketStates.clear();
 }
 
+void ConnectionPool::ConnectionSucceeded(Ptr<Socket> socket) {
+    establishedConnections++;
+}
+
 void 
 ConnectionPool::CreateSockets(vector<Address> receiverAddresses, bool enablePacing, bool enableProbe, Time probeStartTime, Time probeStopTime) {
     NS_LOG_FUNCTION(this);
@@ -42,6 +47,7 @@ ConnectionPool::CreateSockets(vector<Address> receiverAddresses, bool enablePaci
             NS_FATAL_ERROR ("Failed to bind socket");
         }
         socket->Connect(receiverAddress);
+        socket->SetConnectCallback(MakeCallback(&ConnectionPool::ConnectionSucceeded, this), MakeNullCallback<void, Ptr<Socket> > ());
         socket->SetRecvCallback (MakeNullCallback<void, Ptr<Socket> > ());
         socket->SetAllowBroadcast (true);
         if(protocol == "ns3::TcpSocketFactory") {
@@ -51,7 +57,7 @@ ConnectionPool::CreateSockets(vector<Address> receiverAddresses, bool enablePaci
         }
         sockets.push_back(socket);
         socketStates.push_back(false);
-        cout << "Socket created for " << InetSocketAddress::ConvertFrom(receiverAddress).GetIpv4() << " On port " << InetSocketAddress::ConvertFrom(receiverAddress).GetPort() << endl;
+        // cout << "Socket created for " << InetSocketAddress::ConvertFrom(receiverAddress).GetIpv4() << " On port " << InetSocketAddress::ConvertFrom(receiverAddress).GetPort() << endl;
     }
     if (enableProbe) {
         cout << "Probing enabled with the rate: " << m_varProbe->GetMean() << " seconds." << endl;
@@ -195,6 +201,11 @@ Ptr<Socket> ConnectionPool::findIdleSocket() {
 void 
 ConnectionPool::SendData(const Ptr<Packet>& packet) {
     NS_LOG_FUNCTION(this);
+    if (sockets.size() != establishedConnections) {
+        cout << "Not all connections on node " << GetNodeIP(senderNode, 1) << " are established yet. Established connections: " << establishedConnections << " out of " << sockets.size() << endl;
+        return;
+    }
+
     if (findIdleSocket()->Send(packet) < 0) {
         // cout << "Error sending packet from " << GetNodeIP(senderNode, 1) << " to " << InetSocketAddress::ConvertFrom(remoteAddress).GetIpv4() << endl;
         NS_LOG_INFO ("Error while sending packet to " << InetSocketAddress::ConvertFrom(remoteAddress).GetIpv4());

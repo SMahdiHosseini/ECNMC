@@ -442,6 +442,9 @@ class PointToPointNetDevice : public NetDevice
      * packet sniffers in \c netif_receive_skb.
      */
     TracedCallback<Ptr<const Packet>> m_promiscSnifferTrace;
+    // ****** Mahdi Change ***** (START) ***** //
+    TracedCallback<Ptr<const Packet>> m_startTxOutTrace;
+    // ****** Mahdi Change ***** (ENd) ***** //
 
     Ptr<Node> m_node;                                    //!< Node owning this NetDevice
     Mac48Address m_address;                              //!< Mac48Address of this NetDevice

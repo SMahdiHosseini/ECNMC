@@ -7,8 +7,8 @@ from enum import Enum
 import subprocess
 import random
 import psutil
-# __ns3_path = os.popen('locate "ns-3.41" | grep /ns-3.41$').read().splitlines()[0]
-__ns3_path = "/media/experiments/ns-allinone-3.41/ns-3.41"
+__ns3_path = os.popen('locate "ns-3.41" | grep /ns-3.41$').read().splitlines()[0]
+# __ns3_path = "/media/experiments/ns-allinone-3.41/ns-3.41"
 # __ns3_path = '/Users/shossein/Documents/NAL/Flwo-Path_Consistency/ns-allinone-3.41/ns-3.41'
 
 class ReverseType(Enum):
@@ -27,6 +27,8 @@ class ExperimentConfig:
         self.pct_paced_back = 0.8
         self.app_data_rate = "20Mbps"
         self.duration = "10s"
+        self.trafficStartTime = "1.0"
+        self.trafficStopTime = "10.0"
         self.sampleRate="10.0"
         self.experiments="100"
         self.steadyStart="3"
@@ -37,6 +39,8 @@ class ExperimentConfig:
         self.differentiationDelay=[]
         self.swtichDstREDQueueDiscMaxSize = "10KB"
         self.switchSrcREDQueueDiscMaxSize = "6KB"
+        self.switchSrcREDQueueDiscMaxSize = "15KB"
+        self.switchREDQueueDiscMaxSize = "90KB"
         self.switchTXMaxSize = "1p"
         self.MinTh = "0.15"
         self.MaxTh = "0.15"
@@ -64,6 +68,8 @@ class ExperimentConfig:
         self.PassiveProbeIsEnabled = config.getboolean('Settings', 'PassiveProbe')
         self.app_data_rate = config.get('Settings', 'appDataRate')
         self.duration = config.get('Settings', 'duration')
+        self.trafficStartTime = config.get('Settings', 'trafficStartTime')
+        self.trafficStopTime = config.get('Settings', 'trafficStopTime')
         self.sampleRate = config.get('Settings', 'sampleRate')
         self.sampleRateScales = [float(x) for x in config.get('Settings', 'sampleRateScales').split(',')]
         self.experiments = config.get('Settings', 'experiments')
@@ -78,6 +84,7 @@ class ExperimentConfig:
         self.ctHostToSwitchLinkRate = config.get('SingleQueue', 'ctHostToSwitchLinkRate')
         self.swtichDstREDQueueDiscMaxSize = config.get('Settings', 'swtichDstREDQueueDiscMaxSize')
         self.switchSrcREDQueueDiscMaxSize = config.get('Settings', 'switchSrcREDQueueDiscMaxSize')
+        self.switchREDQueueDiscMaxSize = config.get('DCSim', 'switchREDQueueDiscMaxSize')
         self.switchTXMaxSize = config.get('Settings', 'switchTXMaxSize')
         self.MinTh = config.get('Settings', 'MinTh')
         self.MaxTh = config.get('Settings', 'MaxTh')
@@ -157,8 +164,8 @@ def run_forward_experiment(exp, singleQueue=False):
                             '--sampleRate={} '.format(expConfig.sampleRate) +
                             '--experiment={} '.format(i + 1) +
                             '--errorRate={} '.format(exp_errorRate) +
-                            '--trafficStartTime={} '.format(i * float(expConfig.duration)) +
-                            '--trafficStopTime={} '.format((i + 1) * float(expConfig.duration)) +
+                            '--trafficStartTime={} '.format(expConfig.trafficStartTime) +
+                            '--trafficStopTime={} '.format(expConfig.trafficStopTime) +
                             '--steadyStartTime={} '.format(expConfig.steadyStart) +
                             '--steadyStopTime={} '.format(expConfig.steadyEnd) +
                             '--swtichDstREDQueueDiscMaxSize={} '.format(expConfig.swtichDstREDQueueDiscMaxSize) +
@@ -187,17 +194,30 @@ def run_forward_experiment(exp, singleQueue=False):
                             '--hostToTorLinkDelay={} '.format(expConfig.host_to_tor_link_delay) +
                             '--torToAggLinkDelay={} '.format(expConfig.tor_to_agg_link_delay) +
                             '--aggToCoreLinkDelay={} '.format(expConfig.agg_to_core_link_delay) +
+                            '--load={} '.format(load) +
                             '--pctPacedBack={} '.format(expConfig.pct_paced_back) +
-                            '--appDataRate={} '.format(expConfig.app_data_rate) +
                             '--duration={} '.format(expConfig.duration) +
                             '--sampleRate={} '.format(expConfig.sampleRate) +
                             '--experiment={} '.format(i + 1) +
                             '--errorRate={} '.format(exp_errorRate) +
-                            '--trafficStartTime={} '.format(i * float(expConfig.duration)) +
-                            '--trafficStopTime={} '.format((i + 1) * float(expConfig.duration)) +
+                            '--trafficStartTime={} '.format(expConfig.trafficStartTime) +
+                            '--trafficStopTime={} '.format(expConfig.trafficStopTime) +
                             '--steadyStartTime={} '.format(expConfig.steadyStart) +
                             '--steadyStopTime={} '.format(expConfig.steadyEnd) +
-                            '--dirName=' + 'forward '
+                            '--switchREDQueueDiscMaxSize={} '.format(expConfig.switchREDQueueDiscMaxSize) +
+                            '--switchSrcREDQueueDiscMaxSize={} '.format(expConfig.switchSrcREDQueueDiscMaxSize) +
+                            '--switchTXMaxSize={} '.format(expConfig.switchTXMaxSize) +
+                            '--minTh={} '.format(expConfig.MinTh) +
+                            '--maxTh={} '.format(expConfig.MaxTh) +
+                            '--dirName=' + 'forward ' +
+                            '--traffic={} '.format(traffic) +
+                            '--Nagle={} '.format(expConfig.NagleIsEnabled) +
+                            '--ActiveProbe={} '.format(expConfig.ActiveProbeIsEnabled) +
+                            '--PassiveProbe={} '.format(expConfig.PassiveProbeIsEnabled) +
+                            '--differentiationDelay={} '.format(expConfig.differentiationDelay[0]) +
+                            '--isDifferentating={} '.format(expConfig.isDifferentating) +
+                            '--silentPacketDrop={} '.format(expConfig.silentPacketDrop) +
+                            '--probeInterval={} '.format(expConfig.probeInterval)
                         )
                     output_file = '{}/scratch/ECNMC/Results/results_forward/result_{}.txt'.format(get_ns3_path(), i)
                     run_ns3_with_timeout(cmd, output_file, timeout_seconds=1000, initial_seed=i + 1)

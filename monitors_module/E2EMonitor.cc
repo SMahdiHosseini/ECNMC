@@ -378,9 +378,12 @@ void E2EMonitor::SaveMonitorRecords(const string& filename) {
 
     ofstream packetsFile;
     packetsFile.open(filename.substr(0, filename.size() - 4) + "_packets.csv");
-    packetsFile << "SourceIp,SourcePort,DestinationIp,DestinationPort,SequenceNb,Id,PayloadSize,Path,SentTime,IsReceived,ReceiveTime,transmissionDelay,ECN,Tagged" << endl;
+    packetsFile << "SourceIp,SourcePort,DestinationIp,DestinationPort,SequenceNb,ACKNb,Id,PayloadSize,Path,SentTime,IsReceived,ReceiveTime,transmissionDelay,ECN,Tagged" << endl;
     for (auto& packetKeyEventPair: _recordedPackets) {
         PacketKey key = packetKeyEventPair.first;
+        // if (key.GetSeqNb() == SequenceNumber32(1) && key.GetAckNb() != SequenceNumber32(1)) {
+        //     continue;
+        // }
         E2EMonitorEvent* event = packetKeyEventPair.second;
         Time transmissionDelay = Seconds(0);
         if (numOfSegmetns == 3) {
@@ -393,7 +396,7 @@ void E2EMonitor::SaveMonitorRecords(const string& filename) {
                                 + hostToTorLinkDelay * 2;
         }
         packetsFile << key.GetSrcIp() << "," << key.GetSrcPort() << ",";
-        packetsFile << key.GetDstIp() << "," << key.GetDstPort() << "," << key.GetSeqNb() << "," << key.GetId()  << "," << key.GetPacketSize() << ",";
+        packetsFile << key.GetDstIp() << "," << key.GetDstPort() << "," << key.GetSeqNb() << "," << key.GetAckNb() << "," << key.GetId()  << "," << key.GetPacketSize() << ",";
         packetsFile << event->GetPath() << ",";
         // packetsFile << event->GetTxEnqueueTime().GetNanoSeconds() << "," << event->GetTxDequeueTime().GetNanoSeconds() << ",";
         packetsFile << event->GetSentTime().GetNanoSeconds() << ",";

@@ -235,7 +235,13 @@ PointToPointNetDevice::GetTypeId()
                             "Trace source simulating a promiscuous packet sniffer "
                             "attached to the device",
                             MakeTraceSourceAccessor(&PointToPointNetDevice::m_promiscSnifferTrace),
+                            "ns3::Packet::TracedCallback")
+            // ****** Mahdi Change ***** (START) ***** //
+            .AddTraceSource("StartTxOut",
+                            "Trace source indicating the start of packet transmission",
+                            MakeTraceSourceAccessor(&PointToPointNetDevice::m_startTxOutTrace),
                             "ns3::Packet::TracedCallback");
+            // ****** Mahdi Change ***** (END) ***** //
     return tid;
 }
 
@@ -439,6 +445,9 @@ PointToPointNetDevice::ResumeTransmission()
             }
             m_snifferTrace(pkt);
             m_promiscSnifferTrace(pkt);
+            // ****** Mahdi Change ***** (START) ***** //
+            m_startTxOutTrace(pkt);
+            // ****** Mahdi Change ***** (END) ***** //
             TransmitStart(pkt);
         }
         else
@@ -955,6 +964,9 @@ PointToPointNetDevice::Send(Ptr<Packet> packet, const Address& dest, uint16_t pr
             packet = CheckForFragmentation(packet);
             m_snifferTrace(packet);
             m_promiscSnifferTrace(packet);
+            // ****** Mahdi Change ***** (START) ***** //
+            m_startTxOutTrace(packet);
+            // ****** Mahdi Change ***** (END) ***** //
             bool ret = TransmitStart(packet);
             return ret;
         }

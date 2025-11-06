@@ -77,7 +77,6 @@ private:
     Ptr<PointToPointNetDevice> outgoingNetDevice;
     Ptr<PointToPointNetDevice> incomingNetDevice;
     Ptr<PointToPointNetDevice> incomingNetDevice_1;
-    Ipv4Address DstIpAddress;
     double _sampleRate;
     std::unordered_map<PacketKey, samplingEvent*, PacketKeyHash> _recordedSamples;
     int zeroDelayPort;
@@ -119,7 +118,7 @@ private:
     uint32_t ComputeQueueSize();
 public:
     PoissonSampler(const Time &steadyStartTime, const Time &steadyStopTime, Ptr<RedQueueDisc> queueDisc, Ptr<Queue<Packet>> queue, Ptr<PointToPointNetDevice> outgoingNetDevice, const string &sampleTag, double sampleRate);
-    PoissonSampler(const Time &steadyStartTime, const Time &steadyStopTime, Ptr<RedQueueDisc> queueDisc, Ptr<Queue<Packet>> queue, Ptr<PointToPointNetDevice> outgoingNetDevice, const string &sampleTag, double sampleRate, Ptr<PointToPointNetDevice> incomingNetDevice, Ptr<PointToPointNetDevice> incomingNetDevice_1, const string cdfFileName, Ipv4Address dstIpAddress);
+    PoissonSampler(const Time &steadyStartTime, const Time &steadyStopTime, Ptr<RedQueueDisc> queueDisc, Ptr<Queue<Packet>> queue, Ptr<PointToPointNetDevice> outgoingNetDevice, const string &sampleTag, double sampleRate, Ptr<PointToPointNetDevice> incomingNetDevice, Ptr<PointToPointNetDevice> incomingNetDevice_1, const string cdfFileName);
     void SaveMonitorRecords(const string &filename);
 };
 

@@ -31,6 +31,7 @@ public:
     void ProbeNetwork();
 private:
     vector<Ptr<Socket>> sockets;
+    size_t establishedConnections;
     vector<bool> socketStates;
     Address remoteAddress;
     string protocol;
@@ -43,6 +44,7 @@ private:
     double _probeInterval;
     void ScheduleNextProbe();
     vector<Time> scheduleAllProbes(Time probeStartTime, Time probeStopTime);
+    void ConnectionSucceeded(Ptr<Socket> socket);
 };
 
 #endif //CONNECTIONPOOL_H

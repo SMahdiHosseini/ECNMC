@@ -30,7 +30,7 @@ DCWorkloadGenerator::establishPairConnections(uint32_t receiverId) {
 
 
 void 
-DCWorkloadGenerator::GenrateTraffic(bool pctPacedBack, bool probe, Time probeInterval) {
+DCWorkloadGenerator::GenrateTraffic(bool pctPacedBack, bool probe, Time probeInterval, Time StartTime) {
     for (uint32_t i = 0; i < _receivers.size(); i++) {
         receiversAddresses.push_back(establishPairConnections(i));
     }
@@ -47,5 +47,6 @@ DCWorkloadGenerator::GenrateTraffic(bool pctPacedBack, bool probe, Time probeInt
     factory.Set("ProbeInterval", DoubleValue(probeInterval.GetSeconds()));
     Ptr<WorkloadApp> nodeAppsHandler = factory.Create<WorkloadApp>();
     nodeAppsHandler->SetReceiverAddress(receiversAddresses);
+    nodeAppsHandler->SetTrafficStartTime(StartTime);
     _sender->AddApplication(nodeAppsHandler);
 }
