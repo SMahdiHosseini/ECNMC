@@ -66,6 +66,8 @@ PoissonSampler::PoissonSampler(const Time &steadyStartTime, const Time &steadySt
     outgoingDataRate = outgoingNetDevice->GetDataRate();
     incomingNetDevice = _incomingNetDevice;
     incomingNetDevice_1 = _incomingNetDevice_1;
+    lastLeftTime = Time(0);
+    lastLeftSize = 0;
     Simulator::Schedule(Seconds(0), &PoissonSampler::Connect, this, outgoingNetDevice);
     Simulator::Schedule(steadyStopTime, &PoissonSampler::Disconnect, this, outgoingNetDevice);
 }
@@ -131,9 +133,9 @@ void PoissonSampler::RecordIncomingPacket(Ptr<const Packet> packet) {
     event.SetLabel(label);
     queueSizeProcessByPackets.push_back(std::make_tuple(Simulator::Now(), event));
 
-    _lastDropProb = dropProbDynamicCDF;
-    _lastQueueSize = REDQueueDisc->GetNBytes();
-    _lastTotalQueueSize = ComputeQueueSize();
+    // _lastDropProb = dropProbDynamicCDF;
+    // _lastQueueSize = REDQueueDisc->GetNBytes();
+    // _lastTotalQueueSize = ComputeQueueSize();
     // updateGTCounters();
     // if (ipHeader.GetSource() == Ipv4Address("10.1.1.1")) {
         // cout << "### POISSON ### Enqueue Time: " << Simulator::Now().GetNanoSeconds();
@@ -207,6 +209,9 @@ void PoissonSampler::EnqueueQueueDisc(Ptr<const QueueDiscItem> item) {
     event.SetLabel(label);
     event.SetEventAction("E");
     queueSizeProcess.push_back(std::make_tuple(Simulator::Now(), event));
+    _lastDropProb = packetCDF.calculateProbabilityGreaterThan(REDQueueDisc->GetMaxSize().GetValue() - (REDQueueDisc->GetNBytes() - item->GetSize() - 2));
+    _lastQueueSize = REDQueueDisc->GetNBytes() - item->GetSize() - 2;
+    _lastTotalQueueSize = ComputeQueueSize() - item->GetSize() - 2;
     // cout << "### POISSON ### Time: " << Simulator::Now().GetNanoSeconds() << " *** Enqueue *** " << " Queue Size: " << REDQueueDisc->GetNBytes() + NetDeviceQueue->GetNBytes() << " Total Queue Size: " << ComputeQueueSize() << " Queuing Delay: " << queuingDelay.GetNanoSeconds() << " packet size: " << item->GetSize() << endl;
     // if (ipHeader.GetSource() == Ipv4Address("10.1.1.1")) {
     //     cout << "### POISSON ### Enqueuing Time at switch of : " << ipHeader.GetIdentification() << " Time: " << Simulator::Now().GetNanoSeconds() << endl;
