@@ -7,8 +7,8 @@ from enum import Enum
 import subprocess
 import random
 import psutil
-__ns3_path = os.popen('locate "ns-3.41" | grep /ns-3.41$').read().splitlines()[0]
-# __ns3_path = "/media/experiments/ns-allinone-3.41/ns-3.41"
+# __ns3_path = os.popen('locate "ns-3.41" | grep /ns-3.41$').read().splitlines()[0]
+__ns3_path = "/media/experiments/ns-allinone-3.41/ns-3.41"
 # __ns3_path = '/Users/shossein/Documents/NAL/Flwo-Path_Consistency/ns-allinone-3.41/ns-3.41'
 
 class ReverseType(Enum):
@@ -220,7 +220,7 @@ def run_forward_experiment(exp, singleQueue=False):
                             '--probeInterval={} '.format(expConfig.probeInterval)
                         )
                     output_file = '{}/scratch/ECNMC/Results/results_forward/result_{}.txt'.format(get_ns3_path(), i)
-                    run_ns3_with_timeout(cmd, output_file, timeout_seconds=1000, initial_seed=i + 1)
+                    run_ns3_with_timeout(cmd, output_file, timeout_seconds=3000, initial_seed=i + 1)
                     os.system('mkdir -p {}/scratch/Results_forward/{}/{}/{}/{}'.format(get_ns3_path(), traffic, rate, load, i))
                     os.system('mv {}/scratch/ECNMC/Results/results_forward/{}/*.csv {}/scratch/Results_forward/{}/{}/{}/{}'.format(get_ns3_path(), i + 1, get_ns3_path(), traffic, rate, load, i))
                     # os.system('mv {}/scratch/ECNMC/Results/*_cwnd.csv {}/scratch/Results_forward/{}/{}'.format(get_ns3_path(), get_ns3_path(), rate, i))
