@@ -1934,6 +1934,10 @@ TcpSocketBase::ReceivedAck(Ptr<Packet> packet, const TcpHeader& tcpHeader)
         // (although it may be re-entered below if ECE is still set)
         NS_LOG_DEBUG(TcpSocketState::TcpCongStateName[m_tcb->m_congState] << " -> CA_OPEN");
         m_tcb->m_congState = TcpSocketState::CA_OPEN;
+        // ***** Mahdi Change ***** (START) ***** //
+        // Reset the dupack count to 0 when exiting CWR state
+        m_dupAckCount = 0;
+        // ***** Mahdi Change ***** (END) ***** //
         if (!m_congestionControl->HasCongControl())
         {
             m_tcb->m_cWnd = m_tcb->m_ssThresh.Get();
@@ -1941,6 +1945,20 @@ TcpSocketBase::ReceivedAck(Ptr<Packet> packet, const TcpHeader& tcpHeader)
             m_congestionControl->CwndEvent(m_tcb, TcpSocketState::CA_EVENT_COMPLETE_CWR);
         }
     }
+    // ***** Mahdi Change ***** (START) ***** //
+    // If we are in CA_CWR but the ackNumber is less than m_recover, it means that the sender has not yet
+    // reduced the sending rate in response to ECN Echo notification. So we reset the dupack count to 0
+    if (m_tcb->m_congState == TcpSocketState::CA_CWR && (ackNumber <= m_recover))
+    {
+        m_dupAckCount = 0;
+    }
+    // Also, if we are in CA_CWR and we receive a cumulative ack, it means that the sender has reduced
+    // the sending rate in response to ECN Echo notification. So we reset the dupack count to 0
+    if (m_tcb->m_congState == TcpSocketState::CA_CWR && (ackNumber <= m_tcb->m_lastAckedSeq))
+    {
+        m_dupAckCount = 0;
+    }
+    // ***** Mahdi Change ***** (END) ***** //
 
     if (ackNumber > oldHeadSequence && (m_tcb->m_ecnState != TcpSocketState::ECN_DISABLED) &&
         (tcpHeader.GetFlags() & TcpHeader::ECE))
