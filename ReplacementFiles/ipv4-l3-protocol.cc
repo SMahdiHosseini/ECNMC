@@ -1020,6 +1020,9 @@ Ipv4L3Protocol::SendRealOut(Ptr<Ipv4Route> route, Ptr<Packet> packet, const Ipv4
         }
         if (packet->GetSize() + ipHeader.GetSerializedSize() > Mtu)
         {
+            cout << "Fragmenting packet: ";
+            packet->Print(cout);
+            cout << endl;
             std::list<Ipv4PayloadHeaderPair> listFragments;
             DoFragmentation(packet, ipHeader, Mtu, listFragments);
             // ***** Mahdi Change ***** (End) ***** //
