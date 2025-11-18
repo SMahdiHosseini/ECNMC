@@ -1,0 +1,734 @@
+{
+    "MaxEpsilonIneqDelay": {
+        "event_poisson_eventAvg": {
+            "R0H0R2H0": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 0
+                    },
+                    0
+                ]
+            }
+        },
+        "event_eventAvg": {
+            "R0H0R2H0": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 0
+                    },
+                    3
+                ]
+            }
+        }
+    },
+    "MaxEpsilonIneqLastDelay": {
+        "event_poisson_eventAvg": {
+            "R0H0R2H0": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 0
+                    },
+                    0
+                ]
+            }
+        },
+        "event_eventAvg": {
+            "R0H0R2H0": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 0
+                    },
+                    0
+                ]
+            }
+        }
+    },
+    "MaxEpsilonIneqSuccessProb": {
+        "event_poisson_eventAvg": {
+            "R0H0R2H0": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 0
+                    },
+                    0
+                ]
+            }
+        },
+        "event_eventAvg": {
+            "R0H0R2H0": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 0
+                    },
+                    3
+                ]
+            }
+        }
+    },
+    "MaxEpsilonIneqLastSuccessProb": {
+        "event_poisson_eventAvg": {
+            "R0H0R2H0": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 0
+                    },
+                    0
+                ]
+            }
+        },
+        "event_eventAvg": {
+            "R0H0R2H0": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 0
+                    },
+                    0
+                ]
+            }
+        }
+    },
+    "MaxEpsilonIneqNonMarkingProb": {
+        "event_poisson_eventAvg": {
+            "R0H0R2H0": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 0
+                    },
+                    0
+                ]
+            }
+        },
+        "event_eventAvg": {
+            "R0H0R2H0": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 0
+                    },
+                    3
+                ]
+            }
+        }
+    },
+    "MaxEpsilonIneqLastNonMarkingProb": {
+        "event_poisson_eventAvg": {
+            "R0H0R2H0": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 0
+                    },
+                    0
+                ]
+            }
+        },
+        "event_eventAvg": {
+            "R0H0R2H0": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 0
+                    },
+                    0
+                ]
+            }
+        }
+    },
+    "EndToEndSampleSizeDelay": {
+        "R0H0R2H0": {
+            "0": [
+                0,
+                0,
+                0
+            ]
+        }
+    },
+    "EndToEndSampleSizeSuccess": {
+        "R0H0R2H0": {
+            "0": [
+                0,
+                0,
+                0
+            ]
+        }
+    },
+    "EndToEndSampleSizeMarking": {
+        "R0H0R2H0": {
+            "0": [
+                0,
+                0,
+                0
+            ]
+        }
+    },
+    "totalPckts": {
+        "R0H0R2H0": {
+            "0": [
+                5,
+                3,
+                2
+            ]
+        }
+    },
+    "InterArrivals": {
+        "R0H0R2H0": {
+            "0": [
+                NaN,
+                NaN,
+                NaN
+            ]
+        }
+    },
+    "EndToEndDelayMean": {
+        "event_poisson_eventAvg": {
+            "R0H0R2H0": {
+                "0": [
+                    [],
+                    0
+                ]
+            }
+        },
+        "event_eventAvg": {
+            "R0H0R2H0": {
+                "0": [
+                    [
+                        [
+                            0.0,
+                            0.0
+                        ],
+                        [
+                            4435.333333333333,
+                            3621.4345019414413
+                        ],
+                        [
+                            0.0,
+                            0.0
+                        ]
+                    ],
+                    3
+                ]
+            }
+        }
+    },
+    "EndToEndSuccessProb": {
+        "event_poisson_eventAvg": {
+            "R0H0R2H0": {
+                "0": [
+                    [],
+                    0
+                ]
+            }
+        },
+        "event_eventAvg": {
+            "R0H0R2H0": {
+                "0": [
+                    [
+                        [
+                            1.0,
+                            0.0
+                        ],
+                        [
+                            1.0,
+                            0.0
+                        ],
+                        [
+                            1.0,
+                            0.0
+                        ]
+                    ],
+                    3
+                ]
+            }
+        }
+    },
+    "EndToEndNonMarkingProb": {
+        "event_poisson_eventAvg": {
+            "R0H0R2H0": {
+                "0": [
+                    [],
+                    0
+                ]
+            }
+        },
+        "event_eventAvg": {
+            "R0H0R2H0": {
+                "0": [
+                    [
+                        [
+                            1.0,
+                            0.0
+                        ],
+                        [
+                            1.0,
+                            0.0
+                        ],
+                        [
+                            1.0,
+                            0.0
+                        ]
+                    ],
+                    3
+                ]
+            }
+        }
+    },
+    "DelayBias": {
+        "R0H0R2H0": {
+            "0": [
+                NaN,
+                NaN,
+                NaN
+            ]
+        }
+    },
+    "SuccessProbBias": {
+        "R0H0R2H0": {
+            "0": [
+                0.0,
+                0.0,
+                0.0
+            ]
+        }
+    },
+    "NonMarkingProbBias": {
+        "R0H0R2H0": {
+            "0": [
+                0.0,
+                0.0,
+                0.0
+            ]
+        }
+    },
+    "DropRate": [],
+    "maxEpsilonDelay": {
+        "R0H0R2H0": {
+            "0": [
+                0.7658942117169241,
+                0.4455893697420323,
+                NaN
+            ]
+        }
+    },
+    "maxEpsilonLastDelay": {
+        "R0H0R2H0": {
+            "0": []
+        }
+    },
+    "maxEpsilonSuccessProb": {
+        "R0H0R2H0": {
+            "0": [
+                0.0,
+                0.0022114624017772486,
+                0.0
+            ]
+        }
+    },
+    "maxEpsilonLastSuccessProb": {
+        "R0H0R2H0": {
+            "0": []
+        }
+    },
+    "maxEpsilonNonMarkingProb": {
+        "R0H0R2H0": {
+            "0": [
+                0.0,
+                0.0038474886646927393,
+                0.0
+            ]
+        }
+    },
+    "maxEpsilonLastNonMarkingProb": {
+        "R0H0R2H0": {
+            "0": []
+        }
+    },
+    "workLoad": {
+        "R0H0R2H0": {
+            "0": [
+                4.32e-06,
+                1.1984e-05,
+                2.32e-05
+            ]
+        }
+    },
+    "RTT": {
+        "R0H0R2H0": {
+            "0": [
+                400000.0,
+                400000.0,
+                400000.0
+            ]
+        }
+    },
+    "AverageWorkLoad": [
+        4.32e-06,
+        1.1984e-05,
+        2.32e-05
+    ],
+    "experiments": 3,
+    "TrafficsComptDelay": {
+        "event_poisson_eventAvg": {
+            "0": [
+                0,
+                0
+            ]
+        }
+    },
+    "expSuccessDelay": [
+        [
+            0,
+            0,
+            0
+        ],
+        [
+            28,
+            0,
+            0
+        ],
+        [
+            26,
+            0,
+            0
+        ]
+    ],
+    "ActiveFractionOfAll": {
+        "Packets": {
+            "R0H0R2H0": {
+                "0": [
+                    0,
+                    0,
+                    0
+                ]
+            }
+        },
+        "Bytes": {
+            "R0H0R2H0": {
+                "0": [
+                    0,
+                    0,
+                    0
+                ]
+            }
+        }
+    },
+    "ActiveFractionOfTagged": {
+        "Packets": {
+            "R0H0R2H0": {
+                "0": [
+                    0,
+                    0,
+                    0
+                ]
+            }
+        },
+        "Bytes": {
+            "R0H0R2H0": {
+                "0": [
+                    0,
+                    0,
+                    0
+                ]
+            }
+        }
+    },
+    "A0T2Delaystd": [
+        2674.7789581645425,
+        2292.7150097414856,
+        1575.267533994468
+    ],
+    "A0T2DelayMean": [
+        617.958256240465,
+        462.10256697889207,
+        199.27592213890782
+    ],
+    "A0T2LastDelaystd": [
+        589.1893330056159,
+        2949.0609585903244,
+        0.0
+    ],
+    "A0T2LastDelayMean": [
+        24.212678936605315,
+        550.5277917998766,
+        0.0
+    ],
+    "A0T2SuccessProbStd": [
+        0.0,
+        0.0,
+        0.0
+    ],
+    "A0T2SuccessProbMean": [
+        1.0,
+        1.0,
+        1.0
+    ],
+    "A0T2LastSuccessProbStd": [
+        0.0,
+        0.0,
+        0.0
+    ],
+    "A0T2LastSuccessProbMean": [
+        1.0,
+        1.0,
+        1.0
+    ],
+    "A0T2NonMarkingProbStd": [
+        0.0,
+        0.0,
+        0.0
+    ],
+    "A0T2NonMarkingProbMean": [
+        1.0,
+        1.0,
+        1.0
+    ],
+    "A0T2LastNonMarkingProbStd": [
+        0.0,
+        0.0,
+        0.0
+    ],
+    "A0T2LastNonMarkingProbMean": [
+        1.0,
+        1.0,
+        1.0
+    ],
+    "A0T2SampleSize": [
+        1141,
+        1981,
+        978
+    ],
+    "A0T2InterArrivals": [
+        175807.32192982457,
+        165049.13636363635,
+        169827.88536335723
+    ],
+    "A0T2Occupancy": [
+        0.0,
+        0.0,
+        0.0
+    ],
+    "A0T2PacktsInQueue": [
+        0.03517799005006788,
+        0.026305724276897903,
+        0.0113440128607858
+    ],
+    "A0T2EmptyFrac": [
+        92.98860648553901,
+        94.54820797576981,
+        97.95501022494888
+    ],
+    "A0T2GT1PktsFrac": [
+        0.0876424189307625,
+        0.1514386673397274,
+        0.0
+    ],
+    "A0T2mixingRate": [],
+    "A0T2mixingSignalAvg": [],
+    "A0T2mixingRateMonly": [],
+    "A0T2mixingRatePoisson": [],
+    "A0T2mixingRateE2EPoisson": [],
+    "A0T2mixingRatePoissonEventAvg": [],
+    "A0T2mixingDelayDiff": [],
+    "T0A0Delaystd": [
+        2643.8434065397964,
+        2443.7393778656688,
+        0.0
+    ],
+    "T0A0DelayMean": [
+        639.0099657890821,
+        541.6671317223804,
+        0.0
+    ],
+    "T0A0LastDelaystd": [
+        3158.641842184291,
+        4719.672855929653,
+        0.0
+    ],
+    "T0A0LastDelayMean": [
+        655.2027368734196,
+        1845.4720315493796,
+        0.0
+    ],
+    "T0A0SuccessProbStd": [
+        0.0,
+        0.0,
+        0.0
+    ],
+    "T0A0SuccessProbMean": [
+        1.0,
+        1.0,
+        1.0
+    ],
+    "T0A0LastSuccessProbStd": [
+        0.0,
+        0.0,
+        0.0
+    ],
+    "T0A0LastSuccessProbMean": [
+        1.0,
+        1.0,
+        1.0
+    ],
+    "T0A0NonMarkingProbStd": [
+        0.0,
+        0.0,
+        0.0
+    ],
+    "T0A0NonMarkingProbMean": [
+        1.0,
+        1.0,
+        1.0
+    ],
+    "T0A0LastNonMarkingProbStd": [
+        0.0,
+        0.0,
+        0.0
+    ],
+    "T0A0LastNonMarkingProbMean": [
+        1.0,
+        1.0,
+        1.0
+    ],
+    "T0A0SampleSize": [
+        1245,
+        1991,
+        1017
+    ],
+    "T0A0InterArrivals": [
+        161238.99356913182,
+        164049.6311557789,
+        163265.36909448818
+    ],
+    "T0A0Occupancy": [
+        0.0001856314145470772,
+        0.0,
+        0.0
+    ],
+    "T0A0PacktsInQueue": [
+        0.0363763830184596,
+        0.030835029353121806,
+        0.0
+    ],
+    "T0A0EmptyFrac": [
+        92.53012048192771,
+        93.57106981416374,
+        100.0
+    ],
+    "T0A0GT1PktsFrac": [
+        0.0,
+        0.05022601707684581,
+        0.0
+    ],
+    "T0A0mixingRate": [],
+    "T0A0mixingSignalAvg": [],
+    "T0A0mixingRateMonly": [],
+    "T0A0mixingRatePoisson": [],
+    "T0A0mixingRateE2EPoisson": [],
+    "T0A0mixingRatePoissonEventAvg": [],
+    "T0A0mixingDelayDiff": [],
+    "T2H0Delaystd": [
+        74.63707336968488,
+        36401.12727883778,
+        0.0
+    ],
+    "T2H0DelayMean": [
+        5.584045584045584,
+        3597.4423691738184,
+        0.0
+    ],
+    "T2H0LastDelaystd": [
+        0.0,
+        38201.03561407904,
+        0.0
+    ],
+    "T2H0LastDelayMean": [
+        0.0,
+        7245.714285714285,
+        0.0
+    ],
+    "T2H0SuccessProbStd": [
+        0.0,
+        0.050092222141561754,
+        0.0
+    ],
+    "T2H0SuccessProbMean": [
+        1.0,
+        0.997480860676426,
+        1.0
+    ],
+    "T2H0LastSuccessProbStd": [
+        0.0,
+        0.0,
+        0.0
+    ],
+    "T2H0LastSuccessProbMean": [
+        1.0,
+        1.0,
+        1.0
+    ],
+    "T2H0NonMarkingProbStd": [
+        0.0,
+        0.08670867571465671,
+        0.0
+    ],
+    "T2H0NonMarkingProbMean": [
+        1.0,
+        0.9924280666330136,
+        1.0
+    ],
+    "T2H0LastNonMarkingProbStd": [
+        0.0,
+        0.09491209712913869,
+        0.0
+    ],
+    "T2H0LastNonMarkingProbMean": [
+        1.0,
+        0.9909136799596163,
+        1.0
+    ],
+    "T2H0SampleSize": [
+        1170,
+        1981,
+        980
+    ],
+    "T2H0InterArrivals": [
+        171360.9366980325,
+        164978.98434343433,
+        169010.2890704801
+    ],
+    "T2H0Occupancy": [
+        0.0,
+        0.6769510348308935,
+        0.0
+    ],
+    "T2H0PacktsInQueue": [
+        0.00014127923008173224,
+        0.09101714528126437,
+        0.0
+    ],
+    "T2H0EmptyFrac": [
+        99.23076923076923,
+        96.76930843008581,
+        100.0
+    ],
+    "T2H0GT1PktsFrac": [
+        0.0,
+        0.8076728924785461,
+        0.0
+    ],
+    "T2H0mixingRate": [],
+    "T2H0mixingSignalAvg": [],
+    "T2H0mixingRateMonly": [],
+    "T2H0mixingRatePoisson": [],
+    "T2H0mixingRateE2EPoisson": [],
+    "T2H0mixingRatePoissonEventAvg": [],
+    "T2H0mixingDelayDiff": []
+}

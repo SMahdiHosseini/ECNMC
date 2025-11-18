@@ -707,6 +707,9 @@ PointToPointNetDevice::TransmitComplete()
         p = CheckForFragmentation(p);
         m_snifferTrace(p);
         m_promiscSnifferTrace(p);
+        // ****** Mahdi Change ***** (START) ***** //
+        m_startTxOutTrace(p);
+        // ****** Mahdi Change ***** (END) ***** //
         TransmitStart(p);
     }
     // ****** Mahdi Change ***** (END) ***** //

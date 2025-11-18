@@ -1,0 +1,777 @@
+{
+    "MaxEpsilonIneqDelay": {
+        "event_linearInterp_timeAvg": {
+            "A0T2": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 1
+                    },
+                    1
+                ]
+            },
+            "T0A0": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 1
+                    },
+                    1
+                ]
+            },
+            "T2H0": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 1
+                    },
+                    1
+                ]
+            }
+        }
+    },
+    "MaxEpsilonIneqLastDelay": {
+        "event_linearInterp_timeAvg": {
+            "A0T2": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 0
+                    },
+                    0
+                ]
+            },
+            "T0A0": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 0
+                    },
+                    0
+                ]
+            },
+            "T2H0": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 0
+                    },
+                    0
+                ]
+            }
+        }
+    },
+    "MaxEpsilonIneqSuccessProb": {
+        "probability_linearInterp_timeAvg": {
+            "A0T2": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 1
+                    },
+                    1
+                ]
+            },
+            "T0A0": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 1
+                    },
+                    1
+                ]
+            },
+            "T2H0": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 1
+                    },
+                    1
+                ]
+            }
+        }
+    },
+    "MaxEpsilonIneqLastSuccessProb": {
+        "probability_linearInterp_timeAvg": {
+            "A0T2": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 0
+                    },
+                    0
+                ]
+            },
+            "T0A0": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 0
+                    },
+                    0
+                ]
+            },
+            "T2H0": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 0
+                    },
+                    0
+                ]
+            }
+        }
+    },
+    "MaxEpsilonIneqNonMarkingProb": {
+        "event_linearInterp_timeAvg": {
+            "A0T2": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 1
+                    },
+                    1
+                ]
+            },
+            "T0A0": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 1
+                    },
+                    1
+                ]
+            },
+            "T2H0": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 1
+                    },
+                    1
+                ]
+            }
+        }
+    },
+    "MaxEpsilonIneqLastNonMarkingProb": {
+        "event_linearInterp_timeAvg": {
+            "A0T2": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 0
+                    },
+                    0
+                ]
+            },
+            "T0A0": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 0
+                    },
+                    0
+                ]
+            },
+            "T2H0": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 0
+                    },
+                    0
+                ]
+            }
+        }
+    },
+    "EndToEndSampleSizeDelay": {
+        "A0T2": {
+            "0": [
+                22388
+            ]
+        },
+        "T0A0": {
+            "0": [
+                45870
+            ]
+        },
+        "T2H0": {
+            "0": [
+                6335
+            ]
+        }
+    },
+    "EndToEndSampleSizeSuccess": {
+        "A0T2": {
+            "0": [
+                22388
+            ]
+        },
+        "T0A0": {
+            "0": [
+                45870
+            ]
+        },
+        "T2H0": {
+            "0": [
+                6335
+            ]
+        }
+    },
+    "EndToEndSampleSizeMarking": {
+        "A0T2": {
+            "0": [
+                22388
+            ]
+        },
+        "T0A0": {
+            "0": [
+                45870
+            ]
+        },
+        "T2H0": {
+            "0": [
+                6335
+            ]
+        }
+    },
+    "totalPckts": {
+        "A0T2": {
+            "0": [
+                22388
+            ]
+        },
+        "T0A0": {
+            "0": [
+                45870
+            ]
+        },
+        "T2H0": {
+            "0": [
+                6335
+            ]
+        }
+    },
+    "InterArrivals": {
+        "A0T2": {
+            "0": [
+                1526140884.9118724
+            ]
+        },
+        "T0A0": {
+            "0": [
+                1551674164.3973186
+            ]
+        },
+        "T2H0": {
+            "0": [
+                1560253191.6426203
+            ]
+        }
+    },
+    "EndToEndDelayMean": {
+        "event_linearInterp_timeAvg": {
+            "A0T2": {
+                "0": [
+                    [
+                        5526.945794192
+                    ],
+                    1
+                ]
+            },
+            "T0A0": {
+                "0": [
+                    [
+                        11637.515928499
+                    ],
+                    1
+                ]
+            },
+            "T2H0": {
+                "0": [
+                    [
+                        12748.618627306
+                    ],
+                    1
+                ]
+            }
+        }
+    },
+    "EndToEndSuccessProb": {
+        "probability_linearInterp_timeAvg": {
+            "A0T2": {
+                "0": [
+                    [
+                        1.0
+                    ],
+                    1
+                ]
+            },
+            "T0A0": {
+                "0": [
+                    [
+                        1.0
+                    ],
+                    1
+                ]
+            },
+            "T2H0": {
+                "0": [
+                    [
+                        0.9939220277369885
+                    ],
+                    1
+                ]
+            }
+        }
+    },
+    "EndToEndNonMarkingProb": {
+        "event_linearInterp_timeAvg": {
+            "A0T2": {
+                "0": [
+                    [
+                        0.9864513376007807
+                    ],
+                    1
+                ]
+            },
+            "T0A0": {
+                "0": [
+                    [
+                        0.9720599173688775
+                    ],
+                    1
+                ]
+            },
+            "T2H0": {
+                "0": [
+                    [
+                        0.9735960928283538
+                    ],
+                    1
+                ]
+            }
+        }
+    },
+    "DelayBias": {
+        "A0T2": {
+            "0": []
+        },
+        "T0A0": {
+            "0": []
+        },
+        "T2H0": {
+            "0": []
+        }
+    },
+    "SuccessProbBias": {
+        "A0T2": {
+            "0": []
+        },
+        "T0A0": {
+            "0": []
+        },
+        "T2H0": {
+            "0": []
+        }
+    },
+    "NonMarkingProbBias": {
+        "A0T2": {
+            "0": []
+        },
+        "T0A0": {
+            "0": []
+        },
+        "T2H0": {
+            "0": []
+        }
+    },
+    "DropRate": [
+        0.007976687312687303
+    ],
+    "maxEpsilonDelay": {
+        "A0T2": {
+            "0": [
+                0.14571803818983511
+            ]
+        },
+        "T0A0": {
+            "0": [
+                0.11621078052905211
+            ]
+        },
+        "T2H0": {
+            "0": [
+                0.15250048003708952
+            ]
+        }
+    },
+    "maxEpsilonLastDelay": {
+        "A0T2": {
+            "0": []
+        },
+        "T0A0": {
+            "0": []
+        },
+        "T2H0": {
+            "0": []
+        }
+    },
+    "maxEpsilonSuccessProb": {
+        "A0T2": {
+            "0": [
+                0.0
+            ]
+        },
+        "T0A0": {
+            "0": [
+                0.0
+            ]
+        },
+        "T2H0": {
+            "0": [
+                0.003204653272328514
+            ]
+        }
+    },
+    "maxEpsilonLastSuccessProb": {
+        "A0T2": {
+            "0": []
+        },
+        "T0A0": {
+            "0": []
+        },
+        "T2H0": {
+            "0": []
+        }
+    },
+    "maxEpsilonNonMarkingProb": {
+        "A0T2": {
+            "0": [
+                0.004651384916720131
+            ]
+        },
+        "T0A0": {
+            "0": [
+                0.006030315995013415
+            ]
+        },
+        "T2H0": {
+            "0": [
+                0.005918086562811672
+            ]
+        }
+    },
+    "maxEpsilonLastNonMarkingProb": {
+        "A0T2": {
+            "0": []
+        },
+        "T0A0": {
+            "0": []
+        },
+        "T2H0": {
+            "0": []
+        }
+    },
+    "workLoad": {
+        "A0T2": {
+            "0": [
+                0
+            ]
+        },
+        "T0A0": {
+            "0": [
+                0
+            ]
+        },
+        "T2H0": {
+            "0": [
+                0
+            ]
+        }
+    },
+    "RTT": {
+        "A0T2": {
+            "0": [
+                20208.496649991066
+            ]
+        },
+        "T0A0": {
+            "0": [
+                20464.741007194243
+            ]
+        },
+        "T2H0": {
+            "0": [
+                63167.6637726914
+            ]
+        }
+    },
+    "AverageWorkLoad": [
+        0.0
+    ],
+    "experiments": 1,
+    "TrafficsComptDelay": {
+        "event_poisson_eventAvg": {
+            "0": [
+                0,
+                0
+            ]
+        }
+    },
+    "expSuccessDelay": {
+        "A0T2": [
+            [
+                0,
+                1,
+                1
+            ]
+        ],
+        "T0A0": [
+            [
+                0,
+                1,
+                1
+            ]
+        ],
+        "T2H0": [
+            [
+                0,
+                1,
+                1
+            ]
+        ]
+    },
+    "ActiveFractionOfAll": {
+        "Packets": {
+            "A0T2": {
+                "0": []
+            },
+            "T0A0": {
+                "0": []
+            },
+            "T2H0": {
+                "0": []
+            }
+        },
+        "Bytes": {
+            "A0T2": {
+                "0": []
+            },
+            "T0A0": {
+                "0": []
+            },
+            "T2H0": {
+                "0": []
+            }
+        }
+    },
+    "ActiveFractionOfTagged": {
+        "Packets": {
+            "A0T2": {
+                "0": []
+            },
+            "T0A0": {
+                "0": []
+            },
+            "T2H0": {
+                "0": []
+            }
+        },
+        "Bytes": {
+            "A0T2": {
+                "0": []
+            },
+            "T0A0": {
+                "0": []
+            },
+            "T2H0": {
+                "0": []
+            }
+        }
+    },
+    "A0T2Delaystd": [
+        24688.825105781078
+    ],
+    "A0T2DelayMean": [
+        6120.322061191627
+    ],
+    "A0T2LastDelaystd": [
+        23707.440982542932
+    ],
+    "A0T2LastDelayMean": [
+        4946.070853462157
+    ],
+    "A0T2SuccessProbStd": [
+        0.0
+    ],
+    "A0T2SuccessProbMean": [
+        1.0
+    ],
+    "A0T2LastSuccessProbStd": [
+        1.5593348143219583e-05
+    ],
+    "A0T2LastSuccessProbMean": [
+        0.9999987771739131
+    ],
+    "A0T2NonMarkingProbStd": [
+        0.12666477720618213
+    ],
+    "A0T2NonMarkingProbMean": [
+        0.9836956521739131
+    ],
+    "A0T2LastNonMarkingProbStd": [
+        0.12536004596111583
+    ],
+    "A0T2LastNonMarkingProbMean": [
+        0.9840353260869565
+    ],
+    "A0T2SampleSize": [
+        2944
+    ],
+    "A0T2InterArrivals": [
+        169775.13387699626
+    ],
+    "A0T2Occupancy": [
+        0.5377906099033817
+    ],
+    "A0T2PacktsInQueue": [
+        0.5274979272307427
+    ],
+    "A0T2EmptyFrac": [
+        73.53940217391305
+    ],
+    "A0T2GT1PktsFrac": [
+        12.5
+    ],
+    "A0T2mixingRate": [],
+    "A0T2mixingSignalAvg": [],
+    "A0T2mixingRateMonly": [],
+    "A0T2mixingRatePoisson": [],
+    "A0T2mixingRateE2EPoisson": [],
+    "A0T2mixingRatePoissonEventAvg": [],
+    "A0T2mixingDelayDiff": [],
+    "T0A0Delaystd": [
+        36933.28202394178
+    ],
+    "T0A0DelayMean": [
+        11401.326633165829
+    ],
+    "T0A0LastDelaystd": [
+        36436.502413849936
+    ],
+    "T0A0LastDelayMean": [
+        8765.97109001799
+    ],
+    "T0A0SuccessProbStd": [
+        0.0
+    ],
+    "T0A0SuccessProbMean": [
+        1.0
+    ],
+    "T0A0LastSuccessProbStd": [
+        0.0
+    ],
+    "T0A0LastSuccessProbMean": [
+        1.0
+    ],
+    "T0A0NonMarkingProbStd": [
+        0.1634778310198372
+    ],
+    "T0A0NonMarkingProbMean": [
+        0.9725293132328309
+    ],
+    "T0A0LastNonMarkingProbStd": [
+        0.1663553930171653
+    ],
+    "T0A0LastNonMarkingProbMean": [
+        0.9715242881072027
+    ],
+    "T0A0SampleSize": [
+        2985
+    ],
+    "T0A0InterArrivals": [
+        167530.42794906168
+    ],
+    "T0A0Occupancy": [
+        1.0369901358645077
+    ],
+    "T0A0PacktsInQueue": [
+        0.9826568122633529
+    ],
+    "T0A0EmptyFrac": [
+        51.75879396984925
+    ],
+    "T0A0GT1PktsFrac": [
+        24.656616415410383
+    ],
+    "T0A0mixingRate": [],
+    "T0A0mixingSignalAvg": [],
+    "T0A0mixingRateMonly": [],
+    "T0A0mixingRatePoisson": [],
+    "T0A0mixingRateE2EPoisson": [],
+    "T0A0mixingRatePoissonEventAvg": [],
+    "T0A0mixingDelayDiff": [],
+    "T2H0Delaystd": [
+        54290.464312883014
+    ],
+    "T2H0DelayMean": [
+        12733.000333000335
+    ],
+    "T2H0LastDelaystd": [
+        1588717554.2074618
+    ],
+    "T2H0LastDelayMean": [
+        50247158.556998566
+    ],
+    "T2H0SuccessProbStd": [
+        0.08888419037276343
+    ],
+    "T2H0SuccessProbMean": [
+        0.9920233126873127
+    ],
+    "T2H0LastSuccessProbStd": [
+        6.3192893335869345e-06
+    ],
+    "T2H0LastSuccessProbMean": [
+        0.9999998001998002
+    ],
+    "T2H0NonMarkingProbStd": [
+        0.16105580805234673
+    ],
+    "T2H0NonMarkingProbMean": [
+        0.9733599733599734
+    ],
+    "T2H0LastNonMarkingProbStd": [
+        0.17505559409572677
+    ],
+    "T2H0LastNonMarkingProbMean": [
+        0.9683649683649683
+    ],
+    "T2H0SampleSize": [
+        3003
+    ],
+    "T2H0InterArrivals": [
+        166482.11392405065
+    ],
+    "T2H0Occupancy": [
+        1.6740370740370738
+    ],
+    "T2H0PacktsInQueue": [
+        0.4877471200540279
+    ],
+    "T2H0EmptyFrac": [
+        81.35198135198135
+    ],
+    "T2H0GT1PktsFrac": [
+        10.755910755910755
+    ],
+    "T2H0mixingRate": [],
+    "T2H0mixingSignalAvg": [],
+    "T2H0mixingRateMonly": [],
+    "T2H0mixingRatePoisson": [],
+    "T2H0mixingRateE2EPoisson": [],
+    "T2H0mixingRatePoissonEventAvg": [],
+    "T2H0mixingDelayDiff": []
+}

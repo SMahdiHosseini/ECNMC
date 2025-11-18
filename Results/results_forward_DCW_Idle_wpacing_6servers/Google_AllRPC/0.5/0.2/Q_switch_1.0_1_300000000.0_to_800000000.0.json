@@ -1,0 +1,253 @@
+{
+    "MaxEpsilonIneqDelay": {
+        "event_linearInterp_timeAvg": {
+            "SD0": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 0
+                    },
+                    0
+                ]
+            }
+        }
+    },
+    "MaxEpsilonIneqLastDelay": {
+        "event_linearInterp_timeAvg": {
+            "SD0": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 0
+                    },
+                    0
+                ]
+            }
+        }
+    },
+    "MaxEpsilonIneqSuccessProb": {
+        "probability_linearInterp_timeAvg": {
+            "SD0": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 0
+                    },
+                    0
+                ]
+            }
+        }
+    },
+    "MaxEpsilonIneqLastSuccessProb": {
+        "probability_linearInterp_timeAvg": {
+            "SD0": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 0
+                    },
+                    0
+                ]
+            }
+        }
+    },
+    "MaxEpsilonIneqNonMarkingProb": {
+        "event_linearInterp_timeAvg": {
+            "SD0": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 0
+                    },
+                    0
+                ]
+            }
+        }
+    },
+    "MaxEpsilonIneqLastNonMarkingProb": {
+        "event_linearInterp_timeAvg": {
+            "SD0": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 0
+                    },
+                    0
+                ]
+            }
+        }
+    },
+    "EndToEndSampleSizeDelay": {
+        "SD0": {
+            "0": []
+        }
+    },
+    "EndToEndSampleSizeSuccess": {
+        "SD0": {
+            "0": []
+        }
+    },
+    "EndToEndSampleSizeMarking": {
+        "SD0": {
+            "0": []
+        }
+    },
+    "totalPckts": {
+        "SD0": {
+            "0": []
+        }
+    },
+    "InterArrivals": {
+        "SD0": {
+            "0": []
+        }
+    },
+    "EndToEndDelayMean": {
+        "event_linearInterp_timeAvg": {
+            "SD0": {
+                "0": [
+                    [],
+                    0
+                ]
+            }
+        }
+    },
+    "EndToEndSuccessProb": {
+        "probability_linearInterp_timeAvg": {
+            "SD0": {
+                "0": [
+                    [],
+                    0
+                ]
+            }
+        }
+    },
+    "EndToEndNonMarkingProb": {
+        "event_linearInterp_timeAvg": {
+            "SD0": {
+                "0": [
+                    [],
+                    0
+                ]
+            }
+        }
+    },
+    "DelayBias": {
+        "SD0": {
+            "0": []
+        }
+    },
+    "SuccessProbBias": {
+        "SD0": {
+            "0": []
+        }
+    },
+    "NonMarkingProbBias": {
+        "SD0": {
+            "0": []
+        }
+    },
+    "DropRate": [],
+    "maxEpsilonDelay": {
+        "SD0": {
+            "0": []
+        }
+    },
+    "maxEpsilonLastDelay": {
+        "SD0": {
+            "0": []
+        }
+    },
+    "maxEpsilonSuccessProb": {
+        "SD0": {
+            "0": []
+        }
+    },
+    "maxEpsilonLastSuccessProb": {
+        "SD0": {
+            "0": []
+        }
+    },
+    "maxEpsilonNonMarkingProb": {
+        "SD0": {
+            "0": []
+        }
+    },
+    "maxEpsilonLastNonMarkingProb": {
+        "SD0": {
+            "0": []
+        }
+    },
+    "workLoad": {
+        "SD0": {
+            "0": []
+        }
+    },
+    "RTT": {
+        "SD0": {
+            "0": []
+        }
+    },
+    "AverageWorkLoad": [],
+    "experiments": 0,
+    "TrafficsComptDelay": {
+        "event_poisson_eventAvg": {
+            "0": [
+                0,
+                0
+            ]
+        }
+    },
+    "expSuccessDelay": {
+        "SD0": []
+    },
+    "ActiveFractionOfAll": {
+        "Packets": {
+            "SD0": {
+                "0": []
+            }
+        },
+        "Bytes": {
+            "SD0": {
+                "0": []
+            }
+        }
+    },
+    "ActiveFractionOfTagged": {
+        "Packets": {
+            "SD0": {
+                "0": []
+            }
+        },
+        "Bytes": {
+            "SD0": {
+                "0": []
+            }
+        }
+    },
+    "SD0Delaystd": [],
+    "SD0DelayMean": [],
+    "SD0LastDelaystd": [],
+    "SD0LastDelayMean": [],
+    "SD0SuccessProbStd": [],
+    "SD0SuccessProbMean": [],
+    "SD0LastSuccessProbStd": [],
+    "SD0LastSuccessProbMean": [],
+    "SD0NonMarkingProbStd": [],
+    "SD0NonMarkingProbMean": [],
+    "SD0LastNonMarkingProbStd": [],
+    "SD0LastNonMarkingProbMean": [],
+    "SD0SampleSize": [],
+    "SD0InterArrivals": [],
+    "SD0Occupancy": [],
+    "SD0PacktsInQueue": [],
+    "SD0EmptyFrac": [],
+    "SD0GT1PktsFrac": [],
+    "SD0mixingRate": [],
+    "SD0mixingSignalAvg": [],
+    "SD0mixingRateMonly": [],
+    "SD0mixingRatePoisson": [],
+    "SD0mixingRateE2EPoisson": [],
+    "SD0mixingRatePoissonEventAvg": [],
+    "SD0mixingDelayDiff": []
+}
