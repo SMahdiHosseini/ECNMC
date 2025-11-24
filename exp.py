@@ -103,7 +103,7 @@ def run_ns3_with_timeout(base_cmd, output_file, timeout_seconds=180, initial_see
     seed = initial_seed or int(time.time())
     attempt = 1
 
-    while attempt <= 5:
+    while attempt <= 1:
         print(f"Attempt {attempt}: Running simulation with seed {seed}")
 
         # Add the seed to the command
@@ -220,7 +220,7 @@ def run_forward_experiment(exp, singleQueue=False):
                             '--probeInterval={} '.format(expConfig.probeInterval)
                         )
                     output_file = '{}/scratch/ECNMC/Results/results_forward/result_{}.txt'.format(get_ns3_path(), i)
-                    run_ns3_with_timeout(cmd, output_file, timeout_seconds=3600, initial_seed=i + 1)
+                    run_ns3_with_timeout(cmd, output_file, timeout_seconds=36000, initial_seed=i + 1)
                     os.system('mkdir -p {}/scratch/Results_forward/{}/{}/{}/{}'.format(get_ns3_path(), traffic, rate, load, i))
                     os.system('mv {}/scratch/ECNMC/Results/results_forward/{}/*.csv {}/scratch/Results_forward/{}/{}/{}/{}'.format(get_ns3_path(), i + 1, get_ns3_path(), traffic, rate, load, i))
                     # os.system('mv {}/scratch/ECNMC/Results/*_cwnd.csv {}/scratch/Results_forward/{}/{}'.format(get_ns3_path(), get_ns3_path(), rate, i))
@@ -437,7 +437,7 @@ if (args.IsForward == 1):
         expConfig.read_config_file('Parameters.config')
         expConfig.experiments = int(expConfig.experiments)
         ths = []
-        numOfThs = 30
+        numOfThs = 15
         for th in range(numOfThs):
             ths.append(threading.Thread(target=run_forward_experiment, args=([i for i in range(int(th * expConfig.experiments / numOfThs), int((th + 1) * expConfig.experiments / numOfThs))], args.IsSingleQueue, )))
 

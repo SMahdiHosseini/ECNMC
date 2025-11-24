@@ -379,6 +379,7 @@ void E2EMonitor::SaveMonitorRecords(const string& filename) {
     ofstream packetsFile;
     packetsFile.open(filename.substr(0, filename.size() - 4) + "_packets.csv");
     packetsFile << "SourceIp,SourcePort,DestinationIp,DestinationPort,SequenceNb,ACKNb,Id,PayloadSize,Path,SentTime,IsReceived,ReceiveTime,transmissionDelay,ECN,Tagged" << endl;
+    vector<PacketKey> keysToErase;
     for (auto& packetKeyEventPair: _recordedPackets) {
         PacketKey key = packetKeyEventPair.first;
         // if (key.GetSeqNb() == SequenceNumber32(1) && key.GetAckNb() != SequenceNumber32(1)) {
@@ -401,7 +402,14 @@ void E2EMonitor::SaveMonitorRecords(const string& filename) {
         // packetsFile << event->GetTxEnqueueTime().GetNanoSeconds() << "," << event->GetTxDequeueTime().GetNanoSeconds() << ",";
         packetsFile << event->GetSentTime().GetNanoSeconds() << ",";
         packetsFile << event->IsReceived() << "," << event->GetReceivedTime().GetNanoSeconds() << "," << transmissionDelay.GetNanoSeconds() << "," << event->GetEcn() << "," << event->GetPacketKey()->IsTagged() << endl;
+        if (event->IsReceived()){
+            keysToErase.push_back(packetKeyEventPair.first);
+        }
     }
+    for (auto &key : keysToErase) {
+        _recordedPackets.erase(key);
+    }
+    keysToErase.clear();
     packetsFile.close();
 
     // ofstream markingsFile;

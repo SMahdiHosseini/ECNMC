@@ -7,8 +7,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 colors = ['b', 'g', 'r', 'c', 'm', 'y', 'k', 'b', 'g', 'r', 'c', 'm', 'y', 'k']
-flows = ["T0A0", "A0T2", "T2H0"]
-switches = ["T0A0", "A0T2", "T2H0"]
+flows = ["A0T2", "T2H3", "T0A0"]
+switches = ["A0T2", "T2H3", "T0A0"]
 def readResults(results_dir, serviceRateScales, results_dir_file, selectedVarMethods, differentiationDelay=0, errorRate=0, load=0, traffic=''):
     e2e_results_WOBias = {}
     e2e_delay = {}
@@ -402,6 +402,9 @@ def plot_metric_per_loads_traffic(traffic_list, metric, loads, rates, results_di
     # max_y = 0.003
     # min_y = -10000
     # print(f"max_y: {max_y}, min_y: {min_y}")
+    if min_y == max_y:
+        min_y = 0
+        max_y = 1.0
     for ax in axs:
         ax.set_ylim(bottom=0.05 * min_y, top=1.05 * max_y)
         # ax.set_ylim(bottom=-0.5, top=0.5)
@@ -564,15 +567,15 @@ def __main__():
                    default="")
     args = parser.parse_args()
     results_dir = args.dir
-    start = 1.3 * 1e9
-    end = 1.8 * 1e9
+    start = 0.010 * 1e9
+    end = 0.10 * 1e9
     results_dir_file = "Q_switch_1.0_30_{}_to_{}".format(start, end)
     config = configparser.ConfigParser()
     config.read('../Results/results_{}/Parameters.config'.format(args.dir))
     rateScales = [float(x) for x in config.get('Settings', 'serviceRateScales').split(',')]
     loads = [float(x) for x in config.get('Settings', 'load').split(',')]
     traffics = config.get('Settings', 'traffic').split(',')
-    # traffics = ["Google_AllRPC", "Fabricated_Heavy_Head", "Fabricated_Heavy_Middle", "Google_SearchRPC", "Facebook_HadoopDist_All"]
+    traffics = ["Google_AllRPC", "Facebook_HadoopDist_All"]
     selectedVarMethods = ['event_linearInterp_timeAvg', 'probability_linearInterp_timeAvg']
     os.system('mkdir -p ../Results/results_' + results_dir + '/' + results_dir_file)
     analyse_forward_exp(results_dir, results_dir_file, rateScales, loads, selectedVarMethods, traffics)

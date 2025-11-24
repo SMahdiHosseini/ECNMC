@@ -652,11 +652,11 @@ def find_samples_path(time, txDelay, avg_interarrival_=None, df_name=None, sampl
     # if interarrival_99 > txDelay * 1.05:
     #     return distanceAwareSampling(time, 3e-7)
     
-    if samplingMethod == 'DA':
+    if samplingMethod == "DA":
     # #     # rate = find_sampling_rate(time, 0.0075)
         # sampling_rate = 1 / np.quantile(np.diff(time), 0.99)
         # sampling_rate = 1 / np.mean(np.diff(time))
-        sampling_rate = 3e-7
+        sampling_rate = 5e-6
         return distanceAwareSampling(time, sampling_rate)
 
     # return poissonLikeSampling(time, 3e-10, 3e6)
@@ -678,7 +678,7 @@ def find_samples_path(time, txDelay, avg_interarrival_=None, df_name=None, sampl
     # print("Interarrival times are not exponentially distributed. Proceeding with sampling...")
 
     # Step 3: Divide into chunks of average interarrival time
-    avg_interarrival = np.mean(interarrival) * 10
+    avg_interarrival = np.mean(interarrival) * 5
     # avg_interarrival  = avg_interarrival_ * 5
     # avg_interarrival = np.mean(interarrival[interarrival > txDelay])
     # print("Average interarrival time:", avg_interarrival)
@@ -1470,7 +1470,7 @@ def plot_queuingDelay_time_new(__ns3_path, results_folder, rate, experiment, seg
         plt.legend(ncol=2, fontsize=9)  # multi-column legend for many labels
         plt.savefig('{}/scratch/{}/{}/{}/queuingDelay_time_{}_{}.png'.format(__ns3_path, results_folder, rate, experiment, segment, steadyStart_plot, steadyEnd_plot))
 
-def plot_queuingDelay_time(__ns3_path, results_folder, rate, experiment, segment, steadyStart, steadyEnd, paths, linkRates):
+def plot_queuingDelay_time(__ns3_path, results_folder, rate, experiment, segment, steadyStart, steadyEnd, paths, linkRates, maxQueueSize):
     # plot_queuingDelay_time_new(__ns3_path, results_folder, rate, experiment, segment, steadyStart, steadyEnd, paths, linkRate)
     # return
     file_paths = glob.glob('{}/scratch/{}/{}/{}/*_{}.csv'.format(__ns3_path, results_folder, rate, experiment, segment))
@@ -1502,10 +1502,10 @@ def plot_queuingDelay_time(__ns3_path, results_folder, rate, experiment, segment
         plt.scatter(full_df_M['Time'], full_df_M['TotalQueueSize'], color='r', label='Measurement Traffic', marker='o', s=3)
         plt.scatter(full_df_CT['Time'], full_df_CT['TotalQueueSize'], color='b', label='Cross Traffic', marker='x', s=1)
         # plt.scatter(samples_times, samples_values, color='g', label='Sampled Traffic', marker='^', s=10)
-        plt.ylim(0, 19000)
+        plt.ylim(0, maxQueueSize * 0.75)
         # add the mean and variance of all the delays
-        mean_full = full_df['TotalQueueSize'].mean()
-        std_full = full_df['TotalQueueSize'].std()
+        # mean_full = full_df['TotalQueueSize'].mean()
+        # std_full = full_df['TotalQueueSize'].std()
         # plt.axhline(mean_full, color='g', linestyle='dashed', linewidth=1, label='Mean: {:.2f} B'.format(mean_full))
         # plt.axhline(mean_full + std_full, color='g', linestyle='dotted', linewidth=1, label='Mean + Std: {:.2f} B'.format(mean_full + std_full))
         # plt.axhline(mean_full - std_full, color='g', linestyle='dotted', linewidth=1, label='Mean - Std: {:.2f} B'.format(mean_full - std_full))
@@ -1513,7 +1513,7 @@ def plot_queuingDelay_time(__ns3_path, results_folder, rate, experiment, segment
         # steadyEnd_plot = 0.507 * 1e9
         # plt.xlim(steadyStart_plot, steadyEnd_plot)
         # set 100 ticks in y-axis
-        plt.yticks(np.linspace(0, 19000, 20))
+        plt.yticks(np.linspace(0, maxQueueSize * 0.75, 20))
         # enable grids in y-axis
         plt.grid(axis='y')
         plt.legend()
@@ -1524,7 +1524,9 @@ def plot_queuingDelay_time(__ns3_path, results_folder, rate, experiment, segment
         plt.ylabel('Size (B)', fontsize=16)
         plt.xticks(fontsize=14)
         plt.yticks(fontsize=14)
-        plt.savefig('{}/scratch/{}/{}/{}/queuingDelay_DASampling_time_{}_{}.png'.format(__ns3_path, results_folder, rate, experiment, segment, steadyStart, steadyEnd))
+        queue_name = file_path.split('/')[-1].split('_')[0]
+        plt.savefig('{}/scratch/{}/{}/{}/{}_queueSize_time_{}_{}.png'.format(__ns3_path, results_folder, rate, experiment, queue_name, steadyStart, steadyEnd))
+        plt.close()
         # lags, corr = cross_correlation_delay_time_series(full_df_M['Time'].values, full_df_M['TotalQueueSize'].values, full_df_CT['Time'].values, full_df_CT['TotalQueueSize'].values, bin_width=1000000, max_lag=100000000, normalize=True, plot=False)
         # print(f"Cross-correlation lags: {lags}")
         # print(f"Cross-correlation values: {corr}")
@@ -1532,13 +1534,18 @@ def plot_queuingDelay_time(__ns3_path, results_folder, rate, experiment, segment
         # lag_at_max = lags[np.argmax(corr)]
         # symmetry = np.corrcoef(corr[:len(corr)//2], corr[:len(corr)//2:-1])[0, 1]
         # print(f"Max correlation: {max_corr} at lag {lag_at_max} with symmetry {symmetry}")
+        full_df = None
+        full_df_M = None
+        full_df_CT = None
 
-def calculate_offline_computations_on_switch(__ns3_path, results_folder, rate, experiment, segment, steadyStart, steadyEnd, paths, linkRates, load):
+def calculate_offline_computations_on_switch(__ns3_path, results_folder, rate, experiment, segment, steadyStart, steadyEnd, paths, linkRates, load, queues_names):
     file_paths = glob.glob('{}/scratch/{}/{}/{}/{}/*_{}.csv'.format(__ns3_path, results_folder, rate, load, experiment, segment))
     dfs = {}
     for file_path in file_paths:
         df_res = {}
         df_name = file_path.split('/')[-1].split('_')[0]
+        if df_name not in queues_names:
+            continue
         full_df = pd.read_csv(file_path)
         df_res['first'] = {}
         df_res['last'] = {}
@@ -1917,7 +1924,7 @@ def find_sampling_rate(time, maxError):
         else: low = mid
 
     return (high + low) / 2
-def calculate_offline_computations_DC(__ns3_path, rate, segment, experiment, results_folder, steadyStart, steadyEnd, projectColumn, nHosts, removeDrops=True, checkColumn="", linkRates=[], linkDelays=[], swtichDstREDQueueDiscMaxSize=[0], stats=None, tsh=0.15, differentiationDelay=None, errorRate=None, load=None, passiveProbe=False):
+def calculate_offline_computations_DC(__ns3_path, rate, segment, experiment, results_folder, steadyStart, steadyEnd, projectColumn, nHosts, removeDrops=True, checkColumn="", linkRates=[], linkDelays=[], swtichDstREDQueueDiscMaxSize=[0], stats=None, tsh=0.15, differentiationDelay=None, errorRate=None, load=None, passiveProbe=False, queue_names=[], flow_names=[]):
     if differentiationDelay == 0.0 and errorRate is not None:
         file_paths = glob.glob('{}/scratch/{}/{}/{}/D_{}/f_{}/{}/*_{}.csv'.format(__ns3_path, results_folder, rate, load, differentiationDelay, errorRate, experiment, segment))
     else:
@@ -1925,11 +1932,12 @@ def calculate_offline_computations_DC(__ns3_path, rate, segment, experiment, res
     dfs = {}
     if 'EndToEnd_packets' in segment:
         e2e_merged_df = pd.DataFrame()
-        file_paths.append('R0R2H0')
+        file_paths.append('R0R2H3')
+    # e2e_merged_df = pd.DataFrame()
     for file_path in file_paths:
-        if file_path == 'R0R2H0':
+        if file_path == 'R0R2H3':
             full_df = e2e_merged_df.copy()
-            df_name = 'R0R2H0'
+            df_name = 'R0R2H3'
         else:
             df_name = file_path.split('/')[-1].split('_')[0]
             full_df = pd.read_csv(file_path)
@@ -1938,6 +1946,9 @@ def calculate_offline_computations_DC(__ns3_path, rate, segment, experiment, res
             if "R0H" in df_name:
                 e2e_merged_df = pd.concat([e2e_merged_df, full_df], ignore_index=True)
                 continue
+            # if len(flow_names) != 0 and df_name not in flow_names:
+            #     print("Skipping flow not in flow_names:", df_name)
+            #     continue
             df_res['first'] = {}
             df_res['last'] = {}
             df_res['workload'] = {}
@@ -1985,8 +1996,8 @@ def calculate_offline_computations_DC(__ns3_path, rate, segment, experiment, res
                 full_df['BitsTag'] = 0
             full_df = prune_data(full_df, projectColumn, steadyStart, steadyEnd)
             df_res = calc_RTT_per_path(full_df, df_res, checkColumn, linkDelays)
-            print(f"DC {df_name} len full df after pruning: {len(full_df)}")
-            samplingMethod = "Orig"
+            # print(f"DC {df_name} len full df after pruning: {len(full_df)}")
+            samplingMethod = "DA"
             df_res = calculate_offline_E2E_lossRates_DC(full_df, df_res, checkColumn, txDelay_to_firstQ, df_name, passiveProbe, samplingMethod)
             df_res = calculate_offline_E2E_delays(full_df, removeDrops, checkColumn, txDelay_to_firstQ, df_res, df_name, passiveProbe, samplingMethod)
             df_res = calculate_offline_E2E_workload(full_df, df_res, steadyStart, steadyEnd)
@@ -1999,6 +2010,8 @@ def calculate_offline_computations_DC(__ns3_path, rate, segment, experiment, res
                     if metric == 'delay':
                         df_res['bias'][metric][path] = (df_res['bias'][metric][path] * 8) / linkRates[0]
         if 'Poisson' in segment:
+            if len(queue_names) != 0 and df_name not in queue_names:
+                continue
             packets_cfd = PacketCDF()
             packets_cfd.load_cdf_data('{}/scratch/ECNMC/DCWorkloads/packet_size_cdf_{}.csv'.format(__ns3_path, results_folder.split('/')[-1]))
             # packets_cfd.load_cdf_data('{}/scratch/ECNMC/Helpers/packet_size_cdf.csv'.format(__ns3_path, results_folder.split('/')[-1]))
@@ -2043,8 +2056,8 @@ def calculate_offline_computations_DC(__ns3_path, rate, segment, experiment, res
             # print(f"DC {df_name} Avg Delay : {df_res['DelayMean']} ns, delay Std: {df_res['DelayStd']} ns, samples: {df_res['sampleSize']}")
             # print(f"DC {df_name} Avg Success Prob: {df_res['SuccessProbMean']}, Success Prob Std: {df_res['SuccessProbStd']}, samples: {df_res['sampleSize']}")
             # print(f"DC {df_name} Avg Non-Marking Prob: {df_res['NonMarkingProbMean']}, Non-Marking Prob Std: {df_res['NonMarkingProbStd']}, samples: {df_res['sampleSize']}")
-        if df_name == 'R0R2H0':
-            df_name = 'R0H0R2H0'
+        if df_name == 'R0R2H3':
+            df_name = 'R0H0R2H3'
         dfs[df_name] = df_res
     return dfs
 
@@ -2218,11 +2231,11 @@ def read_queues_indicators(__ns3_path, rate, results_folder, differentiationDela
     i = 0
     if differentiationDelay is not None and errorRate is not None:
         while len(file_paths) == 0:
-            file_paths = glob.glob('{}/scratch/{}/{}/{}/D_{}/f_{}/{}/*_PoissonSampler.csv'.format(__ns3_path, results_folder, rate, load, differentiationDelay, errorRate, i))
+            file_paths = glob.glob('{}/scratch/{}/{}/{}/D_{}/f_{}/{}/*_PoissonSampler_events.csv'.format(__ns3_path, results_folder, rate, load, differentiationDelay, errorRate, i))
             i += 1
     else:
         while len(file_paths) == 0:
-            file_paths = glob.glob('{}/scratch/{}/{}/{}/{}/*_PoissonSampler.csv'.format(__ns3_path, results_folder, rate, load, i))
+            file_paths = glob.glob('{}/scratch/{}/{}/{}/{}/*_PoissonSampler_events.csv'.format(__ns3_path, results_folder, rate, load, i))
             i += 1
     for file_path in file_paths:
         if 'C' not in file_path.split('/')[-1].split('_')[0]:

@@ -458,12 +458,12 @@ void PoissonSampler::RecordPacket(Ptr<const Packet> packet) {
 
 
 void PoissonSampler::SaveMonitorRecords(const string& filename) {
-    ofstream outfile;
-    outfile.open(filename);
-    outfile << "sampleDelayMean,unbiasedSmapleDelayVariance,sampleSize,samplesDropMean,samplesDropVariance,samplesMarkingProbMean,samplesMarkingProbVariance,GTSampleSize,GTPacketSizeMean,GTDropMean,GTQueuingDelay,GTMarkingProbMean" << endl;
-    outfile << sampleMean[0] << "," << unbiasedSmapleVariance[0] << "," << sampleSize[0] << "," << samplesLossProbMean << "," << samplesLossProbVariance << "," << samplesMarkingProbMean << "," << samplesMarkingProbVariance
-    << "," << numOfGTSamples << "," << GTPacketSizeMean << "," << GTDropMean << "," << GTQueuingDelay << "," << GTMarkingProbMean << endl;
-    outfile.close();
+    // ofstream outfile;
+    // outfile.open(filename);
+    // outfile << "sampleDelayMean,unbiasedSmapleDelayVariance,sampleSize,samplesDropMean,samplesDropVariance,samplesMarkingProbMean,samplesMarkingProbVariance,GTSampleSize,GTPacketSizeMean,GTDropMean,GTQueuingDelay,GTMarkingProbMean" << endl;
+    // outfile << sampleMean[0] << "," << unbiasedSmapleVariance[0] << "," << sampleSize[0] << "," << samplesLossProbMean << "," << samplesLossProbVariance << "," << samplesMarkingProbMean << "," << samplesMarkingProbVariance
+    // << "," << numOfGTSamples << "," << GTPacketSizeMean << "," << GTDropMean << "," << GTQueuingDelay << "," << GTMarkingProbMean << endl;
+    // outfile.close();
 
     ofstream eventsFile;
     eventsFile.open(filename.substr(0, filename.size() - 4) + "_events.csv");
@@ -473,6 +473,7 @@ void PoissonSampler::SaveMonitorRecords(const string& filename) {
         eventsFile << item.second->GetSampleTime().GetNanoSeconds() << "," << (item.second->GetDepartureTime() - item.second->GetSampleTime()).GetNanoSeconds() << "," << item.second->GetLossProb() << "," << item.second->GetMarkingProb() << "," << item.second->GetQueueSize() << 
         "," << item.second->GetTotalQueueSize() << "," << item.second->GetLastMarkingProb() << "," << item.second->GetLastDropProb() << "," << item.second->GetLastQueueSize() << "," << item.second->GetLastTotalQueueSize() << endl;
     }
+    _recordedSamples.clear();
     eventsFile.close();
 
     ofstream queueSizeFile;
@@ -483,6 +484,8 @@ void PoissonSampler::SaveMonitorRecords(const string& filename) {
         queueSizeFile << std::get<0>(item).GetNanoSeconds() << "," << (event.GetDepartureTime() - event.GetSampleTime()).GetNanoSeconds() << "," << event.GetLossProb() << "," << event.GetMarkingProb() << "," << event.GetQueueSize() << 
         "," << event.GetTotalQueueSize() << "," << event.GetLastMarkingProb() << "," << event.GetLabel() << "," << event.GetEventAction() << endl;
     }
+    // erase the events to reduce memory usage
+    queueSizeProcess.clear();
     queueSizeFile.close();
 
     // ofstream queueSizeByPacketsFile;
