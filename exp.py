@@ -51,6 +51,9 @@ class ExperimentConfig:
         self.ActiveProbeIsEnabled = False
         self.PassiveProbeIsEnabled = False
         self.probeInterval = "1ms"
+        self.incastMessageSize = 10000
+        self.incastFactor = 6
+        self.incastperiod = "50us"
 
     def read_config_file(self, config_file):
         config = configparser.ConfigParser()
@@ -85,6 +88,9 @@ class ExperimentConfig:
         self.swtichDstREDQueueDiscMaxSize = config.get('Settings', 'swtichDstREDQueueDiscMaxSize')
         self.switchSrcREDQueueDiscMaxSize = config.get('Settings', 'switchSrcREDQueueDiscMaxSize')
         self.switchREDQueueDiscMaxSize = config.get('DCSim', 'switchREDQueueDiscMaxSize')
+        self.incastMessageSize = config.getint('DCSim', 'incastMessageSize')
+        self.incastFactor = config.getint('DCSim', 'incastFactor')
+        self.incastperiod = config.get('DCSim', 'incastperiod')
         self.switchTXMaxSize = config.get('Settings', 'switchTXMaxSize')
         self.MinTh = config.get('Settings', 'MinTh')
         self.MaxTh = config.get('Settings', 'MaxTh')
@@ -217,7 +223,10 @@ def run_forward_experiment(exp, singleQueue=False):
                             '--differentiationDelay={} '.format(expConfig.differentiationDelay[0]) +
                             '--isDifferentating={} '.format(expConfig.isDifferentating) +
                             '--silentPacketDrop={} '.format(expConfig.silentPacketDrop) +
-                            '--probeInterval={} '.format(expConfig.probeInterval)
+                            '--probeInterval={} '.format(expConfig.probeInterval) +
+                            '--incastMessageSize={} '.format(expConfig.incastMessageSize) +
+                            '--incastFactor={} '.format(expConfig.incastFactor) +
+                            '--incastperiod={} '.format(expConfig.incastperiod)
                         )
                     output_file = '{}/scratch/ECNMC/Results/results_forward/result_{}.txt'.format(get_ns3_path(), i)
                     run_ns3_with_timeout(cmd, output_file, timeout_seconds=36000, initial_seed=i + 1)

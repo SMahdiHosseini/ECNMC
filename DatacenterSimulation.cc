@@ -20,6 +20,7 @@
 #include "traffic_generator_module/background_replay/BackgroundReplay.h"
 #include "traffic_generator_module/DC_traffic_generator/DCWorkloadGenerator.h"
 #include "traffic_generator_module/DC_traffic_generator/ProbeGenerator.h"
+#include "traffic_generator_module/DC_traffic_generator/IncastGenerator.h"
 #include <iomanip>
 #include <iostream>
 #include <string>
@@ -705,6 +706,7 @@ void run_DC_simulation(int argc, char* argv[]){
     string switchREDQueueDiscMaxSize = "90KB";         // Maximum size of the switch's RED queue disc to the dst hosts
     string traffic = "chicago_2010_traffic_10min_2paths/path";  // If the is CAIDA, Merged CAIDA or BulkSend                            
     string probeInterval = "100us";                    // Probe interval for the probe clock at TCP socket 
+    string incastperiod = "500us";                     // Incast period
     double pctPacedBack = 0.0;                         // the percentage of tcp flows of the CAIDA trace to be paced
     bool enableSwitchECN = true;                       // Enable ECN on the switches
     bool enableECMP = true;                            // Enable ECMP on the switches
@@ -723,6 +725,8 @@ void run_DC_simulation(int argc, char* argv[]){
     uint16_t poolSize = 20;                            // The size of the connection pool
     double avgMsgSize = 1448.0;                        // The average message size
     double hostTrafficRate = 1000.0;                   // The traffic rate of the measurement traffic
+    uint32_t incastMessageSize = 10000;                // The size of the incast messages
+    uint16_t incastFactor = 10;                        // The incast factor
     int seed = 1;                                      // The seed for the random number generator
 
     /*command line input*/
@@ -762,6 +766,9 @@ void run_DC_simulation(int argc, char* argv[]){
     cmd.AddValue("Nagle", "If the Nagle algorithm should be used", Nagle);
     cmd.AddValue("ActiveProbe", "If the active probe should be used", activeProbe);
     cmd.AddValue("PassiveProbe", "If the passive probe should be used", passiveProbe);
+    cmd.AddValue("incastperiod", "Incast period", incastperiod);
+    cmd.AddValue("incastMessageSize", "The size of the incast messages", incastMessageSize);
+    cmd.AddValue("incastFactor", "The incast factor", incastFactor);
     cmd.Parse(argc, argv);
 
     /*set default values*/
@@ -1061,6 +1068,10 @@ void run_DC_simulation(int argc, char* argv[]){
             }
         }
     }
+
+    // Incast Traffic 
+    auto* incastTrafficGenerator = new IncastGenerator(racks, incastFactor, incastMessageSize, Time(incastperiod), Seconds(stof(trafficStartTime)), Seconds(stof(trafficStopTime)));
+    incastTrafficGenerator->Start();
     /* ########## END: Application Setup ########## */
 
 
@@ -1268,6 +1279,9 @@ void run_DC_simulation(int argc, char* argv[]){
     cout << "Sender Nagle: " << Nagle << endl;
     cout << "Sender ActiveProbe: " << activeProbe << endl;
     cout << "Sender PassiveProbe: " << passiveProbe << endl;
+    cout << "Incast Factor: " << incastFactor << endl;
+    cout << "Incast Message Size: " << incastMessageSize << endl;
+    cout << "Incast Period: " << incastperiod << endl;
     cout << "Seed: " << seed << endl;
     /* ########## END: Check Config ########## */
 
