@@ -19,7 +19,7 @@ private:
     void StopApplication() override;
 
     void HandleTCPAccept (Ptr<Socket> socket, const Address& from);
-    void Recv(Ptr<Socket> socket);
+    virtual void Recv(Ptr<Socket> socket);
 
     Address _serverAddress;
     string _protocol;

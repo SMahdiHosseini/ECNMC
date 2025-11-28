@@ -22,6 +22,8 @@ add_library(
   traffic_generator_module/background_replay/BackgroundReplay.cc
   traffic_generator_module/background_replay/TraceReplayReceiver.cc
   traffic_generator_module/background_replay/TraceReplayReceiverHelper.cc
+  traffic_generator_module/background_replay/IncastReceiver.cc
+  traffic_generator_module/background_replay/IncastReceiverHelper.cc
   traffic_generator_module/background_replay/TraceReplaySender.cc
   traffic_generator_module/background_replay/TraceReplaySenderHelper.cc
   traffic_generator_module/DC_traffic_generator/DCWorkloadGenerator.cc
@@ -29,6 +31,7 @@ add_library(
   traffic_generator_module/DC_traffic_generator/ConnectionPool.cc
   traffic_generator_module/DC_traffic_generator/ProbeApp.cc
   traffic_generator_module/DC_traffic_generator/ProbeGenerator.cc
+  traffic_generator_module/DC_traffic_generator/IncastGenerator.cc
 )
 
 # Link the custom library to the scratch executable
