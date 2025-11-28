@@ -525,7 +525,7 @@ def analyze_all_experiments(rate, steadyStart, steadyEnd, confidenceValue, dir, 
 
     rounds_results = prepare_results(flows_name, queues_names, num_of_paths)
     merged_results = prepare_results(flows_name, queues_names, num_of_paths)
-    batch_size = 10
+    batch_size = 30
     for i in range(int(experiments_end / batch_size) + 1):
         ths = []
         return_dict = multiprocessing.Manager().dict()
@@ -547,14 +547,14 @@ def analyze_all_experiments(rate, steadyStart, steadyEnd, confidenceValue, dir, 
             th.join()
         merge_results(return_dict, merged_results, flows_name, queues_names, num_of_paths)
         print("{} joind".format(i))
-    # merged_results['AverageWorkLoad'] = sum(merged_results['AverageWorkLoad']) / merged_results['experiments']
+    merged_results['AverageWorkLoad'] = sum(merged_results['AverageWorkLoad']) / merged_results['experiments']
     if differentiationDelay is not None and errorRate is not None:
         if differentiationDelay != 0.0:
             os.system('mkdir -p ../Results/results_{}/{}/{}/D_{}/f_{}/'.format(dir, rate, load, differentiationDelay, errorRate))
-        with open('../Results/results_{}/{}/{}/D_{}/f_{}/Q_e_m_DA_5e6_merged_switch_1.0_{}_{}_to_{}.json'.format(dir, rate, load, differentiationDelay, errorRate, experiments_end, steadyStart, steadyEnd), 'w') as f:
+        with open('../Results/results_{}/{}/{}/D_{}/f_{}/Q_e_m_passive_5RTT_switch_1.0_{}_{}_to_{}.json'.format(dir, rate, load, differentiationDelay, errorRate, experiments_end, steadyStart, steadyEnd), 'w') as f:
             js.dump(merged_results, f, indent=4)
     else:
-        with open('../Results/results_{}/{}/{}/Q_e_m_DA_5e6_merged_switch_1.0_{}_{}_to_{}.json'.format(dir, rate, load, experiments_end, steadyStart, steadyEnd), 'w') as f:
+        with open('../Results/results_{}/{}/{}/Q_e_m_passive_5RTT_switch_1.0_{}_{}_to_{}.json'.format(dir, rate, load, experiments_end, steadyStart, steadyEnd), 'w') as f:
             js.dump(merged_results, f, indent=4)
 
 # main function
@@ -570,16 +570,17 @@ def __main__():
     config = configparser.ConfigParser()
     config.read('../Results/results_{}/Parameters.config'.format(args.dir))
     steadyStart = convert_to_float(config.get('Settings', 'steadyStart')) * 1e9
-    steadyStart = 0.05 * 1e9
+    steadyStart = 0.09 * 1e9
     steadyEnd = convert_to_float(config.get('Settings', 'steadyEnd')) * 1e9
+    # steadyEnd = 0.015 * 1e9
     experiments = int(config.get('Settings', 'experiments'))
-    # experiments = 1
+    experiments = 1
     serviceRateScales = [float(x) for x in config.get('Settings', 'serviceRateScales').split(',')]
     # serviceRateScales = [0.5]
     loads = [float(x) for x in config.get('Settings', 'load').split(',')]
-    # loads = [0.4]
+    # loads = [0.95]
     traffics = config.get('Settings', 'traffic').split(',')
-    traffics = ['Google_AllRPC', "Facebook_HadoopDist_All"]
+    # traffics = ["Facebook_HadoopDist_All"]
     errorRates = [float(x) for x in config.get('Settings', 'errorRate').split(',')]
     differentiationDelays = [float(x) for x in config.get('Settings', 'differentiationDelay').split(',')]
     if "forward" in args.dir:

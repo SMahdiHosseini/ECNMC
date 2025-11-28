@@ -3,6 +3,7 @@ import configparser
 import os
 import json as js
 from matplotlib.cm import get_cmap
+from matplotlib.lines import Line2D
 import matplotlib.pyplot as plt
 import numpy as np
 import itertools
@@ -125,7 +126,7 @@ def readResults(results_dir, serviceRateScales, results_dir_file, selectedVarMet
                         results_WOBias_mixingRate_packetsInQueue_filter[rate]['Delay'] = {}
                         workload[rate] = np.mean([t for selected_flow in selected_flows for t in temp['workLoad'][selected_flow][path]]) * 1e3
                         totalPkts[rate] = np.mean([t for selected_flow in selected_flows for t in temp['totalPckts'][selected_flow][path]])
-                        pcktsRatio[rate] = np.mean([temp['EndToEndSampleSizeDelay'][selected_flow][path][i] / temp['totalPckts'][selected_flow][path][i] for i in range(temp['experiments']) for selected_flow in selected_flows])
+                        pcktsRatio[rate] = [temp['EndToEndSampleSizeDelay'][selected_flow][path][i] / temp['totalPckts'][selected_flow][path][i] for i in range(temp['experiments']) for selected_flow in selected_flows]
                         # CVS[rate]['DelayCV'] = np.mean([(temp['SD0Delaystd'][i] / np.sqrt(temp['SD0SampleSize'][i])) / temp['SD0DelayMean'][i] if temp['SD0DelayMean'][i] != 0 else 0 for i in range(temp['experiments'])])
                         # CVS[rate]['LastDelayCV'] = np.mean([temp['SD0LastDelaystd'][i] / temp['SD0LastDelayMean'][i] for i in range(temp['experiments'])])
                         # CVS[rate]['SuccessProbCV'] = np.mean([(temp['SD0SuccessProbStd'][i] / np.sqrt(temp['SD0SampleSize'][i])) / temp['SD0SuccessProbMean'][i] if temp['SD0SuccessProbMean'][i] != 0 else 0 for i in range(temp['experiments'])])
@@ -150,16 +151,16 @@ def readResults(results_dir, serviceRateScales, results_dir_file, selectedVarMet
                         # stds[rate]['delay'] = np.sqrt(sum(temp['SD0Delaystd'][i] ** 2 for i in range(len(temp['SD0Delaystd'])))) / len(temp['SD0Delaystd'])
                         # stds[rate]['success'] = np.sqrt(sum(temp['SD0SuccessProbStd'][i] ** 2 for i in range(len(temp['SD0SuccessProbStd'])))) / len(temp['SD0SuccessProbStd'])
                         # stds[rate]['nonMarking'] = np.sqrt(sum(temp['SD0NonMarkingProbStd'][i] ** 2 for i in range(len(temp['SD0NonMarkingProbStd'])))) / len(temp['SD0NonMarkingProbStd'])
-                        sampleSizes[rate] = np.mean([t for selected_flow in selected_flows for t in temp['EndToEndSampleSizeDelay'][selected_flow][path]])
-                        e2e_samples_rtt[rate] = np.mean([temp['RTT'][flow][path][i] / temp['InterArrivals'][flow][path][i] for i in range(temp['experiments']) if (str(temp['InterArrivals'][flow][path][i]) != 'nan' and temp['InterArrivals'][flow][path][i] != 0)])
+                        sampleSizes[rate] = [t for selected_flow in selected_flows for t in temp['EndToEndSampleSizeDelay'][selected_flow][path]]
+                        e2e_samples_rtt[rate] = [temp['RTT'][selected_flow][path][i] / temp['InterArrivals'][selected_flow][path][i] for selected_flow in selected_flows for i in range(temp['experiments']) if (str(temp['InterArrivals'][selected_flow][path][i]) != 'nan' and temp['InterArrivals'][selected_flow][path][i] != 0)]
                         avgRtt[rate] = np.mean(temp['RTT'][flow][path])
-                        avgInterArrivals[rate] = np.nanmean(temp['InterArrivals'][flow][path])
+                        avgInterArrivals[rate] = [t for selected_flow in selected_flows for t in temp['InterArrivals'][selected_flow][path]]
                         ActiveFractionOfAllPackets[rate] = np.mean([t for selected_flow in selected_flows for t in temp['ActiveFractionOfAll']['Packets'][selected_flow][path]])
                         ActiveFractionOfAllBytes[rate] = np.mean([t for selected_flow in selected_flows for t in temp['ActiveFractionOfAll']['Bytes'][selected_flow][path]])
-                        e2e_delay[rate] = np.mean([temp['EndToEndDelayMean']['event_poisson_eventAvg'][selected_flow][path][0][i][0] for selected_flow in selected_flows for i in range(temp['EndToEndDelayMean']['event_poisson_eventAvg'][selected_flow][path][1])])
-                        e2e_stds[rate]['delay'] = np.mean([temp['EndToEndDelayMean']['event_poisson_eventAvg'][selected_flow][path][0][i][1] for selected_flow in selected_flows for i in range(temp['EndToEndDelayMean']['event_poisson_eventAvg'][selected_flow][path][1])])
-                        e2e_stds[rate]['success'] = np.mean([temp['EndToEndSuccessProb']['event_poisson_eventAvg'][selected_flow][path][0][i][1] for selected_flow in selected_flows for i in range(temp['EndToEndSuccessProb']['event_poisson_eventAvg'][selected_flow][path][1])])
-                        e2e_stds[rate]['nonMarking'] = np.mean([temp['EndToEndNonMarkingProb']['event_poisson_eventAvg'][selected_flow][path][0][i][1] for selected_flow in selected_flows for i in range(temp['EndToEndNonMarkingProb']['event_poisson_eventAvg'][selected_flow][path][1])])
+                        e2e_delay[rate] = [temp['EndToEndDelayMean']['event_poisson_eventAvg'][selected_flow][path][0][i][0] for selected_flow in selected_flows for i in range(temp['EndToEndDelayMean']['event_poisson_eventAvg'][selected_flow][path][1])]
+                        e2e_stds[rate]['delay'] = [temp['EndToEndDelayMean']['event_poisson_eventAvg'][selected_flow][path][0][i][1] for selected_flow in selected_flows for i in range(temp['EndToEndDelayMean']['event_poisson_eventAvg'][selected_flow][path][1])]
+                        e2e_stds[rate]['success'] = [temp['EndToEndSuccessProb']['event_poisson_eventAvg'][selected_flow][path][0][i][1] for selected_flow in selected_flows for i in range(temp['EndToEndSuccessProb']['event_poisson_eventAvg'][selected_flow][path][1])]
+                        e2e_stds[rate]['nonMarking'] = [temp['EndToEndNonMarkingProb']['event_poisson_eventAvg'][selected_flow][path][0][i][1] for selected_flow in selected_flows for i in range(temp['EndToEndNonMarkingProb']['event_poisson_eventAvg'][selected_flow][path][1])]
                         # stdsRatios[rate]['delay'] = np.mean([temp['EndToEndDelayMean']['event_poisson_eventAvg'][flow][path][0][i][1] / temp['SD0Delaystd'][i] if temp['SD0Delaystd'][i] != 0 else 1 for i in range(temp['EndToEndDelayMean']['event_poisson_eventAvg'][flow][path][1])])
                         # stdsRatios[rate]['success'] = np.mean([temp['EndToEndSuccessProb']['event_poisson_eventAvg'][flow][path][0][i][1] / temp['SD0SuccessProbStd'][i] if temp['SD0SuccessProbStd'][i] != 0 else 1 for i in range(temp['EndToEndSuccessProb']['event_poisson_eventAvg'][flow][path][1])])
                         # stdsRatios[rate]['nonMarking'] = np.mean([temp['EndToEndNonMarkingProb']['event_poisson_eventAvg'][flow][path][0][i][1] / temp['SD0NonMarkingProbStd'][i] if temp['SD0NonMarkingProbStd'][i] != 0 else 1 for i in range(temp['EndToEndNonMarkingProb']['event_poisson_eventAvg'][flow][path][1])])
@@ -947,7 +948,118 @@ def plot_metric_per_loads_traffic(traffic_list, metric, loads, rates, results_di
     plt.savefig(f"../Results/results_{results_dir}/{results_dir_file}/{label}_vs_Load_Subplots.png")
     plt.close()
 
+def plot_metric_per_loads_traffic_boxplot(traffic_list, metric, loads, rates, results_dir, results_dir_file, label):
+    print(f"Generating {label} Rate vs Load BOXplots (subplot per ratio, box per traffic)...")
 
+    # Compute oversubscription ratios
+    oversub_ratios = [1 / r if r != 0 else np.nan for r in rates]
+    oversub_ratio_map = dict(zip(rates, oversub_ratios))
+
+    # Colors (one per traffic, consistent across subplots)
+    cmap = get_cmap('tab10') if len(traffic_list) <= 10 else get_cmap('tab20')
+    color_map = {traffic: cmap(i / len(traffic_list)) for i, traffic in enumerate(traffic_list)}
+
+    num_ratios = len(rates)
+    fig, axs = plt.subplots(nrows=num_ratios, ncols=1,
+                            figsize=(20, 7 * num_ratios), sharex=True)
+    if num_ratios == 1:
+        axs = [axs]
+
+    max_y = -np.inf
+    min_y = np.inf
+
+    loads_sorted = sorted(loads)
+    x_base = np.arange(len(loads_sorted))  # base positions for loads
+    box_width = 0.8 / max(len(traffic_list), 1)  # share 0.8 of space among traffics
+
+    for idx, rate in enumerate(rates):
+        alpha = oversub_ratio_map[rate]
+        ax = axs[idx]
+
+        # For each traffic, collect data (list of lists) and positions
+        for t_idx, traffic in enumerate(traffic_list):
+            data = []
+            positions = []
+
+            offset = (t_idx - (len(traffic_list) - 1) / 2.0) * box_width
+
+            for i, load in enumerate(loads_sorted):
+                values = metric[traffic][load].get(rate, [])
+                if values is None:
+                    values = []
+
+                # Ensure it's a list/array
+                values = list(values)
+                if len(values) == 0:
+                    continue  # no box for this (traffic, load, rate)
+
+                data.append(values)
+                pos = x_base[i] + offset
+                positions.append(pos)
+
+                # Update global min/max
+                v_min = min(values)
+                v_max = max(values)
+                if v_max > max_y:
+                    max_y = v_max
+                if v_min < min_y:
+                    min_y = v_min
+
+            if len(data) == 0:
+                continue
+
+            bp = ax.boxplot(
+                data,
+                positions=positions,
+                widths=box_width * 0.9,
+                patch_artist=True,
+                manage_ticks=False
+            )
+
+            # Color boxes by traffic
+            color = color_map[traffic]
+            for patch in bp['boxes']:
+                patch.set_facecolor(color)
+                patch.set_edgecolor(color)
+            for element in ['whiskers', 'caps', 'medians']:
+                for item in bp[element]:
+                    item.set_color(color)
+
+        ax.set_title(f"{label} vs Load (α = {alpha:.2f})", fontsize=18)
+        ax.set_ylabel(label, fontsize=14)
+        ax.grid(True, which='both', linestyle='--', linewidth=0.5)
+
+        # Legend (one entry per traffic)
+        handles = [
+            Line2D([0], [0], linestyle='none', marker='s',
+                   markersize=10, markerfacecolor=color_map[t],
+                   markeredgecolor=color_map[t])
+            for t in traffic_list
+        ]
+        ax.legend(handles, traffic_list, loc='best',
+                  fontsize=10, fancybox=True, shadow=True)
+
+    # If nothing got plotted, avoid crash
+    if not np.isfinite(max_y) or not np.isfinite(min_y):
+        max_y, min_y = 1.0, 0.0
+
+    for ax in axs:
+        # Same y-scale across subplots
+        bottom = 0.95 * min_y if min_y >= 0 else 1.05 * min_y
+        top = 1.05 * max_y
+        ax.set_ylim(bottom=bottom, top=top)
+        ax.tick_params(axis='y', labelsize=12)
+
+        # X axis: ticks at base positions (loads)
+        ax.set_xticks(x_base)
+        ax.set_xticklabels([f"{l:.2f}" for l in loads_sorted], fontsize=12)
+
+    axs[-1].set_xlabel("Load", fontsize=16)
+
+    plt.suptitle(f"{label} vs Load per Oversubscription Ratio (boxplots)", fontsize=24)
+    plt.tight_layout(rect=[0, 0, 1, 0.96])
+    plt.savefig(f"../Results/results_{results_dir}/{results_dir_file}/{label}_vs_Load_Subplots_Boxplot.png")
+    plt.close()
 
 def plot_success_vs_loads(results, loads, rates, results_dir, results_dir_file, selectedVarMethod):
     for metric in set(
@@ -1259,10 +1371,10 @@ def analyse_forward_exp(results_dir, results_dir_file, rateScales, loads, select
                 
             # results[traffic][load]['DropRate'] = DropRates[traffic][load]
     selectedRates = rateScales
-    plot_metric_per_loads_traffic(list(results.keys()), avgInterArrivals, loads, selectedRates, results_dir, results_dir_file, 'Avg Inter Arrival Time(ns)')
+    plot_metric_per_loads_traffic_boxplot(list(results.keys()), avgInterArrivals, loads, selectedRates, results_dir, results_dir_file, 'Avg Inter Arrival Time(ns)')
     # plot_metric_per_loads_traffic(list(results.keys()), ActiveFractionOfAllBytes, loads, selectedRates, results_dir, results_dir_file, 'Fraction of Active Probs over All Bytes')
     # plot_metric_per_loads_traffic(list(results.keys()), ActiveFractionOfAllPackets, loads, selectedRates, results_dir, results_dir_file, 'Fraction of Active Probs over All Packets')
-    plot_metric_per_loads_traffic(list(results.keys()), e2e_samples_rtt, loads, selectedRates, results_dir, results_dir_file, '#end-to-end samples per RTT')
+    plot_metric_per_loads_traffic_boxplot(list(results.keys()), e2e_samples_rtt, loads, selectedRates, results_dir, results_dir_file, '#end-to-end samples per RTT')
     # plot_metric_per_loads_traffic(list(results.keys()), switch_samples_rtt, loads, selectedRates, results_dir, results_dir_file, '#switch samples per RTT')
     # plot_metric_per_loads_traffic(list(results.keys()), CVS_all['delay'], loads, selectedRates, results_dir, results_dir_file, 'CV of Delay')
     # plot_metric_per_loads_traffic(list(results.keys()), CVS_all['success'], loads, selectedRates, results_dir, results_dir_file, 'CV of Success Probability')
@@ -1273,7 +1385,7 @@ def analyse_forward_exp(results_dir, results_dir_file, rateScales, loads, select
     # plot_metric_per_loads_traffic(list(results.keys()), errors_bounds['delay'], loads, selectedRates, results_dir, results_dir_file, 'Error bounds of Delay(ns)')
     # plot_metric_per_loads_traffic(list(results.keys()), errors_bounds['success'], loads, selectedRates, results_dir, results_dir_file, 'Error bounds of Success Probability')
     # plot_metric_per_loads_traffic(list(results.keys()), errors_bounds['nonMarking'], loads, selectedRates, results_dir, results_dir_file, 'Error bounds of Non Marking Probability')
-    plot_metric_per_loads_traffic(list(results.keys()), e2e_stds_all['delay'], loads, selectedRates, results_dir, results_dir_file, 'End-to-end STD of Delay(ns)')
+    plot_metric_per_loads_traffic_boxplot(list(results.keys()), e2e_stds_all['delay'], loads, selectedRates, results_dir, results_dir_file, 'End-to-end STD of Delay(ns)')
     # plot_metric_per_loads_traffic(list(results.keys()), stdsRatios_all['delay'], loads, selectedRates, results_dir, results_dir_file, 'End-to-end STD of Delay(ns) over Switch STD of Delay(ns)')
     # plot_metric_per_loads_traffic(list(results.keys()), switch_delay, loads, selectedRates, results_dir, results_dir_file, 'Switch Delay(ns)')
     # plot_metric_per_loads_traffic(list(results.keys()), switch_nonMarking, loads, selectedRates, results_dir, results_dir_file, 'Switch Non Marking Probability')
@@ -1291,14 +1403,14 @@ def analyse_forward_exp(results_dir, results_dir_file, rateScales, loads, select
     # plot_metric_per_loads_traffic(list(results.keys()), mixingRateMonly, loads, selectedRates, results_dir, results_dir_file, 'Mixing Rate M only')
     # plot_metric_per_loads_traffic(list(results.keys()), mixingRatePoisson, loads, selectedRates, results_dir, results_dir_file, 'Mixing Rate Poisson')
     # plot_metric_per_loads_traffic(list(results.keys()), mixingRateE2EPoisson, loads, selectedRates, results_dir, results_dir_file, 'Mixing Rate E2E Poisson')
-    plot_metric_per_loads_traffic(list(results.keys()), e2e_delay, loads, selectedRates, results_dir, results_dir_file, 'End-to-End Delay(ns)')
-    plot_metric_per_loads_traffic(list(results.keys()), pcktsRatio, loads, selectedRates, results_dir, results_dir_file, '#end-to-end Packets Ratio')
+    plot_metric_per_loads_traffic_boxplot(list(results.keys()), e2e_delay, loads, selectedRates, results_dir, results_dir_file, 'End-to-End Delay(ns)')
+    plot_metric_per_loads_traffic_boxplot(list(results.keys()), pcktsRatio, loads, selectedRates, results_dir, results_dir_file, '#end-to-end Packets Ratio')
     # plot_metric_per_loads_traffic(list(results.keys()), stds_all['delay'], loads, selectedRates, results_dir, results_dir_file, 'STD of Delay(ns)')
     # plot_metric_per_loads_traffic(list(results.keys()), stds_all['success'], loads, selectedRates, results_dir, results_dir_file, 'STD of Success Probability')
     # plot_metric_per_loads_traffic(list(results.keys()), stds_all['nonMarking'], loads, selectedRates, results_dir, results_dir_file, 'STD of Non Marking Probability')
     plot_metric_per_loads_traffic(list(results.keys()), workload, loads, selectedRates, results_dir, results_dir_file, 'Workload(Mbps)')
     plot_metric_per_loads_traffic(list(results.keys()), totalPkts, loads, selectedRates, results_dir, results_dir_file, '#end-to-end Packets')
-    plot_metric_per_loads_traffic(list(results.keys()), sampleSizes, loads, selectedRates, results_dir, results_dir_file, '#Delay Samples')
+    plot_metric_per_loads_traffic_boxplot(list(results.keys()), sampleSizes, loads, selectedRates, results_dir, results_dir_file, '#Delay Samples')
     plot_metric_per_loads_traffic(list(results.keys()), avgRtt, loads, selectedRates, results_dir, results_dir_file, 'Avg RTT(ns)')
     plot_forward_success_per_loads_traffic(results, loads, selectedRates, results_dir, results_dir_file, selectedVarMethods, 'WithBias')
     plot_forward_success_per_loads_traffic(results_WOBias, loads, selectedRates, results_dir, results_dir_file, selectedVarMethods, 'WithoutBias')
@@ -1398,14 +1510,14 @@ def __main__():
     results_dir = args.dir
     # results_dir_file = args.file
     start = 0.010 * 1e9
-    end = 0.10 * 1e9
-    results_dir_file = "Q_e_m_passive_5Interarrivals_switch_1.0_30_{}_to_{}".format(start, end)
+    end = 0.020 * 1e9
+    results_dir_file = "Q_e_m_passive_3RTT_switch_1.0_30_{}_to_{}".format(start, end)
     config = configparser.ConfigParser()
     config.read('../Results/results_{}/Parameters.config'.format(args.dir))
     rateScales = [float(x) for x in config.get('Settings', 'serviceRateScales').split(',')]
     loads = [float(x) for x in config.get('Settings', 'load').split(',')]
     traffics = config.get('Settings', 'traffic').split(',')
-    traffics = ["Google_AllRPC", "Facebook_HadoopDist_All"]
+    # traffics = ["Google_AllRPC", "Facebook_HadoopDist_All"]
     # experiments = 1
     errorRates = [float(x) for x in config.get('Settings', 'errorRate').split(',')]
     # errorRates = [0.20, 0.40]

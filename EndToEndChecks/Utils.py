@@ -321,6 +321,7 @@ def calculate_offline_E2E_workload(full_df, df_res, steadyStart, steadyEnd):
             df_res['first'][path] = df['SentTime'].iloc[0]
             df_res['last'][path] = df['SentTime'].iloc[-1]
             df_res['workload'][path] = df['PayloadSize'].sum() * 8 / (steadyEnd - steadyStart)
+            print("Path: {}, total packets: {}, workload: {} bps".format(path, len(df), df_res['workload'][path]))
         df = None
     full_df_ = None
     return df_res
@@ -641,7 +642,7 @@ def randomSampling(time):
     return []
 
 def find_samples_path(time, txDelay, avg_interarrival_=None, df_name=None, samplingMethod='Orig'):
-    if "P0D0" in df_name:
+    if "P0" in df_name:
         return time
     # check the 99 percentile of the interarrival times
     # interarrival_99 = np.percentile(np.diff(time), 99)
@@ -656,7 +657,7 @@ def find_samples_path(time, txDelay, avg_interarrival_=None, df_name=None, sampl
     # #     # rate = find_sampling_rate(time, 0.0075)
         # sampling_rate = 1 / np.quantile(np.diff(time), 0.99)
         # sampling_rate = 1 / np.mean(np.diff(time))
-        sampling_rate = 5e-6
+        sampling_rate = 2e-6
         return distanceAwareSampling(time, sampling_rate)
 
     # return poissonLikeSampling(time, 3e-10, 3e6)
@@ -678,8 +679,8 @@ def find_samples_path(time, txDelay, avg_interarrival_=None, df_name=None, sampl
     # print("Interarrival times are not exponentially distributed. Proceeding with sampling...")
 
     # Step 3: Divide into chunks of average interarrival time
-    avg_interarrival = np.mean(interarrival) * 5
-    # avg_interarrival  = avg_interarrival_ * 5
+    # avg_interarrival = np.mean(interarrival) * 10
+    avg_interarrival  = avg_interarrival_ * 5
     # avg_interarrival = np.mean(interarrival[interarrival > txDelay])
     # print("Average interarrival time:", avg_interarrival)
     start_time = time[0]
@@ -915,7 +916,7 @@ def calculate_offline_E2E_delays(full_df, removeDrops, checkColumn, txDelay, df_
             df_res['InterArrivals'][path] = np.diff(samples_times).mean()
             avg, std = np.mean(samples_values), np.std(samples_values) / np.sqrt(len(samples_values))
         df_res['delay']['event_poisson_eventAvg'][path] = (avg, std)
-
+        # print("Path:", path, "E2E Delay Average from Poisson-sampled SentTimes:", avg, "std/Rn:", std)
         df_res['delay']['event_eventAvg'][path] = (np.mean(values), np.std(values) / np.sqrt(len(values)))
         df = None
     full_df_ = None
@@ -939,6 +940,10 @@ def addRemoveTransmission_data(full_df, linkDelays, linksRates):
     # full_df['Time'] = full_df['SentTime']
     full_df['SentTime'] = full_df['SentTime'] + linkDelays[0] + (full_df['PayloadSize'] * 8) / linksRates[0]
     # full_df['SentTime'] = full_df['TxEnqueueTime']
+    # if there are multiple rows with the same Id, keep only the one with IsReceived == 1
+    full_df = full_df.sort_values("IsReceived", ascending=False)
+    full_df = full_df.drop_duplicates(subset="Id", keep="first")
+    full_df = full_df.sort_values(by=['SentTime']).reset_index(drop=True)
     return full_df
 
 def timeShift(full_df, timeColumn, sizeColumn, linkDelays, linksRates):
@@ -1930,10 +1935,10 @@ def calculate_offline_computations_DC(__ns3_path, rate, segment, experiment, res
     else:
         file_paths = glob.glob('{}/scratch/{}/{}/{}/{}/*_{}.csv'.format(__ns3_path, results_folder, rate, load, experiment, segment))
     dfs = {}
-    if 'EndToEnd_packets' in segment:
-        e2e_merged_df = pd.DataFrame()
-        file_paths.append('R0R2H3')
-    # e2e_merged_df = pd.DataFrame()
+    # if 'EndToEnd_packets' in segment:
+    #     e2e_merged_df = pd.DataFrame()
+    #     file_paths.append('R0R2H3')
+    e2e_merged_df = pd.DataFrame()
     for file_path in file_paths:
         if file_path == 'R0R2H3':
             full_df = e2e_merged_df.copy()
@@ -1943,12 +1948,12 @@ def calculate_offline_computations_DC(__ns3_path, rate, segment, experiment, res
             full_df = pd.read_csv(file_path)
         df_res = {}
         if 'EndToEnd_packets' in segment:
-            if "R0H" in df_name:
-                e2e_merged_df = pd.concat([e2e_merged_df, full_df], ignore_index=True)
-                continue
-            # if len(flow_names) != 0 and df_name not in flow_names:
-            #     print("Skipping flow not in flow_names:", df_name)
+            # if "R0H" in df_name:
+            #     e2e_merged_df = pd.concat([e2e_merged_df, full_df], ignore_index=True)
             #     continue
+            if len(flow_names) != 0 and df_name not in flow_names:
+                # print("Skipping flow not in flow_names:", df_name)
+                continue
             df_res['first'] = {}
             df_res['last'] = {}
             df_res['workload'] = {}
@@ -1997,7 +2002,7 @@ def calculate_offline_computations_DC(__ns3_path, rate, segment, experiment, res
             full_df = prune_data(full_df, projectColumn, steadyStart, steadyEnd)
             df_res = calc_RTT_per_path(full_df, df_res, checkColumn, linkDelays)
             # print(f"DC {df_name} len full df after pruning: {len(full_df)}")
-            samplingMethod = "DA"
+            samplingMethod = "Orig"
             df_res = calculate_offline_E2E_lossRates_DC(full_df, df_res, checkColumn, txDelay_to_firstQ, df_name, passiveProbe, samplingMethod)
             df_res = calculate_offline_E2E_delays(full_df, removeDrops, checkColumn, txDelay_to_firstQ, df_res, df_name, passiveProbe, samplingMethod)
             df_res = calculate_offline_E2E_workload(full_df, df_res, steadyStart, steadyEnd)
@@ -2061,7 +2066,7 @@ def calculate_offline_computations_DC(__ns3_path, rate, segment, experiment, res
         dfs[df_name] = df_res
     return dfs
 
-def calculate_offline_computations(__ns3_path, rate, segment, experiment, results_folder, steadyStart, steadyEnd, projectColumn, nHosts, removeDrops=True, checkColumn="", linksRates=[], linkDelays=[], swtichDstREDQueueDiscMaxSize=0, stats=None, tsh=0.15, differentiationDelay=None, errorRate=None, load=None, passiveProbe=False):
+def calculate_offline_computations(__ns3_path, rate, segment, experiment, results_folder, steadyStart, steadyEnd, projectColumn, nHosts, removeDrops=True, checkColumn="", linksRates=[], linkDelays=[], swtichDstREDQueueDiscMaxSize=0, stats=None, tsh=0.15, differentiationDelay=None, errorRate=None, load=None, passiveProbe=False, flow_names=['AD0']):
     if differentiationDelay == 0.0 and errorRate is not None:
         file_paths = glob.glob('{}/scratch/{}/{}/{}/D_{}/f_{}/{}/*_{}.csv'.format(__ns3_path, results_folder, rate, load, differentiationDelay, errorRate, experiment, segment))
     else:
@@ -2080,6 +2085,9 @@ def calculate_offline_computations(__ns3_path, rate, segment, experiment, result
             df_res = calculate_offline_E2E_markingFraction(full_df, stats[df_name]['DelayMean'].keys(), df_res)
             df_res = calculate_offline_E2E_congestionEstimation(full_df, stats[df_name]['DelayMean'].keys(), df_res)
         if 'EndToEnd_packets' in segment:
+            if len(flow_names) != 0 and df_name not in flow_names:
+                print("Skipping flow not in flow_names:", df_name)
+                continue
             df_res['first'] = {}
             df_res['last'] = {}
             df_res['workload'] = {}
@@ -2121,7 +2129,8 @@ def calculate_offline_computations(__ns3_path, rate, segment, experiment, result
                 #     print("Interarrival times are exponentially distributed.")
                 # else:
                 #     print("Interarrival times are *NOT* exponentially distributed.")
-
+            else:
+                full_df['BitsTag'] = 0
                 
             if (differentiationDelay is not None) and (differentiationDelay != 0.0):
                 full_df = addExtraDelay(full_df, differentiationDelay, errorRate)
@@ -2136,7 +2145,7 @@ def calculate_offline_computations(__ns3_path, rate, segment, experiment, result
             # interarrival_99 = np.percentile(np.diff(full_df['SentTime'].values), 99)
             # if interarrival_99 < txDelay * 1.05 and samplingMethod == "DA":
             #     samplingMethod = "Orig"
-            samplingMethod = "DA"
+            samplingMethod = "Orig"
 
             df_res = calculate_offline_E2E_lossRates(__ns3_path, full_df, df_res, checkColumn, txDelay, linksRates[1], swtichDstREDQueueDiscMaxSize, df_name, passiveProbe, samplingMethod)
             df_res = calculate_offline_E2E_delays(full_df, removeDrops, checkColumn, txDelay, df_res, df_name, passiveProbe, samplingMethod)

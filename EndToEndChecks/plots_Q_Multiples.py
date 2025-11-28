@@ -575,7 +575,7 @@ def __main__():
     rateScales = [float(x) for x in config.get('Settings', 'serviceRateScales').split(',')]
     loads = [float(x) for x in config.get('Settings', 'load').split(',')]
     traffics = config.get('Settings', 'traffic').split(',')
-    traffics = ["Google_AllRPC", "Facebook_HadoopDist_All"]
+    # traffics = ["Google_AllRPC", "Facebook_HadoopDist_All"]
     selectedVarMethods = ['event_linearInterp_timeAvg', 'probability_linearInterp_timeAvg']
     os.system('mkdir -p ../Results/results_' + results_dir + '/' + results_dir_file)
     analyse_forward_exp(results_dir, results_dir_file, rateScales, loads, selectedVarMethods, traffics)

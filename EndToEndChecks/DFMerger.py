@@ -7,7 +7,7 @@ import multiprocessing
 __ns3_path = "/media/experiments/ns-allinone-3.41/ns-3.41"
 
 def merge_single_experiment(return_dict, rate, results_folder, config, experiment=0, ns3_path=__ns3_path, differentiationDelay=None, errorRate=None, load=None):
-    segments = ["PoissonSampler_queueSize", "PoissonSampler_events", "EndToEnd_packets"]
+    segments = ["PoissonSampler_queueSize", "PoissonSampler_events", "EndToEnd_packets", "SwitchMonitor"]
     for segment in segments:
         file_paths = glob.glob('{}/scratch/{}/{}/{}/{}/*_{}.csv'.format(__ns3_path, results_folder, rate, load, experiment, segment))
         # There are a lot mutiple file with the format of namex_time_PoissonSampler_queueSize.csv with different namex and time, I want to merge all the files with the same namex into one file
@@ -43,7 +43,7 @@ def merge_all_experiments(rate, dir, config, experiments_end=3, ns3_path=__ns3_p
     else:
         results_folder = 'Results_' + dir
 
-    batch_size = 30
+    batch_size = 5
     for i in range(int(experiments_end / batch_size) + 1):
         ths = []
         return_dict = multiprocessing.Manager().dict()
@@ -79,13 +79,13 @@ def __main__():
     steadyStart = convert_to_float(config.get('Settings', 'steadyStart')) * 1e9
     steadyEnd = convert_to_float(config.get('Settings', 'steadyEnd')) * 1e9
     experiments = int(config.get('Settings', 'experiments'))
-    # experiments = 1
+    experiments = 1
     serviceRateScales = [float(x) for x in config.get('Settings', 'serviceRateScales').split(',')]
     # serviceRateScales = [0.5]
     loads = [float(x) for x in config.get('Settings', 'load').split(',')]
     # loads = [0.4]
     traffics = config.get('Settings', 'traffic').split(',')
-    traffics = ['Google_AllRPC']
+    # traffics = ['Google_SearchRPC']
     errorRates = [float(x) for x in config.get('Settings', 'errorRate').split(',')]
     differentiationDelays = [float(x) for x in config.get('Settings', 'differentiationDelay').split(',')]
     if "forward" in args.dir:

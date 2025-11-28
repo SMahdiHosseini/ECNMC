@@ -386,23 +386,23 @@ void E2EMonitor::SaveMonitorRecords(const string& filename) {
         //     continue;
         // }
         E2EMonitorEvent* event = packetKeyEventPair.second;
-        Time transmissionDelay = Seconds(0);
-        if (numOfSegmetns == 3) {
-            transmissionDelay = hostToTorLinkRate.CalculateBytesTxTime(key.GetPacketSize()) * 2
-                                + torToAggLinkRate.CalculateBytesTxTime(key.GetPacketSize()) * 2
-                                + hostToTorLinkDelay * 4;
-        } else if (numOfSegmetns == 1) {
-            transmissionDelay = hostToTorLinkRate.CalculateBytesTxTime(key.GetPacketSize())
-                                + torToAggLinkRate.CalculateBytesTxTime(key.GetPacketSize())
-                                + hostToTorLinkDelay * 2;
-        }
-        packetsFile << key.GetSrcIp() << "," << key.GetSrcPort() << ",";
-        packetsFile << key.GetDstIp() << "," << key.GetDstPort() << "," << key.GetSeqNb() << "," << key.GetAckNb() << "," << key.GetId()  << "," << key.GetPacketSize() << ",";
-        packetsFile << event->GetPath() << ",";
-        // packetsFile << event->GetTxEnqueueTime().GetNanoSeconds() << "," << event->GetTxDequeueTime().GetNanoSeconds() << ",";
-        packetsFile << event->GetSentTime().GetNanoSeconds() << ",";
-        packetsFile << event->IsReceived() << "," << event->GetReceivedTime().GetNanoSeconds() << "," << transmissionDelay.GetNanoSeconds() << "," << event->GetEcn() << "," << event->GetPacketKey()->IsTagged() << endl;
         if (event->IsReceived()){
+            Time transmissionDelay = Seconds(0);
+            if (numOfSegmetns == 3) {
+                transmissionDelay = hostToTorLinkRate.CalculateBytesTxTime(key.GetPacketSize()) * 2
+                                    + torToAggLinkRate.CalculateBytesTxTime(key.GetPacketSize()) * 2
+                                    + hostToTorLinkDelay * 4;
+            } else if (numOfSegmetns == 1) {
+                transmissionDelay = hostToTorLinkRate.CalculateBytesTxTime(key.GetPacketSize())
+                                    + torToAggLinkRate.CalculateBytesTxTime(key.GetPacketSize())
+                                    + hostToTorLinkDelay * 2;
+            }
+            packetsFile << key.GetSrcIp() << "," << key.GetSrcPort() << ",";
+            packetsFile << key.GetDstIp() << "," << key.GetDstPort() << "," << key.GetSeqNb() << "," << key.GetAckNb() << "," << key.GetId()  << "," << key.GetPacketSize() << ",";
+            packetsFile << event->GetPath() << ",";
+            // packetsFile << event->GetTxEnqueueTime().GetNanoSeconds() << "," << event->GetTxDequeueTime().GetNanoSeconds() << ",";
+            packetsFile << event->GetSentTime().GetNanoSeconds() << ",";
+            packetsFile << event->IsReceived() << "," << event->GetReceivedTime().GetNanoSeconds() << "," << transmissionDelay.GetNanoSeconds() << "," << event->GetEcn() << "," << event->GetPacketKey()->IsTagged() << endl;
             keysToErase.push_back(packetKeyEventPair.first);
         }
     }

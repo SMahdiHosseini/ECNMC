@@ -145,6 +145,7 @@ def run_forward_experiment(exp, singleQueue=False):
         for rate in expConfig.serviceRateScales:
             exp_tor_to_agg_link_rate = "{}Mbps".format(round(float(expConfig.tor_to_agg_link_rate.split('M')[0]) * rate, 1))
             exp_bottleNeckLinkRate = "{}Mbps".format(round(float(expConfig.bottleneckLinkRate.split('M')[0]) * rate, 1))
+            exp_switchREDQueueDiscMaxSize = "{}KB".format(round(float(expConfig.switchREDQueueDiscMaxSize.split('K')[0]) * rate, 1))
             # exp_errorRate = "{}".format(float(expConfig.errorRate) * expConfig.errorRateScale[0])
             exp_errorRate = "0.0"
             for load in expConfig.load:
@@ -204,7 +205,7 @@ def run_forward_experiment(exp, singleQueue=False):
                             '--trafficStopTime={} '.format(expConfig.trafficStopTime) +
                             '--steadyStartTime={} '.format(expConfig.steadyStart) +
                             '--steadyStopTime={} '.format(expConfig.steadyEnd) +
-                            '--switchREDQueueDiscMaxSize={} '.format(expConfig.switchREDQueueDiscMaxSize) +
+                            '--switchREDQueueDiscMaxSize={} '.format(exp_switchREDQueueDiscMaxSize) +
                             '--switchSrcREDQueueDiscMaxSize={} '.format(expConfig.switchSrcREDQueueDiscMaxSize) +
                             '--switchTXMaxSize={} '.format(expConfig.switchTXMaxSize) +
                             '--minTh={} '.format(expConfig.MinTh) +
@@ -220,7 +221,7 @@ def run_forward_experiment(exp, singleQueue=False):
                             '--probeInterval={} '.format(expConfig.probeInterval)
                         )
                     output_file = '{}/scratch/ECNMC/Results/results_forward/result_{}.txt'.format(get_ns3_path(), i)
-                    run_ns3_with_timeout(cmd, output_file, timeout_seconds=36000, initial_seed=i + 1)
+                    run_ns3_with_timeout(cmd, output_file, timeout_seconds=72000, initial_seed=i + 1)
                     os.system('mkdir -p {}/scratch/Results_forward/{}/{}/{}/{}'.format(get_ns3_path(), traffic, rate, load, i))
                     os.system('mv {}/scratch/ECNMC/Results/results_forward/{}/*.csv {}/scratch/Results_forward/{}/{}/{}/{}'.format(get_ns3_path(), i + 1, get_ns3_path(), traffic, rate, load, i))
                     # os.system('mv {}/scratch/ECNMC/Results/*_cwnd.csv {}/scratch/Results_forward/{}/{}'.format(get_ns3_path(), get_ns3_path(), rate, i))
