@@ -11,8 +11,7 @@ ProbeGenerator::ProbeGenerator(const Ptr<Node>& sender, const Ptr<Node>& receive
 Address
 ProbeGenerator::establishPairConnections() {
 
-    InetSocketAddress receiverAddress = InetSocketAddress(GetNodeIP(_receiver, 1), 9000);
-
+    InetSocketAddress receiverAddress = InetSocketAddress(GetNodeIP(_receiver, 1), 40000);
     // create sink at receiver
     TraceReplayReceiverHelper replayHelperServer(receiverAddress);
     replayHelperServer.SetAttribute("Protocol", StringValue("ns3::TcpSocketFactory"));

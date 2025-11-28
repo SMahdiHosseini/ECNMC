@@ -825,7 +825,10 @@ void run_DC_simulation(int argc, char* argv[]){
     torSwitches.Create(nRacks);
     aggSwitches.Create(nAggSwitches);
     coreSwitches.Create(nCoreSwitches);
-
+    NodeContainer activeProbeHost;
+    if (activeProbe) {
+        activeProbeHost.Create(1);
+    }
     // connecting the hosts to the ToR switches
     vector<vector<NetDeviceContainer>> hostsToTorsNetDevices;
 
@@ -839,6 +842,11 @@ void run_DC_simulation(int argc, char* argv[]){
         for (int j = 0; j < nHosts; j++) {
             hostsToTors.push_back(p2pHostToTor.Install(racks[i].Get(j), torSwitches.Get(i)));
             DynamicCast<PointToPointNetDevice>(hostsToTors.back().Get(1))->GetQueue()->SetMaxSize(QueueSize(switchTXMaxSize));
+            // if we are on the first rack and active probe is enabled, connect the active probe host to the ToR switch
+            if (i == 0 && j == nHosts - 1 && activeProbe) {
+                hostsToTors.push_back(p2pHostToTor.Install(activeProbeHost.Get(0), torSwitches.Get(i)));
+                DynamicCast<PointToPointNetDevice>(hostsToTors.back().Get(1))->GetQueue()->SetMaxSize(QueueSize(switchTXMaxSize));
+            }
         }
         hostsToTorsNetDevices.push_back(hostsToTors);
     }
@@ -899,6 +907,9 @@ void run_DC_simulation(int argc, char* argv[]){
         vector<QueueDiscContainer> qdiscs;
         for (int j = 0; j < nHosts; j++) {
             qdiscs.push_back(torToHostTCH.Install(hostsToTorsNetDevices[i][j].Get(1)));
+            if (i == 0 && j == nHosts - 1 && activeProbe) {
+                qdiscs.push_back(torToHostTCH.Install(hostsToTorsNetDevices[i][j + 1].Get(1)));
+            }
         }
         torToHostQueueDiscs.push_back(qdiscs);
     }
@@ -948,6 +959,10 @@ void run_DC_simulation(int argc, char* argv[]){
         for (int j = 0; j < nHosts; j++) {
             ips.push_back(address.Assign(hostsToTorsNetDevices[i][j]));
             address.NewNetwork();
+            if (i == 0 && j == nHosts - 1 && activeProbe) {
+                ips.push_back(address.Assign(hostsToTorsNetDevices[i][j + 1]));
+                address.NewNetwork();
+            }
         }
         ipsRacks.push_back(ips);
     }
@@ -1040,17 +1055,16 @@ void run_DC_simulation(int argc, char* argv[]){
             vector<Ptr<Node>> dstNodes;
             // all nodes except this node are destination nodes
             for (int k = 0; k < nRacks; k++) {
-                if (i == 1 && k == 3)
-                    continue;
-                if (i == 3 && k == 1)
-                    continue;
+                // if (i == 1 && k == 3)
+                //     continue;
+                // if (i == 3 && k == 1)
+                //     continue;
                 for (int l = 0; l < nHosts; l++) {
                     if (k != i || l != j) {
                         dstNodes.push_back(racks[k].Get(l));
                     }
                 }
             }
-
             auto* dcTrafficGenerator = new DCWorkloadGenerator(racks[i].Get(j), dstNodes, hostTrafficRate, poolSize, "scratch/ECNMC/DCWorkloads/" + traffic, "ns3::TcpSocketFactory", Time(Seconds(0)), stopTime - Seconds(0.00002));
             // if this is the the traffic from R0H0, activate the passiveProbing
             if (i == 0 && j == 0) {
@@ -1060,6 +1074,10 @@ void run_DC_simulation(int argc, char* argv[]){
                 dcTrafficGenerator->GenrateTraffic(pctPacedBack, false, Time(probeInterval), Seconds(stof(trafficStartTime)));
             }
         }
+    }
+    if (activeProbe) {
+        auto* probeGenerator = new ProbeGenerator(activeProbeHost.Get(0), racks[2].Get(3), 1 / Time(probeInterval).GetSeconds(), Seconds(stof(steadyStartTime)), Seconds(stof(steadyStopTime)));
+        probeGenerator->GenrateTraffic();
     }
     /* ########## END: Application Setup ########## */
 
@@ -1087,6 +1105,11 @@ void run_DC_simulation(int argc, char* argv[]){
         R0toR2H3Monitor->AddAppKey(AppKey(ipsRacks[0][j].GetAddress(0), ipsRacks[2][3].GetAddress(0), 0, 0));
         endToendMonitors.push_back(R0toR2H3Monitor);
     }
+    if (activeProbe) {
+        auto *ActiveProbeMonitor = new E2EMonitor(startTime, Seconds(stof(steadyStopTime)) + convergenceTime, Seconds(stof(steadyStartTime)), Seconds(stof(steadyStopTime)), DynamicCast<PointToPointNetDevice>(hostsToTorsNetDevices[0][nHosts].Get(0)), racks[2].Get(3), activeProbeHost.Get(0), "R0P_R2H3", errorRate, DataRate(hostToTorLinkRate), DataRate(torToAggLinkRate), Time(hostToTorLinkDelay), 2, 3, QueueSize(switchREDQueueDiscMaxSize).GetValue(), isDifferentating, differentiationDelay);
+        ActiveProbeMonitor->AddAppKey(AppKey(ipsRacks[0][nHosts].GetAddress(0), ipsRacks[2][3].GetAddress(0), 0, 0));
+        endToendMonitors.push_back(ActiveProbeMonitor);
+    }
     
     // We want to monitor all the flows from all serevers in R1 to R2H3
     // for (int j = 0; j < nHosts; j++) {
@@ -1109,16 +1132,11 @@ void run_DC_simulation(int argc, char* argv[]){
     //     endToendMonitors.push_back(R3toR0H3Monitor);
     // }
 
-    // We want to monitor all the flows from all serevers in R0 to R0Hn
-    // for (int j = 0; j < nHosts; j++) {
-    //     for (int k = 0; k < nHosts; k++) {
-    //         if (k == j) {
-    //             continue;
-    //         }
-    //         auto *R0toR0HnMonitor = new E2EMonitor(startTime, Seconds(stof(steadyStopTime)) + convergenceTime, Seconds(stof(steadyStartTime)), Seconds(stof(steadyStopTime)), DynamicCast<PointToPointNetDevice>(hostsToTorsNetDevices[0][j].Get(0)), racks[0].Get(k), racks[0].Get(j), "R0H" + to_string(j) + "R0H" + to_string(k), errorRate, DataRate(hostToTorLinkRate), DataRate(hostToTorLinkRate), Time(hostToTorLinkDelay), 1, 1, QueueSize(switchREDQueueDiscMaxSize).GetValue(), isDifferentating, differentiationDelay);
-    //         R0toR0HnMonitor->AddAppKey(AppKey(ipsRacks[0][j].GetAddress(0), ipsRacks[0][k].GetAddress(0), 0, 0));
-    //         endToendMonitors.push_back(R0toR0HnMonitor);
-    //     }
+    // We want to monitor all the flows from all serevers in R0 to R0H5
+    // for (int j = 0; j < nHosts - 1; j++) {
+    //     auto *R0toR0H5Monitor = new E2EMonitor(startTime, Seconds(stof(steadyStopTime)) + convergenceTime, Seconds(stof(steadyStartTime)), Seconds(stof(steadyStopTime)), DynamicCast<PointToPointNetDevice>(hostsToTorsNetDevices[0][j].Get(0)), racks[0].Get(5), racks[0].Get(j), "R0H" + to_string(j) + "R0H5", errorRate, DataRate(hostToTorLinkRate), DataRate(hostToTorLinkRate), Time(hostToTorLinkDelay), 1, 1, QueueSize(switchSrcREDQueueDiscMaxSize).GetValue(), isDifferentating, differentiationDelay);
+    //     R0toR0H5Monitor->AddAppKey(AppKey(ipsRacks[0][j].GetAddress(0), ipsRacks[0][5].GetAddress(0), 0, 0));
+    //     endToendMonitors.push_back(R0toR0H5Monitor);
     // }
     // // Monitor the packets between each pair of hosts in R0 and R2
     // for (int i = 0; i < nHosts; i++) {
@@ -1186,6 +1204,10 @@ void run_DC_simulation(int argc, char* argv[]){
     //         PoissonSamplers.push_back(hostToTorSampler);
     //     }
     // }
+    // Only T0 to H5
+    // Ptr<PointToPointNetDevice> hostToTorNetDeviceT0H5 = DynamicCast<PointToPointNetDevice>(hostsToTorsNetDevices[0][5].Get(1));
+    // auto *hostToTorSamplerT0H5 = new PoissonSampler(Seconds(stof(steadyStartTime)), Seconds(stof(steadyStopTime)), DynamicCast<RedQueueDisc>(torToHostQueueDiscs[0][5].Get(0)), hostToTorNetDeviceT0H5->GetQueue(), hostToTorNetDeviceT0H5, "T0H5", sampleRate, nullptr, nullptr, traffic);
+    // PoissonSamplers.push_back(hostToTorSamplerT0H5);
     // // PoissonSampler on the Agg to Tor links
     // Only A0 to T2
     Ptr<PointToPointNetDevice> aggToTorNetDeviceA0T2 = DynamicCast<PointToPointNetDevice>(torToAggNetDevices[2][0].Get(1));
@@ -1216,6 +1238,17 @@ void run_DC_simulation(int argc, char* argv[]){
     //     }
     // }
 
+    // vector<SwitchMonitor *> switchMonitors;
+    // //  Switch Monitor on A0
+    // auto *aggSwitchMonitor = new SwitchMonitor(startTime, Seconds(stof(steadyStopTime)) + convergenceTime, Seconds(stof(steadyStartTime)), Seconds(stof(steadyStopTime)), aggSwitches.Get(0), "A0");
+    // aggSwitchMonitor->AddAppKey(AppKey(ipsRacks[0][0].GetAddress(0), ipsRacks[2][3].GetAddress(0), 0, 0));
+    // switchMonitors.push_back(aggSwitchMonitor);
+
+    // // switch monitor on A1
+    // auto *aggSwitchMonitor1 = new SwitchMonitor(startTime, Seconds(stof(steadyStopTime)) + convergenceTime, Seconds(stof(steadyStartTime)), Seconds(stof(steadyStopTime)), aggSwitches.Get(1), "A1");
+    // aggSwitchMonitor1->AddAppKey(AppKey(ipsRacks[0][0].GetAddress(0), ipsRacks[2][3].GetAddress(0), 0, 0));
+    // switchMonitors.push_back(aggSwitchMonitor1);    
+
     /* ########## END: Monitoring ########## */
 
 
@@ -1227,6 +1260,9 @@ void run_DC_simulation(int argc, char* argv[]){
         for (int j = 0; j < nHosts; j++) {
             cout << "Rack: " << i << " Host: "<< j << " Id:" << racks[i].Get(j)->GetId() << " IP: " << ipsRacks[i][j].GetAddress(0) << endl;
         }
+    }
+    if (activeProbe) {
+        cout << "Active Probe Host Id: " << activeProbeHost.Get(0)->GetId() << " IP: " << ipsRacks[0][nHosts].GetAddress(0) << endl;
     }
     //print config parameters
 
@@ -1287,6 +1323,9 @@ void run_DC_simulation(int argc, char* argv[]){
         monitor->SaveMonitorRecords((string) (getenv("PWD")) + "/Results/results_" + dirName + "/" + to_string(experiment)  + "/" + monitor->GetMonitorTag() + "_" + to_string(Seconds(stof(steadyStopTime)).GetNanoSeconds()) + "_PoissonSampler.csv");
     }
 
+    // for (auto monitor: switchMonitors) {
+    //     monitor->SavePacketRecords((string) (getenv("PWD")) + "/Results/results_" + dirName + "/" + to_string(experiment)  + "/" + monitor->GetMonitorTag() + "_" + to_string(Seconds(stof(steadyStopTime)).GetNanoSeconds()) + "_SwitchMonitor.csv");
+    // }
     /* ########## END: Scheduling and  Running ########## */
 
 
