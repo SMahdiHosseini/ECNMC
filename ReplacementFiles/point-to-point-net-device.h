@@ -32,6 +32,7 @@
 #include "ns3/MeasurementProbeTag.h" // mahdi
 #include "ns3/ipv4-header.h" // mahdi
 #include "ns3/tcp-header.h" // mahdi
+#include "ns3/core-module.h" // mahdi
 #include <cstring>
 
 namespace ns3
@@ -212,6 +213,7 @@ class PointToPointNetDevice : public NetDevice
     Ptr<Packet> CheckForFragmentation(Ptr<Packet> p);
     void FragmentPacket(Ptr<Packet> p, uint32_t firstFragmentSize);
     void SetNextPoissonTick(Time nextTick);
+    void SetInterframeGapMean(Time t);
     std::vector<Ptr<Packet>> PrioPackets;
     /**
      * \brief Pair of a packet and an Ipv4 header.
@@ -480,6 +482,8 @@ class PointToPointNetDevice : public NetDevice
     bool m_isHalted = false; //!< Whether transmission is halted
     bool m_tagNext = false; //!< Whether to tag the next packet
     uint32_t m_probeThreshold = 100; //!< The threshold for probing the channel
+    Time m_tInterframeGapMean = Seconds(0); //!<The interframe gap that the Net Device uses to throttle packet transmission (mean value for the faulty device)
+    Ptr<ExponentialRandomVariable> m_varInterframeGap = CreateObject<ExponentialRandomVariable>(); //!< Exponential variable for interframe gap
     // ****** Mahdi Change ***** (END) ***** // 
 
     /**

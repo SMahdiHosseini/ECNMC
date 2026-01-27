@@ -145,6 +145,11 @@ PointToPointNetDevice::GetTypeId()
                             UintegerValue(100),
                             MakeUintegerAccessor(&PointToPointNetDevice::m_probeThreshold),
                             MakeUintegerChecker<uint32_t>())
+            .AddAttribute("InterframeGapMean",
+                            "The mean interframe gap to use in faulty device",
+                            TimeValue(Seconds(0.0)),
+                            MakeTimeAccessor(&PointToPointNetDevice::m_tInterframeGapMean),
+                            MakeTimeChecker())
             // ****** Mahdi Change ***** (END) ***** //
 
             //
@@ -603,6 +608,17 @@ PointToPointNetDevice::SetInterframeGap(Time t)
     m_tInterframeGap = t;
 }
 
+// ****** Mahdi Change ***** (START) ***** //
+void
+PointToPointNetDevice::SetInterframeGapMean(Time t)
+{
+    NS_LOG_FUNCTION(this << t.As(Time::S));
+
+    m_tInterframeGapMean = t;
+    m_varInterframeGap->SetAttribute("Mean", DoubleValue(t.GetSeconds()));
+}
+// ****** Mahdi Change ***** (END) ***** //
+
 bool
 PointToPointNetDevice::TransmitStart(Ptr<Packet> p)
 {
@@ -623,6 +639,15 @@ PointToPointNetDevice::TransmitStart(Ptr<Packet> p)
     Time txCompleteTime = txTime + m_tInterframeGap;
 
     // ****** Mahdi Change ***** (START) ***** //
+    if (m_tInterframeGapMean > Seconds(0))
+    {
+        Time randomIFG = Seconds(m_varInterframeGap->GetValue());
+        // std::cout << " ### PointToPointNetDevice ### Using random interframe gap of " << randomIFG.GetNanoSeconds() << " at time: " << Simulator::Now().GetNanoSeconds();
+        // Ptr<Ipv4> ipv4 = m_node->GetObject<Ipv4>();
+        // int32_t ifIndex = ipv4->GetInterfaceForDevice(this);
+        // std::cout << " on Device with IP: " << ipv4->GetAddress(ifIndex, 0).GetLocal() << std::endl;
+        txCompleteTime = txTime + randomIFG;
+    }
     // if (m_node->GetObject<ns3::Ipv4>()->GetAddress(1, 0).GetLocal() == Ipv4Address("10.1.1.1"))
     // {
     //     Ipv4Header ipv4Header;
