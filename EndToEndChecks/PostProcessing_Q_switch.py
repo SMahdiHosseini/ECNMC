@@ -314,7 +314,7 @@ def analyze_single_experiment(return_dict, rate, queues_names, confidenceValue, 
     nHosts = 24
     paths = range(num_of_paths)
     # if (experiment == 0):
-    plot_queuingDelay_time(__ns3_path, results_folder, str(rate) + "/" + str(load), experiment, 'PoissonSampler_queueSize', steadyStart, steadyEnd, range(1), [hostToTorLinkRate, torToAggLinkRate, torToAggLinkRate, hostToTorLinkRate], switchREDQueueDiscMaxSize * 0.2)
+    # plot_queuingDelay_time(__ns3_path, results_folder, str(rate) + "/" + str(load), experiment, 'PoissonSampler_queueSize', steadyStart, steadyEnd, range(1), [hostToTorLinkRate, torToAggLinkRate, torToAggLinkRate, hostToTorLinkRate], switchREDQueueDiscMaxSize * 0.2)
     # endToEndStats = calculate_offline_computations_DC(__ns3_path, rate, 'EndToEnd_packets', str(experiment), results_folder, steadyStart, steadyEnd, "SentTime", nHosts, True, "IsReceived", [hostToTorLinkRate], [linkDelay, linkDelay, linkDelay, linkDelay], [0], differentiationDelay=differentiationDelay, errorRate=errorRate, load=load, passiveProbe=passiveProbe)
     endToEndStats = calculate_offline_computations_on_switch(__ns3_path, results_folder, rate, experiment, 'PoissonSampler_queueSize', steadyStart, steadyEnd, paths, [hostToTorLinkRate, torToAggLinkRate, torToAggLinkRate, hostToTorLinkRate], load, queues_names)
     # samples_dfs = calculate_offline_computations_DC(__ns3_path, rate, 'PoissonSampler_events', str(experiment), results_folder, endToEndStats['R0H0R2H0']['first'][0], endToEndStats['R0H0R2H0']['last'][0], "Time", nHosts, linkRates=[hostToTorLinkRate, torToAggLinkRate, torToAggLinkRate, hostToTorLinkRate], swtichDstREDQueueDiscMaxSize=[switchSrcREDQueueDiscMaxSize, switchREDQueueDiscMaxSize], differentiationDelay=differentiationDelay, errorRate=errorRate, load=load)
@@ -560,15 +560,16 @@ def __main__():
     config.read('../Results/results_{}/Parameters.config'.format(args.dir))
     steadyStart = convert_to_float(config.get('Settings', 'steadyStart')) * 1e9
     steadyEnd = convert_to_float(config.get('Settings', 'steadyEnd')) * 1e9
-    # steadyStart = 0.05 * 1e9
+    # steadyStart = 0.08 * 1e9
+    steadyEnd = 0.020 * 1e9
     experiments = int(config.get('Settings', 'experiments'))
-    experiments = 1
+    # experiments = 1
     serviceRateScales = [float(x) for x in config.get('Settings', 'serviceRateScales').split(',')]
     # serviceRateScales = [0.5, 1.0]
     loads = [float(x) for x in config.get('Settings', 'load').split(',')]
     # loads = [0.25, 0.7, 0.95]
     traffics = config.get('Settings', 'traffic').split(',')
-    # traffics = ['Google_AllRPC', 'Facebook_HadoopDist_All', '']
+    traffics = ['Google_AllRPC', 'Facebook_HadoopDist_All']
     errorRates = [float(x) for x in config.get('Settings', 'errorRate').split(',')]
     differentiationDelays = [float(x) for x in config.get('Settings', 'differentiationDelay').split(',')]
     if "forward" in args.dir:

@@ -57,7 +57,8 @@ def check_all_delayConsistency(endToEnd_statistics, samples_paths_aggregated_sta
                     res['MaxEpsilonIneq'][flow][path][var_method] = check_MaxEpsilon_ineq_delay(endToEnd_statistics[flow]['delay'][var_method][path], samples_paths_aggregated_statistics[flow][path])
                 else:
                     e = samples_paths_aggregated_statistics[flow][path]['DelayMean'] * samples_paths_aggregated_statistics[flow][path]['MaxEpsilonDelay'] # u * epsilon
-                    e += endToEnd_statistics[flow]['delay'][var_method][path][1] * confidenceValue / np.sqrt(endToEnd_statistics[flow]['sampleSize']['delay'][path])
+                    # e += endToEnd_statistics[flow]['delay'][var_method][path][1] * confidenceValue # using e2e samples std as e2e std
+                    e += confidenceValue * samples_paths_aggregated_statistics[flow][path]['e2eDelayStd'] / np.sqrt(endToEnd_statistics[flow]['sampleSize']['delay'][path]) # using sum of stds as e2e std
                     if (endToEnd_statistics[flow]['sampleSize']['delay'][path] < min_sample_size):
                         res['MaxEpsilonIneq'][flow][path][var_method] = False
                         continue
@@ -75,7 +76,8 @@ def check_all_successProbConsistency(endToEnd_statistics, samples_paths_aggregat
                 if var_method != 'event_poisson_eventAvg' and var_method != 'probability_poisson_eventAvg' and var_method != 'event_eventAvg' and var_method != 'probability_eventAvg':
                     res['MaxEpsilonIneq'][flow][path][var_method] = check_MaxEpsilon_ineq_successProb(np.log(endToEnd_statistics[flow]['successProb'][var_method][path]), samples_paths_aggregated_statistics[flow][path], number_of_segments)
                 else:
-                    epsp = (endToEnd_statistics[flow]['successProb'][var_method][path][1] * confidenceValue) / (np.sqrt(endToEnd_statistics[flow]['sampleSize']['successProb'][path]) * endToEnd_statistics[flow]['successProb'][var_method][path][0])
+                    # epsp = (endToEnd_statistics[flow]['successProb'][var_method][path][1] * confidenceValue) / (endToEnd_statistics[flow]['successProb'][var_method][path][0]) # using e2e samples std as e2e std
+                    epsp = (samples_paths_aggregated_statistics[flow][path]['e2eSuccessProbStd'] * confidenceValue) / (endToEnd_statistics[flow]['successProb'][var_method][path][0] * np.sqrt(endToEnd_statistics[flow]['sampleSize']['successProb'][path])) # using sum of stds as e2e std
                     if (endToEnd_statistics[flow]['sampleSize']['successProb'][path] < min_sample_size):
                         res['MaxEpsilonIneq'][flow][path][var_method] = False
                         continue
@@ -97,7 +99,8 @@ def check_all_nonMarkingProbConsistency(endToEnd_statistics, samples_paths_aggre
                 if var_method != 'event_poisson_eventAvg' and var_method != 'probability_poisson_eventAvg' and var_method != 'event_eventAvg' and var_method != 'probability_eventAvg':
                     res['MaxEpsilonIneq'][flow][path][var_method] = check_MaxEpsilon_ineq_nonMarkingProb(np.log(endToEnd_statistics[flow]['nonMarkingProb'][var_method][path]), samples_paths_aggregated_statistics[flow][path], number_of_segments)
                 else:
-                    epsp = (endToEnd_statistics[flow]['nonMarkingProb'][var_method][path][1] * confidenceValue) / (np.sqrt(endToEnd_statistics[flow]['sampleSize']['nonMarkingProb'][path]) * endToEnd_statistics[flow]['nonMarkingProb'][var_method][path][0])
+                    # epsp = (endToEnd_statistics[flow]['nonMarkingProb'][var_method][path][1] * confidenceValue) / (endToEnd_statistics[flow]['nonMarkingProb'][var_method][path][0]) # using e2e samples std as e2e std
+                    epsp = (samples_paths_aggregated_statistics[flow][path]['e2eNonMarkingProbStd'] * confidenceValue) / (endToEnd_statistics[flow]['nonMarkingProb'][var_method][path][0] * np.sqrt(endToEnd_statistics[flow]['sampleSize']['nonMarkingProb'][path])) # using sum of stds as e2e std
                     if (endToEnd_statistics[flow]['sampleSize']['nonMarkingProb'][path] < min_sample_size):
                         res['MaxEpsilonIneq'][flow][path][var_method] = False
                         continue
@@ -329,6 +332,9 @@ def analyze_single_experiment(return_dict, rate, queues_names, confidenceValue, 
             samples_paths_aggregated_statistics[flow][path]['MaxEpsilonDelay'] = max([calc_epsilon(confidenceValue, samples_dfs['T' + flow[1] + 'A' + str(path)]),
                                                                                       calc_epsilon(confidenceValue, samples_dfs['A' + str(path) + 'T' + flow[5]]),
                                                                                       calc_epsilon(confidenceValue, samples_dfs['T' + flow[5] + 'H' + flow[7]])])
+            samples_paths_aggregated_statistics[flow][path]['e2eDelayStd'] = sum([samples_dfs['T' + flow[1] + 'A' + str(path)]['DelayStd'],
+                                                                                  samples_dfs['A' + str(path) + 'T' + flow[5]]['DelayStd'],
+                                                                                  samples_dfs['T' + flow[5] + 'H' + flow[7]]['DelayStd']])
             # print(flow, path, samples_paths_aggregated_statistics[flow][path]['DelayMean'], samples_paths_aggregated_statistics[flow][path]['MaxEpsilonDelay'])
             samples_paths_aggregated_statistics[flow][path]['SuccessProbMean'] = sum([np.log(samples_dfs['T' + flow[1] + 'A' + str(path)]['SuccessProbMean']),
                                                                                       np.log(samples_dfs['A' + str(path) + 'T' + flow[5]]['SuccessProbMean']),
@@ -337,6 +343,9 @@ def analyze_single_experiment(return_dict, rate, queues_names, confidenceValue, 
             samples_paths_aggregated_statistics[flow][path]['MaxEpsilonSuccessProb'] = max([calc_epsilon_loss(confidenceValue, samples_dfs['T' + flow[1] + 'A' + str(path)]),
                                                                                      calc_epsilon_loss(confidenceValue, samples_dfs['A' + str(path) + 'T' + flow[5]]),
                                                                                      calc_epsilon_loss(confidenceValue, samples_dfs['T' + flow[5] + 'H' + flow[7]])])
+            samples_paths_aggregated_statistics[flow][path]['e2eSuccessProbStd'] = sum([samples_dfs['T' + flow[1] + 'A' + str(path)]['SuccessProbStd'],
+                                                                                        samples_dfs['A' + str(path) + 'T' + flow[5]]['SuccessProbStd'],
+                                                                                        samples_dfs['T' + flow[5] + 'H' + flow[7]]['SuccessProbStd']])
             # print(flow, path, samples_paths_aggregated_statistics[flow][path]['SuccessProbMean'], samples_paths_aggregated_statistics[flow][path]['MaxEpsilonSuccessProb'])
 
             samples_paths_aggregated_statistics[flow][path]['NonMarkingProbMean'] = sum([np.log(samples_dfs['T' + flow[1] + 'A' + str(path)]['NonMarkingProbMean']),
@@ -345,6 +354,9 @@ def analyze_single_experiment(return_dict, rate, queues_names, confidenceValue, 
             samples_paths_aggregated_statistics[flow][path]['MaxEpsilonNonMarkingProb'] = max([calc_epsilon_marking(confidenceValue, samples_dfs['T' + flow[1] + 'A' + str(path)]),
                                                                                                calc_epsilon_marking(confidenceValue, samples_dfs['A' + str(path) + 'T' + flow[5]]),
                                                                                                calc_epsilon_marking(confidenceValue, samples_dfs['T' + flow[5] + 'H' + flow[7]])])
+            samples_paths_aggregated_statistics[flow][path]['e2eNonMarkingProbStd'] = sum([samples_dfs['T' + flow[1] + 'A' + str(path)]['NonMarkingProbStd'],
+                                                                                           samples_dfs['A' + str(path) + 'T' + flow[5]]['NonMarkingProbStd'],
+                                                                                           samples_dfs['T' + flow[5] + 'H' + flow[7]]['NonMarkingProbStd']])
             # print(flow, path, samples_paths_aggregated_statistics[flow][path]['NonMarkingProbMean'], samples_paths_aggregated_statistics[flow][path]['MaxEpsilonNonMarkingProb'])
 
     AverageWorkLoad = 0
@@ -506,18 +518,18 @@ def merge_results(return_dict, merged_results, flows, queues, num_of_paths):
         merged_results['AverageWorkLoad'] += return_dict[exp]['AverageWorkLoad']
     
 def analyze_all_experiments(rate, steadyStart, steadyEnd, confidenceValue, dir, config, experiments_end=3, ns3_path=__ns3_path, load=None, differentiationDelay=None, errorRate=None):
-    if ("delay" in dir) and ("reverse" in dir):
-        # remove reverse from dir
-        results_folder = 'Results_' + dir.replace("reverse", "forward").replace("delay_", "")
-    else:
-        results_folder = 'Results_' + dir
+    # if ("delay" in dir) and ("reverse" in dir):
+    #     # remove reverse from dir
+    #     results_folder = 'Results_' + dir.replace("reverse", "forward").replace("delay_", "")
+    # else:
+    results_folder = 'Results_' + dir
     num_of_paths = 1
-    if ("delay" in dir) and ("reverse" in dir):
-        flows_name = read_data_flowIndicator(ns3_path, rate, results_folder, differentiationDelay=None, errorRate=None, load=load)
-        queues_names = read_queues_indicators(ns3_path, rate, results_folder, differentiationDelay=None, errorRate=None, load=load)
-    else:
-        flows_name = read_data_flowIndicator(ns3_path, rate, results_folder, differentiationDelay=differentiationDelay, errorRate=errorRate, load=load)
-        queues_names = read_queues_indicators(ns3_path, rate, results_folder, differentiationDelay=differentiationDelay, errorRate=errorRate, load=load)
+    # if ("delay" in dir) and ("reverse" in dir):
+    #     flows_name = read_data_flowIndicator(ns3_path, rate, results_folder, differentiationDelay=None, errorRate=None, load=load)
+    #     queues_names = read_queues_indicators(ns3_path, rate, results_folder, differentiationDelay=None, errorRate=None, load=load)
+    # else:
+    flows_name = read_data_flowIndicator(ns3_path, rate, results_folder, differentiationDelay=differentiationDelay, errorRate=errorRate, load=load)
+    queues_names = read_queues_indicators(ns3_path, rate, results_folder, differentiationDelay=differentiationDelay, errorRate=errorRate, load=load)
     flows_name = ['R0H0R2H3']
     queues_names = ["T0A0", "A0T2", "T2H3"]
     flows_name.sort()
@@ -530,7 +542,7 @@ def analyze_all_experiments(rate, steadyStart, steadyEnd, confidenceValue, dir, 
         ths = []
         return_dict = multiprocessing.Manager().dict()
         for experiment in range(batch_size * i, min(experiments_end, batch_size * (i + 1))):
-            if differentiationDelay is not None and errorRate is not None and ("delay" not in dir):
+            if differentiationDelay is not None and errorRate is not None:
                 if len(os.listdir('{}/scratch/{}/{}/{}/D_{}/f_{}/{}'.format(__ns3_path, results_folder, rate, load, differentiationDelay, errorRate, experiment))) == 0:
                     print(experiment)
                     continue
@@ -547,14 +559,13 @@ def analyze_all_experiments(rate, steadyStart, steadyEnd, confidenceValue, dir, 
             th.join()
         merge_results(return_dict, merged_results, flows_name, queues_names, num_of_paths)
         print("{} joind".format(i))
-    merged_results['AverageWorkLoad'] = sum(merged_results['AverageWorkLoad']) / merged_results['experiments']
-    if differentiationDelay is not None and errorRate is not None:
-        if differentiationDelay != 0.0:
-            os.system('mkdir -p ../Results/results_{}/{}/{}/D_{}/f_{}/'.format(dir, rate, load, differentiationDelay, errorRate))
-        with open('../Results/results_{}/{}/{}/D_{}/f_{}/Q_e_m_passive_5RTT_switch_1.0_{}_{}_to_{}.json'.format(dir, rate, load, differentiationDelay, errorRate, experiments_end, steadyStart, steadyEnd), 'w') as f:
+    # merged_results['AverageWorkLoad'] = sum(merged_results['AverageWorkLoad']) / merged_results['experiments']
+    if errorRate is not None:
+        os.system('mkdir -p ../Results/results_{}/{}/{}/D_{}/f_{}/'.format(dir, rate, load, differentiationDelay, errorRate))
+        with open('../Results/results_{}/{}/{}/D_{}/f_{}/Q_e_m_bugfixed_passive_sumSwitchesSTDS_Intervals_test_switch_1.0_{}_{}_to_{}.json'.format(dir, rate, load, differentiationDelay, errorRate, experiments_end, steadyStart, steadyEnd), 'w') as f:
             js.dump(merged_results, f, indent=4)
     else:
-        with open('../Results/results_{}/{}/{}/Q_e_m_passive_5RTT_switch_1.0_{}_{}_to_{}.json'.format(dir, rate, load, experiments_end, steadyStart, steadyEnd), 'w') as f:
+        with open('../Results/results_{}/{}/{}/Q_e_m_bugfixed_passive_sumSwitchesSTDS_Intervals_test_switch_1.0_{}_{}_to_{}.json'.format(dir, rate, load, experiments_end, steadyStart, steadyEnd), 'w') as f:
             js.dump(merged_results, f, indent=4)
 
 # main function
@@ -570,40 +581,49 @@ def __main__():
     config = configparser.ConfigParser()
     config.read('../Results/results_{}/Parameters.config'.format(args.dir))
     steadyStart = convert_to_float(config.get('Settings', 'steadyStart')) * 1e9
-    steadyStart = 0.09 * 1e9
+    # steadyStart = 0.08 * 1e9
     steadyEnd = convert_to_float(config.get('Settings', 'steadyEnd')) * 1e9
     # steadyEnd = 0.015 * 1e9
     experiments = int(config.get('Settings', 'experiments'))
-    experiments = 1
+    # experiments = 1
     serviceRateScales = [float(x) for x in config.get('Settings', 'serviceRateScales').split(',')]
     # serviceRateScales = [0.5]
     loads = [float(x) for x in config.get('Settings', 'load').split(',')]
-    # loads = [0.95]
+    loads = [0.4, 0.7, 0.95]
+    loads = [0.4]
     traffics = config.get('Settings', 'traffic').split(',')
-    # traffics = ["Facebook_HadoopDist_All"]
+    traffics = ["Google_AllRPC", "Google_SearchRPC", "Facebook_HadoopDist_All"]
+    traffics = ["Facebook_HadoopDist_All"]
     errorRates = [float(x) for x in config.get('Settings', 'errorRate').split(',')]
+    # errorRates = [0.1, 0.3, 0.5, 0.7, 0.9]
+    # errorRates = [0.1]
     differentiationDelays = [float(x) for x in config.get('Settings', 'differentiationDelay').split(',')]
-    if "forward" in args.dir:
-        for traffic in traffics:
-            for rate in serviceRateScales:
-                for load in loads:
-                    print("\nAnalyzing experiments for traffic {} rate: {} load: {}".format(traffic, rate, load))
-                    analyze_all_experiments(rate, steadyStart, steadyEnd, confidenceValue, args.dir + "/" + traffic, config, experiments_end=experiments, ns3_path=__ns3_path, load=load)
-                    print("Traffic {} Rate {} {} {} done".format(traffic, rate, load, experiments))
-                print("Traffic {} Rate {} done".format(traffic, rate))
-            print("Traffic {} done".format(traffic))
-    else:
-        for traffic in traffics:
-            for rate in serviceRateScales:
-                for load in loads:
-                    for differentiationDelay in differentiationDelays:
-                        for errorRate in errorRates:
-                            print("\nAnalyzing experiments for rate: ", rate, " load: ", load, " differentiationDelay: ", differentiationDelay, " errorRate: ", errorRate)
-                            os.system('mkdir -p ../Results/results_{}/{}/{}/{}/D_{}/f_{}/'.format(args.dir, traffic, rate, load, differentiationDelay, errorRate))
-                            analyze_all_experiments(rate, steadyStart, steadyEnd, confidenceValue, args.dir + "/" + traffic, config, experiments_end=experiments, ns3_path=__ns3_path, differentiationDelay=differentiationDelay, errorRate=errorRate, load=load)
-                            print("Rate {} load {} with {} and {} done".format(rate, load, differentiationDelay, errorRate))
-                    print("Traffic {} Rate {} load {} done".format(traffic, rate, load))
-                print("Rate {} done".format(rate))
-            print("Traffic {} done".format(traffic))
+    # differentiationDelays = [5.0]
+    # devide steady period into smaller parts
+    numOfSteadyParts = 1
+    for start in range(int(steadyStart), int(steadyEnd), int((steadyEnd - steadyStart) / numOfSteadyParts)):
+        print("Steady period: {} to {}".format(start, start + int((steadyEnd - steadyStart) / numOfSteadyParts)))
+        if "forward" in args.dir:
+            for traffic in traffics:
+                for rate in serviceRateScales:
+                    for load in loads:
+                        print("\nAnalyzing experiments for traffic {} rate: {} load: {}".format(traffic, rate, load))
+                        analyze_all_experiments(rate, start, start + int((steadyEnd - steadyStart) / numOfSteadyParts), confidenceValue, args.dir + "/" + traffic, config, experiments_end=experiments, ns3_path=__ns3_path, load=load)
+                        print("Traffic {} Rate {} {} {} done".format(traffic, rate, load, experiments))
+                    print("Traffic {} Rate {} done".format(traffic, rate))
+                print("Traffic {} done".format(traffic))
+        else:
+            for traffic in traffics:
+                for rate in serviceRateScales:
+                    for load in loads:
+                        for differentiationDelay in differentiationDelays:
+                            for errorRate in errorRates:
+                                print("\nAnalyzing experiments for rate: ", rate, " load: ", load, " differentiationDelay: ", differentiationDelay, " errorRate: ", errorRate)
+                                os.system('mkdir -p ../Results/results_{}/{}/{}/{}/D_{}/f_{}/'.format(args.dir, traffic, rate, load, differentiationDelay, errorRate))
+                                analyze_all_experiments(rate, start, start + int((steadyEnd - steadyStart) / numOfSteadyParts), confidenceValue, args.dir + "/" + traffic, config, experiments_end=experiments, ns3_path=__ns3_path, differentiationDelay=differentiationDelay, errorRate=errorRate, load=load)
+                                print("Rate {} load {} with {} and {} done".format(rate, load, differentiationDelay, errorRate))
+                        print("Traffic {} Rate {} load {} done".format(traffic, rate, load))
+                    print("Rate {} done".format(rate))
+                print("Traffic {} done".format(traffic))
 
 __main__()

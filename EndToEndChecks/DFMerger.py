@@ -9,7 +9,10 @@ __ns3_path = "/media/experiments/ns-allinone-3.41/ns-3.41"
 def merge_single_experiment(return_dict, rate, results_folder, config, experiment=0, ns3_path=__ns3_path, differentiationDelay=None, errorRate=None, load=None):
     segments = ["PoissonSampler_queueSize", "PoissonSampler_events", "EndToEnd_packets", "SwitchMonitor"]
     for segment in segments:
-        file_paths = glob.glob('{}/scratch/{}/{}/{}/{}/*_{}.csv'.format(__ns3_path, results_folder, rate, load, experiment, segment))
+        if differentiationDelay is not None and errorRate is not None:
+            file_paths = glob.glob('{}/scratch/{}/{}/{}/D_{}/f_{}/{}/*_{}.csv'.format(__ns3_path, results_folder, rate, load, differentiationDelay, errorRate, experiment, segment))
+        else:
+            file_paths = glob.glob('{}/scratch/{}/{}/{}/{}/*_{}.csv'.format(__ns3_path, results_folder, rate, load, experiment, segment))
         # There are a lot mutiple file with the format of namex_time_PoissonSampler_queueSize.csv with different namex and time, I want to merge all the files with the same namex into one file
         # and if there is already a file with the same namex, but with different time, we have already merged them before, so skip them
         file_dict = {}
@@ -24,7 +27,11 @@ def merge_single_experiment(return_dict, rate, results_folder, config, experimen
             file_dict[namex].append(file_path)
 
         for namex, paths in file_dict.items():
-            output_file = '{}/scratch/{}/{}/{}/{}/{}_{}.csv'.format(__ns3_path, results_folder, rate, load, experiment, namex, segment)
+            if differentiationDelay is not None and errorRate is not None:
+                output_file = '{}/scratch/{}/{}/{}/D_{}/f_{}/{}/{}_{}.csv'.format(__ns3_path, results_folder, rate, load, differentiationDelay, errorRate, experiment, namex, segment)
+            else:
+                output_file = '{}/scratch/{}/{}/{}/{}/{}_{}.csv'.format(__ns3_path, results_folder, rate, load, experiment, namex, segment)
+
             with open(output_file, 'w') as outfile:
                 for i, path in enumerate(paths):
                     with open(path, 'r') as infile:
@@ -37,18 +44,18 @@ def merge_single_experiment(return_dict, rate, results_folder, config, experimen
 
 
 def merge_all_experiments(rate, dir, config, experiments_end=3, ns3_path=__ns3_path, load=None, differentiationDelay=None, errorRate=None):
-    if ("delay" in dir) and ("reverse" in dir):
-        # remove reverse from dir
-        results_folder = 'Results_' + dir.replace("reverse", "forward").replace("delay_", "")
-    else:
-        results_folder = 'Results_' + dir
+    # if ("delay" in dir) and ("reverse" in dir):
+    #     # remove reverse from dir
+    #     results_folder = 'Results_' + dir.replace("reverse", "forward").replace("delay_", "")
+    # else:
+    results_folder = 'Results_' + dir
 
-    batch_size = 5
+    batch_size = 10
     for i in range(int(experiments_end / batch_size) + 1):
         ths = []
         return_dict = multiprocessing.Manager().dict()
         for experiment in range(batch_size * i, min(experiments_end, batch_size * (i + 1))):
-            if differentiationDelay is not None and errorRate is not None and ("delay" not in dir):
+            if differentiationDelay is not None and errorRate is not None:
                 if len(os.listdir('{}/scratch/{}/{}/{}/D_{}/f_{}/{}'.format(__ns3_path, results_folder, rate, load, differentiationDelay, errorRate, experiment))) == 0:
                     print(experiment)
                     continue
@@ -79,15 +86,16 @@ def __main__():
     steadyStart = convert_to_float(config.get('Settings', 'steadyStart')) * 1e9
     steadyEnd = convert_to_float(config.get('Settings', 'steadyEnd')) * 1e9
     experiments = int(config.get('Settings', 'experiments'))
-    experiments = 1
+    # experiments = 1
     serviceRateScales = [float(x) for x in config.get('Settings', 'serviceRateScales').split(',')]
     # serviceRateScales = [0.5]
     loads = [float(x) for x in config.get('Settings', 'load').split(',')]
     # loads = [0.4]
     traffics = config.get('Settings', 'traffic').split(',')
-    # traffics = ['Google_SearchRPC']
+    # traffics = ['Google_AllRPC']
     errorRates = [float(x) for x in config.get('Settings', 'errorRate').split(',')]
     differentiationDelays = [float(x) for x in config.get('Settings', 'differentiationDelay').split(',')]
+    # differentiationDelays = [5.0]
     if "forward" in args.dir:
         for traffic in traffics:
             for rate in serviceRateScales:

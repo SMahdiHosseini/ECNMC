@@ -1,0 +1,62 @@
+
+
+Analyzing experiments for rate:  0.5  load:  0.4  differentiationDelay:  5.0  errorRate:  1.0
+Analyzing experiment:  0
+Analyzing experiment:  1
+Analyzing experiment:  2
+Analyzing experiment:  3
+Analyzing experiment:  4
+Analyzing experiment:  5
+Analyzing experiment:  6
+Analyzing experiment:  7
+Analyzing experiment:  8
+Analyzing experiment:  9
+Analyzing experiment:  10
+Analyzing experiment:  11
+Analyzing experiment:  12
+Analyzing experiment:  13
+Analyzing experiment:  14
+Analyzing experiment:  15
+Analyzing experiment:  16
+Analyzing experiment:  17
+Analyzing experiment:  18
+Analyzing experiment:  19
+Analyzing experiment:  20
+Analyzing experiment:  21
+Analyzing experiment:  22
+Analyzing experiment:  23
+Analyzing experiment:  24
+Analyzing experiment:  25
+Analyzing experiment:  26
+Analyzing experiment:  27
+Analyzing experiment:  28
+Analyzing experiment:  29
+/media/experiments/ns-allinone-3.41/ns-3.41/scratch/ECNMC/EndToEndChecks/PostProcessing.py:80: RuntimeWarning: invalid value encountered in scalar divide
+  epsp = (samples_paths_aggregated_statistics[flow][path]['e2eSuccessProbStd'] * confidenceValue) / (endToEnd_statistics[flow]['successProb'][var_method][path][0] * np.sqrt(endToEnd_statistics[flow]['sampleSize']['successProb'][path])) # using sum of stds as e2e std
+/media/experiments/ns-allinone-3.41/ns-3.41/scratch/ECNMC/EndToEndChecks/PostProcessing.py:103: RuntimeWarning: divide by zero encountered in scalar divide
+  epsp = (samples_paths_aggregated_statistics[flow][path]['e2eNonMarkingProbStd'] * confidenceValue) / (endToEnd_statistics[flow]['nonMarkingProb'][var_method][path][0] * np.sqrt(endToEnd_statistics[flow]['sampleSize']['nonMarkingProb'][path])) # using sum of stds as e2e std
+Failed to find exponentially distributed interarrival times after 20 tries.
+Failed to find exponentially distributed interarrival times after 20 tries.
+Failed to find exponentially distributed interarrival times after 20 tries.
+/media/experiments/ns-allinone-3.41/ns-3.41/scratch/ECNMC/EndToEndChecks/PostProcessing.py:61: RuntimeWarning: divide by zero encountered in scalar divide
+  e += confidenceValue * samples_paths_aggregated_statistics[flow][path]['e2eDelayStd'] / np.sqrt(endToEnd_statistics[flow]['sampleSize']['delay'][path]) # using sum of stds as e2e std
+/media/experiments/ns-allinone-3.41/ns-3.41/scratch/ECNMC/EndToEndChecks/PostProcessing.py:80: RuntimeWarning: invalid value encountered in scalar divide
+  epsp = (samples_paths_aggregated_statistics[flow][path]['e2eSuccessProbStd'] * confidenceValue) / (endToEnd_statistics[flow]['successProb'][var_method][path][0] * np.sqrt(endToEnd_statistics[flow]['sampleSize']['successProb'][path])) # using sum of stds as e2e std
+Failed to find exponentially distributed interarrival times after 20 tries.
+Failed to find exponentially distributed interarrival times after 20 tries.
+Failed to find exponentially distributed interarrival times after 20 tries.
+Failed to find exponentially distributed interarrival times after 20 tries.
+/media/experiments/ns-allinone-3.41/ns-3.41/scratch/ECNMC/EndToEndChecks/PostProcessing.py:61: RuntimeWarning: divide by zero encountered in scalar divide
+  e += confidenceValue * samples_paths_aggregated_statistics[flow][path]['e2eDelayStd'] / np.sqrt(endToEnd_statistics[flow]['sampleSize']['delay'][path]) # using sum of stds as e2e std
+/media/experiments/ns-allinone-3.41/ns-3.41/scratch/ECNMC/EndToEndChecks/PostProcessing.py:80: RuntimeWarning: invalid value encountered in scalar divide
+  epsp = (samples_paths_aggregated_statistics[flow][path]['e2eSuccessProbStd'] * confidenceValue) / (endToEnd_statistics[flow]['successProb'][var_method][path][0] * np.sqrt(endToEnd_statistics[flow]['sampleSize']['successProb'][path])) # using sum of stds as e2e std
+Failed to find exponentially distributed interarrival times after 20 tries.
+Failed to find exponentially distributed interarrival times after 20 tries.
+Failed to find exponentially distributed interarrival times after 20 tries.
+Failed to find exponentially distributed interarrival times after 20 tries.
+0 joind
+1 joind
+Rate 0.5 load 0.4 with 5.0 and 1.0 done
+Traffic Google_AllRPC Rate 0.5 load 0.4 done
+Rate 0.5 done
+Traffic Google_AllRPC done

@@ -567,7 +567,7 @@ def __main__():
                    default="")
     args = parser.parse_args()
     results_dir = args.dir
-    start = 0.010 * 1e9
+    start = 0.080 * 1e9
     end = 0.10 * 1e9
     results_dir_file = "Q_switch_1.0_30_{}_to_{}".format(start, end)
     config = configparser.ConfigParser()
@@ -575,7 +575,7 @@ def __main__():
     rateScales = [float(x) for x in config.get('Settings', 'serviceRateScales').split(',')]
     loads = [float(x) for x in config.get('Settings', 'load').split(',')]
     traffics = config.get('Settings', 'traffic').split(',')
-    # traffics = ["Google_AllRPC", "Facebook_HadoopDist_All"]
+    traffics = ["Google_AllRPC", "Facebook_HadoopDist_All"]
     selectedVarMethods = ['event_linearInterp_timeAvg', 'probability_linearInterp_timeAvg']
     os.system('mkdir -p ../Results/results_' + results_dir + '/' + results_dir_file)
     analyse_forward_exp(results_dir, results_dir_file, rateScales, loads, selectedVarMethods, traffics)

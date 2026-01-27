@@ -6,7 +6,8 @@ import numpy as np
 from scipy.stats import anderson
 from scipy.stats import f_oneway, kruskal
 from scipy.stats import expon, bernoulli, ks_2samp
-
+from scipy.stats import poisson
+from math import factorial, exp
 import csv
 from collections import defaultdict
 estimation_gain = 0.0625
@@ -321,12 +322,12 @@ def calculate_offline_E2E_workload(full_df, df_res, steadyStart, steadyEnd):
             df_res['first'][path] = df['SentTime'].iloc[0]
             df_res['last'][path] = df['SentTime'].iloc[-1]
             df_res['workload'][path] = df['PayloadSize'].sum() * 8 / (steadyEnd - steadyStart)
-            print("Path: {}, total packets: {}, workload: {} bps".format(path, len(df), df_res['workload'][path]))
+            # print("Path: {}, total packets: {}, workload: {} bps".format(path, len(df), df_res['workload'][path]))
         df = None
     full_df_ = None
     return df_res
 
-def calculate_offline_E2E_lossRates_DC(full_df, df_res, checkColumn, txDelay, df_name, passiveProbe, samplingMethod):
+def calculate_offline_E2E_lossRates_DC(full_df, df_res, checkColumn, txDelay, df_name, passiveProbe, samplingMethod, steadyStart, steadyEnd):
     df_res['successProb'] = {}
     for var in ['event']:
         for method in ['rightCont_timeAvg', 'leftCont_timeAvg', 'linearInterp_timeAvg', 'poisson_eventAvg', 'eventAvg']:
@@ -366,7 +367,9 @@ def calculate_offline_E2E_lossRates_DC(full_df, df_res, checkColumn, txDelay, df
                 print("Sample times are 'NOT' exponentially distributed.")
                 samples_times = []
         else:
-            samples_times = find_samples_path(time, txDelay, df_res['RTT'][path], df_name, samplingMethod)
+            # samples_times = find_samples_path(time, txDelay, df_res['RTT'][path], df_name, samplingMethod)
+            samples_times = find_samples_path_new(time, txDelay, df_res['RTT'][path], df_name, samplingMethod, steadyStart, steadyEnd, steps=1)
+
         df_res['sampleSize']['successProb'][path] = len(samples_times)
         samples_values = df[df['SentTime'].isin(samples_times)]['nonDropEvent'].values
         if df_res['sampleSize']['successProb'][path] == 0:
@@ -503,82 +506,140 @@ def calc_RTT_per_path(full_df, df_res, checkColumn, linkDelays):
     return df_res
 
 
-def find_samples_path_new(time, txDelay, maxLength):
-    # Step 1: Compute interarrival times
-    interarrival = np.diff(time)
+def find_samples_path_new(time, txDelay, avg_interarrival_=None, df_name=None, samplingMethod='Orig', steadyStart=0, steadyEnd=1, steps=1):
+    aggregated_samples = []
+    steps = 1
+    for step in range(steps):
+        intervalStart = steadyStart + (steadyEnd - steadyStart) / steps * step
+        intervalEnd = steadyStart + (steadyEnd - steadyStart) / steps * (step + 1)
+        interval_times = time[(time >= intervalStart) & (time < intervalEnd)]
+    #     # print("Interval from {} to {} has {} packets".format(intervalStart, intervalEnd, len(interval_times)))
+    #     t_sel_, report = e2e_poisson_like_sampler(interval_times, N_min=len(interval_times) * 0.7, max_delta_for_idc=avg_interarrival_ * 5, df_name=df_name)
+    #     # print("Poisson-like sampler selected {} packets".format(len(t_sel_)))
+    #     # t_sel, intervalBrnval = find_samples_path(interval_times, txDelay, avg_interarrival_, df_name, samplingMethod, [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9])
+    #     # print("Bernoulli sampler selected {} packets".format(len(t_sel)))
+    #     if len(t_sel_) == 0:
+    #         return []
+    #     aggregated_samples.extend(t_sel_)
+        t_sel_, info = trim_counts_round_robin_J_two_scales(interval_times)
+        if len(t_sel_) == 0:
+            return []
+        # X = info["X_counts"]   # original counts per Δ
+        # Y = info["Y_counts"]   # trimmed counts per Δ
+        # plot_bin_count_distributions(X, Y, title_suffix=" (Δ-bin)")
+        # t_sel_lambda =  info["Delta"] / float(Y.mean())
+        # plot_iat_distribution(interval_times, t_sel_, t_sel_lambda, title_suffix="")
+        # # for round in info["trace"]:
+        # #     print(round)
+        # print(info["trace"][-1])
+        aggregated_samples.extend(t_sel_)
+    return aggregated_samples
+    # print("Delta:", info["Delta"])
+    # print("IDC(Δ)  :", info["initial_idc_by_factor"][1], "->", info["final_idc_by_factor"][1])
+    # print("IDC(2Δ) :", info["initial_idc_by_factor"].get(2), "->", info["final_idc_by_factor"].get(2))
+    # print("kept:", info["final_total"])
+    #################################################
+    # aggregated_samples = []
+    # max_sample_size_brnval = []
+    # for step in range(steps):
+    #     intervalStart = steadyStart + (steadyEnd - steadyStart) / steps * step
+    #     intervalEnd = steadyStart + (steadyEnd - steadyStart) / steps * (step + 1)
+    #     interval_times = time[(time >= intervalStart) & (time < intervalEnd)]
+    #     intervalSamples, intervalBrnval = find_samples_path(interval_times, txDelay, avg_interarrival_, df_name, samplingMethod, [0.1, 0.2, 0.3, 0.5, 0.6, 0.7, 0.8, 0.18])
+    #     if len(intervalSamples) == 0:
+    #         return []
+    #     aggregated_samples.extend(intervalSamples)
+    #     max_sample_size_brnval.append(intervalBrnval)
+ 
+    # if len(set(max_sample_size_brnval)) == 1:
+    #     return aggregated_samples
+    # else:
+    #     min_brnval = min(max_sample_size_brnval)
+    #     for step in range(steps):
+    #         intervalStart = steadyStart + (steadyEnd - steadyStart) / steps * step
+    #         intervalEnd = steadyStart + (steadyEnd - steadyStart) / steps * (step + 1)
+    #         interval_times = time[(time >= intervalStart) & (time < intervalEnd)]
+    #         intervalSamples, _ = find_samples_path(interval_times, txDelay, avg_interarrival_, df_name, samplingMethod, [min_brnval])
+    #         if len(intervalSamples) == 0:
+    #             return []
+    #         aggregated_samples.extend(intervalSamples)
+    #     return aggregated_samples
+    #################################################
+    # # Step 1: Compute interarrival times
+    # interarrival = np.diff(time)
 
-    # Step 2: Check if the entire sequence is exponential
-    anderson_statistic, anderson_critical_values, _ = anderson(interarrival, 'expon')
-    if anderson_statistic <= anderson_critical_values[2]:
-        print("Interarrival times are exponentially distributed.")
-        return time
+    # # Step 2: Check if the entire sequence is exponential
+    # anderson_statistic, anderson_critical_values, _ = anderson(interarrival, 'expon')
+    # if anderson_statistic <= anderson_critical_values[2]:
+    #     print("Interarrival times are exponentially distributed.")
+    #     return time
 
-    # Step 3: Custom binning by txDelay and maxLength
-    bins = []
-    i = 0
-    n = len(time)
+    # # Step 3: Custom binning by txDelay and maxLength
+    # bins = []
+    # i = 0
+    # n = len(time)
 
-    while i < n:
-        bin_start = i
-        bin_times = [time[i]]
-        i += 1
-        while i < n:
-            gap = time[i] - time[i - 1]
-            span = time[i] - bin_times[0]
-            if gap > txDelay:
-                break
-            bin_times.append(time[i])
-            i += 1
-        bins.append(np.array(bin_times))
+    # while i < n:
+    #     bin_start = i
+    #     bin_times = [time[i]]
+    #     i += 1
+    #     while i < n:
+    #         gap = time[i] - time[i - 1]
+    #         span = time[i] - bin_times[0]
+    #         if gap > txDelay:
+    #             break
+    #         bin_times.append(time[i])
+    #         i += 1
+    #     bins.append(np.array(bin_times))
 
-    # Step 4: Try random sampling from bins + exponential test
-    max_sample_size = 0
-    best_sample = None
+    # # Step 4: Try random sampling from bins + exponential test
+    # max_sample_size = 0
+    # best_sample = None
 
-    for brnval in [0.1, 0.15, 0.2]:
-        tries = 20
-        while tries > 0:
-            selected_indices = []
-            for bin_times in bins:
-                if len(bin_times) > 0:
-                    chosen = np.random.choice(bin_times)
-                    selected_indices.append(chosen)
-            selected_times = np.array(sorted(selected_indices))
+    # for brnval in [0.1, 0.15, 0.2]:
+    #     tries = 20
+    #     while tries > 0:
+    #         selected_indices = []
+    #         for bin_times in bins:
+    #             if len(bin_times) > 0:
+    #                 chosen = np.random.choice(bin_times)
+    #                 selected_indices.append(chosen)
+    #         selected_times = np.array(sorted(selected_indices))
 
-            if len(selected_times) <= 1:
-                tries -= 1
-                continue
+    #         if len(selected_times) <= 1:
+    #             tries -= 1
+    #             continue
 
-            # First check: directly test selected times
-            selected_interarrival = np.diff(selected_times)
-            anderson_statistic, anderson_critical_values, _ = anderson(selected_interarrival, 'expon')
-            if anderson_statistic <= anderson_critical_values[2]:
-                if len(selected_times) > max_sample_size:
-                    max_sample_size = len(selected_times)
-                    best_sample = selected_times
-                    break
+    #         # First check: directly test selected times
+    #         selected_interarrival = np.diff(selected_times)
+    #         anderson_statistic, anderson_critical_values, _ = anderson(selected_interarrival, 'expon')
+    #         if anderson_statistic <= anderson_critical_values[2]:
+    #             if len(selected_times) > max_sample_size:
+    #                 max_sample_size = len(selected_times)
+    #                 best_sample = selected_times
+    #                 break
 
-            # Second check: apply Bernoulli sampling
-            keep_mask = bernoulli.rvs(brnval, size=len(selected_times))
-            final_times = selected_times[keep_mask == 1]
+    #         # Second check: apply Bernoulli sampling
+    #         keep_mask = bernoulli.rvs(brnval, size=len(selected_times))
+    #         final_times = selected_times[keep_mask == 1]
 
-            if len(final_times) <= 1:
-                tries -= 1
-                continue
+    #         if len(final_times) <= 1:
+    #             tries -= 1
+    #             continue
 
-            anderson_statistic, anderson_critical_values, _ = anderson(np.diff(final_times), 'expon')
-            if anderson_statistic <= anderson_critical_values[2]:
-                if len(final_times) > max_sample_size:
-                    max_sample_size = len(final_times)
-                    best_sample = final_times
-                    break
-            tries -= 1
+    #         anderson_statistic, anderson_critical_values, _ = anderson(np.diff(final_times), 'expon')
+    #         if anderson_statistic <= anderson_critical_values[2]:
+    #             if len(final_times) > max_sample_size:
+    #                 max_sample_size = len(final_times)
+    #                 best_sample = final_times
+    #                 break
+    #         tries -= 1
 
-    if best_sample is not None:
-        return best_sample
+    # if best_sample is not None:
+    #     return best_sample
 
-    print("Failed to find exponentially distributed interarrival times after 20 tries.")
-    return []
+    # print("Failed to find exponentially distributed interarrival times after 20 tries.")
+    # return []
 
 # def calculate_Poisson_bias
 # f = lambda rate: 1 - (np.sum(-np.expm1(-rate * interarrivals)) / np.sum(rate * interarrivals))
@@ -641,7 +702,7 @@ def randomSampling(time):
     print("Failed to find exponentially distributed interarrival times after 20 tries.")
     return []
 
-def find_samples_path(time, txDelay, avg_interarrival_=None, df_name=None, samplingMethod='Orig'):
+def find_samples_path(time, txDelay, avg_interarrival_=None, df_name=None, samplingMethod='Orig', brnval_list=[0.1, 0.2, 0.3, 0.5]):
     if "P0" in df_name:
         return time
     # check the 99 percentile of the interarrival times
@@ -688,8 +749,9 @@ def find_samples_path(time, txDelay, avg_interarrival_=None, df_name=None, sampl
     bins = np.arange(start_time, end_time, avg_interarrival)
     max_sample_size = 0
     max_sample_size_times = []
+    max_sample_size_brnval = 0
     # for brnval in [0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5]:
-    for brnval in [0.1, 0.2, 0.3, 0.5]:
+    for brnval in brnval_list:
         tries = 20
         final_values = []
         while tries > 0 :
@@ -716,6 +778,7 @@ def find_samples_path(time, txDelay, avg_interarrival_=None, df_name=None, sampl
                 if len(selected_times) > max_sample_size:
                     max_sample_size = len(selected_times)
                     max_sample_size_times = selected_times
+                    max_sample_size_brnval = brnval
                     break
                 # return selected_times
 
@@ -733,15 +796,16 @@ def find_samples_path(time, txDelay, avg_interarrival_=None, df_name=None, sampl
                 if len(final_times) > max_sample_size:
                     max_sample_size = len(final_times)
                     max_sample_size_times = final_times
+                    max_sample_size_brnval = brnval
                     break
             tries -= 1
             # print("Tries left:", tries, "with brnval:", brnval)
         # print("after brnval:", brnval, "max_sample_size:", max_sample_size)
     if max_sample_size:
         # print("Max sample size found:", max_sample_size, len(max_sample_size_times))
-        return max_sample_size_times
+        return max_sample_size_times, max_sample_size_brnval
     print("Failed to find exponentially distributed interarrival times after 20 tries.")
-    return []
+    return [], 0
 
 def e2e_poisson_sampling(time, values, delay=False, sizes=None):
     duration = time[-1] - time[0]
@@ -802,7 +866,7 @@ def calculate_offline_markingProbMean_at_receiver_poisson(df, swtichDstREDQueueD
         markingProbs.append(1 - (df_sample['ECN'].sum() / len(df_sample)))
     return np.mean(markingProbs)
 
-def calculate_offline_E2E_markingProb(full_df, df_res, checkColumn, txDelay, swtichDstREDQueueDiscMaxSize, linkRate, __ns3_path, tsh, df_name, passiveProbe, samplingMethod):
+def calculate_offline_E2E_markingProb(full_df, df_res, checkColumn, txDelay, swtichDstREDQueueDiscMaxSize, linkRate, __ns3_path, tsh, df_name, passiveProbe, samplingMethod, steadyStart, steadyEnd):
     # timeAvg_methods = ['rightCont_timeAvg', 'leftCont_timeAvg', 'linearInterp_timeAvg']
     # nonMarkingProb_timeAvg_vars = ['event_currentProb', 'event_lastProb']
     df_res['nonMarkingProb'] = {}
@@ -841,7 +905,8 @@ def calculate_offline_E2E_markingProb(full_df, df_res, checkColumn, txDelay, swt
                 print("Sample times are 'NOT' exponentially distributed.")
                 samples_times = []
         else:
-            samples_times = find_samples_path(time, txDelay, df_res['RTT'][path], df_name, samplingMethod)
+            # samples_times = find_samples_path(time, txDelay, df_res['RTT'][path], df_name, samplingMethod)
+            samples_times = find_samples_path_new(time, txDelay, df_res['RTT'][path], df_name, samplingMethod, steadyStart, steadyEnd, steps=1)
         df_res['sampleSize']['nonMarkingProb'][path] = len(samples_times)
         samples_values = df[df['SentTime'].isin(samples_times)]['nonMarking'].values
         if df_res['sampleSize']['nonMarkingProb'][path] == 0:
@@ -854,7 +919,7 @@ def calculate_offline_E2E_markingProb(full_df, df_res, checkColumn, txDelay, swt
     full_df_ = None
     return df_res
 
-def calculate_offline_E2E_delays(full_df, removeDrops, checkColumn, txDelay, df_res, df_name, passiveProbe, samplingMethod):
+def calculate_offline_E2E_delays(full_df, removeDrops, checkColumn, txDelay, df_res, df_name, passiveProbe, samplingMethod, steadyStart, steadyEnd):
     df_res['delay'] = {}
     for var in ['event']:
         for method in ['rightCont_timeAvg', 'leftCont_timeAvg', 'linearInterp_timeAvg', 'poisson_eventAvg', 'eventAvg']:
@@ -890,8 +955,8 @@ def calculate_offline_E2E_delays(full_df, removeDrops, checkColumn, txDelay, df_
                 print("Sample times are 'NOT' exponentially distributed.")
                 samples_times = []
         else:
-            # df_res['bias']['delay'][path] = 
-            samples_times = find_samples_path(time, txDelay, df_res['RTT'][path], df_name, samplingMethod)
+            # samples_times = find_samples_path(time, txDelay, df_res['RTT'][path], df_name, samplingMethod)
+            samples_times = find_samples_path_new(time, txDelay, df_res['RTT'][path], df_name, samplingMethod, steadyStart, steadyEnd, steps=1)
 
         samples = df[df['SentTime'].isin(samples_times)]
         df_res['bias']['delay'][path] = (samples['PayloadSize'] - (samples['BitsTag'] / 8)).mean()
@@ -932,6 +997,12 @@ def addExtraDelay(full_df, differentiationDelay, errorRate):
     if differentiationDelay > 0:
         extra_delay_indices = full_df.sample(frac=errorRate).index
         full_df.loc[extra_delay_indices, 'Delay'] += np.int64(full_df.loc[extra_delay_indices, 'Delay'] * differentiationDelay)
+    return full_df
+
+def addPacketsFromOtherPaths(full_df, errorRate, fromPath, toPath):
+    if errorRate > 0:
+        extra_delay_indices = full_df[full_df['Path'] == fromPath].sample(frac=errorRate).index
+        full_df.loc[extra_delay_indices, 'Path'] = toPath
     return full_df
 
 def addRemoveTransmission_data(full_df, linkDelays, linksRates):
@@ -1929,8 +2000,1291 @@ def find_sampling_rate(time, maxError):
         else: low = mid
 
     return (high + low) / 2
+
+# -----------------------------
+# Core metrics
+# -----------------------------
+
+def compute_iats(t: np.ndarray) -> np.ndarray:
+    t = np.asarray(t, dtype=float)
+    t = np.sort(t)
+    x = np.diff(t)
+    x = x[np.isfinite(x) & (x > 0)]
+    return x
+
+def cv_iat(t: np.ndarray) -> float:
+    x = compute_iats(t)
+    return float(np.std(x) / np.mean(x))
+
+def idc_curve(t: np.ndarray, deltas: np.ndarray, min_bins: int = 30, max_bins: int = 5000):
+    """
+    Compute IDC(Δ) = Var(NΔ)/E[NΔ] for counts NΔ in bins of width Δ.
+    Returns arrays (deltas_used, idc_values).
+    """
+    if len(t) < 2:
+        return np.array([]), np.array([])
+    t = np.asarray(t, dtype=float)
+    t = np.sort(t)
+    t0 = t[0]
+    tt = t - t0
+    T = tt[-1]
+    if T <= 0:
+        raise ValueError("Timestamp span is zero.")
+
+    deltas = np.asarray(deltas, dtype=float)
+    out_d, out_idc, out_mu, out_var = [], [], [], []
+    for Delta in deltas:
+        if not np.isfinite(Delta) or Delta <= 0:
+            continue
+        nbins = int(np.floor(T / Delta)) + 1
+        # if nbins < min_bins or nbins > max_bins:
+        #     continue
+        edges = np.linspace(0, nbins * Delta, nbins + 1)
+        counts, _ = np.histogram(tt, bins=edges)
+        mu = counts.mean()
+        if mu <= 0:
+            continue
+        var = counts.var(ddof=1) if nbins > 1 else 0.0
+        out_d.append(Delta)
+        out_idc.append(var / mu)
+        out_mu.append(mu)
+        out_var.append(var)
+
+    if len(out_d) == 0:
+        raise RuntimeError("No valid deltas produced IDC values. Adjust min_bins/max_bins or deltas.")
+    out_d = np.array(out_d)
+    out_idc = np.array(out_idc)
+    out_mu = np.array(out_mu)
+    out_var = np.array(out_var)
+    order = np.argsort(out_d)
+    return out_d[order], out_idc[order], out_mu[order], out_var[order]
+
+def find_idc_plateau_delta(deltas: np.ndarray,
+                           idc: np.ndarray,
+                           slope_thresh: float = 0.10,
+                           consec: int = 4,
+                           smooth_window: int = 5) -> float:
+    """
+    Pick Δ* as the earliest delta where the (smoothed) log-log slope of IDC
+    stays below slope_thresh for 'consec' consecutive points.
+    """
+    deltas = np.asarray(deltas, float)
+    idc = np.asarray(idc, float)
+    good = np.isfinite(deltas) & np.isfinite(idc) & (deltas > 0) & (idc > 0)
+    d = deltas[good]
+    y = idc[good]
+    if d.size < smooth_window + consec:
+        return float(np.median(d))  # fallback
+
+    logd = np.log(d)
+    logy = np.log(y)
+    slope = np.abs(np.gradient(logy, logd))
+    sm = np.empty_like(slope)
+    for i in range(slope.size):
+        lo = max(0, i - smooth_window + 1)
+        sm[i] = np.median(slope[lo:i+1])
+
+    for i in range(0, sm.size - consec + 1):
+        if np.all(sm[i:i+consec] < slope_thresh):
+            return float(d[i])
+    return float(d[-1])
+
+def rel_w1_to_exp_fit(t_sel: np.ndarray):
+    """
+    Relative Wasserstein-1 distance between empirical IATs and Exp(mean IAT).
+    Uses quantile-based formula in 1D, no SciPy needed.
+    Returns (relW1, W1, lambda_hat).
+    """
+    x = compute_iats(t_sel)
+    if x.size < 5:
+        return np.nan, np.nan, np.nan
+    x = np.sort(x)
+    n = x.size
+    mu = x.mean()
+    lam_hat = 1.0 / mu
+    p = (np.arange(1, n + 1) - 0.5) / n
+    q_exp = -np.log(1.0 - p) / lam_hat
+    w1 = float(np.mean(np.abs(x - q_exp)))
+    rel = float(w1 / mu)
+    return rel, w1, float(lam_hat)
+
+def idc_slope_over_region(deltas: np.ndarray, idc: np.ndarray, delta_min: float) -> float:
+    """
+    Fit slope of log(IDC) vs log(Δ) for Δ >= delta_min using least squares.
+    Returns absolute slope; near 0 => IDC "flat" over that region.
+    """
+    deltas = np.asarray(deltas, float)
+    idc = np.asarray(idc, float)
+    good = np.isfinite(deltas) & np.isfinite(idc) & (deltas > 0) & (idc > 0) & (deltas >= delta_min)
+    d = deltas[good]
+    y = idc[good]
+    if d.size < 4:
+        return np.nan
+    X = np.log(d)
+    Y = np.log(y)
+    Xc = X - X.mean()
+    slope = float((Xc @ (Y - Y.mean())) / (Xc @ Xc))
+    return abs(slope)
+
+# -----------------------------
+# Sampling building blocks
+# -----------------------------
+
+def bernoulli_thin(t: np.ndarray, q: float, rng: np.random.Generator) -> np.ndarray:
+    t = np.asarray(t, float)
+    if q >= 1.0:
+        return t.copy()
+    keep = rng.random(t.size) < q
+    return t[keep]
+
+def local_rate_equalized_thin(t: np.ndarray, lambda_target: float, Delta: float, rng: np.random.Generator) -> np.ndarray:
+    """
+    Time-varying thinning: q(t_i) = min(1, lambda_target / hat_lambda(t_i)),
+    where hat_lambda estimated via a sliding window of width Delta centered at t_i.
+    Implemented in O(n) using two pointers.
+    """
+    t = np.asarray(t, float)
+    t = np.sort(t)
+    n = t.size
+    if n == 0:
+        return t
+    if Delta <= 0:
+        raise ValueError("Delta must be positive for local rate estimation.")
+
+    left = 0
+    right = 0
+    half = Delta / 2.0
+    keep = np.zeros(n, dtype=bool)
+
+    for i in range(n):
+        ti = t[i]
+        while left < n and t[left] < ti - half:
+            left += 1
+        while right < n and t[right] < ti + half:
+            right += 1
+        count = max(1, right - left)  # include at least itself
+        lam_hat = count / Delta
+        q = min(1.0, lambda_target / lam_hat) if lam_hat > 0 else 1.0
+        keep[i] = (rng.random() < q)
+    return t[keep]
+
+def soft_decluster(t: np.ndarray, Delta: float, cap_c: int, rng: np.random.Generator) -> np.ndarray:
+    """
+    Partition into windows of length Delta and keep up to cap_c packets per window uniformly at random.
+    """
+    t = np.asarray(t, float)
+    t = np.sort(t)
+    if t.size == 0:
+        return t
+    if Delta <= 0:
+        raise ValueError("Delta must be positive for declustering.")
+    if cap_c < 0:
+        raise ValueError("cap_c must be >= 0.")
+
+    t0 = t[0]
+    bins = np.floor((t - t0) / Delta).astype(int)
+
+    kept_idx = []
+    start = 0
+    while start < t.size:
+        b = bins[start]
+        end = start + 1
+        while end < t.size and bins[end] == b:
+            end += 1
+        idx = np.arange(start, end)
+        if idx.size <= cap_c:
+            kept_idx.extend(idx.tolist())
+        else:
+            chosen = rng.choice(idx, size=cap_c, replace=False)
+            kept_idx.extend(chosen.tolist())
+        start = end
+
+    kept_idx = np.array(kept_idx, dtype=int)
+    kept_idx.sort()
+    return t[kept_idx]
+
+# -----------------------------
+# Full pipeline
+# -----------------------------
+
+def e2e_poisson_like_sampler(t,
+                            N_min: int,
+                            relW1_tol: float = 0.10,
+                            idc_slope_tol: float = 0.15,
+                            deltas_for_idc=None,
+                            plateau_slope_thresh: float = 0.10,
+                            rng_seed: int = 0,
+                            caps=(1,),
+                            max_delta_for_idc=50000.0, df_name=""):
+    """
+    Multi-stage sampling to maximize number of selected samples while aiming for Poisson-like selection times.
+
+    Stages:
+      1) Global Bernoulli thinning to reach ~N_min
+      2) If needed: local-rate equalized thinning using Δ* from IDC plateau
+      3) If needed: soft declustering at Δ* with cap c in 'caps', with optional final thinning
+
+    Returns:
+      t_sel, report_dict
+    """
+    rng = np.random.default_rng(rng_seed)
+    t = np.asarray(t, float)
+    t = t[np.isfinite(t)]
+    t = np.sort(t)
+    if t.size < 5:
+        raise ValueError("Need at least 5 timestamps.")
+
+    t = np.unique(t)  # remove duplicates (zero IATs)
+    if t.size < 5:
+        raise ValueError("Need at least 5 unique timestamps.")
+
+    T = t[-1] - t[0]
+    if T <= 0:
+        raise ValueError("Timestamp span must be positive.")
+    N = t.size
+    lambda_target = N_min / T
+
+    Delta_star, mu = find_delta_for_empty_prob(t, p0_max=0.10)
+    d0, idc0, mu0, var0 = idc_curve(t, np.array([Delta_star]))
+    print(f"Delta star for empty prob 0.1: {Delta_star}, mu: {mu}, idc: {idc0[0]}")
+    return t, {}
+    # # Choose IDC deltas if not provided
+    # if deltas_for_idc is None:
+    #     d_min = max(T / 750000.0, np.finfo(float).eps)
+    #     d_max = max(T / 1800.0, d_min * 10.0)
+    #     deltas_for_idc = np.logspace(np.log10(d_min), np.log10(d_max), 200)
+    # deltas_for_idc = np.asarray(deltas_for_idc, float)
+
+    # # Original diagnostics + Δ*
+    # CV0 = cv_iat(t)
+    # d0, idc0, mu0, var0 = idc_curve(t, deltas_for_idc)
+    # Delta_star = find_idc_plateau_delta(d0, idc0, slope_thresh=plateau_slope_thresh)
+    # plt.figure(figsize=(10, 6))
+    # plt.plot(d0, idc0, marker='o', linewidth=1)
+    # # print(f"Min d0: {d0.min()}, Max d0: {d0.max()}")
+    # # print(f"Min idc0: {idc0.min()}, Max idc0: {idc0.max()}")
+    # # plt.xscale('log'); plt.yscale('log')
+    # plt.axvline(Delta_star, linestyle='--')
+    # plt.title("Original IDC(Δ) with Δ* (vertical dashed)")
+    # plt.xlabel("Δ"); plt.ylabel("IDC(Δ)")
+    # plt.grid(True, which="both", linestyle="--", alpha=0.5)
+    # plt.tight_layout()
+    # plt.savefig(f"original_idc_plot_{df_name.split('/')[-1]}_{t[0]:.0f}_{t[-1]:.0f}.png")
+    # # # find the d0 with the closest idc0 to 1.0
+    # idx_closest_to_one = np.argmin(np.abs(idc0 - 1.0))
+    # d_closest_to_one = d0[idx_closest_to_one]
+    # print(f"Delta closest to IDC=1.0: {d_closest_to_one}")
+    # # print(f"\lambda of the minimizer delta: { mu0[idx_closest_to_one]/ d_closest_to_one} packets/second")
+    # print(f"\lambda of the minimizer delta: { mu0[idx_closest_to_one]} packets/delta")
+    # print(f"average rate: {len(t) / (T * 1e-9)} packets/second")
+
+    # # plt.figure(figsize=(10, 6))
+    # # plt.plot(mu0, idc0, marker='o', linewidth=1)
+    # # plt.title("Original μ curve")
+    # # plt.ylabel("μ(Δ)"); plt.xlabel("Δ")
+    # # plt.grid(True, which="both", linestyle="--", alpha=0.5)
+    # t2 = soft_decluster(t, Delta=d_closest_to_one, cap_c=1, rng=rng)
+    # return t2, {}
+
+    # report = {
+    #     "N_total": int(N),
+    #     "T": float(T),
+    #     "CV_original": float(CV0),
+    #     "Delta_star": float(Delta_star),
+    #     "stages": []
+    # }
+
+    # def validate(tsel):
+    #     rel, w1, lam_hat = rel_w1_to_exp_fit(tsel)
+    #     ds, idcs = idc_curve(tsel, deltas_for_idc)
+    #     slope = idc_slope_over_region(ds, idcs, Delta_star)
+    #     return {
+    #         "N_sel": int(tsel.size),
+    #         "rate_sel": float(tsel.size / T),
+    #         "relW1": float(rel),
+    #         "W1": float(w1),
+    #         "lambda_exp_hat": float(lam_hat),
+    #         "idc_slope_abs": float(slope),
+    #         "d_idc": ds,
+    #         "idc": idcs
+    #     }
+
+    # def passes(v):
+    #     ok1 = (v["relW1"] <= relW1_tol)
+    #     ok2 = (np.isfinite(v["idc_slope_abs"]) and v["idc_slope_abs"] <= idc_slope_tol)
+    #     return ok1 and ok2
+
+    # def declusting_sampling():
+    #     qs = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+    #     t2_maxSize = 0
+    #     t2_best = t
+    #     v2_best = validate(t)
+    #     c_best = None
+    #     for c in caps:
+    #         for q_final in qs:
+    #             tries = 20
+    #             while tries > 0:
+    #                 base = t
+    #                 t2 = soft_decluster(base, Delta=Delta_star, cap_c=int(c), rng=rng)
+    #                 # print(F"After soft decluster with cap {c}, from time {t2[0]} to {t2[-1]} with size {t2.size} out of {base.size} Delta_star {Delta_star}")
+    #                 t2_candidate = bernoulli_thin(t2, q_final, rng)
+    #                 v2_candidate = validate(t2_candidate)
+    #                 if passes(v2_candidate) and t2_maxSize < t2_candidate.size:
+    #                     t2_best = t2_candidate
+    #                     v2_best = v2_candidate
+    #                     t2_maxSize = t2_candidate.size
+    #                     c_best = c
+    #                     # print(F"from time {t2[0]} to {t2[-1]} with size {t2.size} we thin with q {q_final} to size {t2_candidate.size}")
+    #                     break
+    #                 tries -= 1
+    #     return t2_best, v2_best, c_best
+    
+    # # Stage 1: global thinning (max yield)
+    # q0 = min(1.0, N_min / N)
+    # t1 = bernoulli_thin(t, q0, rng)
+    # d1, idc1, mu1, var1 = idc_curve(t1, deltas_for_idc)
+    # Delta_star_1 = find_idc_plateau_delta(d1, idc1, slope_thresh=plateau_slope_thresh)
+    # plt.figure(figsize=(10, 6))
+    # plt.plot(d1, idc1, marker='o', linewidth=1)
+    # # plt.xscale('log'); plt.yscale('log')
+    # plt.axvline(Delta_star_1, linestyle='--')
+    # plt.title("IDC(Δ) with Δ* (vertical dashed)")
+    # plt.xlabel("Δ"); plt.ylabel("IDC(Δ)")
+    # plt.grid(True, which="both", linestyle="--", alpha=0.5)
+    # plt.tight_layout()
+    # plt.savefig(f"after_thinning_idc_plot_{df_name.split('/')[-1]}_{t[0]:.0f}_{t[-1]:.0f}.png")
+    # return t, report
+
+    # v1 = validate(t1)
+    # report["stages"].append({"name": "stage1_global_thin", "q": float(q0),
+    #                          **{k: v1[k] for k in v1 if k not in ("d_idc","idc")}})
+
+    # if passes(v1):
+    #     report["selected_stage"] = "stage1_global_thin"
+    #     return t1, report
+
+    # # Stage 2: soft declustering (cap >= 1)    
+    # t2_best, v2_best, c = declusting_sampling()
+    # report["stages"].append({"name": "stage2_soft_decluster", "cap_c": c,
+    #                             **{k: v2_best[k] for k in v2_best if k not in ("d_idc","idc")}})
+    
+    # if passes(v2_best):
+    #     report["selected_stage"] = f"stage2_soft_decluster_cap{c}"
+    #     return t2_best, report
+    
+    # # stage 3: declustering of max_delta_for_idc if not yet tried
+    # Delta_star = max_delta_for_idc
+    # t2_best, v2_best, c = declusting_sampling()
+    # report["stages"].append({"name": "stage3_soft_decluster_maxDelta", "cap_c": c,
+    #                             **{k: v2_best[k] for k in v2_best if k not in ("d_idc","idc")}})
+    # if passes(v2_best):
+    #     report["selected_stage"] = f"stage3_soft_decluster_cap{c}_maxDelta"
+    #     return t2_best, report
+    
+    # report["selected_stage"] = "none"
+    # return [], report
+
+
+# def trim_counts_round_robin_to_idc_multiscale(
+#     t: np.ndarray,
+#     p0_max: float = 0.10,
+#     target_idc: float = 1.0,
+#     tol_primary: float = 0.001,
+#     max_rounds: int = 300,
+#     min_mean_per_bin: float = 0.2,
+#     min_total_keep: int = 1000,
+#     policy: str = "reduce_if_gt1",              # "closest" or "reduce_if_gt1"
+#     check_factors=(2, 3, 4, 5, 6),                 # enforce safeguards at 2Δ,4Δ (can use just (2,))
+#     allow_worsen: float = 0.0,            # allow tiny worsening (e.g., 1e-6)
+#     rng_seed: int = 0,
+#     return_debug: bool = True,
+# ):
+#     """
+#     Your iterative, round-robin, 'remove at most 1 per interval' algorithm,
+#     with a multi-scale safeguard.
+
+#     Workflow:
+#       1) Find Δ via find_delta_for_empty_prob(t, p0_max).
+#       2) Bin into Δ => counts X_i.
+#       3) Maintain kept counts Y_i initialized to X_i.
+#       4) Iterate rounds:
+#          - traverse bins; for each bin i, try Y_i -> Y_i-1
+#          - accept only if:
+#              (a) primary objective improves (IDCΔ closer to target, or reduces if >1), AND
+#              (b) IDC at each coarser scale (e.g., 2Δ,4Δ) does NOT worsen (beyond allow_worsen).
+#       5) After convergence, sample exactly Y_i packets uniformly per bin.
+
+#     Returns:
+#       t_selected, info (includes Delta, initial/final IDC at each scale, trace if requested)
+#     """
+#     rng = np.random.default_rng(rng_seed)
+
+#     # --- small helpers (local) ---
+#     def _sanitize_times(tt):
+#         tt = np.asarray(tt, dtype=float)
+#         tt = tt[np.isfinite(tt)]
+#         tt = np.unique(np.sort(tt))
+#         if tt.size < 2:
+#             raise ValueError("Need at least 2 finite timestamps.")
+#         return tt
+
+#     def _bin_ids(tt, Delta):
+#         tt = _sanitize_times(tt)
+#         if Delta <= 0:
+#             raise ValueError("Delta must be > 0.")
+#         t0 = tt[0]
+#         x = tt - t0
+#         T = x[-1]
+#         nb = int(np.floor(T / Delta)) + 1
+#         bid = np.floor(x / Delta).astype(int)
+#         bid = np.clip(bid, 0, nb - 1)
+#         return tt, bid, nb, t0
+
+#     def _idc_from_S_SS(nbins, S, SS):
+#         # IDC = Var/Mean, Var = E[Y^2] - E[Y]^2, population variance (ddof=0)
+#         if nbins <= 0:
+#             return np.inf
+#         mu = S / nbins
+#         if mu <= 0:
+#             return np.inf
+#         ey2 = SS / nbins
+#         var = ey2 - mu * mu
+#         if var < 0 and var > -1e-12:
+#             var = 0.0
+#         return float(var / mu)
+
+#     def _objective(val):
+#         if policy == "reduce_if_gt1":
+#             return max(0.0, val - target_idc)
+#         return abs(val - target_idc)
+
+#     def _select_packets_per_bin(tt, bid, y, rng_):
+#         order = np.argsort(tt)
+#         tt = tt[order]
+#         bid = bid[order]
+#         selected_idx = []
+#         n = tt.size
+#         i = 0
+#         while i < n:
+#             b0 = bid[i]
+#             j = i + 1
+#             while j < n and bid[j] == b0:
+#                 j += 1
+#             idx = np.arange(i, j)
+#             k = int(y[b0])
+#             if k > 0:
+#                 if idx.size <= k:
+#                     selected_idx.extend(idx.tolist())
+#                 else:
+#                     chosen = rng_.choice(idx, size=k, replace=False)
+#                     selected_idx.extend(chosen.tolist())
+#             i = j
+#         selected_idx = np.array(selected_idx, dtype=int)
+#         selected_idx.sort()
+#         return tt[selected_idx]
+
+#     # --- Step 1: choose Δ using your empty-bin rule ---
+#     Delta, mu_scan = find_delta_for_empty_prob(t, p0_max=p0_max)
+#     if Delta is None:
+#         raise RuntimeError(f"No Δ found with empirical empty-bin prob <= {p0_max}.")
+
+#     # --- Step 2: bin at Δ and initialize counts ---
+#     t_clean, b_fine, n_fine, t0 = _bin_ids(t, Delta)
+#     X = np.bincount(b_fine, minlength=n_fine).astype(int)
+#     Y = X.copy()
+
+#     # Build multi-scale structures:
+#     # scale factors include 1 (fine) plus check_factors
+#     factors = [1] + [int(f) for f in check_factors if int(f) >= 2]
+#     # unique and sorted
+#     factors = sorted(set(factors))
+
+#     # For each factor f, define coarse bin index for each fine bin i: coarse = i // f
+#     # counts_f = sum of Y over fine bins mapping to coarse bins
+#     scales = {}
+#     for f in factors:
+#         map_f = (np.arange(n_fine) // f).astype(int)
+#         n_coarse = int(map_f.max()) + 1
+#         counts_f = np.bincount(map_f, weights=Y, minlength=n_coarse).astype(int)
+#         S = float(counts_f.sum())
+#         SS = float((counts_f * counts_f).sum())
+#         idc = _idc_from_S_SS(n_coarse, S, SS)
+#         scales[f] = {
+#             "map": map_f,
+#             "n": n_coarse,
+#             "counts": counts_f,
+#             "S": S,
+#             "SS": SS,
+#             "idc": float(idc),
+#         }
+
+#     idc0_all = {f: scales[f]["idc"] for f in factors}
+#     idc_primary = scales[1]["idc"]
+
+#     debug = []
+#     if return_debug:
+#         debug.append({
+#             "round": 0,
+#             "idc_primary": float(idc_primary),
+#             "idc_by_factor": {f: float(scales[f]["idc"]) for f in factors},
+#             "kept_total": int(Y.sum()),
+#             "mean_per_fine_bin": float(Y.mean()),
+#             "removed_this_round": 0
+#         })
+
+#     # --- Round-robin trimming with multi-scale safeguard ---
+#     for r in range(1, max_rounds + 1):
+#         if _objective(scales[1]["idc"]) <= tol_primary:
+#             break
+#         # if Y.sum() < min_total_keep:
+#         #     break
+#         # if Y.mean() < min_mean_per_bin:
+#         #     break
+
+#         changed = 0
+#         eligible = np.where(Y > 0)[0]
+#         if eligible.size == 0:
+#             break
+
+#         for i in eligible:
+#             if Y[i] <= 0:
+#                 continue
+
+#             cur_idc_primary = scales[1]["idc"]
+#             cur_obj = _objective(cur_idc_primary)
+
+#             # We'll attempt decrement in fine bin i:
+#             # This affects each scale f at coarse bin j = i//f
+#             # We'll compute prospective IDC for each scale without committing, then commit if accepted.
+#             prospective = {}
+
+#             # First compute prospective per-scale IDC after decrement
+#             for f in factors:
+#                 j = i // f
+#                 sc = scales[f]
+#                 old = sc["counts"][j]
+#                 if old <= 0:
+#                     # shouldn't happen if Y[i]>0, but safe guard
+#                     prospective[f] = (sc["idc"], sc["S"], sc["SS"], old)
+#                     continue
+#                 S2 = sc["S"] - 1.0
+#                 SS2 = sc["SS"] - float(2 * old - 1)  # old^2 - (old-1)^2 = 2*old-1
+#                 idc2 = _idc_from_S_SS(sc["n"], S2, SS2)
+#                 prospective[f] = (idc2, S2, SS2, old)
+
+#             new_idc_primary = prospective[1][0]
+#             new_obj = _objective(new_idc_primary)
+
+#             # Primary acceptance
+#             if policy == "reduce_if_gt1":
+#                 accept_primary = (cur_idc_primary > target_idc) and (new_idc_primary < cur_idc_primary)
+#             else:
+#                 accept_primary = (new_obj < cur_obj)
+
+#             if not accept_primary:
+#                 continue
+
+#             # Multi-scale safeguard: do not worsen coarser IDC beyond allow_worsen
+#             ok_multi = True
+#             for f in factors:
+#                 if f == 1:
+#                     continue
+#                 if prospective[f][0] > scales[f]["idc"] + allow_worsen:
+#                     ok_multi = False
+#                     break
+
+#             if not ok_multi:
+#                 continue
+
+#             # Commit decrement
+#             Y[i] -= 1
+#             for f in factors:
+#                 j = i // f
+#                 idc2, S2, SS2, old = prospective[f]
+#                 scales[f]["counts"][j] = old - 1
+#                 scales[f]["S"] = S2
+#                 scales[f]["SS"] = SS2
+#                 scales[f]["idc"] = float(idc2)
+
+#             changed += 1
+#             if _objective(scales[1]["idc"]) <= tol_primary:
+#                 break
+
+#         if return_debug:
+#             debug.append({
+#                 "round": r,
+#                 "idc_primary": float(scales[1]["idc"]),
+#                 "idc_by_factor": {f: float(scales[f]["idc"]) for f in factors},
+#                 "kept_total": int(Y.sum()),
+#                 "mean_per_fine_bin": float(Y.mean()),
+#                 "removed_this_round": int(changed)
+#             })
+
+#         if changed == 0:
+#             break
+
+#     # --- Sample actual packets per fine bin according to final Y ---
+#     t_sel = _select_packets_per_bin(t_clean, b_fine, Y, rng)
+
+#     info = {
+#         "Delta": float(Delta),
+#         "t0": float(t0),
+#         "p0_max": float(p0_max),
+#         "factors": factors,
+#         "allow_worsen": float(allow_worsen),
+#         "policy": policy,
+#         "tol_primary": float(tol_primary),
+#         "initial_idc_by_factor": {f: float(idc0_all[f]) for f in factors},
+#         "final_idc_by_factor": {f: float(scales[f]["idc"]) for f in factors},
+#         "initial_total": int(X.sum()),
+#         "final_total": int(Y.sum()),
+#         "nbins_fine": int(n_fine),
+#         "empty_prob_at_Delta": float(np.mean(X == 0)),
+#         "mean_count_at_Delta": float(X.mean()),
+#         "X_counts": X,
+#         "Y_counts": Y,
+#     }
+#     if return_debug:
+#         info["trace"] = debug
+
+#     return t_sel, info
+def plot_iat_distribution(t_before, t_after, t_sel_lambda=None, nbins=None, title_suffix=""):
+    """
+    Plot inter-arrival time (IAT) distributions BEFORE and AFTER trimming
+    using stem plots, with Exponential(mean) reference curves.
+
+    Parameters
+    ----------
+    t_before : array-like
+        Packet timestamps BEFORE trimming
+    t_after : array-like
+        Packet timestamps AFTER trimming
+    nbins : int or None
+        Number of bins used to discretize IATs.
+        If None, chosen automatically (Freedman–Diaconis rule).
+    title_suffix : str
+        Optional suffix for plot title
+    """
+
+    def compute_iat(t):
+        t = np.asarray(t, float)
+        t = t[np.isfinite(t)]
+        t = np.unique(np.sort(t))
+        if t.size < 2:
+            return np.array([])
+        return np.diff(t)
+
+    def auto_nbins(iat):
+        # Freedman–Diaconis rule with safety caps
+        q25, q75 = np.percentile(iat, [25, 75])
+        iqr = q75 - q25
+        if iqr <= 0:
+            return 30
+        bw = 2 * iqr / (len(iat) ** (1 / 3))
+        if bw <= 0:
+            return 30
+        nb = int(np.ceil((iat.max() - iat.min()) / bw))
+        return int(np.clip(nb, 20, 200))
+
+    # ---- compute IATs ----
+    iat_before = compute_iat(t_before)
+    iat_after = compute_iat(t_after)
+
+    if iat_before.size == 0 or iat_after.size == 0:
+        raise ValueError("Not enough timestamps to compute IATs.")
+
+    mean_iat_before = iat_before.mean()
+    if t_sel_lambda is not None:
+        mean_iat_after = t_sel_lambda
+    else:
+        mean_iat_after = iat_after.mean()
+
+    # ---- choose nbins automatically if needed ----
+    if nbins is None:
+        nbins = auto_nbins(np.concatenate([iat_before, iat_after]))
+
+    # ---- common binning ----
+    xmax = max(iat_before.max(), iat_after.max())
+    bins = np.linspace(0, xmax, nbins + 1)
+    bin_centers = 0.5 * (bins[:-1] + bins[1:])
+
+    # ---- empirical PMFs ----
+    p_before, _ = np.histogram(iat_before, bins=bins)
+    p_after, _ = np.histogram(iat_after, bins=bins)
+
+    p_before = p_before / p_before.sum()
+    p_after = p_after / p_after.sum()
+
+    # ---- exponential reference (converted to PMF scale) ----
+    bin_width = bins[1] - bins[0]
+    exp_before = (1 / mean_iat_before) * np.exp(-bin_centers / mean_iat_before) * bin_width
+    exp_after = (1 / mean_iat_after) * np.exp(-bin_centers / mean_iat_after) * bin_width
+
+    # ---- plot ----
+    plt.figure(figsize=(8, 5))
+
+    plt.stem(
+        bin_centers, p_before,
+        linefmt="C0-", markerfmt="C0o", basefmt=" ",
+        label=f"Before, mean IAT={mean_iat_before:.3g}"
+    )
+
+    plt.plot(
+        bin_centers, exp_before,
+        "C0--", linewidth=2, label="Exp(mean before)"
+    )
+
+    plt.plot(
+        bin_centers, exp_after,
+        "C1--", linewidth=2, label="Exp(mean after)"
+    )
+
+    plt.stem(
+        bin_centers, p_after,
+        linefmt="C1-", markerfmt="C1s", basefmt=" ",
+        label=f"After, mean IAT={mean_iat_after:.3g}"
+    )
+
+    plt.xlabel("Inter-arrival time")
+    plt.ylabel("Probability")
+    plt.title("Inter-arrival time distribution" + title_suffix)
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.savefig("iat_distributions.png")
+    plt.close()
+
+
+def plot_bin_count_distributions(X, Y, max_k=None, title_suffix=""):
+    """
+    Plot empirical distributions of packet counts per Δ-bin:
+      - before trimming (X)
+      - after trimming (Y)
+
+    Also overlays Poisson(mean) reference curves.
+
+    Parameters
+    ----------
+    X : array-like
+        Original bin counts per Δ
+    Y : array-like
+        Kept bin counts per Δ after trimming
+    max_k : int or None
+        Max count to plot on x-axis (defaults to max of X,Y)
+    title_suffix : str
+        Optional string appended to plot title
+    """
+
+    X = np.asarray(X, dtype=int)
+    Y = np.asarray(Y, dtype=int)
+
+    if max_k is None:
+        max_k = max(X.max(), Y.max())
+
+    k = np.arange(0, max_k + 1)
+
+    # empirical PMFs
+    px = np.bincount(X, minlength=max_k + 1) / X.size
+    py = np.bincount(Y, minlength=max_k + 1) / Y.size
+
+    # Poisson references
+    mu_x = X.mean()
+    mu_y = Y.mean()
+
+    def poisson_pmf(mu, k):
+        return np.array([exp(-mu) * mu**i / factorial(i) for i in k])
+
+    p_pois_x = poisson_pmf(mu_x, k)
+    p_pois_y = poisson_pmf(mu_y, k)
+
+    plt.figure(figsize=(8, 5))
+
+    plt.stem(k, px, linefmt="C0-", markerfmt="C0o", basefmt=" ",
+             label=f"Before (X), mean={mu_x:.2f}")
+    plt.stem(k, py, linefmt="C1-", markerfmt="C1s", basefmt=" ",
+             label=f"After (Y), mean={mu_y:.2f}")
+
+    plt.plot(k, p_pois_x, "C0--", alpha=0.6, label="Poisson(mean(X))")
+    plt.plot(k, p_pois_y, "C1--", alpha=0.6, label="Poisson(mean(Y))")
+
+    plt.xlabel("Packets per Δ-bin")
+    plt.ylabel("Probability")
+    plt.title("Distribution of packets per Δ-bin" + title_suffix)
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.savefig("bin_count_distributions.png")
+    plt.close()
+
+
+def trim_counts_round_robin_J_two_scales(
+    t: np.ndarray,
+    p0_max: float = 0.05,
+    target_idc: float = 1.0,
+    tol_J: float = 0.005,
+    max_rounds: int = 400,
+    # objective weights
+    w_idc1: float = 1.0,
+    w_idc2: float = 0.0,
+    w_acf1: float = 1.0,
+    w_acf2: float = 0.0,
+    allow_worsen: float = 0.0, # small slack (e.g., 1e-6) to avoid floating noise
+    rng_seed: int = 0,
+    return_debug: bool = True,
+):
+    """
+    Round-robin trimming over Δ-bins (remove at most 1 per bin per round),
+    where acceptance is based on the combined objective:
+
+        J = w1 * |IDC(Δ) - target| + w2 * |IDC(2Δ) - target|
+
+    Steps:
+      1) Choose Δ using find_delta_for_empty_prob(t, p0_max).
+      2) Bin arrivals into Δ-bins => counts X_i, initialize kept counts Y_i = X_i.
+      3) Maintain IDC(Δ) and IDC(2Δ) incrementally.
+      4) Traverse bins; for each bin i, tentatively decrement Y_i by 1,
+         accept iff J decreases (by at least allow_worsen).
+      5) Sample actual packets to match final Y_i (uniform within each bin).
+
+    Returns:
+      t_selected, info (Delta, initial/final IDC at Δ and 2Δ, trace if requested)
+    """
+    # rng = np.random.default_rng(rng_seed)
+    rng = None
+
+    # ---- helpers ----
+    def _sanitize_times(tt):
+        tt = np.asarray(tt, dtype=float)
+        tt = tt[np.isfinite(tt)]
+        tt = np.unique(np.sort(tt))
+        if tt.size < 2:
+            raise ValueError("Need at least 2 finite timestamps.")
+        return tt
+
+    def _bin_ids(tt, Delta):
+        tt = _sanitize_times(tt)
+        if Delta <= 0:
+            raise ValueError("Delta must be > 0.")
+        t0 = tt[0]
+        x = tt - t0
+        T = x[-1]
+        nb = int(np.floor(T / Delta)) + 1
+        bid = np.floor(x / Delta).astype(int)
+        bid = np.clip(bid, 0, nb - 1)
+        return tt, bid, nb, t0
+
+    def _idc_from_S_SS(nbins, S, SS):
+        if nbins <= 0:
+            return np.inf
+        mu = S / nbins
+        if mu <= 0:
+            return np.inf
+        ey2 = SS / nbins
+        var = ey2 - mu * mu
+        if var < 0 and var > -1e-12:
+            var = 0.0
+        return float(var / mu)
+
+    def _select_packets_per_bin(tt, bid, y, rng_):
+        order = np.argsort(tt)
+        tt = tt[order]
+        bid = bid[order]
+        selected_idx = []
+        n = tt.size
+        i = 0
+        while i < n:
+            b0 = bid[i]
+            j = i + 1
+            while j < n and bid[j] == b0:
+                j += 1
+            idx = np.arange(i, j)
+            k = int(y[b0])
+            if k > 0:
+                if idx.size <= k:
+                    selected_idx.extend(idx.tolist())
+                else:
+                    chosen = np.random.choice(idx, size=k, replace=False)
+                    selected_idx.extend(chosen.tolist())
+                    
+            i = j
+        selected_idx = np.array(selected_idx, dtype=int)
+        selected_idx.sort()
+        return tt[selected_idx]
+    
+    def _stats_init(y):
+        y = y.astype(int, copy=True)
+        n = y.size
+        S = float(y.sum())
+        SS = float((y * y).sum())
+        if n >= 2:
+            P = float((y[:-1] * y[1:]).sum())
+        else:
+            P = 0.0
+        return y, n, S, SS, P
+
+    def _idc_acf_from_stats(n, S, SS, P):
+        if n <= 0:
+            return np.inf, 0.0
+        mu = S / n
+        if mu <= 0:
+            return np.inf, 0.0
+        var = SS / n - mu * mu
+        if var < 0 and var > -1e-12:
+            var = 0.0
+        idc = (var / mu) if mu > 0 else np.inf
+
+        if n < 2 or var <= 0:
+            acf1 = 0.0
+        else:
+            cov1 = (P / (n - 1)) - (mu * mu)
+            acf1 = cov1 / var
+        return float(idc), float(acf1)
+    
+    # def _plot_idc_curve():
+    #     # Default candidate grid: from fine to coarse
+    #     d_min = 120.0 # 120 ns
+    #     d_max = 1000000.0 # 1 ms
+    #     deltas_for_idc = np.logspace(np.log10(d_min), np.log10(d_max), 250)
+    #     deltas_for_idc = np.asarray(deltas_for_idc, float)
+
+    #     # Original diagnostics + Δ*
+    #     CV0 = cv_iat(t)
+    # d0, idc0, mu0, var0 = idc_curve(t, deltas_for_idc)
+    # Delta_star = find_idc_plateau_delta(d0, idc0, slope_thresh=plateau_slope_thresh)
+    # plt.figure(figsize=(10, 6))
+    # plt.plot(d0, idc0, marker='o', linewidth=1)
+    # # print(f"Min d0: {d0.min()}, Max d0: {d0.max()}")
+    # # print(f"Min idc0: {idc0.min()}, Max idc0: {idc0.max()}")
+    # # plt.xscale('log'); plt.yscale('log')
+    # plt.axvline(Delta_star, linestyle='--')
+    # plt.title("Original IDC(Δ) with Δ* (vertical dashed)")
+    # plt.xlabel("Δ"); plt.ylabel("IDC(Δ)")
+    # plt.grid(True, which="both", linestyle="--", alpha=0.5)
+    # plt.tight_layout()
+    # plt.savefig(f"original_idc_plot_{df_name.split('/')[-1]}_{t[0]:.0f}_{t[-1]:.0f}.png")
+
+    # def J(idc1, idc2):
+    #     return w1 * abs(idc1 - target_idc) + w2 * abs(idc2 - target_idc)
+    def J(idc1, idc2, acf1_1, acf1_2):
+        return (
+            w_idc1 * abs(idc1 - target_idc)
+            + w_idc2 * abs(idc2 - target_idc)
+            + w_acf1 * abs(acf1_1)
+            + w_acf2 * abs(acf1_2)
+        )
+
+    # ---- Step 1: choose Δ ----
+    Delta, mu = find_delta_for_empty_prob(t, p0_max=p0_max)
+    # Delta, mu = find_delta_for_closest_mean_packets_per_bin(t, target_mean=1.0)
+    # print(f"Chosen Delta: {Delta} with mean packets per bin: {mu}")
+    if Delta is None:
+        raise RuntimeError(f"No Δ found such that P(empty bin) <= {p0_max}.")
+
+    # ---------- 2) bin at Δ ----------
+    t_clean, bid, n_fine, t0 = _bin_ids(t, Delta)
+    X = np.bincount(bid, minlength=n_fine).astype(int)
+    Y = X.copy()
+
+    # scale Δ
+    y1, n1, S1, SS1, P1 = _stats_init(Y)
+
+    # scale 2Δ by summing pairs
+    map2 = (np.arange(n_fine) // 2).astype(int)
+    n2 = int(map2.max()) + 1
+    y2 = np.bincount(map2, weights=y1, minlength=n2).astype(int)
+    y2, n2, S2, SS2, P2 = _stats_init(y2)
+
+    idc1, acf1_1 = _idc_acf_from_stats(n1, S1, SS1, P1)
+    idc2, acf1_2 = _idc_acf_from_stats(n2, S2, SS2, P2)
+    Jcur = J(idc1, idc2, acf1_1, acf1_2)
+
+    trace = []
+    if return_debug:
+        trace.append({
+            "round": 0,
+            "J": Jcur,
+            "idc_Delta": idc1,
+            "idc_2Delta": idc2,
+            "acf1_Delta": acf1_1,
+            "acf1_2Delta": acf1_2,
+            "kept_total": int(Y.sum()),
+            "mean_per_bin": float(Y.mean()),
+            "removed_this_round": 0
+        })
+    rel, w1, lam_hat = rel_w1_to_exp_fit(t_clean)
+    min_packets_per_bin = 0
+    # ---------- 3) round-robin trimming ----------
+    break_reason = None
+    for r in range(1, max_rounds + 1):
+        if Jcur <= tol_J:
+            break_reason = "tol_J"
+            break
+
+        changed = 0
+        eligible = np.where(Y > min_packets_per_bin)[0]
+        if eligible.size == 0:
+            break_reason = "no_eligible"
+            break
+
+        for i in eligible:
+            if Y[i] <= min_packets_per_bin:
+                continue
+
+            # ---- propose decrement at Δ scale: y1[i] -> y1[i]-1 ----
+            a1 = y1[i]
+            if a1 <= min_packets_per_bin:
+                continue
+
+            # update S1, SS1, P1 incrementally
+            S1_p = S1 - 1.0
+            SS1_p = SS1 - float(2 * a1 - 1)
+
+            P1_p = P1
+            if n1 >= 2:
+                if i > 0:
+                    P1_p -= float(y1[i - 1])        # term (i-1,i) decreases by y_{i-1}
+                if i < n1 - 1:
+                    P1_p -= float(y1[i + 1])        # term (i,i+1) decreases by y_{i+1}
+
+            idc1_p, acf1_1_p = _idc_acf_from_stats(n1, S1_p, SS1_p, P1_p)
+
+            # ---- corresponding decrement at 2Δ scale in coarse bin j=i//2 ----
+            j = i // 2
+            a2 = y2[j]
+            if a2 <= 1:
+                continue
+
+            S2_p = S2 - 1.0
+            SS2_p = SS2 - float(2 * a2 - 1)
+
+            P2_p = P2
+            if n2 >= 2:
+                if j > 0:
+                    P2_p -= float(y2[j - 1])
+                if j < n2 - 1:
+                    P2_p -= float(y2[j + 1])
+
+            idc2_p, acf1_2_p = _idc_acf_from_stats(n2, S2_p, SS2_p, P2_p)
+
+            Jnew = J(idc1_p, idc2_p, acf1_1_p, acf1_2_p)
+
+            # accept iff J decreases
+            if Jnew < Jcur - allow_worsen:
+                # commit fine, with probability proportional to Y[i]
+                p_i = 1.0 * (Y[i] / Y.max())
+                if p_i > 1.0:
+                    p_i = 1.0
+
+                if np.random.random() >= p_i:
+                    continue
+
+                # commit fine
+                Y[i] -= 1
+                y1[i] = a1 - 1
+                S1, SS1, P1 = S1_p, SS1_p, P1_p
+
+                # commit coarse
+                y2[j] = a2 - 1
+                S2, SS2, P2 = S2_p, SS2_p, P2_p
+
+                # commit derived stats
+                idc1, acf1_1 = idc1_p, acf1_1_p
+                idc2, acf1_2 = idc2_p, acf1_2_p
+                Jcur = Jnew
+                changed += 1
+
+                if Jcur <= tol_J:
+                    break_reason = "tol_J"
+                    break
+        t_sel = _select_packets_per_bin(t_clean, bid, Y, rng)
+        rel, w1, lam_hat = rel_w1_to_exp_fit(t_sel)
+        empty_prob = float(np.sum(Y == 0)) / float(Y.size)
+        if return_debug:
+            trace.append({
+                "round": r,
+                "J": Jcur,
+                "idc_Delta": idc1,
+                "idc_2Delta": idc2,
+                "acf1_Delta": acf1_1,
+                "acf1_2Delta": acf1_2,
+                "kept_total": int(Y.sum()),
+                "mean_per_bin": float(Y.mean()),
+                "removed_this_round": int(changed),
+                "relW1": float(rel),
+                "empty_prob": float(empty_prob)
+            })
+
+        if changed == 0:
+            break_reason = "no_change"
+            break
+
+    # ---------- 4) final sampling ----------
+    if (break_reason is None) or (break_reason == "no_eligible") or (break_reason == "no_change"):
+        t_sel = []
+    else:
+        t_sel = _select_packets_per_bin(t_clean, bid, Y, rng)
+    
+    rel, _, _ = rel_w1_to_exp_fit(t_sel)
+    # if rel >= 0.05:
+    #     t_sel = []
+    
+    info = {
+        "Delta": float(Delta),
+        "p0_max": float(p0_max),
+        "weights": {"w_idc1": w_idc1, "w_idc2": w_idc2, "w_acf1": w_acf1, "w_acf2": w_acf2},
+        "final": {
+            "J": float(Jcur),
+            "idc_Delta": float(idc1),
+            "idc_2Delta": float(idc2),
+            "acf1_Delta": float(acf1_1),
+            "acf1_2Delta": float(acf1_2),
+            "total_kept": int(Y.sum()),
+            "relW1": float(rel),
+        },
+        "initial_total": int(X.sum()),
+        "final_total": int(Y.sum()),
+        "X_counts": X,
+        "Y_counts": Y,
+    }
+    if return_debug:
+        info["trace"] = trace
+
+    return t_sel, info
+
+def find_delta_for_closest_mean_packets_per_bin(t, target_mean=1.0):
+    """
+    Find the smallest bin width Δ such that the empirical mean number of packets per bin
+    μ_hat(Δ) is closest to target_mean (default 1.0).
+
+    Inputs:
+      t: 1D array-like of packet arrival timestamps (seconds or any time unit).
+      target_mean: threshold for mean packets per bin (e.g., 1.0).
+    Returns:
+        Delta_star (float) if found, else None.
+    """
+    t = np.asarray(t, dtype=float)
+    t = t[np.isfinite(t)]
+    t = np.unique(np.sort(t))
+    if t.size < 2:
+        raise ValueError("Need at least 2 timestamps.")
+
+    t0 = t[0]
+    tt = t - t0
+    T = tt[-1]
+    if T <= 0:
+        raise ValueError("Timestamp span must be positive.")
+
+    # Default candidate grid: from fine to coarse
+    # smallest Δ: about T/max_bins, largest Δ: about T/min_bins
+    d_min = 120.0 # 120 ns
+    d_max = 500000.0 # 500 us
+    deltas = np.logspace(np.log10(d_min), np.log10(d_max), 200)
+
+    deltas = np.asarray(list(deltas), dtype=float)
+
+    used_d, mu_list = [], []
+
+    for Delta in deltas:
+        if not np.isfinite(Delta) or Delta <= 0:
+            continue
+        nbins = int(np.floor(T / Delta)) + 1
+        # bins over [0, nbins*Delta]
+        edges = np.linspace(0, nbins * Delta, nbins + 1)
+        counts, _ = np.histogram(tt, bins=edges)
+        mu_hat = float(np.mean(counts))
+        used_d.append(float(Delta))
+        mu_list.append(mu_hat)
+
+    used_d = np.asarray(used_d)
+    mu_arr = np.asarray(mu_list)
+
+    # sort by Δ increasing
+    order = np.argsort(used_d)
+    used_d, mu_arr = used_d[order], mu_arr[order]
+    # pick Δ minimizing |mu_hat - target_mean|
+    diffs = np.abs(mu_arr - target_mean)
+    idx_min = np.argmin(diffs)
+    Delta_star = float(used_d[idx_min])
+    print("Delta:", Delta_star, "mean_count_at_Delta:", mu_arr[idx_min])
+
+    return Delta_star, mu_arr[idx_min]
+
+def find_delta_for_empty_prob(t, p0_max=0.10):
+    """
+    Find the smallest bin width Δ such that the empirical probability of an empty bin
+    P_hat(X=0) is <= p0_max (default 10%).
+
+    Inputs:
+      t: 1D array-like of packet arrival timestamps (seconds or any time unit).
+      p0_max: threshold for empty-bin probability (e.g., 0.10).
+      deltas: optional iterable of candidate Δ values. If None, uses a log-spaced grid.
+
+    Returns:
+      Delta_star (float) if found, else None.
+    """
+    t = np.asarray(t, dtype=float)
+    t = t[np.isfinite(t)]
+    t = np.unique(np.sort(t))
+    if t.size < 2:
+        raise ValueError("Need at least 2 timestamps.")
+
+    t0 = t[0]
+    tt = t - t0
+    T = tt[-1]
+    if T <= 0:
+        raise ValueError("Timestamp span must be positive.")
+
+    # Default candidate grid: from fine to coarse
+    # smallest Δ: about T/max_bins, largest Δ: about T/min_bins
+    d_min = 120.0 # 120 ns
+    d_max = 500000.0 # 500 us
+    deltas = np.logspace(np.log10(d_min), np.log10(d_max), 200)
+
+    deltas = np.asarray(list(deltas), dtype=float)
+
+    used_d, p0_list, mu_list = [], [], []
+
+    for Delta in deltas:
+        if not np.isfinite(Delta) or Delta <= 0:
+            continue
+        nbins = int(np.floor(T / Delta)) + 1
+        # bins over [0, nbins*Delta]
+        edges = np.linspace(0, nbins * Delta, nbins + 1)
+        counts, _ = np.histogram(tt, bins=edges)
+
+        p0_hat = float(np.mean(counts == 0))
+        mu_hat = float(np.mean(counts))
+
+        used_d.append(float(Delta))
+        p0_list.append(p0_hat)
+        mu_list.append(mu_hat)
+
+    used_d = np.asarray(used_d)
+    p0_arr = np.asarray(p0_list)
+    mu_arr = np.asarray(mu_list)
+
+    # sort by Δ increasing
+    order = np.argsort(used_d)
+    used_d, p0_arr, mu_arr = used_d[order], p0_arr[order], mu_arr[order]
+
+    # pick smallest Δ meeting threshold
+    ok = np.where(p0_arr <= p0_max)[0]
+    Delta_star = float(used_d[ok[0]]) if ok.size > 0 else None
+    
+    # if no Δ meets threshold, return Δ that minimizes p0_arr
+    if Delta_star is None:
+        # print("Warning: no Δ found with P_hat(X=0) <= {:.4f}. Returning Δ minimizing P_hat.".format(p0_max))
+        idx_min = np.argmin(p0_arr)
+        Delta_star = float(used_d[idx_min])
+        mu_star = float(mu_arr[idx_min])
+        # print("Delta chosen:", Delta_star, "empty_prob_at_Delta:", p0_arr[idx_min], "mean_count_at_Delta:", mu_star)
+        return Delta_star, mu_star
+    else:
+        # print("Delta:", Delta_star, "empty_prob_at_Delta:", p0_arr[ok[0]], "mean_count_at_Delta:", mu_arr[ok[0]])
+        return Delta_star, mu_arr[ok[0]]
+
 def calculate_offline_computations_DC(__ns3_path, rate, segment, experiment, results_folder, steadyStart, steadyEnd, projectColumn, nHosts, removeDrops=True, checkColumn="", linkRates=[], linkDelays=[], swtichDstREDQueueDiscMaxSize=[0], stats=None, tsh=0.15, differentiationDelay=None, errorRate=None, load=None, passiveProbe=False, queue_names=[], flow_names=[]):
-    if differentiationDelay == 0.0 and errorRate is not None:
+    if differentiationDelay is not None and errorRate is not None:
         file_paths = glob.glob('{}/scratch/{}/{}/{}/D_{}/f_{}/{}/*_{}.csv'.format(__ns3_path, results_folder, rate, load, differentiationDelay, errorRate, experiment, segment))
     else:
         file_paths = glob.glob('{}/scratch/{}/{}/{}/{}/*_{}.csv'.format(__ns3_path, results_folder, rate, load, experiment, segment))
@@ -1999,14 +3353,16 @@ def calculate_offline_computations_DC(__ns3_path, rate, segment, experiment, res
                 #     print("Interarrival times are *NOT* exponentially distributed.")
             else:
                 full_df['BitsTag'] = 0
+            # if errorRate is not None:
+            #     full_df = addPacketsFromOtherPaths(full_df, errorRate, 1, 0)
             full_df = prune_data(full_df, projectColumn, steadyStart, steadyEnd)
             df_res = calc_RTT_per_path(full_df, df_res, checkColumn, linkDelays)
             # print(f"DC {df_name} len full df after pruning: {len(full_df)}")
             samplingMethod = "Orig"
-            df_res = calculate_offline_E2E_lossRates_DC(full_df, df_res, checkColumn, txDelay_to_firstQ, df_name, passiveProbe, samplingMethod)
-            df_res = calculate_offline_E2E_delays(full_df, removeDrops, checkColumn, txDelay_to_firstQ, df_res, df_name, passiveProbe, samplingMethod)
+            df_res = calculate_offline_E2E_lossRates_DC(full_df, df_res, checkColumn, txDelay_to_firstQ, df_name, passiveProbe, samplingMethod, steadyStart, steadyEnd)
+            df_res = calculate_offline_E2E_delays(full_df, removeDrops, checkColumn, txDelay_to_firstQ, df_res, results_folder, passiveProbe, samplingMethod, steadyStart, steadyEnd)
             df_res = calculate_offline_E2E_workload(full_df, df_res, steadyStart, steadyEnd)
-            df_res = calculate_offline_E2E_markingProb(full_df, df_res, checkColumn, txDelay_to_firstQ, swtichDstREDQueueDiscMaxSize, linkRates[0], __ns3_path, tsh, df_name, passiveProbe, samplingMethod)
+            df_res = calculate_offline_E2E_markingProb(full_df, df_res, checkColumn, txDelay_to_firstQ, swtichDstREDQueueDiscMaxSize, linkRates[0], __ns3_path, tsh, df_name, passiveProbe, samplingMethod, steadyStart, steadyEnd)
             # for all values in df_res['bias'], multiply them by 1000 to convert to ms
             # TODO: The bias term for multihop setting is different 
             for metric in df_res['bias']:
