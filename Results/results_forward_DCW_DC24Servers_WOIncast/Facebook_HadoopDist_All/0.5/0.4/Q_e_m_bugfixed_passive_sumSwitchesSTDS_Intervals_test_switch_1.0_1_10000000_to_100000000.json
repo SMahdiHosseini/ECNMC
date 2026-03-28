@@ -1,0 +1,571 @@
+{
+    "MaxEpsilonIneqDelay": {
+        "event_poisson_eventAvg": {
+            "R0H0R2H3": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 1
+                    },
+                    1
+                ]
+            }
+        },
+        "event_eventAvg": {
+            "R0H0R2H3": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 0
+                    },
+                    1
+                ]
+            }
+        }
+    },
+    "MaxEpsilonIneqLastDelay": {
+        "event_poisson_eventAvg": {
+            "R0H0R2H3": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 0
+                    },
+                    0
+                ]
+            }
+        },
+        "event_eventAvg": {
+            "R0H0R2H3": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 0
+                    },
+                    0
+                ]
+            }
+        }
+    },
+    "MaxEpsilonIneqSuccessProb": {
+        "event_poisson_eventAvg": {
+            "R0H0R2H3": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 1
+                    },
+                    1
+                ]
+            }
+        },
+        "event_eventAvg": {
+            "R0H0R2H3": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 1
+                    },
+                    1
+                ]
+            }
+        }
+    },
+    "MaxEpsilonIneqLastSuccessProb": {
+        "event_poisson_eventAvg": {
+            "R0H0R2H3": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 0
+                    },
+                    0
+                ]
+            }
+        },
+        "event_eventAvg": {
+            "R0H0R2H3": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 0
+                    },
+                    0
+                ]
+            }
+        }
+    },
+    "MaxEpsilonIneqNonMarkingProb": {
+        "event_poisson_eventAvg": {
+            "R0H0R2H3": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 1
+                    },
+                    1
+                ]
+            }
+        },
+        "event_eventAvg": {
+            "R0H0R2H3": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 1
+                    },
+                    1
+                ]
+            }
+        }
+    },
+    "MaxEpsilonIneqLastNonMarkingProb": {
+        "event_poisson_eventAvg": {
+            "R0H0R2H3": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 0
+                    },
+                    0
+                ]
+            }
+        },
+        "event_eventAvg": {
+            "R0H0R2H3": {
+                "0": [
+                    {
+                        "WBias": 0,
+                        "WOBias": 0
+                    },
+                    0
+                ]
+            }
+        }
+    },
+    "EndToEndSampleSizeDelay": {
+        "R0H0R2H3": {
+            "0": [
+                715
+            ]
+        }
+    },
+    "EndToEndSampleSizeSuccess": {
+        "R0H0R2H3": {
+            "0": [
+                715
+            ]
+        }
+    },
+    "EndToEndSampleSizeMarking": {
+        "R0H0R2H3": {
+            "0": [
+                715
+            ]
+        }
+    },
+    "totalPckts": {
+        "R0H0R2H3": {
+            "0": [
+                2049
+            ]
+        }
+    },
+    "InterArrivals": {
+        "R0H0R2H3": {
+            "0": [
+                125792.08263305321
+            ]
+        }
+    },
+    "EndToEndDelayMean": {
+        "event_poisson_eventAvg": {
+            "R0H0R2H3": {
+                "0": [
+                    [
+                        [
+                            51.106293706293705,
+                            5.023970498229045
+                        ]
+                    ],
+                    1
+                ]
+            }
+        },
+        "event_eventAvg": {
+            "R0H0R2H3": {
+                "0": [
+                    [
+                        [
+                            115.6041971693509,
+                            6.533742619267478
+                        ]
+                    ],
+                    1
+                ]
+            }
+        }
+    },
+    "EndToEndSuccessProb": {
+        "event_poisson_eventAvg": {
+            "R0H0R2H3": {
+                "0": [
+                    [
+                        [
+                            1.0,
+                            0.0
+                        ]
+                    ],
+                    1
+                ]
+            }
+        },
+        "event_eventAvg": {
+            "R0H0R2H3": {
+                "0": [
+                    [
+                        [
+                            1.0,
+                            0.0
+                        ]
+                    ],
+                    1
+                ]
+            }
+        }
+    },
+    "EndToEndNonMarkingProb": {
+        "event_poisson_eventAvg": {
+            "R0H0R2H3": {
+                "0": [
+                    [
+                        [
+                            1.0,
+                            0.0
+                        ]
+                    ],
+                    1
+                ]
+            }
+        },
+        "event_eventAvg": {
+            "R0H0R2H3": {
+                "0": [
+                    [
+                        [
+                            0.997559785261103,
+                            0.0010899648941304686
+                        ]
+                    ],
+                    1
+                ]
+            }
+        }
+    },
+    "DelayBias": {
+        "R0H0R2H3": {
+            "0": [
+                160.9250461538461
+            ]
+        }
+    },
+    "SuccessProbBias": {
+        "R0H0R2H3": {
+            "0": [
+                0.0
+            ]
+        }
+    },
+    "NonMarkingProbBias": {
+        "R0H0R2H3": {
+            "0": [
+                0.0
+            ]
+        }
+    },
+    "DropRate": [],
+    "maxEpsilonDelay": {
+        "R0H0R2H3": {
+            "0": [
+                0.1318003363320493
+            ]
+        }
+    },
+    "maxEpsilonLastDelay": {
+        "R0H0R2H3": {
+            "0": []
+        }
+    },
+    "maxEpsilonSuccessProb": {
+        "R0H0R2H3": {
+            "0": [
+                0.0
+            ]
+        }
+    },
+    "maxEpsilonLastSuccessProb": {
+        "R0H0R2H3": {
+            "0": []
+        }
+    },
+    "maxEpsilonNonMarkingProb": {
+        "R0H0R2H3": {
+            "0": [
+                0.0007859951143892102
+            ]
+        }
+    },
+    "maxEpsilonLastNonMarkingProb": {
+        "R0H0R2H3": {
+            "0": []
+        }
+    },
+    "workLoad": {
+        "R0H0R2H3": {
+            "0": [
+                0.16707253333333333
+            ]
+        }
+    },
+    "RTT": {
+        "R0H0R2H3": {
+            "0": [
+                8000.0
+            ]
+        }
+    },
+    "AverageWorkLoad": [
+        0.16707253333333333
+    ],
+    "experiments": 1,
+    "TrafficsComptDelay": {
+        "event_poisson_eventAvg": {
+            "0": [
+                0,
+                0
+            ]
+        }
+    },
+    "expSuccessDelay": [
+        [
+            2,
+            1,
+            1
+        ]
+    ],
+    "ActiveFractionOfAll": {
+        "Packets": {
+            "R0H0R2H3": {
+                "0": [
+                    0
+                ]
+            }
+        },
+        "Bytes": {
+            "R0H0R2H3": {
+                "0": [
+                    0
+                ]
+            }
+        }
+    },
+    "ActiveFractionOfTagged": {
+        "Packets": {
+            "R0H0R2H3": {
+                "0": [
+                    0
+                ]
+            }
+        },
+        "Bytes": {
+            "R0H0R2H3": {
+                "0": [
+                    0
+                ]
+            }
+        }
+    },
+    "A0T2Delaystd": [
+        178.18667950377278
+    ],
+    "A0T2DelayMean": [
+        27.934557309031636
+    ],
+    "A0T2LastDelaystd": [
+        176.23701715008752
+    ],
+    "A0T2LastDelayMean": [
+        25.549304289842187
+    ],
+    "A0T2SuccessProbStd": [
+        0.0
+    ],
+    "A0T2SuccessProbMean": [
+        1.0
+    ],
+    "A0T2LastSuccessProbStd": [
+        0.0
+    ],
+    "A0T2LastSuccessProbMean": [
+        1.0
+    ],
+    "A0T2NonMarkingProbStd": [
+        0.03798471412434882
+    ],
+    "A0T2NonMarkingProbMean": [
+        0.9985552344965548
+    ],
+    "A0T2LastNonMarkingProbStd": [
+        0.03798471412434882
+    ],
+    "A0T2LastNonMarkingProbMean": [
+        0.9985552344965548
+    ],
+    "A0T2SampleSize": [
+        8998
+    ],
+    "A0T2InterArrivals": [
+        10002.320662443037
+    ],
+    "A0T2Occupancy": [
+        0.07985874638808624
+    ],
+    "A0T2PacktsInQueue": [
+        0.3533793456638264
+    ],
+    "A0T2EmptyFrac": [
+        71.43809735496777
+    ],
+    "A0T2GT1PktsFrac": [
+        6.101355856857079
+    ],
+    "A0T2mixingRate": [],
+    "A0T2mixingSignalAvg": [],
+    "A0T2mixingRateMonly": [],
+    "A0T2mixingRatePoisson": [],
+    "A0T2mixingRateE2EPoisson": [],
+    "A0T2mixingRatePoissonEventAvg": [],
+    "A0T2mixingDelayDiff": [],
+    "T0A0Delaystd": [
+        66.40539889180239
+    ],
+    "T0A0DelayMean": [
+        17.30879496468694
+    ],
+    "T0A0LastDelaystd": [
+        64.9765695428443
+    ],
+    "T0A0LastDelayMean": [
+        15.124979690416072
+    ],
+    "T0A0SuccessProbStd": [
+        0.0
+    ],
+    "T0A0SuccessProbMean": [
+        1.0
+    ],
+    "T0A0LastSuccessProbStd": [
+        0.0
+    ],
+    "T0A0LastSuccessProbMean": [
+        1.0
+    ],
+    "T0A0NonMarkingProbStd": [
+        0.010477668383082936
+    ],
+    "T0A0NonMarkingProbMean": [
+        0.9998902184652542
+    ],
+    "T0A0LastNonMarkingProbStd": [
+        0.0
+    ],
+    "T0A0LastNonMarkingProbMean": [
+        1.0
+    ],
+    "T0A0SampleSize": [
+        9109
+    ],
+    "T0A0InterArrivals": [
+        9875.373078612209
+    ],
+    "T0A0Occupancy": [
+        0.0241814688769349
+    ],
+    "T0A0PacktsInQueue": [
+        0.21896071490178332
+    ],
+    "T0A0EmptyFrac": [
+        73.04863321989241
+    ],
+    "T0A0GT1PktsFrac": [
+        4.522999231529257
+    ],
+    "T0A0mixingRate": [],
+    "T0A0mixingSignalAvg": [],
+    "T0A0mixingRateMonly": [],
+    "T0A0mixingRatePoisson": [],
+    "T0A0mixingRateE2EPoisson": [],
+    "T0A0mixingRatePoissonEventAvg": [],
+    "T0A0mixingDelayDiff": [],
+    "T2H3Delaystd": [
+        88.25879131015145
+    ],
+    "T2H3DelayMean": [
+        18.028833676901378
+    ],
+    "T2H3LastDelaystd": [
+        87.00050720596889
+    ],
+    "T2H3LastDelayMean": [
+        16.72731691439731
+    ],
+    "T2H3SuccessProbStd": [
+        0.0
+    ],
+    "T2H3SuccessProbMean": [
+        1.0
+    ],
+    "T2H3LastSuccessProbStd": [
+        0.0
+    ],
+    "T2H3LastSuccessProbMean": [
+        1.0
+    ],
+    "T2H3NonMarkingProbStd": [
+        0.027549442092551783
+    ],
+    "T2H3NonMarkingProbMean": [
+        0.9992405337962461
+    ],
+    "T2H3LastNonMarkingProbStd": [
+        0.03123473914014094
+    ],
+    "T2H3LastNonMarkingProbMean": [
+        0.9990235434523164
+    ],
+    "T2H3SampleSize": [
+        9217
+    ],
+    "T2H3InterArrivals": [
+        9764.793077256945
+    ],
+    "T2H3Occupancy": [
+        0.058633177823586846
+    ],
+    "T2H3PacktsInQueue": [
+        0.1520462600580996
+    ],
+    "T2H3EmptyFrac": [
+        82.01150048822828
+    ],
+    "T2H3GT1PktsFrac": [
+        2.6798307475317347
+    ],
+    "T2H3mixingRate": [],
+    "T2H3mixingSignalAvg": [],
+    "T2H3mixingRateMonly": [],
+    "T2H3mixingRatePoisson": [],
+    "T2H3mixingRateE2EPoisson": [],
+    "T2H3mixingRatePoissonEventAvg": [],
+    "T2H3mixingDelayDiff": []
+}
