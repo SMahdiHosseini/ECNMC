@@ -1,6 +1,8 @@
 import pandas as pd
 import glob
 import matplotlib.pyplot as plt
+from matplotlib.ticker import MaxNLocator
+from enum import Enum
 import seaborn as sns
 import numpy as np
 from scipy.stats import anderson
@@ -12,6 +14,13 @@ import csv
 from collections import defaultdict
 estimation_gain = 0.0625
 init_alpha = 1
+
+class SubSamplingError(str, Enum):
+    NoError = 'NoError'
+    MinDGTMaxD = 'MinDGTMaxD'
+    NotEnoughPackets = 'NotEnoughPackets'
+    NotEnoughSamples = 'NotEnoughSamples'
+    IDCITrsh = 'IDCITrsh'
 
 class PacketCDF:
     def __init__(self):
@@ -506,38 +515,97 @@ def calc_RTT_per_path(full_df, df_res, checkColumn, linkDelays):
     return df_res
 
 
-def find_samples_path_new(time, txDelay, avg_interarrival_=None, df_name=None, samplingMethod='Orig', steadyStart=0, steadyEnd=1, steps=1):
-    aggregated_samples = []
-    steps = 1
-    for step in range(steps):
-        intervalStart = steadyStart + (steadyEnd - steadyStart) / steps * step
-        intervalEnd = steadyStart + (steadyEnd - steadyStart) / steps * (step + 1)
-        interval_times = time[(time >= intervalStart) & (time < intervalEnd)]
-    #     # print("Interval from {} to {} has {} packets".format(intervalStart, intervalEnd, len(interval_times)))
-    #     t_sel_, report = e2e_poisson_like_sampler(interval_times, N_min=len(interval_times) * 0.7, max_delta_for_idc=avg_interarrival_ * 5, df_name=df_name)
-    #     # print("Poisson-like sampler selected {} packets".format(len(t_sel_)))
-    #     # t_sel, intervalBrnval = find_samples_path(interval_times, txDelay, avg_interarrival_, df_name, samplingMethod, [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9])
-    #     # print("Bernoulli sampler selected {} packets".format(len(t_sel)))
+def find_samples_path_new(time, txDelay, avg_interarrival_=None, df_name=None, samplingMethod='Orig', steadyStart=0, steadyEnd=1, steps=1, MinimumNumberOfSamples=0):
+    subSamplingError = SubSamplingError.NoError
+    # state 0: find the minimum Δ that has more than 95% non-empty intervals and the maximum Δ that gives the minumum number of samples
+    minD, _ = find_delta_for_empty_prob(time, p0_max=0.05)
+    maxD = (steadyEnd - steadyStart) / MinimumNumberOfSamples
+    
+    # stage 1: if minD is larger than maxD, we cannot do subsampling
+    if minD >= maxD:
+        print ("Warning: Minimum Δ is larger than maximum Δ, cannot do subsampling! MinD: {}, MaxD: {}".format(minD, maxD))
+        subSamplingError = SubSamplingError.MinDGTMaxD
+        minD = maxD
+        # stage 2: plot IDC over Δ for minD to steadyEnd - steadyStart) / MinimumNumberOfSamples to see if we can do subsampling
+        # plot_idc_over_delta(time, d_max=maxD, t_start=steadyStart, duration=steadyEnd - steadyStart, label_prefix=f"{df_name}bfore_trimming_")
+        # return [], subSamplingError
+    avgD = (minD + maxD) * 0.5
+
+    # stage 2: plot IDC over Δ for minD to steadyEnd - steadyStart) / MinimumNumberOfSamples to see if we can do subsampling
+    deltas_valid, idc_values = plot_idc_over_delta(time, d_max=maxD, t_start=steadyStart, duration=steadyEnd - steadyStart, label_prefix=f"{df_name}test_bfore_trimming_")
+
+    # stage 2.1: print out the first derivative of IDC at Δ = avgD
+    # deriv, info = idc_derivative_at_delta(deltas_valid, idc_values, d1=avgD)
+    # deriv, info = idc_derivative_by_local_averaging(deltas_valid, idc_values, d1=avgD)
+    # print("Estimated derivative of exp:", df_name, "is", deriv)
+    # stage 2.1: print out the first derivative of IDC at Δ = minD
+    # deriv, info = idc_derivative_at_delta(deltas_valid, idc_values, d1=minD)
+    deriv, info = idc_derivative_by_local_averaging(deltas_valid, idc_values, d1=minD)
+    # print("Estimated derivative of exp:", df_name, "is", deriv)
+
+    # stage 3: see if we have enough packets to sample form
+    if len(time) < MinimumNumberOfSamples:
+        print ("Warning: Not enough e2e packets!")
+        subSamplingError = SubSamplingError.NotEnoughPackets + "+" + subSamplingError.value
+        return [], subSamplingError
+    
+    if deriv > 8e-6:
+        print ("Warning: IDC is increasing at Δ = {}, cannot do subsampling! Derivative: {}".format(minD, deriv))
+        subSamplingError = SubSamplingError.IDCITrsh + "+" + subSamplingError.value
+        return [], subSamplingError
+
+    # stage 4: distance-aware sampling to get the samples for estimation
+    # samples = distanceAwareSampling(time, 1.2 / maxD)
+    # samples = distanceAwareSampling(time, 1.0 / avgD)
+    samples = distanceAwareSampling(time, 1.0 / minD)
+
+    # stage 5: see if we have enough samples after distance-aware sampling
+    if len(samples) < (MinimumNumberOfSamples * 0.95):
+        print ("Warning: Not enough samples after distance-aware sampling!", "Got {}, expected {}".format(len(samples), MinimumNumberOfSamples))
+        subSamplingError = SubSamplingError.NotEnoughSamples + "+" + subSamplingError.value
+        return [], subSamplingError
+
+    # stage 6: plot IDC over Δ for the samples to see if the subsamplig went well
+    # plot_idc_over_delta(samples, d_min=minD, d_max=maxD, t_start=steadyStart, duration=steadyEnd - steadyStart, label_prefix=f"{df_name}after_trimming_withDA(woADtest)_maxD_")
+
+    return samples, subSamplingError
+
+    
+    #################################################
+    # aggregated_samples = []
+    # steps = 1
+    # for step in range(steps):
+    #     intervalStart = steadyStart + (steadyEnd - steadyStart) / steps * step
+    #     intervalEnd = steadyStart + (steadyEnd - steadyStart) / steps * (step + 1)
+    #     interval_times = time[(time >= intervalStart) & (time < intervalEnd)]
+    # #     # print("Interval from {} to {} has {} packets".format(intervalStart, intervalEnd, len(interval_times)))
+    # #     t_sel_, report = e2e_poisson_like_sampler(interval_times, N_min=len(interval_times) * 0.7, max_delta_for_idc=avg_interarrival_ * 5, df_name=df_name)
+    # #     # print("Poisson-like sampler selected {} packets".format(len(t_sel_)))
+    # #     # t_sel, intervalBrnval = find_samples_path(interval_times, txDelay, avg_interarrival_, df_name, samplingMethod, [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9])
+    # #     # print("Bernoulli sampler selected {} packets".format(len(t_sel)))
+    # #     if len(t_sel_) == 0:
+    # #         return []
+    # #     aggregated_samples.extend(t_sel_)
+
+    #     plot_idc_over_delta(interval_times, t_start=steadyStart, duration=steadyEnd - steadyStart, label_prefix=f"{df_name}bfore_trimming_")
+    #     t_sel_, info = trim_counts_round_robin_J_two_scales(interval_times)
     #     if len(t_sel_) == 0:
     #         return []
+    #     plot_idc_over_delta(t_sel_, t_start=steadyStart, duration=steadyEnd - steadyStart, label_prefix=f"{df_name}after_trimming_")
+    #     # X = info["X_counts"]   # original counts per Δ
+    #     # Y = info["Y_counts"]   # trimmed counts per Δ
+    #     # plot_bin_count_distributions(X, Y, title_suffix=" (Δ-bin)")
+    #     # t_sel_lambda =  info["Delta"] / float(Y.mean())
+    #     # plot_iat_distribution(interval_times, t_sel_, t_sel_lambda, title_suffix="")
+    #     # # for round in info["trace"]:
+    #     # #     print(round)
+    #     # print(info["trace"][-1])
     #     aggregated_samples.extend(t_sel_)
-        t_sel_, info = trim_counts_round_robin_J_two_scales(interval_times)
-        if len(t_sel_) == 0:
-            return []
-        # X = info["X_counts"]   # original counts per Δ
-        # Y = info["Y_counts"]   # trimmed counts per Δ
-        # plot_bin_count_distributions(X, Y, title_suffix=" (Δ-bin)")
-        # t_sel_lambda =  info["Delta"] / float(Y.mean())
-        # plot_iat_distribution(interval_times, t_sel_, t_sel_lambda, title_suffix="")
-        # # for round in info["trace"]:
-        # #     print(round)
-        # print(info["trace"][-1])
-        aggregated_samples.extend(t_sel_)
-    return aggregated_samples
-    # print("Delta:", info["Delta"])
-    # print("IDC(Δ)  :", info["initial_idc_by_factor"][1], "->", info["final_idc_by_factor"][1])
-    # print("IDC(2Δ) :", info["initial_idc_by_factor"].get(2), "->", info["final_idc_by_factor"].get(2))
-    # print("kept:", info["final_total"])
+    # return aggregated_samples
+    # # print("Delta:", info["Delta"])
+    # # print("IDC(Δ)  :", info["initial_idc_by_factor"][1], "->", info["final_idc_by_factor"][1])
+    # # print("IDC(2Δ) :", info["initial_idc_by_factor"].get(2), "->", info["final_idc_by_factor"].get(2))
+    # # print("kept:", info["final_total"])
     #################################################
     # aggregated_samples = []
     # max_sample_size_brnval = []
@@ -646,18 +714,26 @@ def find_samples_path_new(time, txDelay, avg_interarrival_=None, df_name=None, s
 def distanceAwareSampling(time, rate):
     interarrival = np.diff(time)
     probabilities = -np.expm1(-interarrival * rate)
-    tries = 20
-    while tries > 0:
-        selected_mask = bernoulli.rvs(probabilities, size=len(probabilities))
-        selected_times = time[1:][selected_mask == 1]
-        # check if the interarrival of selected times is exponential
-        if len(selected_times) > 1:
-            anderson_statistic, anderson_critical_values, _ = anderson(np.diff(selected_times), 'expon')
-            if anderson_statistic <= anderson_critical_values[2]:
-                return selected_times
-        tries -= 1
-    print("Failed to find exponentially distributed interarrival times after 20 tries.")
+    selected_mask = bernoulli.rvs(probabilities, size=len(probabilities))
+    selected_times = time[1:][selected_mask == 1]
+    if len(selected_times) > 1:
+            return selected_times
     return []
+
+    # interarrival = np.diff(time)
+    # probabilities = -np.expm1(-interarrival * rate)
+    # tries = 20
+    # while tries > 0:
+    #     selected_mask = bernoulli.rvs(probabilities, size=len(probabilities))
+    #     selected_times = time[1:][selected_mask == 1]
+    #     # check if the interarrival of selected times is exponential
+    #     if len(selected_times) > 1:
+    #         anderson_statistic, anderson_critical_values, _ = anderson(np.diff(selected_times), 'expon')
+    #         if anderson_statistic <= anderson_critical_values[2]:
+    #             return selected_times
+    #     tries -= 1
+    # print("Failed to find exponentially distributed interarrival times after 20 tries.")
+    # return []
 
 def poissonLikeSampling(time, rate, trsh):
     tries = 1
@@ -919,7 +995,7 @@ def calculate_offline_E2E_markingProb(full_df, df_res, checkColumn, txDelay, swt
     full_df_ = None
     return df_res
 
-def calculate_offline_E2E_delays(full_df, removeDrops, checkColumn, txDelay, df_res, df_name, passiveProbe, samplingMethod, steadyStart, steadyEnd):
+def calculate_offline_E2E_delays(full_df, removeDrops, checkColumn, txDelay, df_res, df_name, passiveProbe, samplingMethod, steadyStart, steadyEnd, samples_paths_aggregated_statistics=None):
     df_res['delay'] = {}
     for var in ['event']:
         for method in ['rightCont_timeAvg', 'leftCont_timeAvg', 'linearInterp_timeAvg', 'poisson_eventAvg', 'eventAvg']:
@@ -929,6 +1005,7 @@ def calculate_offline_E2E_delays(full_df, removeDrops, checkColumn, txDelay, df_
     if removeDrops:
         full_df_ = full_df_[full_df_[checkColumn] == 1]
     df_res['sampleSize']['delay'] = {}
+    df_res['subSamplingError']['delay'] = {}
     df_res['bias']['delay'] = {}
     for path in full_df_['Path'].unique():
         df = full_df_[full_df_['Path'] == path]
@@ -936,7 +1013,7 @@ def calculate_offline_E2E_delays(full_df, removeDrops, checkColumn, txDelay, df_
         df_res['totalPckts'][path] = len(df)
         time = df['SentTime'].values
         values = df['Delay'].values
-
+        subSamplingError = SubSamplingError.NoError
         rightCont_time_average = np.sum(values[:-1] * np.diff(time)) / (time[-1] - time[0])
         df_res['delay']['event_rightCont_timeAvg'][path] = rightCont_time_average
 
@@ -956,12 +1033,19 @@ def calculate_offline_E2E_delays(full_df, removeDrops, checkColumn, txDelay, df_
                 samples_times = []
         else:
             # samples_times = find_samples_path(time, txDelay, df_res['RTT'][path], df_name, samplingMethod)
-            samples_times = find_samples_path_new(time, txDelay, df_res['RTT'][path], df_name, samplingMethod, steadyStart, steadyEnd, steps=1)
+            if path in samples_paths_aggregated_statistics.keys():
+                if samples_paths_aggregated_statistics[path]['MinimumE2ESampleSize'] is not None:
+                   samples_times, subSamplingError = find_samples_path_new(time, txDelay, df_res['RTT'][path], df_name, samplingMethod, steadyStart, steadyEnd, steps=1, MinimumNumberOfSamples=samples_paths_aggregated_statistics[path]['MinimumE2ESampleSize'])
+                else:
+                    samples_times = []
+            else:
+                samples_times = []
 
         samples = df[df['SentTime'].isin(samples_times)]
         df_res['bias']['delay'][path] = (samples['PayloadSize'] - (samples['BitsTag'] / 8)).mean()
         # print("Calculating delay for path:", path, "with", len(time), "packets. is done! ")
         df_res['sampleSize']['delay'][path] = len(samples_times)
+        df_res['subSamplingError']['delay'][path] = subSamplingError
         samples_values = df[df['SentTime'].isin(samples_times)]['Delay'].values
         # print(df[df['SentTime'].isin(samples_times)])
         # samples_packetSizes = df[df['SentTime'].isin(samples_times)]['PayloadSize'].values
@@ -2825,9 +2909,9 @@ def trim_counts_round_robin_J_two_scales(
     max_rounds: int = 400,
     # objective weights
     w_idc1: float = 1.0,
-    w_idc2: float = 0.0,
+    w_idc2: float = 1.0,
     w_acf1: float = 1.0,
-    w_acf2: float = 0.0,
+    w_acf2: float = 1.0,
     allow_worsen: float = 0.0, # small slack (e.g., 1e-6) to avoid floating noise
     rng_seed: int = 0,
     return_debug: bool = True,
@@ -2939,29 +3023,6 @@ def trim_counts_round_robin_J_two_scales(
             cov1 = (P / (n - 1)) - (mu * mu)
             acf1 = cov1 / var
         return float(idc), float(acf1)
-    
-    # def _plot_idc_curve():
-    #     # Default candidate grid: from fine to coarse
-    #     d_min = 120.0 # 120 ns
-    #     d_max = 1000000.0 # 1 ms
-    #     deltas_for_idc = np.logspace(np.log10(d_min), np.log10(d_max), 250)
-    #     deltas_for_idc = np.asarray(deltas_for_idc, float)
-
-    #     # Original diagnostics + Δ*
-    #     CV0 = cv_iat(t)
-    # d0, idc0, mu0, var0 = idc_curve(t, deltas_for_idc)
-    # Delta_star = find_idc_plateau_delta(d0, idc0, slope_thresh=plateau_slope_thresh)
-    # plt.figure(figsize=(10, 6))
-    # plt.plot(d0, idc0, marker='o', linewidth=1)
-    # # print(f"Min d0: {d0.min()}, Max d0: {d0.max()}")
-    # # print(f"Min idc0: {idc0.min()}, Max idc0: {idc0.max()}")
-    # # plt.xscale('log'); plt.yscale('log')
-    # plt.axvline(Delta_star, linestyle='--')
-    # plt.title("Original IDC(Δ) with Δ* (vertical dashed)")
-    # plt.xlabel("Δ"); plt.ylabel("IDC(Δ)")
-    # plt.grid(True, which="both", linestyle="--", alpha=0.5)
-    # plt.tight_layout()
-    # plt.savefig(f"original_idc_plot_{df_name.split('/')[-1]}_{t[0]:.0f}_{t[-1]:.0f}.png")
 
     # def J(idc1, idc2):
     #     return w1 * abs(idc1 - target_idc) + w2 * abs(idc2 - target_idc)
@@ -3150,6 +3211,289 @@ def trim_counts_round_robin_J_two_scales(
         info["trace"] = trace
 
     return t_sel, info
+def idc_derivative_by_local_averaging(
+    deltas,
+    idc_values,
+    d1,
+    half_window_points=40,
+):
+    """
+    Estimate the derivative of IDC at delta = d1 using local averaging
+    on the left and right of d1.
+
+    The derivative is computed as:
+        (x2 - x1) / (t2 - t1)
+    where:
+        x1 = mean IDC on the left side of d1
+        x2 = mean IDC on the right side of d1
+        t1 = mean delta on the left side of d1
+        t2 = mean delta on the right side of d1
+
+    Parameters
+    ----------
+    deltas : array-like
+        1D strictly increasing array of delta values.
+    idc_values : array-like
+        1D array of IDC values corresponding to deltas.
+    d1 : float
+        Delta around which the derivative is estimated.
+    half_window_points : int
+        Number of points to use on each side of d1.
+
+    Returns
+    -------
+    derivative : float
+        Estimated derivative d(IDC)/d(delta) at d1.
+    info : dict
+        Diagnostic information about the computation.
+    """
+    deltas = np.asarray(deltas, dtype=float)
+    idc_values = np.asarray(idc_values, dtype=float)
+
+    if deltas.ndim != 1 or idc_values.ndim != 1:
+        raise ValueError("deltas and idc_values must be 1D arrays")
+    if len(deltas) != len(idc_values):
+        raise ValueError("deltas and idc_values must have the same length")
+    if len(deltas) < 2 * half_window_points + 1:
+        raise ValueError("Not enough points for the requested half_window_points")
+    if not np.all(np.diff(deltas) > 0):
+        raise ValueError("deltas must be strictly increasing")
+    if not (deltas[0] <= d1 <= deltas[-1]):
+        raise ValueError("d1 must lie within the range of deltas")
+
+    # Remove invalid points
+    mask = np.isfinite(deltas) & np.isfinite(idc_values)
+    deltas = deltas[mask]
+    idc_values = idc_values[mask]
+
+    # if len(deltas) < 2 * half_window_points + 1:
+    #     raise ValueError("Not enough finite points after filtering")
+
+    # Find the insertion location of d1
+    idx = np.searchsorted(deltas, d1)
+
+    # Left block: points immediately before d1
+    left_start = idx - half_window_points
+    left_end = idx
+
+    # Right block: points at/after d1
+    right_start = idx
+    right_end = idx + half_window_points
+
+    if left_start < 0 or right_end > len(deltas):
+        # raise ValueError("d1 is too close to the boundary for the requested window size")
+        left_start = max(0, left_start)
+        right_end = min(len(deltas), right_end)
+
+    left_deltas = deltas[left_start:left_end]
+    left_idc = idc_values[left_start:left_end]
+
+    right_deltas = deltas[right_start:right_end]
+    right_idc = idc_values[right_start:right_end]
+
+    t1 = np.mean(left_deltas)
+    t2 = np.mean(right_deltas)
+    x1 = np.mean(left_idc)
+    x2 = np.mean(right_idc)
+
+    if t2 == t1:
+        raise ValueError("Mean delta values on the two sides are equal; cannot divide by zero")
+
+    derivative = (x2 - x1) / (t2 - t1)
+
+    return derivative, {
+        "d1": d1,
+        "t1": t1,
+        "t2": t2,
+        "x1": x1,
+        "x2": x2,
+        "left_count": len(left_deltas),
+        "right_count": len(right_deltas),
+    }
+
+def idc_derivative_at_delta(
+    deltas,
+    idc_values,
+    d1,
+    half_window_points=2000,
+    poly_order=3,
+):
+    """
+    Estimate d(IDC)/d(delta) at delta = d1 from noisy IDC data
+    using a local polynomial fit.
+
+    Parameters
+    ----------
+    deltas : array-like
+        1D array of delta values.
+    idc_values : array-like
+        1D array of IDC(delta) values.
+    d1 : float
+        Delta at which to estimate the derivative.
+    half_window_points : int, default=40
+        Number of points taken on each side of d1 for local fitting.
+    poly_order : int, default=2
+        Degree of local polynomial. 2 is usually a good choice.
+
+    Returns
+    -------
+    derivative : float
+        Estimated first derivative d(IDC)/d(delta) at d1.
+    info : dict
+        Extra information about the fit.
+    """
+    deltas = np.asarray(deltas, dtype=float)
+    idc_values = np.asarray(idc_values, dtype=float)
+
+    if deltas.ndim != 1 or idc_values.ndim != 1:
+        raise ValueError("deltas and idc_values must be 1D arrays")
+    if len(deltas) != len(idc_values):
+        raise ValueError("deltas and idc_values must have the same length")
+    if len(deltas) < 5:
+        raise ValueError("Need at least 5 points")
+    if not np.all(np.diff(deltas) > 0):
+        raise ValueError("deltas must be strictly increasing")
+    if not (deltas[0] <= d1 <= deltas[-1]):
+        raise ValueError("d1 must lie within the delta range")
+
+    # Remove NaNs/infs
+    mask = np.isfinite(deltas) & np.isfinite(idc_values)
+    deltas = deltas[mask]
+    idc_values = idc_values[mask]
+
+    if len(deltas) < poly_order + 2:
+        raise ValueError("Not enough finite points after filtering")
+
+    # Find nearest point to d1
+    center_idx = np.argmin(np.abs(deltas - d1))
+
+    # Local window
+    # left = max(0, center_idx - half_window_points)
+    # right = min(len(deltas), center_idx + half_window_points + 1)
+    left = 0
+    right = len(deltas)
+
+    x = deltas[left:right]
+    y = idc_values[left:right]
+
+    if len(x) < poly_order + 2:
+        raise ValueError("Window too small for requested polynomial order")
+
+    # Center x around d1 for numerical stability
+    x_shift = x - d1
+
+    # Fit local polynomial y ≈ a0 + a1(x-d1) + a2(x-d1)^2 + ...
+    coeffs = np.polyfit(x_shift, y, deg=poly_order)
+
+    # Derivative at x=d1 corresponds to coefficient of first-order term
+    # np.polyfit returns highest degree first
+    derivative = np.polyder(np.poly1d(coeffs))(0.0)
+
+    return derivative, {
+        "d1": d1,
+        "nearest_delta": deltas[center_idx],
+        "window_left_delta": x[0],
+        "window_right_delta": x[-1],
+        "num_points_used": len(x),
+        "poly_order": poly_order,
+        "coeffs": coeffs,
+    }
+
+def plot_idc_over_delta(timestamps, d_min=30.0, d_max=5000000.0, t_start=None, duration=None, label_prefix=""):
+    """
+    Compute and plot IDC(delta) = Var(N_delta) / E[N_delta]
+    for event timestamps over a range of delta values.
+
+    Parameters
+    ----------
+    timestamps : array-like
+        1D array of event timestamps.
+    d_min : float
+        Minimum delta value.
+    d_max : float
+        Maximum delta value.
+    t_start : float or None
+        Optional start time for analysis (defaults to min timestamp).
+    duration : float or None
+        Optional duration for analysis (defaults to max timestamp - min timestamp).
+
+    Returns
+    -------
+    deltas_valid : np.ndarray
+        Delta values used.
+    idc_values : np.ndarray
+        IDC for each delta.
+    """
+    min_windows = 100
+    timestamps = np.asarray(timestamps, dtype=float)
+    deltas = np.logspace(np.log10(d_min), np.log10(d_max), 3000)
+
+    if timestamps.ndim != 1:
+        raise ValueError("timestamps must be a 1D array")
+    if deltas.ndim != 1:
+        raise ValueError("deltas must be a 1D array")
+    if len(timestamps) == 0:
+        raise ValueError("timestamps is empty")
+    if np.any(deltas <= 0):
+        raise ValueError("all deltas must be positive")
+
+    if t_start is not None and duration is not None:
+        timestamps = timestamps[timestamps >= t_start]
+        t_stop = t_start + duration
+    
+    else:
+        duration = timestamps[-1] - timestamps[0]
+        t_start = timestamps[0]
+        t_stop = t_start + duration
+
+    # keep only timestamps in the observation interval
+    timestamps = timestamps[(timestamps >= t_start) & (timestamps < t_stop)]
+
+    idc_values = []
+    deltas_valid = []
+
+    for delta in deltas:
+        n_full = duration // delta
+
+        if n_full < min_windows:
+            # idc_values.append(np.nan)
+            continue
+
+        end = t_start + n_full * delta
+        edges = t_start + np.arange(n_full + 1, dtype=np.int64) * delta
+
+        ts_use = timestamps[timestamps < end]
+        counts, _ = np.histogram(ts_use, bins=edges)
+
+        mean_count = counts.mean()
+        if mean_count == 0:
+            # idc_values.append(np.nan)
+            continue
+
+        var_count = counts.var(ddof=1)
+        idc_values.append(var_count / mean_count)
+        deltas_valid.append(delta)
+
+    idc_values = np.asarray(idc_values, dtype=float)
+    deltas_valid = np.asarray(deltas_valid, dtype=float)
+
+    fig, ax = plt.subplots(figsize=(30, 20))
+    ax.plot(deltas_valid, idc_values, marker="o")
+    ax.set_xlabel(r"$\Delta$(ns)")
+    ax.set_ylabel(r"$IDC(\Delta)$")
+    ax.set_title("Index of Dispersion for Counts vs Window Size")
+    ax.grid(True, alpha=0.5)
+    ax.xaxis.set_major_locator(MaxNLocator(nbins=15))
+    ax.yaxis.set_major_locator(MaxNLocator(nbins=20))
+
+    plt.tight_layout()
+    if label_prefix == "":
+        plt.savefig("idc_over_delta.png")
+    else:
+        plt.savefig(f"{label_prefix}idc_over_delta.png")
+    plt.close()
+
+    return deltas_valid, idc_values
 
 def find_delta_for_closest_mean_packets_per_bin(t, target_mean=1.0):
     """
@@ -3235,10 +3579,10 @@ def find_delta_for_empty_prob(t, p0_max=0.10):
         raise ValueError("Timestamp span must be positive.")
 
     # Default candidate grid: from fine to coarse
-    # smallest Δ: about T/max_bins, largest Δ: about T/min_bins
-    d_min = 120.0 # 120 ns
-    d_max = 500000.0 # 500 us
-    deltas = np.logspace(np.log10(d_min), np.log10(d_max), 200)
+    d_min = 30.0 # 30 ns
+    d_max = 1000000.0 # 1 ms
+    min_bins = 100
+    deltas = np.logspace(np.log10(d_min), np.log10(d_max), 3000)
 
     deltas = np.asarray(list(deltas), dtype=float)
 
@@ -3248,6 +3592,8 @@ def find_delta_for_empty_prob(t, p0_max=0.10):
         if not np.isfinite(Delta) or Delta <= 0:
             continue
         nbins = int(np.floor(T / Delta)) + 1
+        if nbins < min_bins:
+            continue
         # bins over [0, nbins*Delta]
         edges = np.linspace(0, nbins * Delta, nbins + 1)
         counts, _ = np.histogram(tt, bins=edges)
@@ -3283,7 +3629,9 @@ def find_delta_for_empty_prob(t, p0_max=0.10):
         # print("Delta:", Delta_star, "empty_prob_at_Delta:", p0_arr[ok[0]], "mean_count_at_Delta:", mu_arr[ok[0]])
         return Delta_star, mu_arr[ok[0]]
 
-def calculate_offline_computations_DC(__ns3_path, rate, segment, experiment, results_folder, steadyStart, steadyEnd, projectColumn, nHosts, removeDrops=True, checkColumn="", linkRates=[], linkDelays=[], swtichDstREDQueueDiscMaxSize=[0], stats=None, tsh=0.15, differentiationDelay=None, errorRate=None, load=None, passiveProbe=False, queue_names=[], flow_names=[]):
+def calculate_offline_computations_DC(__ns3_path, rate, segment, experiment, results_folder, steadyStart, steadyEnd, projectColumn, nHosts, removeDrops=True, checkColumn="", linkRates=[], linkDelays=[], 
+                                      swtichDstREDQueueDiscMaxSize=[0], stats=None, tsh=0.15, differentiationDelay=None, errorRate=None, load=None, passiveProbe=False, queue_names=[], flow_names=[],
+                                      samples_paths_aggregated_statistics=None):
     if differentiationDelay is not None and errorRate is not None:
         file_paths = glob.glob('{}/scratch/{}/{}/{}/D_{}/f_{}/{}/*_{}.csv'.format(__ns3_path, results_folder, rate, load, differentiationDelay, errorRate, experiment, segment))
     else:
@@ -3312,6 +3660,7 @@ def calculate_offline_computations_DC(__ns3_path, rate, segment, experiment, res
             df_res['last'] = {}
             df_res['workload'] = {}
             df_res['sampleSize'] = {}
+            df_res['subSamplingError'] = {}
             df_res['successProbMean'] = {}
             df_res['sampleSize'] = {}
             df_res['totalPckts'] = {}
@@ -3359,17 +3708,19 @@ def calculate_offline_computations_DC(__ns3_path, rate, segment, experiment, res
             df_res = calc_RTT_per_path(full_df, df_res, checkColumn, linkDelays)
             # print(f"DC {df_name} len full df after pruning: {len(full_df)}")
             samplingMethod = "Orig"
-            df_res = calculate_offline_E2E_lossRates_DC(full_df, df_res, checkColumn, txDelay_to_firstQ, df_name, passiveProbe, samplingMethod, steadyStart, steadyEnd)
-            df_res = calculate_offline_E2E_delays(full_df, removeDrops, checkColumn, txDelay_to_firstQ, df_res, results_folder, passiveProbe, samplingMethod, steadyStart, steadyEnd)
-            df_res = calculate_offline_E2E_workload(full_df, df_res, steadyStart, steadyEnd)
-            df_res = calculate_offline_E2E_markingProb(full_df, df_res, checkColumn, txDelay_to_firstQ, swtichDstREDQueueDiscMaxSize, linkRates[0], __ns3_path, tsh, df_name, passiveProbe, samplingMethod, steadyStart, steadyEnd)
-            # for all values in df_res['bias'], multiply them by 1000 to convert to ms
-            # TODO: The bias term for multihop setting is different 
-            for metric in df_res['bias']:
-                for path in df_res['bias'][metric]:
-                    df_res['bias'][metric][path] = abs(df_res['bias'][metric][path] * ((load * (nHosts - 1)) - (nHosts * rate)))
-                    if metric == 'delay':
-                        df_res['bias'][metric][path] = (df_res['bias'][metric][path] * 8) / linkRates[0]
+            # df_res = calculate_offline_E2E_lossRates_DC(full_df, df_res, checkColumn, txDelay_to_firstQ, df_name, passiveProbe, samplingMethod, steadyStart, steadyEnd)
+            df_res = calculate_offline_E2E_delays(full_df, removeDrops, checkColumn, txDelay_to_firstQ, df_res, 
+                                                  '{}/scratch/{}/{}/{}/{}/'.format(__ns3_path, results_folder, rate, load, experiment)
+                                                  , passiveProbe, samplingMethod, steadyStart, steadyEnd, samples_paths_aggregated_statistics[df_name])
+            # df_res = calculate_offline_E2E_workload(full_df, df_res, steadyStart, steadyEnd)
+            # df_res = calculate_offline_E2E_markingProb(full_df, df_res, checkColumn, txDelay_to_firstQ, swtichDstREDQueueDiscMaxSize, linkRates[0], __ns3_path, tsh, df_name, passiveProbe, samplingMethod, steadyStart, steadyEnd)
+            # # for all values in df_res['bias'], multiply them by 1000 to convert to ms
+            # # TODO: The bias term for multihop setting is different 
+            # for metric in df_res['bias']:
+            #     for path in df_res['bias'][metric]:
+            #         df_res['bias'][metric][path] = abs(df_res['bias'][metric][path] * ((load * (nHosts - 1)) - (nHosts * rate)))
+            #         if metric == 'delay':
+            #             df_res['bias'][metric][path] = (df_res['bias'][metric][path] * 8) / linkRates[0]
         if 'Poisson' in segment:
             if len(queue_names) != 0 and df_name not in queue_names:
                 continue
@@ -3649,6 +4000,12 @@ def calc_epsilon_loss_2(confidenceValue, segement_statistics):
 
 def calc_error(confidenceValue, segement_statistics):
     return (confidenceValue * segement_statistics['DelayStd']) / np.sqrt(segement_statistics['sampleSize'])
+
+def calc_min_e2e_samples(confidenceValue, maxError, samples_paths_aggregated_statistics):
+    if samples_paths_aggregated_statistics['MaxEpsilonDelay'] >= maxError:
+        print("Warning: MaxEpsilonDelay is greater than or equal to maxError. Cannot achieve the desired confidence level with the current data.")
+        return None
+    return int(((confidenceValue * samples_paths_aggregated_statistics['e2eDelayStd']) / ((maxError - samples_paths_aggregated_statistics['MaxEpsilonDelay']) * samples_paths_aggregated_statistics['DelayMean'])) ** 2)
 
 def sample_data(data, sample_column):
     exit = False
