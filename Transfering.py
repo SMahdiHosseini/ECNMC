@@ -23,6 +23,13 @@ def upload_files_to_s3(local_prefix, files, bucket_name, s3_key, config):
         client.upload_file(file_path, bucket_name, s3_key_path, Config=config)
         print("Upload completed.")
 
+def download_file_from_s3(bucket_name, s3_prefix, file_names, local_prefix):
+    ob = client.list_objects(Bucket=bucket_name, Prefix=s3_prefix)
+    for obj in ob['Contents']:
+        if obj['Key'].split('/')[-1] in file_names:
+            print(f"Downloading file \033[1;34;40m '{obj['Key']}' \033[0;37;40m from bucket \033[1;34;40m '{bucket_name}' \033[0;37;40m to \033[1;32;40m '{local_prefix}' \033[0;37;40m...")
+            client.download_file(bucket_name, obj['Key'], f"{local_prefix}/{obj['Key'].split('/')[-1]}")
+            print("Download completed.")
 
 s3_url = "https://s3.epfl.ch"
 rw_access_key = ""
@@ -49,15 +56,12 @@ transfer_config = TransferConfig(
 
 local_prefix = "/media/experiments/ns-allinone-3.41/ns-3.41/scratch/"
 s3_prefix = "dir/to/upload"
-not_uploaded_files = find_non_uploaded_files(bucket_name, s3_prefix, local_prefix)
-upload_files_to_s3(local_prefix, not_uploaded_files, bucket_name, s3_prefix, transfer_config)
 
+# not_uploaded_files = find_non_uploaded_files(bucket_name, s3_prefix, local_prefix)
+# upload_files_to_s3(local_prefix, not_uploaded_files, bucket_name, s3_prefix, transfer_config)
 
-# ob = client.list_objects(Bucket=bucket_name, Prefix=s3_prefix)
-# for key in ob['Contents']:
-#     print(key['Key'])
-#     # If you want the file directly
-#     client.download_file(bucket_name, key['Key'], key["Key"])
+download_file_from_s3(bucket_name, s3_prefix, ['Results_forward_DCW_DC24Servers_WOIncast.zip'], "../")
+
 
 #     # If you want to read the bytes directly (works with text-based files)
 #     content_object = client.get_object(Bucket=bucket_name, Key=key["Key"])
