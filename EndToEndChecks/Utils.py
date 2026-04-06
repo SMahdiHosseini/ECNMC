@@ -1846,86 +1846,206 @@ def calculate_offline_mixing(__ns3_path, rate, segment, experiment, results_fold
         dfs[df_name] = df_res
     return dfs
 
+def sample_total_queuing_delay(times, queue_names, dir_prefix):
+    pass
 
-def cross_correlation_delay_time_series(t_A, d_A, t_B, d_B, bin_width, max_lag, normalize=False, plot=False):
+def visualize_crosscorr_result(result, max_points_scatter=10000):
     """
-    Compute cross-correlation between two delay time processes using bin-based averaging.
+    Visualize the output of crosscorr_qdelay_vs_arrival_increment(...)
 
-    Parameters:
-    - t_A, d_A: timestamps and delays from source A
-    - t_B, d_B: timestamps and delays from source B
-    - bin_width: bin size in seconds (e.g., 0.01 for 10ms)
-    - max_lag: maximum lag (in seconds) for cross-correlation
-    - normalize: whether to normalize the correlation
-    - plot: whether to plot the result
-
-    Returns:
-    - lags: array of time lags (in seconds)
-    - corr: cross-correlation values
+    Parameters
+    ----------
+    result : dict
+        Output of crosscorr_qdelay_vs_arrival_increment(...)
+    max_points_scatter : int
+        Maximum number of points to show in the scatter plot.
+        If there are more points, a random subset is used.
     """
-    t_min = min(min(t_A), min(t_B))
-    t_max = max(max(t_A), max(t_B))
-    n_bins = int(np.ceil((t_max - t_min) / bin_width))
 
-    # Bin the delays
-    bins_A = [[] for _ in range(n_bins)]
-    bins_B = [[] for _ in range(n_bins)]
+    times = np.asarray(result["times"])
+    queue_delays = np.asarray(result["queue_delays"])
+    arrival_increment = np.asarray(result["arrival_increment"])
+    lags = np.asarray(result["lags"])
+    crosscorr = np.asarray(result["crosscorr"])
 
-    for t, d in zip(t_A, d_A):
-        idx = int((t - t_min) // bin_width)
-        if 0 <= idx < n_bins:
-            bins_A[idx].append(d)
+    fig, axes = plt.subplots(3, 1, figsize=(30, 40))
 
-    for t, d in zip(t_B, d_B):
-        idx = int((t - t_min) // bin_width)
-        if 0 <= idx < n_bins:
-            bins_B[idx].append(d)
+    # --------------------------------------------------
+    # 1) Time series plot
+    # --------------------------------------------------
+    ax = axes[0]
+    ax.plot(times, queue_delays, label="Queueing delay")
+    ax.plot(times, arrival_increment, label="Arrival increment")
+    ax.set_xlabel("Time")
+    ax.set_ylabel("Value")
+    ax.set_title("Aligned time series")
+    ax.legend()
+    ax.grid(True, alpha=0.3)
 
-    # Compute mean delay per bin (use NaN for empty bins)
-    mean_A = np.array([np.mean(b) if b else np.nan for b in bins_A])
-    mean_B = np.array([np.mean(b) if b else np.nan for b in bins_B])
+    # --------------------------------------------------
+    # 2) Scatter plot
+    # --------------------------------------------------
+    ax = axes[1]
 
-    # Keep only bins where both A and B have data
-    valid_mask = ~np.isnan(mean_A) & ~np.isnan(mean_B)
-    series_A = mean_A[valid_mask]
-    series_B = mean_B[valid_mask]
-    for i in range(len(series_A)):
-        print(series_A[i], series_B[i])
+    n = len(queue_delays)
+    if n > max_points_scatter:
+        rng = np.random.default_rng(0)
+        idx = rng.choice(n, size=max_points_scatter, replace=False)
+        x = queue_delays[idx]
+        y = arrival_increment[idx]
+    else:
+        x = queue_delays
+        y = arrival_increment
+
+    ax.scatter(x, y, alpha=0.4, s=10)
+    ax.set_xlabel("Queueing delay")
+    ax.set_ylabel("Arrival increment")
+    ax.set_title("Scatter: queueing delay vs arrival increment")
+    ax.grid(True, alpha=0.3)
+
+    # --------------------------------------------------
+    # 3) Cross-correlation
+    # --------------------------------------------------
+    ax = axes[2]
+    ax.plot(lags, crosscorr)
+    ax.axhline(0, linewidth=1)
+    ax.axvline(0, linewidth=1)
+    ax.set_xlabel("Lag (in arrivals)")
+    ax.set_ylabel("Cross-correlation")
+    ax.set_title("Cross-correlation")
+    ax.grid(True, alpha=0.3)
+
+    plt.tight_layout()
+    plt.savefig('crosscorr_qdelay_vs_arrival_increment.png')
+    plt.close()
+
+def sample_increments_of_arrivals(arrival_times, T, times_to_sample):
+    """
+    Sample arrival increments at specific times.
+
+    Parameters
+    ----------
+    arrival_times : array-like
+        1D array of arrival timestamps.
+    T : float
+        Window length used to count arrivals in [t, t+T).
+    times_to_sample : array-like
+        1D array of timestamps at which to sample arrival increment.
+    Returns
+    -------
+    arrival_increment_samples : array
+        Array of arrival increments at the specified times.
+    """
+    arrival_times = np.asarray(arrival_times, dtype=float)
+    times_to_sample = np.asarray(times_to_sample, dtype=float)
+
+    if arrival_times.ndim != 1 or times_to_sample.ndim != 1:
+        raise ValueError("arrival_times and times_to_sample must be 1D arrays.")
+    if len(arrival_times) == 0:
+        raise ValueError("arrival_times must be non-empty.")
+    if T <= 0:
+        raise ValueError("T must be positive.")
+
+    # Sort arrival times for searchsorted
+    arrival_times = np.sort(arrival_times)
+
+    left_idx = np.searchsorted(arrival_times, times_to_sample, side="left")
+    right_idx = np.searchsorted(arrival_times, times_to_sample + T, side="left")
+    arrival_increment_samples = right_idx - left_idx
+
+    return arrival_increment_samples
+
+def crosscorr_qdelay_vs_arrival_increments(
+    arrival_increments,
+    queue_delays,
+    times,
+    max_lag=None,
+    normalize=True,
+    subtract_mean=True,
+):
+    """
+    Compute the cross-correlation between queueing delay and arrival increments.
+
+    Parameters
+    ----------
+    arrival_increments : array-like
+        1D array of arrival increments.
+        Increment at time t_i is the number of arrivals in [t_i, t_i + T).
+    queue_delays : array-like
+        1D array of queueing delay values, one per timestamp.
+        queue_delays[i] is the queueing delay observed at times[i].
+    times : array-like
+        1D array of timestamps.
+    max_lag : int or None
+        Maximum lag in number of arrivals. If None, returns all lags.
+    normalize : bool
+        If True, return normalized cross-correlation.
+
+    Returns
+    -------
+    result : dict
+        {
+            "times": times,
+            "queue_delays": aligned queue delay series,
+            "arrival_increment": arrival_increments,
+            "lags": lags in sample index,
+            "crosscorr": cross-correlation values
+        }
+
+    Notes
+    -----
+    For each time t_i:
+        arrival_increments[i] = #{ arrivals in [t_i, t_i + T) }
+
+    Cross-correlation is computed between:
+        x[i] = queue_delays[i]
+        y[i] = arrival_increment[i]
+
+    With numpy.correlate(x, y, mode='full'), a positive lag means:
+        queue_delays earlier are correlated with future arrival increments.
+    """
+
+    arrival_increments = np.asarray(arrival_increments, dtype=float)
+    queue_delays = np.asarray(queue_delays, dtype=float)
+    times = np.asarray(times, dtype=float)
+
+    if arrival_increments.ndim != 1 or queue_delays.ndim != 1 or times.ndim != 1:
+        raise ValueError("arrival_increments, queue_delays, and times must be 1D arrays.")
+    if len(arrival_increments) != len(queue_delays) or len(arrival_increments) != len(times):
+        raise ValueError("arrival_increments, queue_delays, and times must have the same length.")
+    if len(arrival_increments) == 0:
+        raise ValueError("Inputs must be non-empty.")
+
+    x = queue_delays.astype(float).copy()
+    y = arrival_increments.astype(float).copy()
     
-    if len(series_A) < 2:
-        raise ValueError("Not enough overlapping bins with data to compute correlation.")
+    if subtract_mean:
+        x = x - x.mean()
+        y = y - y.mean()
 
-    # Normalize (zero mean)
+    corr = np.correlate(x, y, mode="full")
+    lags = np.arange(-len(x) + 1, len(x))
+
     if normalize:
-        series_A -= np.mean(series_A)
-        series_B -= np.mean(series_B)
+        denom = np.sqrt(np.sum(x**2) * np.sum(y**2))
+        if denom == 0:
+            raise ValueError("Cannot normalize because one series has zero energy.")
+        corr = corr / denom
 
-    # Compute full cross-correlation
-    corr = np.correlate(series_A, series_B, mode='full')
-    lags = np.arange(-len(series_A) + 1, len(series_A)) * bin_width
+    if max_lag is not None:
+        if max_lag < 0:
+            raise ValueError("max_lag must be non-negative.")
+        mask = np.abs(lags) <= max_lag
+        lags = lags[mask]
+        corr = corr[mask]
 
-    # Restrict lag range
-    mask = np.abs(lags) <= max_lag
-    lags = lags[mask]
-    corr = corr[mask]
-
-    if normalize and np.max(np.abs(corr)) > 0:
-        corr /= np.max(np.abs(corr))
-
-    # Plot
-    if plot:
-        plt.figure(figsize=(8, 4))
-        plt.plot(lags, corr, label='Cross-correlation')
-        plt.axvline(0, color='gray', linestyle='--', alpha=0.6)
-        plt.xlabel('Lag (s)')
-        plt.ylabel('Correlation')
-        plt.title('Cross-Correlation of Delay Time Series (Bin-Based)')
-        plt.grid(True)
-        plt.legend()
-        plt.tight_layout()
-        plt.show()
-
-    return lags, 
+    return {
+        "times": times,
+        "queue_delays": queue_delays,
+        "arrival_increment": arrival_increments,
+        "lags": lags,
+        "crosscorr": corr,
+    }
     
 
 def reconstructSignal(full_df_, linksRates, file_path):
@@ -3708,10 +3828,13 @@ def calculate_offline_computations_DC(__ns3_path, rate, segment, experiment, res
             df_res = calc_RTT_per_path(full_df, df_res, checkColumn, linkDelays)
             # print(f"DC {df_name} len full df after pruning: {len(full_df)}")
             samplingMethod = "Orig"
+            temp = full_df[full_df['Path'] == 0]
+            res = crosscorr_qdelay_vs_arrival_increments(temp['SentTime'], temp['Delay'], 50000)
+            visualize_crosscorr_result(res)
             # df_res = calculate_offline_E2E_lossRates_DC(full_df, df_res, checkColumn, txDelay_to_firstQ, df_name, passiveProbe, samplingMethod, steadyStart, steadyEnd)
-            df_res = calculate_offline_E2E_delays(full_df, removeDrops, checkColumn, txDelay_to_firstQ, df_res, 
-                                                  '{}/scratch/{}/{}/{}/{}/'.format(__ns3_path, results_folder, rate, load, experiment)
-                                                  , passiveProbe, samplingMethod, steadyStart, steadyEnd, samples_paths_aggregated_statistics[df_name])
+            # df_res = calculate_offline_E2E_delays(full_df, removeDrops, checkColumn, txDelay_to_firstQ, df_res, 
+            #                                       '{}/scratch/{}/{}/{}/{}/'.format(__ns3_path, results_folder, rate, load, experiment)
+            #                                       , passiveProbe, samplingMethod, steadyStart, steadyEnd, samples_paths_aggregated_statistics[df_name])
             # df_res = calculate_offline_E2E_workload(full_df, df_res, steadyStart, steadyEnd)
             # df_res = calculate_offline_E2E_markingProb(full_df, df_res, checkColumn, txDelay_to_firstQ, swtichDstREDQueueDiscMaxSize, linkRates[0], __ns3_path, tsh, df_name, passiveProbe, samplingMethod, steadyStart, steadyEnd)
             # # for all values in df_res['bias'], multiply them by 1000 to convert to ms
