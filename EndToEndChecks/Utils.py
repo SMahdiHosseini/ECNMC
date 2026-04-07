@@ -516,6 +516,23 @@ def calc_RTT_per_path(full_df, df_res, checkColumn, linkDelays):
     full_df_ = None
     return df_res
 
+def find_samples_path_ccf(arrival_times, steadyStart, steadyEnd, queue_names, file_path, linkDelays, linkRates, MinimumNumberOfSamples):
+    subSamplingError = SubSamplingError.NoError
+
+    # generate a series of time stamps between steadyStart and steadyEnd at intervals of 90 ns
+    times = np.arange(steadyStart, steadyEnd, 90)
+    # times = np.cumsum(np.random.exponential(90, size=(steadyEnd - steadyStart) // 90)) + steadyStart
+
+    times, queue_size_samples = sample_total_queue_size(times, queue_names, file_path, linkDelays, linkRates)
+    arrival_increments = sample_increments_of_arrivals(arrival_times, 8000, times)
+    res = crosscorr_qsize_vs_arrival_increments(arrival_increments, queue_size_samples, times)
+    visualize_crosscorr_result(res, file_path)
+    if len(arrival_times) < MinimumNumberOfSamples:
+        print ("Warning: Not enough e2e packets!")
+        subSamplingError = SubSamplingError.NotEnoughPackets + "+" + subSamplingError.value
+        return [], subSamplingError
+
+    return arrival_times, SubSamplingError.NoError
 
 def find_samples_path_new(time, txDelay, avg_interarrival_=None, df_name=None, samplingMethod='Orig', steadyStart=0, steadyEnd=1, steps=1, MinimumNumberOfSamples=0):
     subSamplingError = SubSamplingError.NoError
@@ -997,7 +1014,8 @@ def calculate_offline_E2E_markingProb(full_df, df_res, checkColumn, txDelay, swt
     full_df_ = None
     return df_res
 
-def calculate_offline_E2E_delays(full_df, removeDrops, checkColumn, txDelay, df_res, df_name, passiveProbe, samplingMethod, steadyStart, steadyEnd, samples_paths_aggregated_statistics=None):
+def calculate_offline_E2E_delays(full_df, removeDrops, checkColumn, txDelay, df_res, df_name, passiveProbe, samplingMethod, steadyStart, steadyEnd, 
+                                 samples_paths_aggregated_statistics=None, queue_names=None, linkDelays=None, linkRates=None):
     df_res['delay'] = {}
     for var in ['event']:
         for method in ['rightCont_timeAvg', 'leftCont_timeAvg', 'linearInterp_timeAvg', 'poisson_eventAvg', 'eventAvg']:
@@ -1037,7 +1055,8 @@ def calculate_offline_E2E_delays(full_df, removeDrops, checkColumn, txDelay, df_
             # samples_times = find_samples_path(time, txDelay, df_res['RTT'][path], df_name, samplingMethod)
             if path in samples_paths_aggregated_statistics.keys():
                 if samples_paths_aggregated_statistics[path]['MinimumE2ESampleSize'] is not None:
-                   samples_times, subSamplingError = find_samples_path_new(time, txDelay, df_res['RTT'][path], df_name, samplingMethod, steadyStart, steadyEnd, steps=1, MinimumNumberOfSamples=samples_paths_aggregated_statistics[path]['MinimumE2ESampleSize'])
+                #    samples_times, subSamplingError = find_samples_path_new(time, txDelay, df_res['RTT'][path], df_name, samplingMethod, steadyStart, steadyEnd, steps=1, MinimumNumberOfSamples=samples_paths_aggregated_statistics[path]['MinimumE2ESampleSize'])
+                    samples_times, subSamplingError = find_samples_path_ccf(time, steadyStart, steadyEnd, queue_names, df_name, linkDelays, linkRates, samples_paths_aggregated_statistics[path]['MinimumE2ESampleSize'])
                 else:
                     samples_times = []
             else:
@@ -1901,7 +1920,7 @@ def remove_nan_samples(times, queue_sizes):
     return times[valid_indices], queue_sizes[valid_indices]
 
 def sample_queue_size(times, file_path, link_rate):
-    print(f"Sampling total queue size from {file_path} with link rate {link_rate} bpns")
+    # print(f"Sampling total queue size from {file_path} with link rate {link_rate} bpns")
     full_df = pd.read_csv(file_path)
     full_df = full_df.sort_values(by=['Time', 'TotalQueueSize'], ascending=[True, False]).reset_index(drop=True)
 
@@ -1916,7 +1935,7 @@ def sample_total_queue_size(times, queue_names, dir_prefix, linkDelays, linkRate
     sample_times = np.asarray(times, dtype=float)
     invalid_indices = np.zeros(len(times), dtype=bool)
     for queue_name in queue_names:
-        file_path = dir_prefix.rsplit('/', 1)[0] + '/' + queue_name + '_PoissonSampler_queueSize.csv'
+        file_path = dir_prefix + queue_name + '_PoissonSampler_queueSize.csv'
         idx = queue_names.index(queue_name)
         queue_size_sample = sample_queue_size(sample_times, file_path, linkRates[idx])
         queue_size_samples[idx][~invalid_indices] = queue_size_sample
@@ -1930,74 +1949,84 @@ def sample_total_queue_size(times, queue_names, dir_prefix, linkDelays, linkRate
 
     return remove_nan_samples(times, np.sum(queue_size_samples, axis=0))
 
-def visualize_crosscorr_result(result, max_points_scatter=10000):
+def visualize_crosscorr_result(result, file_path, max_points_scatter=10000000):
     """
-    Visualize the output of crosscorr_qdelay_vs_arrival_increment(...)
+    Visualize the output of crosscorr_qsize_vs_arrival_increment(...)
 
     Parameters
     ----------
     result : dict
-        Output of crosscorr_qdelay_vs_arrival_increment(...)
+        Output of crosscorr_qsize_vs_arrival_increment(...)
     max_points_scatter : int
         Maximum number of points to show in the scatter plot.
         If there are more points, a random subset is used.
     """
 
     times = np.asarray(result["times"])
-    queue_delays = np.asarray(result["queue_delays"])
+    queue_sizes = np.asarray(result["queue_sizes"])
     arrival_increment = np.asarray(result["arrival_increment"])
     lags = np.asarray(result["lags"])
     crosscorr = np.asarray(result["crosscorr"])
+    lags_time = lags * np.mean(np.diff(times))  # convert lags from sample index to time
 
     fig, axes = plt.subplots(3, 1, figsize=(30, 40))
 
     # --------------------------------------------------
     # 1) Time series plot
     # --------------------------------------------------
-    ax = axes[0]
-    ax.plot(times, queue_delays, label="Queueing delay")
-    ax.plot(times, arrival_increment, label="Arrival increment")
-    ax.set_xlabel("Time")
-    ax.set_ylabel("Value")
-    ax.set_title("Aligned time series")
-    ax.legend()
-    ax.grid(True, alpha=0.3)
+    ax1 = axes[0]
 
+    # First axis: queue size
+    sc1 = ax1.scatter(times, queue_sizes, alpha=1.0, s=20, marker='o', label="Queue size", color='blue')
+    ax1.set_xlabel("Time")
+    ax1.set_ylabel("Queue size (B)")
+    ax1.grid(True, alpha=0.1)
+    ax2 = ax1.twinx()
+    sc2 = ax2.scatter(times, arrival_increment, alpha=1.0, s=20, marker='s', label="Arrival increments", color='red')
+    ax2.set_ylabel("Arrival increments")
+    handles = [sc1, sc2]
+    labels = [h.get_label() for h in handles]
+    ax1.legend(handles, labels, loc='best', fontsize=40, fancybox=True, shadow=True)
+
+    ax1.set_title("Aligned time series (dual axis)")
     # --------------------------------------------------
     # 2) Scatter plot
     # --------------------------------------------------
     ax = axes[1]
 
-    n = len(queue_delays)
+    n = len(queue_sizes)
     if n > max_points_scatter:
         rng = np.random.default_rng(0)
         idx = rng.choice(n, size=max_points_scatter, replace=False)
-        x = queue_delays[idx]
+        x = queue_sizes[idx]
         y = arrival_increment[idx]
     else:
-        x = queue_delays
+        x = queue_sizes
         y = arrival_increment
 
-    ax.scatter(x, y, alpha=0.4, s=10)
-    ax.set_xlabel("Queueing delay")
+    ax.scatter(x, y, alpha=1.0, s=20)
+    ax.set_xlabel("Queue size (B)")
     ax.set_ylabel("Arrival increment")
-    ax.set_title("Scatter: queueing delay vs arrival increment")
+    ax.set_title("Scatter: queueing size vs arrival increment")
     ax.grid(True, alpha=0.3)
 
     # --------------------------------------------------
     # 3) Cross-correlation
     # --------------------------------------------------
     ax = axes[2]
-    ax.plot(lags, crosscorr)
+    ax.plot(lags_time, crosscorr, marker='o', linestyle='-', markersize=4, linewidth=2)
     ax.axhline(0, linewidth=1)
     ax.axvline(0, linewidth=1)
-    ax.set_xlabel("Lag (in arrivals)")
+    ax.set_xlabel("Lag (ms)")
     ax.set_ylabel("Cross-correlation")
     ax.set_title("Cross-correlation")
-    ax.grid(True, alpha=0.3)
-
+    ax.grid(True, alpha=0.5)
+    ax.set_ylim(bottom=-0.4, top=1.0)
+    ax.set_yticks(np.arange(-0.4, 0.8, 0.2))
+    ax.set_xticks(np.arange(0, np.max(lags_time), max(lags_time) / 20), labels=[f"{float(t/1000000):.1f}" for t in np.arange(0, np.max(lags_time), max(lags_time) / 20)])
+    ax.tick_params(axis='y', labelsize=30)
     plt.tight_layout()
-    plt.savefig('crosscorr_qdelay_vs_arrival_increment.png')
+    plt.savefig(file_path + 'crosscorr_qsize_vs_arrival_increment.png')
     plt.close()
 
 def sample_increments_of_arrivals(arrival_times, T, times_to_sample):
@@ -2036,25 +2065,25 @@ def sample_increments_of_arrivals(arrival_times, T, times_to_sample):
 
     return arrival_increment_samples
 
-def crosscorr_qdelay_vs_arrival_increments(
+def crosscorr_qsize_vs_arrival_increments(
     arrival_increments,
-    queue_delays,
+    queue_sizes,
     times,
     max_lag=None,
     normalize=True,
     subtract_mean=True,
 ):
     """
-    Compute the cross-correlation between queueing delay and arrival increments.
+    Compute the cross-correlation between total queue size and arrival increments.
 
     Parameters
     ----------
     arrival_increments : array-like
         1D array of arrival increments.
         Increment at time t_i is the number of arrivals in [t_i, t_i + T).
-    queue_delays : array-like
-        1D array of queueing delay values, one per timestamp.
-        queue_delays[i] is the queueing delay observed at times[i].
+    queue_sizes : array-like
+        1D array of total queue size values, one per timestamp.
+        queue_sizes[i] is the total queue size observed at times[i].
     times : array-like
         1D array of timestamps.
     max_lag : int or None
@@ -2067,7 +2096,7 @@ def crosscorr_qdelay_vs_arrival_increments(
     result : dict
         {
             "times": times,
-            "queue_delays": aligned queue delay series,
+            "queue_sizes": aligned queue size series,
             "arrival_increment": arrival_increments,
             "lags": lags in sample index,
             "crosscorr": cross-correlation values
@@ -2079,25 +2108,25 @@ def crosscorr_qdelay_vs_arrival_increments(
         arrival_increments[i] = #{ arrivals in [t_i, t_i + T) }
 
     Cross-correlation is computed between:
-        x[i] = queue_delays[i]
+        x[i] = queue_sizes[i]
         y[i] = arrival_increment[i]
 
     With numpy.correlate(x, y, mode='full'), a positive lag means:
-        queue_delays earlier are correlated with future arrival increments.
+        queue_sizes earlier are correlated with future arrival increments.
     """
 
     arrival_increments = np.asarray(arrival_increments, dtype=float)
-    queue_delays = np.asarray(queue_delays, dtype=float)
+    queue_sizes = np.asarray(queue_sizes, dtype=float)
     times = np.asarray(times, dtype=float)
 
-    if arrival_increments.ndim != 1 or queue_delays.ndim != 1 or times.ndim != 1:
-        raise ValueError("arrival_increments, queue_delays, and times must be 1D arrays.")
-    if len(arrival_increments) != len(queue_delays) or len(arrival_increments) != len(times):
-        raise ValueError("arrival_increments, queue_delays, and times must have the same length.")
+    if arrival_increments.ndim != 1 or queue_sizes.ndim != 1 or times.ndim != 1:
+        raise ValueError("arrival_increments, queue_sizes, and times must be 1D arrays.")
+    if len(arrival_increments) != len(queue_sizes) or len(arrival_increments) != len(times):
+        raise ValueError("arrival_increments, queue_sizes, and times must have the same length.")
     if len(arrival_increments) == 0:
         raise ValueError("Inputs must be non-empty.")
 
-    x = queue_delays.astype(float).copy()
+    x = queue_sizes.astype(float).copy()
     y = arrival_increments.astype(float).copy()
     
     if subtract_mean:
@@ -2113,16 +2142,17 @@ def crosscorr_qdelay_vs_arrival_increments(
             raise ValueError("Cannot normalize because one series has zero energy.")
         corr = corr / denom
 
+    mask = lags >= 0
     if max_lag is not None:
         if max_lag < 0:
             raise ValueError("max_lag must be non-negative.")
-        mask = np.abs(lags) <= max_lag
-        lags = lags[mask]
-        corr = corr[mask]
+        mask = mask & (lags <= max_lag)
+    lags = lags[mask]
+    corr = corr[mask]
 
     return {
         "times": times,
-        "queue_delays": queue_delays,
+        "queue_sizes": queue_sizes,
         "arrival_increment": arrival_increments,
         "lags": lags,
         "crosscorr": corr,
@@ -3910,15 +3940,10 @@ def calculate_offline_computations_DC(__ns3_path, rate, segment, experiment, res
             # print(f"DC {df_name} len full df after pruning: {len(full_df)}")
             samplingMethod = "Orig"
             temp = full_df[full_df['Path'] == 0]
-            # generate a series of time stamps between steadyStart and steadyEnd at intervals of 100 ns
-            times = np.arange(steadyStart, steadyEnd + 100, 100)
-            times, queue_size_samples = sample_total_queue_size(times, queue_names, file_path, linkDelays, linkRates)
-            # res = crosscorr_qdelay_vs_arrival_increments(temp['SentTime'], temp['Delay'], 50000)
-            # visualize_crosscorr_result(res)
             # df_res = calculate_offline_E2E_lossRates_DC(full_df, df_res, checkColumn, txDelay_to_firstQ, df_name, passiveProbe, samplingMethod, steadyStart, steadyEnd)
-            # df_res = calculate_offline_E2E_delays(full_df, removeDrops, checkColumn, txDelay_to_firstQ, df_res, 
-            #                                       '{}/scratch/{}/{}/{}/{}/'.format(__ns3_path, results_folder, rate, load, experiment)
-            #                                       , passiveProbe, samplingMethod, steadyStart, steadyEnd, samples_paths_aggregated_statistics[df_name])
+            df_res = calculate_offline_E2E_delays(full_df, removeDrops, checkColumn, txDelay_to_firstQ, df_res, 
+                                                  '{}/scratch/{}/{}/{}/{}/'.format(__ns3_path, results_folder, rate, load, experiment)
+                                                  , passiveProbe, samplingMethod, steadyStart, steadyEnd, samples_paths_aggregated_statistics[df_name], queue_names, linkDelays, linkRates)
             # df_res = calculate_offline_E2E_workload(full_df, df_res, steadyStart, steadyEnd)
             # df_res = calculate_offline_E2E_markingProb(full_df, df_res, checkColumn, txDelay_to_firstQ, swtichDstREDQueueDiscMaxSize, linkRates[0], __ns3_path, tsh, df_name, passiveProbe, samplingMethod, steadyStart, steadyEnd)
             # # for all values in df_res['bias'], multiply them by 1000 to convert to ms
