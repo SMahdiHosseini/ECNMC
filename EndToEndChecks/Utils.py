@@ -12,6 +12,8 @@ from scipy.stats import poisson
 from math import factorial, exp
 import csv
 from collections import defaultdict
+from CCF import * 
+
 estimation_gain = 0.0625
 init_alpha = 1
 
@@ -1846,8 +1848,87 @@ def calculate_offline_mixing(__ns3_path, rate, segment, experiment, results_fold
         dfs[df_name] = df_res
     return dfs
 
-def sample_total_queuing_delay(times, queue_names, dir_prefix):
-    pass
+def sort_queues_by_path(queue_names, linkDelays, linkRates):
+    sorted_queues = [None] * len(queue_names)
+    sorted_linkRates = [None] * len(queue_names)
+    sorted_linkDelays = [None] * len(queue_names)
+    for queue_name in queue_names:
+        if queue_name[0] == 'T' and queue_name[2] == "A":
+            sorted_queues[0] = queue_name
+            sorted_linkRates[0] = linkRates[1]
+            sorted_linkDelays[0] = linkDelays[1]
+
+        if queue_name[0] == 'A' and queue_name[2] == "T":
+            sorted_queues[1] = queue_name
+            sorted_linkRates[1] = linkRates[2]
+            sorted_linkDelays[1] = linkDelays[2]
+
+        if queue_name[0] == 'T' and queue_name[2] == "H":
+            sorted_queues[2] = queue_name
+            sorted_linkRates[2] = linkRates[3]
+            sorted_linkDelays[2] = linkDelays[3]
+
+    return sorted_queues, sorted_linkDelays, sorted_linkRates
+
+def find_queue_size_at_time(times, queue_sizes, target_time, link_rate):
+    if times.size == 0:
+        return np.full(len(target_time), np.nan)
+
+    # find the position in times where target_time would be inserted to maintain order
+    positions = np.searchsorted(times, target_time, side='right') - 1
+    # invalid positions are those that are out of bounds (before the first time or after the last time)
+    invalid = positions < 0
+    invalid |= positions >= times.size - 1
+
+    positions = np.clip(positions, 0, times.size - 1)
+    
+    # Get queue sizes and times at matched positions
+    matched_queue_sizes = queue_sizes[positions]
+    matched_times = times[positions]
+    
+    # Apply draining logic: the queue size should decrease over time.
+    # Drained bytes = time_difference * link_rate / 8 (convert bits/ns to bytes/ns)
+    time_differences = np.asarray(target_time, dtype=float) - matched_times
+    drained_bytes = (time_differences * link_rate) / 8
+    
+    # Final queue size = original size - drained amount, but not less than zero
+    final_queue_sizes = np.maximum(0, matched_queue_sizes - drained_bytes)
+    final_queue_sizes[invalid] = np.nan  
+    return final_queue_sizes
+
+def remove_nan_samples(times, queue_sizes):
+    valid_indices = ~np.isnan(queue_sizes)
+    return times[valid_indices], queue_sizes[valid_indices]
+
+def sample_queue_size(times, file_path, link_rate):
+    print(f"Sampling total queue size from {file_path} with link rate {link_rate} bpns")
+    full_df = pd.read_csv(file_path)
+    full_df = full_df.sort_values(by=['Time', 'TotalQueueSize'], ascending=[True, False]).reset_index(drop=True)
+
+    sample_times = np.asarray(times, dtype=float)
+    df_times = full_df['Time'].to_numpy(dtype=float)
+    df_queue_sizes = full_df['TotalQueueSize'].to_numpy(dtype=float)
+    return find_queue_size_at_time(df_times, df_queue_sizes, sample_times, link_rate)
+
+def sample_total_queue_size(times, queue_names, dir_prefix, linkDelays, linkRates):
+    queue_names, linkDelays, linkRates = sort_queues_by_path(queue_names, linkDelays, linkRates)
+    queue_size_samples = np.zeros((len(queue_names), len(times)))
+    sample_times = np.asarray(times, dtype=float)
+    invalid_indices = np.zeros(len(times), dtype=bool)
+    for queue_name in queue_names:
+        file_path = dir_prefix.rsplit('/', 1)[0] + '/' + queue_name + '_PoissonSampler_queueSize.csv'
+        idx = queue_names.index(queue_name)
+        queue_size_sample = sample_queue_size(sample_times, file_path, linkRates[idx])
+        queue_size_samples[idx][~invalid_indices] = queue_size_sample
+        queue_size_samples[idx][invalid_indices] = np.nan
+        new_invalid_indices = np.isnan(queue_size_sample)
+
+        invalid_indices = np.isnan(queue_size_samples[idx])
+
+        # shift sampling times for next queue for valid indices only (where we have valid samples)
+        sample_times = sample_times[~new_invalid_indices] + queue_size_samples[idx][~invalid_indices] + linkDelays[idx]
+
+    return remove_nan_samples(times, np.sum(queue_size_samples, axis=0))
 
 def visualize_crosscorr_result(result, max_points_scatter=10000):
     """
@@ -3829,8 +3910,11 @@ def calculate_offline_computations_DC(__ns3_path, rate, segment, experiment, res
             # print(f"DC {df_name} len full df after pruning: {len(full_df)}")
             samplingMethod = "Orig"
             temp = full_df[full_df['Path'] == 0]
-            res = crosscorr_qdelay_vs_arrival_increments(temp['SentTime'], temp['Delay'], 50000)
-            visualize_crosscorr_result(res)
+            # generate a series of time stamps between steadyStart and steadyEnd at intervals of 100 ns
+            times = np.arange(steadyStart, steadyEnd + 100, 100)
+            times, queue_size_samples = sample_total_queue_size(times, queue_names, file_path, linkDelays, linkRates)
+            # res = crosscorr_qdelay_vs_arrival_increments(temp['SentTime'], temp['Delay'], 50000)
+            # visualize_crosscorr_result(res)
             # df_res = calculate_offline_E2E_lossRates_DC(full_df, df_res, checkColumn, txDelay_to_firstQ, df_name, passiveProbe, samplingMethod, steadyStart, steadyEnd)
             # df_res = calculate_offline_E2E_delays(full_df, removeDrops, checkColumn, txDelay_to_firstQ, df_res, 
             #                                       '{}/scratch/{}/{}/{}/{}/'.format(__ns3_path, results_folder, rate, load, experiment)
