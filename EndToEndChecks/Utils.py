@@ -519,18 +519,18 @@ def calc_RTT_per_path(full_df, df_res, checkColumn, linkDelays):
 def find_samples_path_ccf(arrival_times, steadyStart, steadyEnd, queue_names, file_path, linkDelays, linkRates, MinimumNumberOfSamples):
     subSamplingError = SubSamplingError.NoError
 
-    # generate a series of time stamps between steadyStart and steadyEnd at intervals of 90 ns
-    times = np.arange(steadyStart, steadyEnd, 90)
+    # generate a series of time stamps between steadyStart and steadyEnd at intervals of 900 ns
+    # times = np.arange(steadyStart, steadyEnd, 90)
     # times = np.cumsum(np.random.exponential(90, size=(steadyEnd - steadyStart) // 90)) + steadyStart
 
-    times, queue_size_samples = sample_total_queue_size(times, queue_names, file_path, linkDelays, linkRates)
-    arrival_increments = sample_increments_of_arrivals(arrival_times, 8000, times)
-    res = crosscorr_qsize_vs_arrival_increments(arrival_increments, queue_size_samples, times)
-    visualize_crosscorr_result(res, file_path)
-    if len(arrival_times) < MinimumNumberOfSamples:
-        print ("Warning: Not enough e2e packets!")
-        subSamplingError = SubSamplingError.NotEnoughPackets + "+" + subSamplingError.value
-        return [], subSamplingError
+    # times, queue_size_samples = sample_total_queue_size(times, queue_names, file_path, linkDelays, linkRates)
+    # arrival_increments = sample_increments_of_arrivals(arrival_times, 8000, times)
+    # res = crosscorr_qsize_vs_arrival_increments(arrival_increments, queue_size_samples, times)
+    # visualize_crosscorr_result(res, file_path)
+    # if len(arrival_times) < MinimumNumberOfSamples:
+    #     print ("Warning: Not enough e2e packets!")
+    #     subSamplingError = SubSamplingError.NotEnoughPackets + "+" + subSamplingError.value
+    #     return [], subSamplingError
 
     return arrival_times, SubSamplingError.NoError
 
@@ -1915,9 +1915,9 @@ def find_queue_size_at_time(times, queue_sizes, target_time, link_rate):
     final_queue_sizes[invalid] = np.nan  
     return final_queue_sizes
 
-def remove_nan_samples(times, queue_sizes):
+def remove_nan_samples(times, queue_sizes, queue_ECN_samples):
     valid_indices = ~np.isnan(queue_sizes)
-    return times[valid_indices], queue_sizes[valid_indices]
+    return times[valid_indices], queue_sizes[valid_indices], queue_ECN_samples[valid_indices]
 
 def sample_queue_size(times, file_path, link_rate):
     # print(f"Sampling total queue size from {file_path} with link rate {link_rate} bpns")
@@ -1929,9 +1929,13 @@ def sample_queue_size(times, file_path, link_rate):
     df_queue_sizes = full_df['TotalQueueSize'].to_numpy(dtype=float)
     return find_queue_size_at_time(df_times, df_queue_sizes, sample_times, link_rate)
 
-def sample_total_queue_size(times, queue_names, dir_prefix, linkDelays, linkRates):
+def sample_ECN_marking(queue_size_samples, queue_size_trsh):
+    return (queue_size_samples >= queue_size_trsh).astype(int)
+
+def sample_total_queue_size(times, queue_names, dir_prefix, linkDelays, linkRates, queue_size_trshs):
     queue_names, linkDelays, linkRates = sort_queues_by_path(queue_names, linkDelays, linkRates)
     queue_size_samples = np.zeros((len(queue_names), len(times)))
+    queue_ECN_samples = np.zeros((len(queue_names), len(times)), dtype=int)
     sample_times = np.asarray(times, dtype=float)
     invalid_indices = np.zeros(len(times), dtype=bool)
     for queue_name in queue_names:
@@ -1947,7 +1951,10 @@ def sample_total_queue_size(times, queue_names, dir_prefix, linkDelays, linkRate
         # shift sampling times for next queue for valid indices only (where we have valid samples)
         sample_times = sample_times[~new_invalid_indices] + queue_size_samples[idx][~invalid_indices] + linkDelays[idx]
 
-    return remove_nan_samples(times, np.sum(queue_size_samples, axis=0))
+        queue_ECN_samples[idx][~invalid_indices] = sample_ECN_marking(queue_size_samples[idx][~invalid_indices], queue_size_trshs[idx])
+        queue_ECN_samples[idx][invalid_indices] = 0
+
+    return remove_nan_samples(times, np.sum(queue_size_samples, axis=0), np.any(queue_ECN_samples, axis=0).astype(int))
 
 def visualize_crosscorr_result(result, file_path, max_points_scatter=10000000):
     """
@@ -2026,7 +2033,7 @@ def visualize_crosscorr_result(result, file_path, max_points_scatter=10000000):
     ax.set_xticks(np.arange(0, np.max(lags_time), max(lags_time) / 20), labels=[f"{float(t/1000000):.1f}" for t in np.arange(0, np.max(lags_time), max(lags_time) / 20)])
     ax.tick_params(axis='y', labelsize=30)
     plt.tight_layout()
-    plt.savefig(file_path + 'crosscorr_qsize_vs_arrival_increment.png')
+    plt.savefig(file_path + 'crosscorr_qsize_vs_arrival_increment_test.png')
     plt.close()
 
 def sample_increments_of_arrivals(arrival_times, T, times_to_sample):
@@ -2157,7 +2164,91 @@ def crosscorr_qsize_vs_arrival_increments(
         "lags": lags,
         "crosscorr": corr,
     }
-    
+
+def visualize_totalQ_and_ECN(times, queue_size_samples, queue_ECN_samples, file_path):
+    """
+    Visualize the total queue size and ECN marking samples over time.
+
+    Parameters
+    ----------
+    times : array-like
+        1D array of timestamps corresponding to the samples.
+    queue_size_samples : array-like
+        1D array of total queue size samples at the corresponding times.
+    queue_ECN_samples : array-like
+        1D array of ECN marking samples (0 or 1) at the corresponding times.
+    """
+
+    times = np.asarray(times)
+    queue_sizes = np.asarray(queue_size_samples)
+    queue_ECN_samples = np.asarray(queue_ECN_samples)
+
+    fig, axes = plt.subplots(2, 1, figsize=(60, 40))
+
+    # --------------------------------------------------
+    # 1) Time series plot of queue size
+    # --------------------------------------------------
+    ax1 = axes[0]
+
+    # First axis: queue size
+    sc1 = ax1.scatter(times, queue_sizes, alpha=1.0, s=20, marker='o', label="Queue size", color='blue')
+    ax1.set_xlabel("Time")
+    ax1.set_ylabel("Queue size (B)")
+    ax1.grid(True, alpha=0.7)
+    ax1.set_title("Total Queue Size over Time")
+    # --------------------------------------------------
+    # 2) Time series plot of ECN markings
+    # --------------------------------------------------
+    ax2 = axes[1]
+
+    # Second axis: ECN markings
+    sc2 = ax2.scatter(times, queue_ECN_samples, alpha=1.0, s=20, marker='s', label="ECN markings", color='red')
+    ax2.set_xlabel("Time")
+    ax2.set_ylabel("ECN marking (0 or 1)")
+    ax2.grid(True, alpha=0.7)
+    ax2.set_title("ECN Markings over Time")
+    plt.tight_layout()
+    plt.savefig(file_path + 'Q(t)_ECN(t).png')
+    plt.close()    
+
+def visualize_crosscorr_Ts(results, file_path):
+    """
+    Visualize the output of crosscorr_qsize_vs_arrival_increment(...)
+
+    Parameters
+    ----------
+    result : list of dict
+        Output of crosscorr_qsize_vs_arrival_increment(...)
+    max_points_scatter : int
+        Maximum number of points to show in the scatter plot.
+        If there are more points, a random subset is used.
+    """
+
+    times = np.asarray(results[0]["times"])
+    lags = np.asarray(results[0]["lags"])
+    lags_time = lags * np.mean(np.diff(times))  # convert lags from sample index to time
+
+    fig, ax = plt.subplots(1, 1, figsize=(30, 20))
+    # --------------------------------------------------
+    # 3) Cross-correlation for different T values
+    # --------------------------------------------------
+    for result in results:
+        crosscorr = np.asarray(result["crosscorr"])
+        ax.plot(lags_time, crosscorr, marker='o', linestyle='-', markersize=4, linewidth=2, label=f"T={result['T']} ns")
+    ax.axhline(0, linewidth=1)
+    ax.axvline(0, linewidth=1)
+    ax.set_xlabel("Lag (ms)")
+    ax.set_ylabel("Cross-correlation")
+    ax.set_title("Cross-correlation")
+    ax.grid(True, alpha=0.5)
+    ax.set_ylim(bottom=-0.4, top=1.0)
+    ax.set_yticks(np.arange(-0.4, 0.8, 0.2))
+    ax.set_xticks(np.arange(0, np.max(lags_time), max(lags_time) / 20), labels=[f"{float(t/1000000):.1f}" for t in np.arange(0, np.max(lags_time), max(lags_time) / 20)])
+    ax.tick_params(axis='y', labelsize=30)
+    ax.legend(fontsize=30)
+    plt.tight_layout()
+    plt.savefig(file_path + 'crosscorr_qsize_vs_arrival_increment_diff_T_Sampling_90ns.png')
+    plt.close()
 
 def reconstructSignal(full_df_, linksRates, file_path):
     from pynufft import NUFFT
@@ -3939,7 +4030,24 @@ def calculate_offline_computations_DC(__ns3_path, rate, segment, experiment, res
             df_res = calc_RTT_per_path(full_df, df_res, checkColumn, linkDelays)
             # print(f"DC {df_name} len full df after pruning: {len(full_df)}")
             samplingMethod = "Orig"
+
+            # plotting the queue size and ECN marking samples over time for the first queue in the path
+            # times = np.cumsum(np.random.exponential(10, size=(steadyEnd - steadyStart) // 10)) + steadyStart
+            # times, queue_size_samples, queue_ECN_samples = sample_total_queue_size(times, queue_names, ('/'.join(file_path.split('/')[:-1])) + '/', linkDelays, linkRates, np.array(swtichDstREDQueueDiscMaxSize, dtype=float) * tsh)
+            # visualize_totalQ_and_ECN(times, queue_size_samples, queue_ECN_samples, ('/'.join(file_path.split('/')[:-1])) + '/')
+            
+            # plotting the cross correlation between the queue size and increment of arrivals for different windows
             temp = full_df[full_df['Path'] == 0]
+            arrival_times = temp['SentTime'].values
+            times = np.cumsum(np.random.exponential(90, size=(steadyEnd - steadyStart) // 90)) + steadyStart
+            times, queue_size_samples, _ = sample_total_queue_size(times, queue_names, ('/'.join(file_path.split('/')[:-1])) + '/', linkDelays, linkRates, np.array(swtichDstREDQueueDiscMaxSize, dtype=float) * tsh)
+            res = []
+            for scale in [0.25, 0.5, 1, 2, 4, 16]:
+                increments = sample_increments_of_arrivals(arrival_times, 8000 * scale, times)
+                result = crosscorr_qsize_vs_arrival_increments(increments, queue_size_samples, times)
+                result['T'] = 8000 * scale
+                res.append(result)
+            visualize_crosscorr_Ts(res, ('/'.join(file_path.split('/')[:-1])) + '/')
             # df_res = calculate_offline_E2E_lossRates_DC(full_df, df_res, checkColumn, txDelay_to_firstQ, df_name, passiveProbe, samplingMethod, steadyStart, steadyEnd)
             df_res = calculate_offline_E2E_delays(full_df, removeDrops, checkColumn, txDelay_to_firstQ, df_res, 
                                                   '{}/scratch/{}/{}/{}/{}/'.format(__ns3_path, results_folder, rate, load, experiment)
