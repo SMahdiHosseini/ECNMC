@@ -423,39 +423,39 @@ TrafficControlLayer::Send(Ptr<NetDevice> device, Ptr<QueueDiscItem> item)
 }
 
 // ***** Mahdi Change ***** (START) ***** //
-uint32_t
-TrafficControlLayer::GetBytesInQueue(Ptr<NetDevice> device, Ptr<QueueDiscItem> item)
-{
-    NS_LOG_FUNCTION(this << device);
-    Ptr<NetDeviceQueueInterface> devQueueIface;
-    auto ndi = m_netDevices.find(device);
+// uint32_t
+// TrafficControlLayer::GetBytesInQueue(Ptr<NetDevice> device, Ptr<QueueDiscItem> item)
+// {
+//     NS_LOG_FUNCTION(this << device);
+//     Ptr<NetDeviceQueueInterface> devQueueIface;
+//     auto ndi = m_netDevices.find(device);
 
-    if (ndi != m_netDevices.end())
-    {
-        devQueueIface = ndi->second.m_ndqi;
-    }
+//     if (ndi != m_netDevices.end())
+//     {
+//         devQueueIface = ndi->second.m_ndqi;
+//     }
 
-    // determine the transmission queue of the device where the packet will be enqueued
-    std::size_t txq = 0;
-    if (devQueueIface && devQueueIface->GetNTxQueues() > 1)
-    {
-        txq = devQueueIface->GetSelectQueueCallback()(item);
-    }
+//     // determine the transmission queue of the device where the packet will be enqueued
+//     std::size_t txq = 0;
+//     if (devQueueIface && devQueueIface->GetNTxQueues() > 1)
+//     {
+//         txq = devQueueIface->GetSelectQueueCallback()(item);
+//     }
 
-    NS_ASSERT(!devQueueIface || txq < devQueueIface->GetNTxQueues());
-    Ptr<PointToPointNetDevice> p2pDev = DynamicCast<PointToPointNetDevice>(device);
-    if (ndi == m_netDevices.end() || !ndi->second.m_rootQueueDisc)
-    {
-        // std::cout << "No queue disc installed on device" << std::endl;
-        return p2pDev->GetNBytesTotal();
-    }
-    else
-    {
-        Ptr<QueueDisc> qDisc = ndi->second.m_queueDiscsToWake[txq];
-        NS_ASSERT(qDisc);
-        // std::cout << "Queue disc installed on device, Bytes in Queue: " << qDisc->GetNBytes() <<  " Packets in Queue: " << qDisc->GetNPackets() << " at time: " << Simulator::Now().GetNanoSeconds() << std::endl;
-        return (qDisc->GetNBytes() + (qDisc->GetNPackets() * 2) + p2pDev->GetNBytesTotal());
-    }
-}
+//     NS_ASSERT(!devQueueIface || txq < devQueueIface->GetNTxQueues());
+//     Ptr<PointToPointNetDevice> p2pDev = DynamicCast<PointToPointNetDevice>(device);
+//     if (ndi == m_netDevices.end() || !ndi->second.m_rootQueueDisc)
+//     {
+//         // std::cout << "No queue disc installed on device" << std::endl;
+//         return p2pDev->GetNBytesTotal();
+//     }
+//     else
+//     {
+//         Ptr<QueueDisc> qDisc = ndi->second.m_queueDiscsToWake[txq];
+//         NS_ASSERT(qDisc);
+//         // std::cout << "Queue disc installed on device, Bytes in Queue: " << qDisc->GetNBytes() <<  " Packets in Queue: " << qDisc->GetNPackets() << " at time: " << Simulator::Now().GetNanoSeconds() << std::endl;
+//         return (qDisc->GetNBytes() + (qDisc->GetNPackets() * 2) + p2pDev->GetNBytesTotal());
+//     }
+// }
 
 } // namespace ns3

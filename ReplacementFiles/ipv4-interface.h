@@ -83,7 +83,7 @@ class Ipv4Interface : public Object
      */
     void SetTrafficControl(Ptr<TrafficControlLayer> tc);
     // ***** Mahdi Change ***** (START) ***** //
-    uint32_t GetBytesInQueue(Ptr<Packet> p, const Ipv4Header& hdr, Ipv4Address dest);
+    // uint32_t GetBytesInQueue(Ptr<Packet> p, const Ipv4Header& hdr, Ipv4Address dest);
     // ***** Mahdi Change ***** (END) ***** //
 
     /**

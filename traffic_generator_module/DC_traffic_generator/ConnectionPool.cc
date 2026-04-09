@@ -135,16 +135,16 @@ void ConnectionPool::ProbeNetwork() {
     // // }
     // std::cout << "Clock tick at: " << Simulator::Now().GetNanoSeconds() << std::endl;
     // Probing with monitoring NetDevice state
-    Ptr<PointToPointNetDevice> netDevice = DynamicCast<PointToPointNetDevice>(senderNode->GetDevice(0));
-    if (netDevice->IsIdle()) {
-        // cout << "Probing: NetDevice is idle, sending probe." << endl;
-        uint32_t socketIndex = m_uniform->GetInteger(0, sockets.size() - 1);
-        DynamicCast<TcpSocketBase>(sockets[socketIndex])->SendProbe();
-    } else {
-        // cout << "Probing: NetDevice is busy, tagging current packet." << endl;
-        netDevice->TagCurrPacket();
-        // netDevice->TagClosestPacket();
-    }
+    // Ptr<PointToPointNetDevice> netDevice = DynamicCast<PointToPointNetDevice>(senderNode->GetDevice(0));
+    // if (netDevice->IsIdle()) {
+    //     // cout << "Probing: NetDevice is idle, sending probe." << endl;
+    //     uint32_t socketIndex = m_uniform->GetInteger(0, sockets.size() - 1);
+    //     DynamicCast<TcpSocketBase>(sockets[socketIndex])->SendProbe();
+    // } else {
+    //     // cout << "Probing: NetDevice is busy, tagging current packet." << endl;
+    //     netDevice->TagCurrPacket();
+    //     // netDevice->TagClosestPacket();
+    // }
     // Probing with monitoring TX queue
     // Ptr<DropTailQueue<Packet>> TxQueue = DynamicCast<DropTailQueue<Packet>>(DynamicCast<PointToPointNetDevice>(senderNode->GetDevice(0))->GetQueue());
     // if (TxQueue->GetNPackets() != 0) {

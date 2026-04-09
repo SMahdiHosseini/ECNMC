@@ -29,9 +29,9 @@
 #include "ns3/ptr.h"
 #include "ns3/queue-fwd.h"
 #include "ns3/traced-callback.h"
-#include "ns3/MeasurementProbeTag.h" // mahdi
-#include "ns3/ipv4-header.h" // mahdi
-#include "ns3/tcp-header.h" // mahdi
+// #include "ns3/MeasurementProbeTag.h" // mahdi
+// #include "ns3/ipv4-header.h" // mahdi
+// #include "ns3/tcp-header.h" // mahdi
 #include "ns3/core-module.h" // mahdi
 #include <cstring>
 
@@ -204,22 +204,22 @@ class PointToPointNetDevice : public NetDevice
     DataRate GetDataRate();
     uint32_t GetNBytesTotal();
     bool IsIdle();
-    void TagCurrPacket();
-    void TagClosestPacket();
-    void TagNextPacket();
-    void ManageNextSend(uint32_t mss);
-    void ResumeTransmission();
-    bool IsProbeNeeded();
+    // void TagCurrPacket();
+    // void TagClosestPacket();
+    // void TagNextPacket();
+    // void ManageNextSend(uint32_t mss);
+    // void ResumeTransmission();
+    // bool IsProbeNeeded();
     Ptr<Packet> CheckForFragmentation(Ptr<Packet> p);
     void FragmentPacket(Ptr<Packet> p, uint32_t firstFragmentSize);
-    void SetNextPoissonTick(Time nextTick);
+    // void SetNextPoissonTick(Time nextTick);
     void SetInterframeGapMean(Time t);
     std::vector<Ptr<Packet>> PrioPackets;
     /**
      * \brief Pair of a packet and an Ipv4 header.
      */
-    typedef std::pair<Ptr<Packet>, Ipv4Header> Ipv4PayloadHeaderPair;
-    void DoFragmentation(Ptr<Packet> packet, Ipv4Header& ipv4Header, uint32_t firstFragmentSize, std::list<Ipv4PayloadHeaderPair>& listFragments);
+    // typedef std::pair<Ptr<Packet>, Ipv4Header> Ipv4PayloadHeaderPair;
+    // void DoFragmentation(Ptr<Packet> packet, Ipv4Header& ipv4Header, uint32_t firstFragmentSize, std::list<Ipv4PayloadHeaderPair>& listFragments);
     // ****** Mahdi Change ***** (END) ***** //
 
   protected:

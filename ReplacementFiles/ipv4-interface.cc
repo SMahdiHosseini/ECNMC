@@ -428,93 +428,93 @@ Ipv4Interface::AddAddressCallback(
 }
 
 // ***** Mahdi Change ***** (START) ***** //
-uint32_t 
-Ipv4Interface::GetBytesInQueue(Ptr<Packet> p, const Ipv4Header& hdr, Ipv4Address dest)
-{
-     NS_LOG_FUNCTION(this << *p << dest);
+// uint32_t 
+// Ipv4Interface::GetBytesInQueue(Ptr<Packet> p, const Ipv4Header& hdr, Ipv4Address dest)
+// {
+//      NS_LOG_FUNCTION(this << *p << dest);
     
-    // Check for a loopback device, if it's the case we don't pass through
-    // traffic control layer
-    if (DynamicCast<LoopbackNetDevice>(m_device))
-    {
-        return 0;
-    }
+//     // Check for a loopback device, if it's the case we don't pass through
+//     // traffic control layer
+//     if (DynamicCast<LoopbackNetDevice>(m_device))
+//     {
+//         return 0;
+//     }
 
-    NS_ASSERT(m_tc);
+//     NS_ASSERT(m_tc);
 
-    // is this packet aimed at a local interface ?
-    for (auto i = m_ifaddrs.begin(); i != m_ifaddrs.end(); ++i)
-    {
-        if (dest == (*i).GetLocal())
-        {
-            return 0;
-        }
-    }
-    if (m_device->NeedsArp())
-    {
-        NS_LOG_LOGIC("Needs ARP"
-                     << " " << dest);
-        Ptr<ArpL3Protocol> arp = m_node->GetObject<ArpL3Protocol>();
-        Address hardwareDestination;
-        bool found = false;
-        if (dest.IsBroadcast())
-        {
-            NS_LOG_LOGIC("All-network Broadcast");
-            hardwareDestination = m_device->GetBroadcast();
-            found = true;
-        }
-        else if (dest.IsMulticast())
-        {
-            NS_LOG_LOGIC("IsMulticast");
-            NS_ASSERT_MSG(m_device->IsMulticast(),
-                          "ArpIpv4Interface::SendTo (): Sending multicast packet over "
-                          "non-multicast device");
+//     // is this packet aimed at a local interface ?
+//     for (auto i = m_ifaddrs.begin(); i != m_ifaddrs.end(); ++i)
+//     {
+//         if (dest == (*i).GetLocal())
+//         {
+//             return 0;
+//         }
+//     }
+//     if (m_device->NeedsArp())
+//     {
+//         NS_LOG_LOGIC("Needs ARP"
+//                      << " " << dest);
+//         Ptr<ArpL3Protocol> arp = m_node->GetObject<ArpL3Protocol>();
+//         Address hardwareDestination;
+//         bool found = false;
+//         if (dest.IsBroadcast())
+//         {
+//             NS_LOG_LOGIC("All-network Broadcast");
+//             hardwareDestination = m_device->GetBroadcast();
+//             found = true;
+//         }
+//         else if (dest.IsMulticast())
+//         {
+//             NS_LOG_LOGIC("IsMulticast");
+//             NS_ASSERT_MSG(m_device->IsMulticast(),
+//                           "ArpIpv4Interface::SendTo (): Sending multicast packet over "
+//                           "non-multicast device");
 
-            hardwareDestination = m_device->GetMulticast(dest);
-            found = true;
-        }
-        else
-        {
-            for (auto i = m_ifaddrs.begin(); i != m_ifaddrs.end(); ++i)
-            {
-                if (dest.IsSubnetDirectedBroadcast((*i).GetMask()))
-                {
-                    NS_LOG_LOGIC("Subnetwork Broadcast");
-                    hardwareDestination = m_device->GetBroadcast();
-                    found = true;
-                    break;
-                }
-            }
-            if (!found)
-            {
-                NS_LOG_LOGIC("ARP Lookup");
-                found = arp->Lookup(p, hdr, dest, m_device, m_cache, &hardwareDestination);
-            }
-        }
+//             hardwareDestination = m_device->GetMulticast(dest);
+//             found = true;
+//         }
+//         else
+//         {
+//             for (auto i = m_ifaddrs.begin(); i != m_ifaddrs.end(); ++i)
+//             {
+//                 if (dest.IsSubnetDirectedBroadcast((*i).GetMask()))
+//                 {
+//                     NS_LOG_LOGIC("Subnetwork Broadcast");
+//                     hardwareDestination = m_device->GetBroadcast();
+//                     found = true;
+//                     break;
+//                 }
+//             }
+//             if (!found)
+//             {
+//                 NS_LOG_LOGIC("ARP Lookup");
+//                 found = arp->Lookup(p, hdr, dest, m_device, m_cache, &hardwareDestination);
+//             }
+//         }
 
-        if (found)
-        {
-            NS_LOG_LOGIC("Address Resolved.  Send.");
-            return m_tc->GetBytesInQueue(m_device,
-                       Create<Ipv4QueueDiscItem>(p,
-                                                 hardwareDestination,
-                                                 Ipv4L3Protocol::PROT_NUMBER,
-                                                 hdr));
-        }
-        else
-        {
-            return 0;
-        }
-    }
-    else
-    {
-        NS_LOG_LOGIC("Doesn't need ARP");
-        return m_tc->GetBytesInQueue(m_device,
-                   Create<Ipv4QueueDiscItem>(p,
-                                             m_device->GetBroadcast(),
-                                             Ipv4L3Protocol::PROT_NUMBER,
-                                             hdr));
-    }
-}
+//         if (found)
+//         {
+//             NS_LOG_LOGIC("Address Resolved.  Send.");
+//             return m_tc->GetBytesInQueue(m_device,
+//                        Create<Ipv4QueueDiscItem>(p,
+//                                                  hardwareDestination,
+//                                                  Ipv4L3Protocol::PROT_NUMBER,
+//                                                  hdr));
+//         }
+//         else
+//         {
+//             return 0;
+//         }
+//     }
+//     else
+//     {
+//         NS_LOG_LOGIC("Doesn't need ARP");
+//         return m_tc->GetBytesInQueue(m_device,
+//                    Create<Ipv4QueueDiscItem>(p,
+//                                              m_device->GetBroadcast(),
+//                                              Ipv4L3Protocol::PROT_NUMBER,
+//                                              hdr));
+//     }
+// }
 // ***** Mahdi Change ***** (END) ***** //
 } // namespace ns3

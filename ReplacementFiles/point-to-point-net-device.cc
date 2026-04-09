@@ -38,61 +38,61 @@ NS_LOG_COMPONENT_DEFINE("PointToPointNetDevice");
 
 NS_OBJECT_ENSURE_REGISTERED(PointToPointNetDevice);
 // ****** Mahdi Change ***** (START) ***** //
-void
-PointToPointNetDevice::DoFragmentation(Ptr<Packet> packet, Ipv4Header& ipv4Header, uint32_t _firstFragmentSize, std::list<Ipv4PayloadHeaderPair>& listFragments)
-{
-    // BEWARE: here we do assume that the header options are not present.
-    // a much more complex handling is necessary in case there are options.
-    // If (when) IPv4 option headers will be implemented, the following code shall be changed.
-    // Of course also the reassemby code shall be changed as well.
+// void
+// PointToPointNetDevice::DoFragmentation(Ptr<Packet> packet, Ipv4Header& ipv4Header, uint32_t _firstFragmentSize, std::list<Ipv4PayloadHeaderPair>& listFragments)
+// {
+//     // BEWARE: here we do assume that the header options are not present.
+//     // a much more complex handling is necessary in case there are options.
+//     // If (when) IPv4 option headers will be implemented, the following code shall be changed.
+//     // Of course also the reassemby code shall be changed as well.
 
-    NS_LOG_FUNCTION(this << *packet << _firstFragmentSize << &listFragments);
+//     NS_LOG_FUNCTION(this << *packet << _firstFragmentSize << &listFragments);
 
-    Ptr<Packet> p = packet->Copy();
+//     Ptr<Packet> p = packet->Copy();
 
-    NS_ASSERT_MSG((ipv4Header.GetSerializedSize() == 5 * 4),
-                  "IPv4 fragmentation implementation only works without option headers.");
+//     NS_ASSERT_MSG((ipv4Header.GetSerializedSize() == 5 * 4),
+//                   "IPv4 fragmentation implementation only works without option headers.");
 
-    uint16_t offset = 0;
-    uint16_t originalOffset = ipv4Header.GetFragmentOffset();
-    uint32_t currentFragmentablePartSize = 0;
+//     uint16_t offset = 0;
+//     uint16_t originalOffset = ipv4Header.GetFragmentOffset();
+//     uint32_t currentFragmentablePartSize = 0;
 
-    // IPv4 fragments are all 8 bytes aligned but the last.
-    // The IP payload size is:
-    // floor( ( outIfaceMtu - ipv4Header.GetSerializedSize() ) /8 ) *8
-    uint32_t firstFragmentSize = (_firstFragmentSize - ipv4Header.GetSerializedSize()) & ~uint32_t(0x7);
-    TcpHeader tcpHeader;
-    p->PeekHeader(tcpHeader);
+//     // IPv4 fragments are all 8 bytes aligned but the last.
+//     // The IP payload size is:
+//     // floor( ( outIfaceMtu - ipv4Header.GetSerializedSize() ) /8 ) *8
+//     uint32_t firstFragmentSize = (_firstFragmentSize - ipv4Header.GetSerializedSize()) & ~uint32_t(0x7);
+//     TcpHeader tcpHeader;
+//     p->PeekHeader(tcpHeader);
 
-    NS_LOG_LOGIC("Fragmenting - Target Size: " << firstFragmentSize);
+//     NS_LOG_LOGIC("Fragmenting - Target Size: " << firstFragmentSize);
 
-    Ipv4Header firstFragmentHeader = ipv4Header;
-    currentFragmentablePartSize = firstFragmentSize;
-    firstFragmentHeader.SetMoreFragments();
-    firstFragmentHeader.SetFragmentOffset(offset + originalOffset);
-    firstFragmentHeader.SetPayloadSize(currentFragmentablePartSize);
-    if (Node::ChecksumEnabled())
-    {
-        firstFragmentHeader.EnableChecksum();
-    }
-    Ptr<Packet> firstFragment = p->CreateFragment(offset, currentFragmentablePartSize);
-    listFragments.emplace_back(firstFragment, firstFragmentHeader);
+//     Ipv4Header firstFragmentHeader = ipv4Header;
+//     currentFragmentablePartSize = firstFragmentSize;
+//     firstFragmentHeader.SetMoreFragments();
+//     firstFragmentHeader.SetFragmentOffset(offset + originalOffset);
+//     firstFragmentHeader.SetPayloadSize(currentFragmentablePartSize);
+//     if (Node::ChecksumEnabled())
+//     {
+//         firstFragmentHeader.EnableChecksum();
+//     }
+//     Ptr<Packet> firstFragment = p->CreateFragment(offset, currentFragmentablePartSize);
+//     listFragments.emplace_back(firstFragment, firstFragmentHeader);
 
-    // The rest of packet goes to the next fragment
-    offset += currentFragmentablePartSize;
-    Ipv4Header secondFragmentHeader = ipv4Header;
-    currentFragmentablePartSize = p->GetSize() - offset;
-    secondFragmentHeader.SetFragmentOffset(offset + originalOffset);
-    secondFragmentHeader.SetPayloadSize(currentFragmentablePartSize + tcpHeader.GetSerializedSize()); // add the TCP header size to the packet
-    secondFragmentHeader.SetLastFragment();
-    if (Node::ChecksumEnabled())
-    {
-        secondFragmentHeader.EnableChecksum();
-    }
-    Ptr<Packet> secondFragment = p->CreateFragment(offset, currentFragmentablePartSize);
-    secondFragment->AddHeader(tcpHeader); // add TCP header to the second fragment
-    listFragments.emplace_back(secondFragment, secondFragmentHeader);
-}
+//     // The rest of packet goes to the next fragment
+//     offset += currentFragmentablePartSize;
+//     Ipv4Header secondFragmentHeader = ipv4Header;
+//     currentFragmentablePartSize = p->GetSize() - offset;
+//     secondFragmentHeader.SetFragmentOffset(offset + originalOffset);
+//     secondFragmentHeader.SetPayloadSize(currentFragmentablePartSize + tcpHeader.GetSerializedSize()); // add the TCP header size to the packet
+//     secondFragmentHeader.SetLastFragment();
+//     if (Node::ChecksumEnabled())
+//     {
+//         secondFragmentHeader.EnableChecksum();
+//     }
+//     Ptr<Packet> secondFragment = p->CreateFragment(offset, currentFragmentablePartSize);
+//     secondFragment->AddHeader(tcpHeader); // add TCP header to the second fragment
+//     listFragments.emplace_back(secondFragment, secondFragmentHeader);
+// }
 // ****** Mahdi Change ***** (END) ***** //
 
 TypeId
@@ -323,236 +323,236 @@ PointToPointNetDevice::IsIdle()
     return (m_txMachineState == READY && m_queue->IsEmpty());
 }
 
-void
-PointToPointNetDevice::TagCurrPacket()
-{   
-    NS_LOG_FUNCTION(this);
-    NS_ASSERT_MSG(m_currentPkt, "PointToPointNetDevice::TagCurrPacket(): m_currentPkt zero");
-    NS_ASSERT_MSG(m_lastTxStart != Seconds(0), "PointToPointNetDevice::TagCurrPacket(): m_lastTxStart zero");
-    MeasurementProbeTagWithBits tag;
-    uint32_t transmittedBits = m_bps.GetBitRate() * (Simulator::Now() - m_lastTxStart).GetSeconds();
+// void
+// PointToPointNetDevice::TagCurrPacket()
+// {   
+//     NS_LOG_FUNCTION(this);
+//     NS_ASSERT_MSG(m_currentPkt, "PointToPointNetDevice::TagCurrPacket(): m_currentPkt zero");
+//     NS_ASSERT_MSG(m_lastTxStart != Seconds(0), "PointToPointNetDevice::TagCurrPacket(): m_lastTxStart zero");
+//     MeasurementProbeTagWithBits tag;
+//     uint32_t transmittedBits = m_bps.GetBitRate() * (Simulator::Now() - m_lastTxStart).GetSeconds();
     
-    Ptr<Packet> pktCopy = m_currentPkt->Copy();
-    PppHeader ppp;
-    pktCopy->RemoveHeader(ppp);
-    Ipv4Header ipv4;
-    pktCopy->RemoveHeader(ipv4);
-    // std::cout << " ### PointToPointNetDevice ### Tagging current packet: " << ipv4.GetIdentification() << std::endl;
+//     Ptr<Packet> pktCopy = m_currentPkt->Copy();
+//     PppHeader ppp;
+//     pktCopy->RemoveHeader(ppp);
+//     Ipv4Header ipv4;
+//     pktCopy->RemoveHeader(ipv4);
+//     // std::cout << " ### PointToPointNetDevice ### Tagging current packet: " << ipv4.GetIdentification() << std::endl;
 
-    // check if the current packet already has a tag
-    if (m_currentPkt->PeekPacketTag(tag))
-    {
-        MeasurementProbeTagWithBits newTag = tag; // Copy existing tag
-        newTag.SetBitFlag(transmittedBits);
-        m_currentPkt->RemovePacketTag(tag); // Remove old tag
-        // Add the new tag with updated bits
-        m_currentPkt->AddPacketTag(newTag);
-    }
-    else
-    {
-        tag.SetFlag(true);
-        tag.SetBitFlag(transmittedBits);
-        m_currentPkt->AddPacketTag(tag);
-    }
-}
+//     // check if the current packet already has a tag
+//     if (m_currentPkt->PeekPacketTag(tag))
+//     {
+//         MeasurementProbeTagWithBits newTag = tag; // Copy existing tag
+//         newTag.SetBitFlag(transmittedBits);
+//         m_currentPkt->RemovePacketTag(tag); // Remove old tag
+//         // Add the new tag with updated bits
+//         m_currentPkt->AddPacketTag(newTag);
+//     }
+//     else
+//     {
+//         tag.SetFlag(true);
+//         tag.SetBitFlag(transmittedBits);
+//         m_currentPkt->AddPacketTag(tag);
+//     }
+// }
 
-void
-PointToPointNetDevice::TagClosestPacket()
-{
-    NS_LOG_FUNCTION(this);
-    NS_ASSERT_MSG(m_currentPkt, "PointToPointNetDevice::TagCurrPacket(): m_currentPkt zero");
-    NS_ASSERT_MSG(m_lastTxStart != Seconds(0), "PointToPointNetDevice::TagCurrPacket(): m_lastTxStart zero");
+// void
+// PointToPointNetDevice::TagClosestPacket()
+// {
+//     NS_LOG_FUNCTION(this);
+//     NS_ASSERT_MSG(m_currentPkt, "PointToPointNetDevice::TagCurrPacket(): m_currentPkt zero");
+//     NS_ASSERT_MSG(m_lastTxStart != Seconds(0), "PointToPointNetDevice::TagCurrPacket(): m_lastTxStart zero");
 
-    MeasurementProbeTagWithBits tag;
-    Time fromTheLast = Simulator::Now() - m_lastTxEnd;
-    Time toTheNext = m_bps.CalculateBytesTxTime(m_currentPkt->GetSize()) - (Simulator::Now() - m_lastTxStart);
-    // std::cout << "fromTheLast: " << fromTheLast.GetNanoSeconds() << ", toTheNext: " << toTheNext.GetNanoSeconds() << std::endl;
-    if (fromTheLast > toTheNext)
-    {
-        // std::cout << "Tagging current packet: ";
-        // m_currentPkt->Print(std::cout);
-        // std::cout << std::endl;
-        if (m_currentPkt->PeekPacketTag(tag))
-        {
-            MeasurementProbeTagWithBits newTag = tag; // Copy existing tag
-            newTag.SetBitFlag(1);
-            m_currentPkt->RemovePacketTag(tag); // Remove old tag
-            // Add the new tag with updated bits
-            m_currentPkt->AddPacketTag(newTag);
-        }
-        else
-        {
-            tag.SetFlag(true);
-            tag.SetBitFlag(1);
-            m_currentPkt->AddPacketTag(tag);
-        }
-    }
-    else
-    {
-        // std::cout << "Tagging last packet: ";
-        // m_lastPkt->Print(std::cout);
-        // std::cout << std::endl;
-        if (m_lastPkt->PeekPacketTag(tag))
-        {
-            MeasurementProbeTagWithBits newTag = tag; // Copy existing tag
-            newTag.SetBitFlag(1);
-            m_lastPkt->RemovePacketTag(tag); // Remove old tag
-            // Add the new tag with updated bits
-            m_lastPkt->AddPacketTag(newTag);
-        }
-        else
-        {
-            tag.SetFlag(true);
-            tag.SetBitFlag(1);
-            m_lastPkt->AddPacketTag(tag);
-        }
-        // overriwting the tag
-        m_phyTxEndTrace(m_lastPkt);
-    }
-}
-void
-PointToPointNetDevice::ManageNextSend(uint32_t mss)
-{
-    if (!m_isHalted) 
-    {
-        m_remainedHaltTime = m_bps.CalculateBytesTxTime(mss) + m_channel->GetDelay();
-        m_haltStartTime = Simulator::Now();
-        m_isHalted = true;
-        m_tagNext = true;
-        // std::cout << " ### PointToPointNetDevice ### Device is halted for " << m_remainedHaltTime.GetNanoSeconds() << " at time: " << Simulator::Now().GetNanoSeconds() << std::endl;
-        Simulator::Schedule(m_bps.CalculateBytesTxTime(mss / 2), &PointToPointNetDevice::ResumeTransmission, this);
-    }
-}
+//     MeasurementProbeTagWithBits tag;
+//     Time fromTheLast = Simulator::Now() - m_lastTxEnd;
+//     Time toTheNext = m_bps.CalculateBytesTxTime(m_currentPkt->GetSize()) - (Simulator::Now() - m_lastTxStart);
+//     // std::cout << "fromTheLast: " << fromTheLast.GetNanoSeconds() << ", toTheNext: " << toTheNext.GetNanoSeconds() << std::endl;
+//     if (fromTheLast > toTheNext)
+//     {
+//         // std::cout << "Tagging current packet: ";
+//         // m_currentPkt->Print(std::cout);
+//         // std::cout << std::endl;
+//         if (m_currentPkt->PeekPacketTag(tag))
+//         {
+//             MeasurementProbeTagWithBits newTag = tag; // Copy existing tag
+//             newTag.SetBitFlag(1);
+//             m_currentPkt->RemovePacketTag(tag); // Remove old tag
+//             // Add the new tag with updated bits
+//             m_currentPkt->AddPacketTag(newTag);
+//         }
+//         else
+//         {
+//             tag.SetFlag(true);
+//             tag.SetBitFlag(1);
+//             m_currentPkt->AddPacketTag(tag);
+//         }
+//     }
+//     else
+//     {
+//         // std::cout << "Tagging last packet: ";
+//         // m_lastPkt->Print(std::cout);
+//         // std::cout << std::endl;
+//         if (m_lastPkt->PeekPacketTag(tag))
+//         {
+//             MeasurementProbeTagWithBits newTag = tag; // Copy existing tag
+//             newTag.SetBitFlag(1);
+//             m_lastPkt->RemovePacketTag(tag); // Remove old tag
+//             // Add the new tag with updated bits
+//             m_lastPkt->AddPacketTag(newTag);
+//         }
+//         else
+//         {
+//             tag.SetFlag(true);
+//             tag.SetBitFlag(1);
+//             m_lastPkt->AddPacketTag(tag);
+//         }
+//         // overriwting the tag
+//         m_phyTxEndTrace(m_lastPkt);
+//     }
+// }
+// void
+// PointToPointNetDevice::ManageNextSend(uint32_t mss)
+// {
+//     if (!m_isHalted) 
+//     {
+//         m_remainedHaltTime = m_bps.CalculateBytesTxTime(mss) + m_channel->GetDelay();
+//         m_haltStartTime = Simulator::Now();
+//         m_isHalted = true;
+//         m_tagNext = true;
+//         // std::cout << " ### PointToPointNetDevice ### Device is halted for " << m_remainedHaltTime.GetNanoSeconds() << " at time: " << Simulator::Now().GetNanoSeconds() << std::endl;
+//         Simulator::Schedule(m_bps.CalculateBytesTxTime(mss / 2), &PointToPointNetDevice::ResumeTransmission, this);
+//     }
+// }
 
-void
-PointToPointNetDevice::ResumeTransmission()
-{
-    NS_LOG_FUNCTION(this);
-    Ptr<const Packet> p = m_queue->Peek();
-    if (p)
-    {
-        m_remainedHaltTime -= (Simulator::Now() - m_haltStartTime);
-        m_remainedHaltTime -= (m_bps.CalculateBytesTxTime(p->GetSize()) + m_channel->GetDelay());
-        if (m_remainedHaltTime <= Seconds(0))
-        {
-            m_isHalted = false;
-            m_haltStartTime = Seconds(0);
-            m_remainedHaltTime = Seconds(0);
-            // std::cout << " ### PointToPointNetDevice ### Device is resumed at time: " << Simulator::Now().GetNanoSeconds() << std::endl;
-            Ptr<Packet> pkt = m_queue->Dequeue();
-            if (m_tagNext)
-            {
-                MeasurementProbeTagWithBits tag;
-                tag.SetFlag(true);
-                tag.SetBitFlag(0);
-                pkt->AddPacketTag(tag);
-                m_tagNext = false;
-            }
-            m_snifferTrace(pkt);
-            m_promiscSnifferTrace(pkt);
-            // ****** Mahdi Change ***** (START) ***** //
-            m_startTxOutTrace(pkt);
-            // ****** Mahdi Change ***** (END) ***** //
-            TransmitStart(pkt);
-        }
-        else
-        {
-            // std::cout << " ### PointToPointNetDevice ### Device is still halted, remaining time: " << m_remainedHaltTime.GetNanoSeconds() << " at time: " << Simulator::Now().GetNanoSeconds() << std::endl;
-            Simulator::Schedule(m_remainedHaltTime, &PointToPointNetDevice::ResumeTransmission, this);
-        }
-    }
-    else
-    {
-        m_isHalted = false;
-        m_haltStartTime = Seconds(0);
-        m_remainedHaltTime = Seconds(0);
-        // std::cout << " ### PointToPointNetDevice ### No packet to resume transmission at time: " << Simulator::Now().GetNanoSeconds() << std::endl;
-    }
-}
+// void
+// PointToPointNetDevice::ResumeTransmission()
+// {
+//     NS_LOG_FUNCTION(this);
+//     Ptr<const Packet> p = m_queue->Peek();
+//     if (p)
+//     {
+//         m_remainedHaltTime -= (Simulator::Now() - m_haltStartTime);
+//         m_remainedHaltTime -= (m_bps.CalculateBytesTxTime(p->GetSize()) + m_channel->GetDelay());
+//         if (m_remainedHaltTime <= Seconds(0))
+//         {
+//             m_isHalted = false;
+//             m_haltStartTime = Seconds(0);
+//             m_remainedHaltTime = Seconds(0);
+//             // std::cout << " ### PointToPointNetDevice ### Device is resumed at time: " << Simulator::Now().GetNanoSeconds() << std::endl;
+//             Ptr<Packet> pkt = m_queue->Dequeue();
+//             if (m_tagNext)
+//             {
+//                 MeasurementProbeTagWithBits tag;
+//                 tag.SetFlag(true);
+//                 tag.SetBitFlag(0);
+//                 pkt->AddPacketTag(tag);
+//                 m_tagNext = false;
+//             }
+//             m_snifferTrace(pkt);
+//             m_promiscSnifferTrace(pkt);
+//             // ****** Mahdi Change ***** (START) ***** //
+//             m_startTxOutTrace(pkt);
+//             // ****** Mahdi Change ***** (END) ***** //
+//             TransmitStart(pkt);
+//         }
+//         else
+//         {
+//             // std::cout << " ### PointToPointNetDevice ### Device is still halted, remaining time: " << m_remainedHaltTime.GetNanoSeconds() << " at time: " << Simulator::Now().GetNanoSeconds() << std::endl;
+//             Simulator::Schedule(m_remainedHaltTime, &PointToPointNetDevice::ResumeTransmission, this);
+//         }
+//     }
+//     else
+//     {
+//         m_isHalted = false;
+//         m_haltStartTime = Seconds(0);
+//         m_remainedHaltTime = Seconds(0);
+//         // std::cout << " ### PointToPointNetDevice ### No packet to resume transmission at time: " << Simulator::Now().GetNanoSeconds() << std::endl;
+//     }
+// }
 
-void
-PointToPointNetDevice::TagNextPacket()
-{
-    NS_LOG_FUNCTION(this);
-    m_tagNext = true;
-}
+// void
+// PointToPointNetDevice::TagNextPacket()
+// {
+//     NS_LOG_FUNCTION(this);
+//     m_tagNext = true;
+// }
 
-bool
-PointToPointNetDevice::IsProbeNeeded()
-{
-    NS_LOG_FUNCTION(this);
-    // Check if the current packet is not null
-    if (m_currentPkt)
-    {
-        uint32_t remainedBytes = m_currentPkt->GetSize() - (m_bps.GetBitRate() * (Simulator::Now() - m_lastTxStart).GetSeconds() / 8);
-        // std::cout << "Remained bytes in current packet: " << remainedBytes << std::endl;
-        if (remainedBytes > m_probeThreshold)
-        {
-            // std::cout << "Probe needed: " << remainedBytes << " bytes remaining." << std::endl;
-            return true;
-        }
-        // std::cout << "No probe needed, current packet is sufficient." << std::endl;
-        TagCurrPacket(); // Tag the current packet if it is not needed for probing
-    }
-    // std::cout << "no packet is sent, probe needed." << std::endl;
-    return true;
-}
+// bool
+// PointToPointNetDevice::IsProbeNeeded()
+// {
+//     NS_LOG_FUNCTION(this);
+//     // Check if the current packet is not null
+//     if (m_currentPkt)
+//     {
+//         uint32_t remainedBytes = m_currentPkt->GetSize() - (m_bps.GetBitRate() * (Simulator::Now() - m_lastTxStart).GetSeconds() / 8);
+//         // std::cout << "Remained bytes in current packet: " << remainedBytes << std::endl;
+//         if (remainedBytes > m_probeThreshold)
+//         {
+//             // std::cout << "Probe needed: " << remainedBytes << " bytes remaining." << std::endl;
+//             return true;
+//         }
+//         // std::cout << "No probe needed, current packet is sufficient." << std::endl;
+//         TagCurrPacket(); // Tag the current packet if it is not needed for probing
+//     }
+//     // std::cout << "no packet is sent, probe needed." << std::endl;
+//     return true;
+// }
 
 void
 PointToPointNetDevice::FragmentPacket(Ptr<Packet> p, uint32_t firstFragmentSize)
 {
     NS_LOG_FUNCTION(this);
-    // std::cout << "Fragmenting packet: " << std::endl;
-    // p->Print(std::cout);
-    // std::cout << std::endl;
-    std::list<Ipv4PayloadHeaderPair> listFragments;
+    // // std::cout << "Fragmenting packet: " << std::endl;
+    // // p->Print(std::cout);
+    // // std::cout << std::endl;
+    // std::list<Ipv4PayloadHeaderPair> listFragments;
 
-    // std::cout << "before PPP remove: "; 
-    // p->Print(std::cout);
+    // // std::cout << "before PPP remove: "; 
+    // // p->Print(std::cout);
 
 
-    PppHeader pppHeader;
-    p->RemoveHeader(pppHeader);
+    // PppHeader pppHeader;
+    // p->RemoveHeader(pppHeader);
 
-    // std::cout << "\nAfter PPP remove: ";
-    // p->Print(std::cout);
-    // std::cout << std::endl;
+    // // std::cout << "\nAfter PPP remove: ";
+    // // p->Print(std::cout);
+    // // std::cout << std::endl;
 
-    Ipv4Header ipv4Header;
-    p->RemoveHeader(ipv4Header);
+    // Ipv4Header ipv4Header;
+    // p->RemoveHeader(ipv4Header);
 
-    // std::cout << "After IPv4 remove: ";
-    // p->Print(std::cout);
-    // std::cout << std::endl;
+    // // std::cout << "After IPv4 remove: ";
+    // // p->Print(std::cout);
+    // // std::cout << std::endl;
 
-    DoFragmentation(p, ipv4Header, firstFragmentSize, listFragments);
+    // DoFragmentation(p, ipv4Header, firstFragmentSize, listFragments);
 
-    // std::cout << "After fragmentation: " << std::endl;
-    for (auto it = listFragments.begin(); it != listFragments.end(); it++)
-    {
-        // std::cout << "before AddHeader: ";
-        // it->first->Print(std::cout);
-        // std::cout << std::endl;
-        it->first->AddHeader(it->second);
-        // std::cout << "after AddHeader: ";
-        // it->first->Print(std::cout);
-        // std::cout << std::endl;
-        it->first->AddHeader(pppHeader);
-        // std::cout << "after AddHeader: ";
-        // it->first->Print(std::cout);
-        // std::cout << std::endl;
-        PrioPackets.push_back(it->first);
-    }
-    // std::cout << "Fragmented packet into " << listFragments.size() << " fragments." << std::endl;
+    // // std::cout << "After fragmentation: " << std::endl;
+    // for (auto it = listFragments.begin(); it != listFragments.end(); it++)
+    // {
+    //     // std::cout << "before AddHeader: ";
+    //     // it->first->Print(std::cout);
+    //     // std::cout << std::endl;
+    //     it->first->AddHeader(it->second);
+    //     // std::cout << "after AddHeader: ";
+    //     // it->first->Print(std::cout);
+    //     // std::cout << std::endl;
+    //     it->first->AddHeader(pppHeader);
+    //     // std::cout << "after AddHeader: ";
+    //     // it->first->Print(std::cout);
+    //     // std::cout << std::endl;
+    //     PrioPackets.push_back(it->first);
+    // }
+    // // std::cout << "Fragmented packet into " << listFragments.size() << " fragments." << std::endl;
 
 }
 
-void
-PointToPointNetDevice::SetNextPoissonTick(Time nextTick)
-{
-    NS_LOG_FUNCTION(this << nextTick.As(Time::S));
-    m_nextPoissonTick = nextTick + Simulator::Now();
-}
+// void
+// PointToPointNetDevice::SetNextPoissonTick(Time nextTick)
+// {
+//     NS_LOG_FUNCTION(this << nextTick.As(Time::S));
+//     m_nextPoissonTick = nextTick + Simulator::Now();
+// }
 
 Ptr<Packet>
 PointToPointNetDevice::CheckForFragmentation(Ptr<Packet> p)

@@ -1,5 +1,6 @@
 //
 // Created by Mahdi on 13.08.25.
+// copied in src/network/utils/MeasurementProbeTag.h and add to the cmake file
 //
 
 #ifndef MEASUREMENT_PROBE_TAG_H
@@ -7,8 +8,9 @@
 
 #include "ns3/tag.h"
 
-using namespace ns3;
-using namespace std;
+namespace ns3
+{
+
 /**
  * \brief Tag for the measurement probe
  */
@@ -76,7 +78,7 @@ class MeasurementProbeTagWithBits : public MeasurementProbeTag
      *
      * \returns the flag
      */
-    vector<uint32_t> GetBitsFlag() const;
+    std::vector<uint32_t> GetBitsFlag() const;
 
     /**
      * \brief Get the type ID.
@@ -112,6 +114,7 @@ class MeasurementProbeTagWithBits : public MeasurementProbeTag
     }
 
   private:
-    vector<uint32_t> m_bits; //!< the flags to indicate the measurement probe bits
+    std::vector<uint32_t> m_bits; //!< the flags to indicate the measurement probe bits
 };
+} // namespace ns3
 #endif // MEASUREMENT_PROBE_TAG_H

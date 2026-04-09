@@ -149,7 +149,7 @@ class TrafficControlLayer : public Object
     virtual void ScanDevices();
     
     // ***** Mahdi Change ***** (START) ***** //
-    uint32_t GetBytesInQueue(Ptr<NetDevice> device, Ptr<QueueDiscItem> item);
+    // uint32_t GetBytesInQueue(Ptr<NetDevice> device, Ptr<QueueDiscItem> item);
     // ***** Mahdi Change ***** (END) ***** //
 
     /**

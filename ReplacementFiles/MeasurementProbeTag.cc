@@ -4,6 +4,8 @@
 
 #include "MeasurementProbeTag.h"
 
+namespace ns3
+{
 
 MeasurementProbeTag::MeasurementProbeTag()
 {
@@ -71,7 +73,7 @@ MeasurementProbeTagWithBits::SetBitFlag(uint32_t flag)
     m_bits.push_back(flag);
 }
 
-vector<uint32_t>
+std::vector<uint32_t>
 MeasurementProbeTagWithBits::GetBitsFlag() const
 {
     return m_bits;
@@ -131,4 +133,6 @@ MeasurementProbeTagWithBits::Print(std::ostream& os) const
     {
         os << bit << " ";
     }
+}
+
 }
