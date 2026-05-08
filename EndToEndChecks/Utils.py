@@ -15,6 +15,7 @@ from scipy.stats import bernoulli, ks_2samp
 from math import factorial, exp
 import csv
 from collections import defaultdict
+import pprint
 
 estimation_gain = 0.0625
 init_alpha = 1
@@ -25,6 +26,7 @@ class SubSamplingError(str, Enum):
     NotEnoughPackets = 'NotEnoughPackets'
     NotEnoughSamples = 'NotEnoughSamples'
     IDCITrsh = 'IDCITrsh'
+    NotPoisson = 'NotPoisson'
 
 class PacketCDF:
     def __init__(self):
@@ -519,24 +521,115 @@ def calc_RTT_per_path(full_df, df_res, checkColumn, linkDelays):
     return df_res
 
 def find_samples_path_ccf(arrival_times, steadyStart, steadyEnd, queue_names, file_path, linkDelays, linkRates, queue_size_trshs, MinimumNumberOfSamples):
+    result = {}
     subSamplingError = SubSamplingError.NoError
 
-    times = np.arange(steadyStart, steadyEnd, 90)
+    # times = np.arange(steadyStart, steadyEnd, 90)
     # times = np.cumsum(np.random.exponential(90, size=(steadyEnd - steadyStart) // 90)) + steadyStart
-    T = 8000 * 16
-    times, queue_size_samples, _ = sample_total_queue_size(times, queue_names, file_path, linkDelays, linkRates, queue_size_trshs)
-    arrival_increments = sample_increments_of_arrivals(arrival_times, T, times)
-    res = crosscorr_qsize_vs_arrival_increments(arrival_increments, queue_size_samples, times)
-    visualize_crosscorr_result(res, file_path)
-    res_auto = autocorr_arrival_increments(arrival_increments)
-    res_auto["times"] = times
-    visualize_autocorr_result(res_auto, file_path, T)
+    # T = 8000 * 16
+    # times, queue_size_samples, _, _ = sample_total_queue_size(times, queue_names, file_path, linkDelays, linkRates, queue_size_trshs)
+    # arrival_increments = sample_increments_of_arrivals(arrival_times, T, times)
+    # res = crosscorr_qsize_vs_arrival_increments(arrival_increments, queue_size_samples, times)
+    # band = 1.96 / np.sqrt(len(arrival_increments))
+    # ccf = res['crosscorr']
+    # result['e2eVsSwitchCCFpercntg'] = len(np.where((ccf < -band) | (ccf > band))[0]) / len(ccf) * 100
+    # result['e2eVsSwitchMaxCCF'] = np.max(np.abs(ccf))
+    result['e2eVsSwitchCCFpercntg'] = np.nan
+    result['e2eVsSwitchMaxCCF'] = np.nan
+    lags, chi_squared_statistic = chi_squared_test(arrival_times, steadyStart, steadyEnd) 
+    out_of_band = [lag for lag, r in zip(lags, chi_squared_statistic) if r]
+    result['e2eCorrArrivals'] = (min(out_of_band), len(out_of_band), len(lags))
+    # visualize_crosscorr_result(res, file_path)
+    # res_auto = autocorr_arrival_increments(arrival_increments)
+    # res_auto["times"] = times
+    # visualize_autocorr_result(res_auto, file_path, T)
     if len(arrival_times) < MinimumNumberOfSamples:
         print ("Warning: Not enough e2e packets!")
         subSamplingError = SubSamplingError.NotEnoughPackets + "+" + subSamplingError.value
-        return [], subSamplingError
+        return [], subSamplingError, result
 
-    return arrival_times, SubSamplingError.NoError
+    return arrival_times, SubSamplingError.NoError, result
+
+def remove_randomly_within_lag(arrival_times, T, steadyStart, steadyEnd, lag, initial_p):
+    # Randomly pick one arrival within each lag window, and remove the others
+    # print("Removing randomly within lag", lag, "with initial probability", initial_p)
+    times = np.arange(steadyStart, steadyEnd, lag * T)
+    arrivals_idxs_per_bin = sample_increments_of_arrivals(arrival_times, lag * T, times, event_type="idx")
+    round = 0
+    keep_idx = []
+    while True:
+        keep_idx = []
+        for idxs in arrivals_idxs_per_bin:
+            if len(idxs) > 1:
+                keep_idx.append(np.random.choice(idxs, size=1, replace=False)[0])
+                # keep_idx.append(idxs[0])
+            elif len(idxs) == 1:
+                keep_idx.append(idxs[0])
+        keep_idx = np.array(keep_idx, dtype=int)
+        # run a random thinning with probability p to further reduce the number of samples
+        keep_idx = keep_idx[np.random.rand(len(keep_idx)) < initial_p]
+        mask = np.zeros(len(arrival_times), dtype=bool)
+        mask[keep_idx] = True
+        lags, res, chi2_res = chi_squared_test(arrival_times[mask], steadyStart, steadyEnd, lags=[lag])
+        if res[0] == False:
+            # print("No significant dependence at lag", lag, ". Stopping iteration.")
+            break
+        if len(keep_idx) < 100:
+            # print("Not enough samples left after thinning. Stopping iteration.")
+            break
+        round += 1
+        initial_p *= 0.95
+        # print("Round", round, "thinning with probability", initial_p, "number of samples left:", len(keep_idx), "out of total", len(arrival_times))
+
+    mask = np.zeros(len(arrival_times), dtype=bool)
+    mask[keep_idx] = True
+    return mask
+
+def find_samples_path_chi_squared_test(arrival_times, steadyStart, steadyEnd, MinimumNumberOfSamples):
+    result = {}
+    subSamplingError = SubSamplingError.NoError.value
+    result['e2eVsSwitchCCFpercntg'] = np.nan
+    result['e2eVsSwitchMaxCCF'] = np.nan
+
+    correlated_lags = []
+    round = 0
+    initial_p = 1.0
+    while True:
+        # print("\n############# after round", round, "#############")
+        # print("Arrivals: ", len(arrival_times))
+        # rel, w1, lam_hat = rel_w1_to_exp_fit(arrival_times)
+        # print("***** Exponential Fit *****")
+        # print("Relative Error:", rel)
+        # print("Wasserstein-1 Distance:", w1)
+        # print("Estimated Lambda:", lam_hat)
+        lags, res, chi2 = chi_squared_test(arrival_times, steadyStart, steadyEnd)
+        correlated_lags = [lag for lag, r in zip(lags, res) if r]
+        # print("Significant dependence at lags:", correlated_lags[:10])
+        upper_band = 0.05 + ((1.96 * np.sqrt(0.95*0.05)) / np.sqrt(len(lags)))
+        lower_band = 0.05 - ((1.96 * np.sqrt(0.95*0.05)) / np.sqrt(len(lags)))
+        out_of_band = [lag for lag, r in zip(lags, res) if r]
+        result['e2eCorrArrivals'] = (min(out_of_band), len(out_of_band), len(lags))
+
+        # print("band for chi-squared test:", lower_band, ",", upper_band, "lags with significant dependence:", len(correlated_lags) / len(lags))
+        if len(correlated_lags) / len(lags) < upper_band:
+            # print("The proportion of lags with significant dependence is within the expected band. Stopping iteration.")
+            subSamplingError = SubSamplingError.NotPoisson + "+" + subSamplingError
+            break
+        if len(arrival_times) < 100:
+            # print("Too few arrival times left. Stopping iteration.")
+            break
+        lag = correlated_lags[0]
+        mask = remove_randomly_within_lag(arrival_times, T=120, steadyStart=steadyStart, steadyEnd=steadyEnd, lag=lag, initial_p=initial_p)
+        arrival_times = arrival_times[mask]
+        round += 1
+    
+    if len(arrival_times) < MinimumNumberOfSamples:
+        # print ("Warning: Not enough e2e packets!")
+        subSamplingError = SubSamplingError.NotEnoughPackets + "+" + subSamplingError
+        return [], subSamplingError, result
+
+    return arrival_times, SubSamplingError.NoError, result
+
 
 def find_samples_path_new(time, txDelay, avg_interarrival_=None, df_name=None, samplingMethod='Orig', steadyStart=0, steadyEnd=1, steps=1, MinimumNumberOfSamples=0):
     subSamplingError = SubSamplingError.NoError
@@ -830,17 +923,18 @@ def find_samples_path(time, txDelay, avg_interarrival_=None, df_name=None, sampl
     # selection_mask = bernoulli.rvs(0.2, size=len(time))
     # temp_times = time[selection_mask == 1]
     # return temp_times
-    # if len(interarrival) > 1:
-    #     anderson_statistic, anderson_critical_values, _ = anderson(interarrival, 'expon')
-    #     if anderson_statistic <= anderson_critical_values[4]:
-    #         # print("Interarrival times are exponentially distributed.")
-    #         return time
+    if len(interarrival) > 1:
+        anderson_statistic, anderson_critical_values, _ = anderson(interarrival, 'expon')
+        if anderson_statistic <= anderson_critical_values[4]:
+            print("Interarrival times are exponentially distributed.")
+            return time
     
     # print("Interarrival times are not exponentially distributed. Proceeding with sampling...")
 
     # Step 3: Divide into chunks of average interarrival time
     # avg_interarrival = np.mean(interarrival) * 10
-    avg_interarrival  = avg_interarrival_ * 5
+    # avg_interarrival  = avg_interarrival_ * 5
+    avg_interarrival = avg_interarrival_
     # avg_interarrival = np.mean(interarrival[interarrival > txDelay])
     # print("Average interarrival time:", avg_interarrival)
     start_time = time[0]
@@ -1031,6 +1125,8 @@ def calculate_offline_E2E_delays(full_df, removeDrops, checkColumn, txDelay, df_
     df_res['sampleSize']['delay'] = {}
     df_res['subSamplingError']['delay'] = {}
     df_res['bias']['delay'] = {}
+    df_res['Corr'] = {}
+    result = {}
     for path in full_df_['Path'].unique():
         df = full_df_[full_df_['Path'] == path]
         df = df.sort_values(by='SentTime').reset_index(drop=True)
@@ -1060,12 +1156,13 @@ def calculate_offline_E2E_delays(full_df, removeDrops, checkColumn, txDelay, df_
             if path in samples_paths_aggregated_statistics.keys():
                 if samples_paths_aggregated_statistics[path]['MinimumE2ESampleSize'] is not None:
                 #    samples_times, subSamplingError = find_samples_path_new(time, txDelay, df_res['RTT'][path], df_name, samplingMethod, steadyStart, steadyEnd, steps=1, MinimumNumberOfSamples=samples_paths_aggregated_statistics[path]['MinimumE2ESampleSize'])
-                    samples_times, subSamplingError = find_samples_path_ccf(time, steadyStart, steadyEnd, queue_names, df_name, linkDelays, linkRates, queue_size_trshs, samples_paths_aggregated_statistics[path]['MinimumE2ESampleSize'])
+                    # samples_times, subSamplingError, result = find_samples_path_ccf(time, steadyStart, steadyEnd, queue_names, df_name, linkDelays, linkRates, queue_size_trshs, samples_paths_aggregated_statistics[path]['MinimumE2ESampleSize'])
+                    samples_times, subSamplingError, result = find_samples_path_chi_squared_test(time, steadyStart, steadyEnd, samples_paths_aggregated_statistics[path]['MinimumE2ESampleSize'])
                 else:
                     samples_times = []
             else:
                 samples_times = []
-
+        df_res['Corr'][path] = result
         samples = df[df['SentTime'].isin(samples_times)]
         df_res['bias']['delay'][path] = (samples['PayloadSize'] - (samples['BitsTag'] / 8)).mean()
         # print("Calculating delay for path:", path, "with", len(time), "packets. is done! ")
@@ -1119,6 +1216,8 @@ def addRemoveTransmission_data(full_df, linkDelays, linksRates):
     # full_df['Delay'] = abs(full_df['ReceiveTime'] - full_df['TxEnqueueTime'] - full_df['transmissionDelay'])
     # full_df['Time'] = full_df['SentTime']
     full_df['SentTime'] = full_df['SentTime'] + linkDelays[0] + (full_df['PayloadSize'] * 8) / linksRates[0]
+    # round the SentTime to the nearest integer
+    full_df['SentTime'] = full_df['SentTime'].apply(lambda x: int(round(x)))
     # full_df['SentTime'] = full_df['TxEnqueueTime']
     # if there are multiple rows with the same Id, keep only the one with IsReceived == 1
     full_df = full_df.sort_values("IsReceived", ascending=False)
@@ -1896,7 +1995,8 @@ def sort_queues_by_path(queue_names, linkDelays, linkRates):
 def find_queue_size_at_time(times, queue_sizes, target_time, link_rate):
     if times.size == 0:
         return np.full(len(target_time), np.nan)
-
+    if times.size == 1:
+        return queue_sizes[-1]
     # find the position in times where target_time would be inserted to maintain order
     positions = np.searchsorted(times, target_time, side='right') - 1
     # invalid positions are those that are out of bounds (before the first time or after the last time)
@@ -1908,7 +2008,9 @@ def find_queue_size_at_time(times, queue_sizes, target_time, link_rate):
     # Get queue sizes and times at matched positions
     matched_queue_sizes = queue_sizes[positions]
     matched_times = times[positions]
-    
+    # print(f"Target times: {target_time}", f"Matched times: {matched_times}")
+    # l = [(t, m) for t, m in zip(target_time, matched_times) if abs(t - m) > 2]
+    # print(f"not matched times: {l[:10]}")
     # Apply draining logic: the queue size should decrease over time.
     # Drained bytes = time_difference * link_rate / 8 (convert bits/ns to bytes/ns)
     time_differences = np.asarray(target_time, dtype=float) - matched_times
@@ -1919,15 +2021,15 @@ def find_queue_size_at_time(times, queue_sizes, target_time, link_rate):
     final_queue_sizes[invalid] = np.nan  
     return final_queue_sizes
 
-def remove_nan_samples(times, queue_sizes, queue_ECN_samples):
+def remove_nan_samples(times, queue_sizes, queue_ECN_samples, queue_delay_samples):
     valid_indices = ~np.isnan(queue_sizes)
-    return times[valid_indices], queue_sizes[valid_indices], queue_ECN_samples[valid_indices]
+    return times[valid_indices], queue_sizes[valid_indices], queue_ECN_samples[valid_indices], queue_delay_samples[valid_indices]
 
 def sample_queue_size(times, file_path, link_rate):
     # print(f"Sampling total queue size from {file_path} with link rate {link_rate} bpns")
     full_df = pd.read_csv(file_path)
     full_df = full_df.sort_values(by=['Time', 'TotalQueueSize'], ascending=[True, False]).reset_index(drop=True)
-
+    # print(f"file_path: {file_path}\n")
     sample_times = np.asarray(times, dtype=float)
     df_times = full_df['Time'].to_numpy(dtype=float)
     df_queue_sizes = full_df['TotalQueueSize'].to_numpy(dtype=float)
@@ -1936,12 +2038,222 @@ def sample_queue_size(times, file_path, link_rate):
 def sample_ECN_marking(queue_size_samples, queue_size_trsh):
     return (queue_size_samples >= queue_size_trsh).astype(int)
 
-def sample_total_queue_size(times, queue_names, dir_prefix, linkDelays, linkRates, queue_size_trshs):
+def sample_queueing_delay(queue_size_samples, link_rate):
+    return (queue_size_samples * 8) / link_rate
+
+def sample_total_queue_size_with_size(times, sizes, queue_names, dir_prefix, linkDelays, linkRates, queue_size_trshs):
     queue_names, linkDelays, linkRates = sort_queues_by_path(queue_names, linkDelays, linkRates)
     queue_size_samples = np.zeros((len(queue_names), len(times)))
     queue_ECN_samples = np.zeros((len(queue_names), len(times)), dtype=int)
+    queue_delay_samples = np.zeros((len(queue_names), len(times)))
     sample_times = np.asarray(times, dtype=float)
     invalid_indices = np.zeros(len(times), dtype=bool)
+    for queue_name in queue_names:
+        file_path = dir_prefix + queue_name + '_PoissonSampler_queueSize.csv'
+        idx = queue_names.index(queue_name)
+        # print(f"Arrival time at Queue {queue_name}: {sample_times[:10]}")
+        queue_size_sample = sample_queue_size(sample_times, file_path, linkRates[idx])
+        queue_size_samples[idx][~invalid_indices] = queue_size_sample - sizes[~invalid_indices]
+        queue_size_samples[idx][invalid_indices] = np.nan
+        new_invalid_indices = np.isnan(queue_size_sample)
+
+        invalid_indices = np.isnan(queue_size_samples[idx])
+        # print(f"Queue {queue_name} - Sampled queue sizes: {queue_size_samples[idx][:10]}")
+        # shift sampling times for next queue for valid indices only (where we have valid samples), and round to integer nanoseconds
+        sample_times = sample_times[~new_invalid_indices] + linkDelays[idx] + ((sizes[~invalid_indices] + queue_size_samples[idx][~invalid_indices]) * 8 / linkRates[idx]).astype(int) + 1
+        queue_ECN_samples[idx][~invalid_indices] = sample_ECN_marking(queue_size_samples[idx][~invalid_indices], queue_size_trshs[idx])
+        queue_ECN_samples[idx][invalid_indices] = 0
+        queue_delay_samples[idx][~invalid_indices] = sample_queueing_delay(queue_size_samples[idx][~invalid_indices], linkRates[idx])
+        queue_delay_samples[idx][invalid_indices] = np.nan
+
+    return remove_nan_samples(times, np.sum(queue_size_samples, axis=0), np.any(queue_ECN_samples, axis=0).astype(int), np.sum(queue_delay_samples, axis=0))
+
+def qqplot_queue_vs_arrivals(
+    queue_values,
+    arrival_increments,
+    file_path=None,
+    title="Q-Q plot: Q(t) vs arrival increments",
+):
+    """
+    Generate a Q-Q plot comparing Q(t) and arrival increments.
+
+    Parameters
+    ----------
+    queue_values : array-like
+        1D array of queue samples Q(t).
+    arrival_increments : array-like
+        1D array of sampled arrival increments.
+    num_quantiles : int
+        Number of quantile points to use in the Q-Q plot.
+    file_path : str or None
+        If provided, save the figure to this path.
+    title : str
+        Plot title.
+
+    Returns
+    -------
+    dict
+        {
+            "queue_quantiles": ...,
+            "arrival_quantiles": ...,
+            "quantile_levels": ...
+        }
+    """
+    import statsmodels.api as sm
+    from statsmodels.graphics.gofplots import qqplot_2samples
+
+    queue_values = np.asarray(queue_values, dtype=float)
+    arrival_increments = np.asarray(arrival_increments, dtype=float)
+
+    if queue_values.ndim != 1 or arrival_increments.ndim != 1:
+        raise ValueError("queue_values and arrival_increments must be 1D arrays.")
+    if len(queue_values) == 0 or len(arrival_increments) == 0:
+        raise ValueError("Inputs must be non-empty.")
+
+    # Remove NaNs / infs
+    queue_values = queue_values[np.isfinite(queue_values)]
+    arrival_increments = arrival_increments[np.isfinite(arrival_increments)]
+    # normalize the data to have zero mean and unit variance
+    queue_values = (queue_values - np.mean(queue_values)) / np.std(queue_values)
+    arrival_increments = (arrival_increments - np.mean(arrival_increments)) / np.std(arrival_increments)
+
+    if len(queue_values) == 0 or len(arrival_increments) == 0:
+        raise ValueError("Inputs must contain at least one finite value.")
+
+    plt.figure(figsize=(30, 10))
+    pp_x = sm.ProbPlot(queue_values)
+    pp_y = sm.ProbPlot(arrival_increments)
+    fig = qqplot_2samples(pp_x, pp_y, line='45')
+    ax = fig.axes[0]
+    # set the color and size of the points
+    for line in ax.get_lines():
+        line.set_marker('o')
+        line.set_markersize(10)
+        line.set_alpha(0.7)
+        line.set_color('blue')
+    plt.xlabel("Quantiles of Q(t)")
+    plt.ylabel("Quantiles of arrival increments")
+    plt.title(title)
+    plt.grid(True, alpha=0.3)
+    # plt.legend()
+    plt.tight_layout()
+
+    if file_path is not None:
+        plt.savefig(file_path)
+        plt.close()
+    else:
+        plt.show()
+
+def boxes_test(
+    arrival_increments,
+    lags
+):
+    """
+    Returns Ljung-Box and Box-Pierce test results for autocorrelation of a time series.
+
+    Parameters
+    ----------
+    arrival_increments : array-like
+        1D array of sampled arrival increments.
+    Returns
+    -------
+    dict
+        {
+            "ljung_box_statistic": ...,
+            "ljung_box_pvalue": ...,
+            "box_pierce_statistic": ...,
+            "box_pierce_pvalue": ...
+        }
+    """
+    from statsmodels.stats.diagnostic import acorr_ljungbox
+
+    arrival_increments = np.asarray(arrival_increments, dtype=float)
+    if arrival_increments.ndim != 1:
+        raise ValueError("arrival_increments must be a 1D array.")
+    if len(arrival_increments) == 0:
+        raise ValueError("arrival_increments must be non-empty.")
+
+    # Remove NaNs / infs
+    arrival_increments = arrival_increments[np.isfinite(arrival_increments)]
+    if len(arrival_increments) == 0:
+        raise ValueError("arrival_increments must contain at least one finite value.")
+
+    # Perform Ljung-Box test
+    ljung_box_result = acorr_ljungbox(arrival_increments, boxpierce=True, lags=lags)
+    print(f"Ljung-Box test statistic: {ljung_box_result['lb_stat']}, p-value: {ljung_box_result['lb_pvalue']}")
+    print(f"Box-Pierce test statistic: {ljung_box_result['bp_stat']}, p-value: {ljung_box_result['bp_pvalue']}")
+    # return {
+    #     "ljung_box_statistic": ljung_box_statistic,
+    #     "ljung_box_pvalue": ljung_box_pvalue,
+    #     "box_pierce_statistic": box_pierce_statistic,
+    #     "box_pierce_pvalue": box_pierce_pvalue
+    # }
+
+def chi_squared_test(
+    arrival_times, 
+    steadyStart, 
+    steadyEnd, 
+    lags=None
+):
+    """
+    Perform a chi-squared test for independence between arrival events at time t and time t - lag.
+
+    Parameters
+    ----------
+    arrival_times : array-like
+        1D array of arrival times (in the same time units as steadyStart and steadyEnd).
+    steadyStart : float
+        Start time of the steady state period.
+    steadyEnd : float
+        End time of the steady state period.
+    lag : float or None
+        Time lag to test for independence. If None, tests multiple lags (1, 2, 4, ..., 8192 samples) and prints results for each.
+    """
+    from scipy.stats import chi2_contingency
+
+    times = np.arange(steadyStart, steadyEnd, 120)
+    T = 120
+    if lags is None:
+        lags = [i for i in range(0, 512)]
+        lags = lags[1:]
+
+    res = [False] * len(lags)
+    chi2_res = [0] * len(lags)
+    arrival_increments = sample_increments_of_arrivals(arrival_times, T, times, event_type='binary')
+    for j, lag in enumerate(lags):
+        if lag >= len(arrival_increments):
+            res[j] = False
+            continue
+
+        A = arrival_increments[:-lag]
+        B = arrival_increments[lag:]
+
+        A1B1 = np.sum(A & B)
+        A1B0 = np.sum(A & (~B))
+        A0B1 = np.sum((~A) & B)
+        A0B0 = np.sum((~A) & (~B))
+
+        table = np.array([[A1B1, A1B0], [A0B1, A0B0]])
+        chi2, p, _, _ = chi2_contingency(table)
+        chi2_res[j] = chi2
+        res[j] = p < 0.05
+
+
+    return lags, res, chi2_res
+
+def sample_total_queue_size(times, queue_names, dir_prefix, linkDelays, linkRates, queue_size_trshs, steadyStart=0.01e9, steadyEnd=0.1e9, intervals=10000):
+    queue_names, linkDelays, linkRates = sort_queues_by_path(queue_names, linkDelays, linkRates)
+    queue_size_samples = np.zeros((len(queue_names), len(times)))
+    queue_ECN_samples = np.zeros((len(queue_names), len(times)), dtype=int)
+    queue_delay_samples = np.zeros((len(queue_names), len(times)))
+    sample_times = np.asarray(times, dtype=float)
+    invalid_indices = np.zeros(len(times), dtype=bool)
+    # Poisson_sample_times = np.array(np.cumsum(np.random.exponential(intervals, size=int((steadyEnd - steadyStart) // intervals))) + steadyStart, dtype=np.int64)
+    res = {}
+    # prev_poisson_samples = np.zeros(len(Poisson_sample_times))
+    # prev_invalid_indices = None
+    # curr_poisson_samples = np.zeros(len(Poisson_sample_times))
+    # curr_invalid_indices = None
     for queue_name in queue_names:
         file_path = dir_prefix + queue_name + '_PoissonSampler_queueSize.csv'
         idx = queue_names.index(queue_name)
@@ -1952,13 +2264,177 @@ def sample_total_queue_size(times, queue_names, dir_prefix, linkDelays, linkRate
 
         invalid_indices = np.isnan(queue_size_samples[idx])
 
-        # shift sampling times for next queue for valid indices only (where we have valid samples)
-        sample_times = sample_times[~new_invalid_indices] + queue_size_samples[idx][~invalid_indices] + linkDelays[idx]
-
         queue_ECN_samples[idx][~invalid_indices] = sample_ECN_marking(queue_size_samples[idx][~invalid_indices], queue_size_trshs[idx])
         queue_ECN_samples[idx][invalid_indices] = 0
+        queue_delay_samples[idx][~invalid_indices] = sample_queueing_delay(queue_size_samples[idx][~invalid_indices], linkRates[idx])
+        # Poisson_sample_times = np.array(np.cumsum(np.random.exponential(intervals, size=int((steadyEnd - steadyStart) // intervals))) + steadyStart, dtype=np.int64)
+        # Poisson_sample_times = Poisson_sample_times + linkDelays[idx] * idx
+        Poisson_sample_times = np.asarray(times, dtype=float) + linkDelays[idx] * idx
+        poisson_samples = sample_queue_size(Poisson_sample_times, file_path, linkRates[idx])
+        poisson_invalid_indices = np.isnan(poisson_samples)
+        poisson_samples_delay = sample_queueing_delay(poisson_samples[~poisson_invalid_indices], linkRates[idx])
+        #########
+        # if idx > 0:
+        #     prev_poisson_samples = curr_poisson_samples
+        #     prev_invalid_indices = curr_invalid_indices
+        #     curr_invalid_indices = np.isnan(poisson_samples)
+        #     curr_poisson_samples = np.zeros(len(Poisson_sample_times))
+        #     curr_poisson_samples[~curr_invalid_indices] = poisson_samples_delay
+        # else:
+        #     curr_invalid_indices = np.isnan(poisson_samples)
+        #     curr_poisson_samples[~curr_invalid_indices] = poisson_samples_delay
+        ###########
+        prob_non_empty = poisson_samples[~poisson_invalid_indices] > 0
+        prob_non_empty = np.sum(prob_non_empty) / len(prob_non_empty)
 
-    return remove_nan_samples(times, np.sum(queue_size_samples, axis=0), np.any(queue_ECN_samples, axis=0).astype(int))
+        res[queue_name+'e2e_samples_queue_delay_mean'] = np.nanmean(queue_delay_samples[idx])
+        # print(f"Queue {queue_name} - E2E samples queue delay mean: {res[queue_name+'e2e_samples_queue_delay_mean']}")
+        res[queue_name+'e2e_samples_queue_delay_std'] = np.nanstd(queue_delay_samples[idx])
+        res[queue_name+'e2e_samples_queue_delay_count'] = len(queue_delay_samples[idx][~invalid_indices])
+        res[queue_name+'poisson_samples_queue_delay_mean'] = np.nanmean(poisson_samples_delay)
+        # print(f"Queue {queue_name} - Poisson samples queue delay mean: {res[queue_name+'poisson_samples_queue_delay_mean']}")
+        res[queue_name+'poisson_samples_queue_delay_std'] = np.nanstd(poisson_samples_delay)
+        res[queue_name+'poisson_samples_queue_delay_count'] = len(poisson_samples_delay)
+        res[queue_name+'poisson_prob_non_empty'] = prob_non_empty
+        res[queue_name+'error_bound'] = res[queue_name+'e2e_samples_queue_delay_std'] * 1.96 / np.sqrt(len(queue_delay_samples[idx][~invalid_indices])) + res[queue_name+'poisson_samples_queue_delay_std'] * 1.96 / np.sqrt(len(poisson_samples_delay))
+        res[queue_name+'e2e_vs_poisson_consistent'] = int(abs(res[queue_name+'e2e_samples_queue_delay_mean'] - res[queue_name+'poisson_samples_queue_delay_mean']) <= res[queue_name+'error_bound'])
+        if idx > 0:
+            res[queue_name+'poisson_prev_queue_non_empty_prob_percentile'] = np.nanpercentile(poisson_samples_delay, res[queue_names[idx - 1]+'poisson_prob_non_empty'] * 100)
+            bias = res[queue_name+'poisson_prev_queue_non_empty_prob_percentile'] * res[queue_names[idx - 1]+'poisson_prob_non_empty']
+            res[queue_name+'bias'] = bias
+            res[queue_name+'e2e_vs_poisson_consistent_with_bias'] = int(abs(res[queue_name+'e2e_samples_queue_delay_mean'] - (res[queue_name+'poisson_samples_queue_delay_mean'] + bias)) <= res[queue_name+'error_bound'])
+        else:
+            res[queue_name+'poisson_prev_queue_non_empty_prob_percentile'] = np.nan
+            bias = 0
+            res[queue_name+'bias'] = bias
+            res[queue_name+'e2e_vs_poisson_consistent_with_bias'] = res[queue_name+'e2e_vs_poisson_consistent']
+        ###########
+        # if idx > 0:
+        #     # print(f"Correlation between queue size of {queue_names[idx - 1]} and {queue_name}")
+        #     # x = prev_poisson_samples
+        #     # y = curr_poisson_samples
+        #     x = queue_delay_samples[idx - 1]
+        #     y = queue_delay_samples[idx]
+        #     # print(f"x mean: {np.nanmean(x)}, y mean: {np.nanmean(y)}")
+        #     # corr_indices = (prev_poisson_samples > 0) & (~curr_invalid_indices) & (~prev_invalid_indices)
+        #     corr_indices = (queue_delay_samples[idx - 1] > 0) & (~invalid_indices)
+        #     x = x[corr_indices]
+        #     y = y[corr_indices]
+        #     x = x - x.mean()
+        #     y = y - y.mean()
+        #     corr = np.correlate(x, y, mode="full")
+        #     lags = np.arange(-len(x) + 1, len(x))
+        #     denom = np.sqrt(np.sum(x**2) * np.sum(y**2))
+        #     corr = corr / denom
+        #     mask = lags >= 0
+        #     lags = lags[mask]
+        #     corr = corr[mask]
+        #     plt.figure(figsize=(30, 10))
+        #     plt.plot(lags, corr, marker='o', linestyle='-', markersize=4, linewidth=2)
+        #     plt.axhline(0, linewidth=1)
+        #     plt.axvline(0, linewidth=1)
+        #     # band = 1.96 / np.sqrt(len(lags_time))  # 95% confidence interval for zero correlation
+        #     # plt.axhline(band, color='black', linestyle='dashed', linewidth=3, label='95% confidence band')
+        #     # plt.axhline(-band, color='black', linestyle='dashed', linewidth=3)
+        #     plt.xlabel("Lag ")
+        #     plt.ylabel("Cross-correlation")
+        #     plt.title("Cross-correlation")
+        #     plt.grid(True, alpha=0.5)
+        #     # plt.set_ylim(bottom=-0.4, top=1.0)
+        #     plt.ylim(bottom=-1.05 * max(corr), top=1.05 * max(corr))
+        #     # plt.set_yticks(np.arange(-0.4, 0.8, 0.2))
+        #     # plt.set_xticks(np.arange(0, np.max(lags_time), max(lags_time) / 20), labels=[f"{float(t/1000000):.1f}" for t in np.arange(0, np.max(lags_time), max(lags_time) / 20)])
+        #     # plt.set_xticks(np.arange(np.min(lags_time), np.max(lags_time), (np.max(lags_time) - np.min(lags_time)) / 20), labels=[f"{float(t/1000000):.1f}" for t in np.arange(np.min(lags_time), np.max(lags_time), (np.max(lags_time) - np.min(lags_time)) / 20)])
+        #     plt.tick_params(axis='y', labelsize=30)
+        #     plt.tight_layout()
+        #     plt.savefig(f'{dir_prefix}crosscorr_{queue_names[idx - 1]}_{queue_name}_pathObserver_Q_GT0_{res[queue_name+"e2e_samples_queue_delay_count"]}samples.png')
+        #     plt.close()
+        ###########
+        # shift sampling times for next queue for valid indices only (where we have valid samples)
+        sample_times = (sample_times[~new_invalid_indices] + queue_size_samples[idx][~invalid_indices] * 8 / linkRates[idx] + linkDelays[idx]).round()
+        # sample_times = sample_times[~new_invalid_indices]
+        queue_delay_samples[idx][invalid_indices] = np.nan
+
+    return remove_nan_samples(times, np.sum(queue_size_samples, axis=0), np.any(queue_ECN_samples, axis=0).astype(int), np.sum(queue_delay_samples, axis=0)), res
+
+def sample_total_queue_size_single_queue(times, queue_name, dir_prefix, linkDelay, linkRate, queue_size_trsh):
+    queue_size_samples = np.zeros((1, len(times)))
+    queue_ECN_samples = np.zeros((1, len(times)), dtype=int)
+    queue_delay_samples = np.zeros((1, len(times)))
+    sample_times = np.asarray(times, dtype=float)
+    invalid_indices = np.zeros(len(times), dtype=bool)
+    file_path = dir_prefix + queue_name + '_PoissonSampler_queueSize.csv'
+    queue_size_sample = sample_queue_size(sample_times, file_path, linkRate)
+    queue_size_samples[0][~invalid_indices] = queue_size_sample
+    queue_size_samples[0][invalid_indices] = np.nan
+    new_invalid_indices = np.isnan(queue_size_sample)
+
+    invalid_indices = np.isnan(queue_size_samples[0])
+    prob_non_empty = queue_size_samples[0][~invalid_indices] > 0
+    prob_non_empty = np.sum(prob_non_empty) / len(prob_non_empty)
+    queue_delay_percentile = np.nanpercentile(sample_queueing_delay(queue_size_samples[0][~invalid_indices], linkRate), prob_non_empty * 100)
+    print(f"Queue {queue_name} - duration: {np.nanmax(sample_times[~new_invalid_indices]) - np.nanmin(sample_times[~new_invalid_indices])} ns and length: {len(sample_times[~new_invalid_indices])} samples")
+    print(f"Queue {queue_name} - min time: {np.nanmin(sample_times[~new_invalid_indices])} ns, max time: {np.nanmax(sample_times[~new_invalid_indices])} ns")
+    print(f"Queue {queue_name} - probability of non-empty queue: {prob_non_empty}")
+    print(f"Queue {queue_name} - non-empty percentile queue delay: {queue_delay_percentile} ns")
+    print(f"Queue {queue_name} - bias : {queue_delay_percentile * prob_non_empty} ns")
+    # plt.figure(figsize=(10, 6))
+    # plt.scatter(sample_times[~new_invalid_indices], queue_size_samples[0][~invalid_indices], color='r', label='Sampled Queue Size', marker='o', s=3)
+    # plt.ylim(0, np.nanmax(queue_size_samples[0][~invalid_indices]) * 1.5)
+    # plt.grid(axis='y')
+    # plt.legend()
+    # plt.title(f'Queue Size per time for {queue_name}', fontsize=16)
+    # plt.xlabel('Time (ns)', fontsize=16)
+    # plt.ylabel('Size (B)', fontsize=16)
+    # plt.xticks(fontsize=14)
+    # plt.yticks(fontsize=14)
+    # plt.savefig(f'Poisson_queue_size_time_{queue_name}.png')
+    # plt.close()
+    queue_ECN_samples[0][~invalid_indices] = sample_ECN_marking(queue_size_samples[0][~invalid_indices], queue_size_trsh)
+    queue_ECN_samples[0][invalid_indices] = 0
+    queue_delay_samples[0][~invalid_indices] = sample_queueing_delay(queue_size_samples[0][~invalid_indices], linkRate)
+    queue_delay_samples[0][invalid_indices] = np.nan
+
+    return remove_nan_samples(times, np.sum(queue_size_samples, axis=0), np.any(queue_ECN_samples, axis=0).astype(int), np.sum(queue_delay_samples, axis=0))
+
+def visualize_autocorr_Ts(results, file_path):
+    """
+    Visualize the output of autocorr_arrival_increments(...)
+
+    Parameters
+    ----------
+    result : dict
+        Output of autocorr_arrival_increments(...)
+    max_points_scatter : int
+        Maximum number of points to show in the scatter plot.
+        If there are more points, a random subset is used.
+    """
+
+    fig, ax = plt.subplots(1, 1, figsize=(30, 20))
+
+    # --------------------------------------------------
+    # 1) Auto-correlations
+    # --------------------------------------------------
+    for result in results:
+        times = np.asarray(result["times"])
+        lags = np.asarray(result["lags"])
+        autocorr = np.asarray(result["autocorr"])
+        lags_time = lags * np.mean(np.diff(times))  # convert lags from sample index to time
+        ax.plot(lags_time, autocorr, marker='o', linestyle='-', markersize=4, linewidth=2, label=result['T'])
+    ax.axhline(0, linewidth=1)
+    ax.axvline(0, linewidth=1)
+    ax.set_xlabel("Lag (ms)")
+    ax.set_ylabel("Autocorrelation")
+    ax.set_title("Autocorrelation")
+    ax.grid(True, alpha=0.5)
+    ax.set_ylim(bottom=-0.4, top=1.0)
+    ax.set_yticks(np.arange(-0.4, 0.8, 0.2))
+    # ax.set_xticks(np.arange(0, np.max(lags_time), max(lags_time) / 20), labels=[f"{float(t/1000000):.1f}" for t in np.arange(0, np.max(lags_time), max(lags_time) / 20)])
+    ax.tick_params(axis='y', labelsize=30)
+    ax.legend(fontsize=30)
+    plt.tight_layout()
+    plt.savefig(file_path + 'autocorr_of_arrival_increment_diff_Ts.png')
+    plt.close()
 
 def visualize_autocorr_result(result, file_path, T):
     """
@@ -2012,11 +2488,12 @@ def visualize_autocorr_result(result, file_path, T):
     ax.legend(fontsize=30)
 
     # --------------------------------------------------
-    # 3) Cross-correlation(10 percentile zoom)
+    # 3) Cross-correlation(zoomed in)
     # --------------------------------------------------
     ax = axes[2]
-    len_lags = int(0.1 * len(lags_time))
-    ax.plot(lags_time[:len_lags], autocorr[:len_lags], marker='o', linestyle='-', markersize=4, linewidth=2)
+    # find the lag that is 10 times T
+    zoomed_lags = lags_time <= 10 * T
+    ax.plot(lags_time[zoomed_lags], autocorr[zoomed_lags], marker='o', linestyle='-', markersize=4, linewidth=2)
     ax.axhline(0, linewidth=1)
     ax.axvline(0, linewidth=1)
     ax.axvline(T, color='blue', linestyle='dashed', linewidth=3, label=r'$\tau$ = {} us'.format(float(T / 1e3)))
@@ -2028,14 +2505,14 @@ def visualize_autocorr_result(result, file_path, T):
     ax.grid(True, alpha=0.5)
     ax.set_ylim(bottom=-0.4, top=1.0)
     ax.set_yticks(np.arange(-0.4, 0.8, 0.2))
-    ax.set_xticks(np.arange(0, np.max(lags_time[:len_lags]), max(lags_time[:len_lags]) / 20), labels=[f"{float(t/1000):.0f}" for t in np.arange(0, np.max(lags_time[:len_lags]), max(lags_time[:len_lags]) / 20)])
+    ax.set_xticks(np.arange(0, np.max(lags_time[zoomed_lags]), max(lags_time[zoomed_lags]) / 20), labels=[f"{float(t/1000):.0f}" for t in np.arange(0, np.max(lags_time[zoomed_lags]), max(lags_time[zoomed_lags]) / 20)])
     ax.tick_params(axis='y', labelsize=30)
     ax.legend(fontsize=30)
     plt.tight_layout()
     plt.savefig(file_path + 'autocorr_of_arrival_increment.png')
     plt.close()
 
-def visualize_crosscorr_result(result, file_path, max_points_scatter=10000000):
+def visualize_crosscorr_result(result, file_path, max_points_scatter=10000000, suffix=""):
     """
     Visualize the output of crosscorr_qsize_vs_arrival_increment(...)
 
@@ -2103,19 +2580,24 @@ def visualize_crosscorr_result(result, file_path, max_points_scatter=10000000):
     ax.plot(lags_time, crosscorr, marker='o', linestyle='-', markersize=4, linewidth=2)
     ax.axhline(0, linewidth=1)
     ax.axvline(0, linewidth=1)
+    band = 1.96 / np.sqrt(len(lags_time))  # 95% confidence interval for zero correlation
+    ax.axhline(band, color='black', linestyle='dashed', linewidth=3, label='95% confidence band')
+    ax.axhline(-band, color='black', linestyle='dashed', linewidth=3)
     ax.set_xlabel("Lag (ms)")
     ax.set_ylabel("Cross-correlation")
     ax.set_title("Cross-correlation")
     ax.grid(True, alpha=0.5)
-    ax.set_ylim(bottom=-0.4, top=1.0)
-    ax.set_yticks(np.arange(-0.4, 0.8, 0.2))
+    # ax.set_ylim(bottom=-0.4, top=1.0)
+    ax.set_ylim(bottom=-1.05 * max(crosscorr), top=1.05 * max(crosscorr))
+    # ax.set_yticks(np.arange(-0.4, 0.8, 0.2))
     ax.set_xticks(np.arange(0, np.max(lags_time), max(lags_time) / 20), labels=[f"{float(t/1000000):.1f}" for t in np.arange(0, np.max(lags_time), max(lags_time) / 20)])
+    # ax.set_xticks(np.arange(np.min(lags_time), np.max(lags_time), (np.max(lags_time) - np.min(lags_time)) / 20), labels=[f"{float(t/1000000):.1f}" for t in np.arange(np.min(lags_time), np.max(lags_time), (np.max(lags_time) - np.min(lags_time)) / 20)])
     ax.tick_params(axis='y', labelsize=30)
     plt.tight_layout()
-    plt.savefig(file_path + 'crosscorr_qsize_vs_arrival_increment.png')
+    plt.savefig(file_path + 'crosscorr_qsize_vs_arrival_increment' + suffix + '.png')
     plt.close()
 
-def sample_increments_of_arrivals(arrival_times, T, times_to_sample):
+def sample_increments_of_arrivals_bytes(arrival_times, T, times_to_sample, arrival_sizes):
     """
     Sample arrival increments at specific times.
 
@@ -2127,6 +2609,51 @@ def sample_increments_of_arrivals(arrival_times, T, times_to_sample):
         Window length used to count arrivals in [t, t+T).
     times_to_sample : array-like
         1D array of timestamps at which to sample arrival increment.
+    arrival_sizes : array-like
+        1D array of arrival sizes.
+    Returns
+    -------
+    arrival_increment_samples : array
+        Array of arrival increments in bytes at the specified times.
+    """
+    arrival_times = np.asarray(arrival_times, dtype=float)
+    times_to_sample = np.asarray(times_to_sample, dtype=float)
+    arrival_sizes = np.asarray(arrival_sizes, dtype=float)
+
+    if arrival_times.ndim != 1 or times_to_sample.ndim != 1 or arrival_sizes.ndim != 1:
+        raise ValueError("arrival_times, times_to_sample, and arrival_sizes must be 1D arrays.")
+    if len(arrival_times) == 0:
+        raise ValueError("arrival_times must be non-empty.")
+    if T <= 0:
+        raise ValueError("T must be positive.")
+
+    # Sort arrival times and arrival sizes for searchsorted
+    sorted_indices = np.argsort(arrival_times)
+    arrival_times = arrival_times[sorted_indices]
+    arrival_sizes = arrival_sizes[sorted_indices]
+
+    left_idx = np.searchsorted(arrival_times, times_to_sample, side="left")
+    right_idx = np.searchsorted(arrival_times, times_to_sample + T, side="left")
+    arrival_increment_bytes_samples = np.zeros(len(times_to_sample), dtype=float)
+    for i in range(len(times_to_sample)):
+        arrival_increment_bytes_samples[i] = np.sum(arrival_sizes[left_idx[i]:right_idx[i]])
+
+    return arrival_increment_bytes_samples
+
+def sample_increments_of_arrivals(arrival_times, T, times_to_sample, event_type="count"):
+    """
+    Sample arrival increments at specific times.
+
+    Parameters
+    ----------
+    arrival_times : array-like
+        1D array of arrival timestamps.
+    T : float
+        Window length used to count arrivals in [t, t+T).
+    times_to_sample : array-like
+        1D array of timestamps at which to sample arrival increment.
+    event_type : str, optional
+        Type of event to sample. Default is "count".
     Returns
     -------
     arrival_increment_samples : array
@@ -2147,8 +2674,14 @@ def sample_increments_of_arrivals(arrival_times, T, times_to_sample):
 
     left_idx = np.searchsorted(arrival_times, times_to_sample, side="left")
     right_idx = np.searchsorted(arrival_times, times_to_sample + T, side="left")
-    arrival_increment_samples = right_idx - left_idx
-
+    if event_type == "binary":
+        arrival_increment_samples = (right_idx - left_idx) > 0  # convert to binary increments (1 if at least one arrival, else 0)
+    elif event_type == "idx":
+        arrival_increment_samples = []
+        for l, r in zip(left_idx, right_idx):
+            arrival_increment_samples.append([i for i in range(l, r)])
+    else:
+        arrival_increment_samples = right_idx - left_idx
     return arrival_increment_samples
 
 def autocorr_arrival_increments(
@@ -2292,6 +2825,7 @@ def crosscorr_qsize_vs_arrival_increments(
         corr = corr / denom
 
     mask = lags >= 0
+    # mask = np.ones(len(lags), dtype=bool)  # keep all lags, including negative ones
     if max_lag is not None:
         if max_lag < 0:
             raise ValueError("max_lag must be non-negative.")
@@ -4092,7 +4626,54 @@ def find_delta_for_empty_prob(t, p0_max=0.10):
     else:
         # print("Delta:", Delta_star, "empty_prob_at_Delta:", p0_arr[ok[0]], "mean_count_at_Delta:", mu_arr[ok[0]])
         return Delta_star, mu_arr[ok[0]]
+def compute_average_packet_size(file_path):
+    # read all csv files in file_path ending with 'EndToEnd_packets.csv' and compute the average packet size
+    sum_size = 0
+    count = 0
+    for file in glob.glob(file_path + '*EndToEnd_packets.csv'):
+        df = pd.read_csv(file)
+        if 'PayloadSize' in df.columns:
+            sum_size += df['PayloadSize'].sum()
+            count += df['PayloadSize'].count()
+    average_packet_size = sum_size / count if count > 0 else 0
+    return average_packet_size
 
+def compute_bias_based_on_average_packet_size(sampling_results, average_packet_size, queue_names, linkRates, alternative_routes=3):
+    queue_names, _, linkRates = sort_queues_by_path(queue_names, [None, None, None, None], linkRates)
+    
+    for queue_name in queue_names:
+        idx = queue_names.index(queue_name)
+        if idx == 0:
+            continue
+        sampling_results[queue_name+'bias'] = sampling_results[queue_names[idx - 1]+'poisson_prob_non_empty'] * average_packet_size * 8 / linkRates[idx] * (1 / alternative_routes)
+        sampling_results[queue_name+'e2e_vs_poisson_consistent_with_bias'] = int(abs(sampling_results[queue_name+'e2e_samples_queue_delay_mean'] - (sampling_results[queue_name+'poisson_samples_queue_delay_mean'] + sampling_results[queue_name+'bias'])) <= sampling_results[queue_name+'error_bound'])
+    
+    return sampling_results
+
+def calculate_offline_delay_bias_DC(__ns3_path, rate, experiment, results_folder, steadyStart, steadyEnd, linkRates=[], linkDelays=[], 
+                                    swtichDstREDQueueDiscMaxSize=[0], tsh=0.15, differentiationDelay=None, errorRate=None, load=None, queue_names=[], flow_names=[], e2e_intervals=10000):
+    if differentiationDelay is not None and errorRate is not None:
+        file_path = '{}/scratch/{}/{}/{}/D_{}/f_{}/{}/'.format(__ns3_path, results_folder, rate, load, differentiationDelay, errorRate, experiment)
+    else:
+        file_path = '{}/scratch/{}/{}/{}/{}/'.format(__ns3_path, results_folder, rate, load, experiment)
+
+    times = np.array(np.cumsum(np.random.exponential(e2e_intervals, size=int((steadyEnd - steadyStart) // e2e_intervals))) + steadyStart, dtype=np.int64)
+    (_, queue_size_samples, _, queue_delay_samples_poisson_e2e), res = sample_total_queue_size(times, queue_names, file_path, linkDelays, linkRates, np.array(swtichDstREDQueueDiscMaxSize[1:], dtype=float) * tsh)
+
+    res = compute_bias_based_on_average_packet_size(res, compute_average_packet_size(file_path), queue_names, linkRates)
+
+    res['sum_poisson_samples_queue_delay_mean'] = sum([res[queue_name+'poisson_samples_queue_delay_mean'] for queue_name in queue_names])
+    res['e2e_poisson_samples_queue_delay_mean'] = np.mean(queue_delay_samples_poisson_e2e)
+    res['e2e_poisson_samples_queue_delay_std'] = np.std(queue_delay_samples_poisson_e2e)
+    res['e2e_vs_sum_error_bound'] = 1.96 * res['sum_poisson_samples_queue_delay_mean'] * np.max([res[queue_name+'poisson_samples_queue_delay_std'] / (np.sqrt(res[queue_name+'poisson_samples_queue_delay_count']) * res[queue_name+'poisson_samples_queue_delay_mean']) for queue_name in queue_names])
+    res['e2e_vs_sum_error_bound'] += 1.96 * res['e2e_poisson_samples_queue_delay_std'] / np.sqrt(len(queue_delay_samples_poisson_e2e))
+    res['e2e_vs_sum_consistent'] = int(abs(res['e2e_poisson_samples_queue_delay_mean'] - res['sum_poisson_samples_queue_delay_mean']) <= res['e2e_vs_sum_error_bound'])
+    bias = sum([res[queue_name+'bias'] for queue_name in queue_names])
+    res['e2e_vs_sum_consistent_with_bias'] = int(abs(res['e2e_poisson_samples_queue_delay_mean'] - (res['sum_poisson_samples_queue_delay_mean'] + bias)) <= res['e2e_vs_sum_error_bound'])
+    # pp = pprint.PrettyPrinter(indent=4)
+    # pp.pprint(res)
+    return res
+    
 def calculate_offline_computations_DC(__ns3_path, rate, segment, experiment, results_folder, steadyStart, steadyEnd, projectColumn, nHosts, removeDrops=True, checkColumn="", linkRates=[], linkDelays=[], 
                                       swtichDstREDQueueDiscMaxSize=[0], stats=None, tsh=0.15, differentiationDelay=None, errorRate=None, load=None, passiveProbe=False, queue_names=[], flow_names=[],
                                       samples_paths_aggregated_statistics=None):
@@ -4210,18 +4791,25 @@ def calculate_offline_computations_DC(__ns3_path, rate, segment, experiment, res
             packets_cfd = PacketCDF()
             packets_cfd.load_cdf_data('{}/scratch/ECNMC/DCWorkloads/packet_size_cdf_{}.csv'.format(__ns3_path, results_folder.split('/')[-1]))
             # packets_cfd.load_cdf_data('{}/scratch/ECNMC/Helpers/packet_size_cdf.csv'.format(__ns3_path, results_folder.split('/')[-1]))
-            full_df = prune_data(full_df, projectColumn, steadyStart, steadyEnd)
             if df_name[0] == 'T' and df_name[2] == 'A':
                 outgoingLinkRate = linkRates[1]
                 switchMaxSize = swtichDstREDQueueDiscMaxSize[1]
+                steadyStart = steadyStart + linkDelays[1]
+                steadyEnd = steadyEnd + linkDelays[1]
 
             if df_name[0] == 'A' and df_name[2] == 'T':
                 outgoingLinkRate = linkRates[2]
                 switchMaxSize = swtichDstREDQueueDiscMaxSize[1]
-                
+                steadyStart = steadyStart + linkDelays[2] + linkDelays[1]
+                steadyEnd = steadyEnd + linkDelays[2] + linkDelays[1]
+
             if df_name[0] == 'T' and df_name[2] == 'H':
                 outgoingLinkRate = linkRates[3]
                 switchMaxSize = swtichDstREDQueueDiscMaxSize[0]
+                steadyStart = steadyStart + linkDelays[3] + linkDelays[2] + linkDelays[1]
+                steadyEnd = steadyEnd + linkDelays[3] + linkDelays[2] + linkDelays[1]
+
+            full_df = prune_data(full_df, projectColumn, steadyStart, steadyEnd)
 
             full_df['Delay'] = (full_df['TotalQueueSize'] * 8) / outgoingLinkRate
             df_res['DelayMean'] = full_df['Delay'].mean()
