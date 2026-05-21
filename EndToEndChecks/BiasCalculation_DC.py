@@ -29,6 +29,8 @@ def prepare_results(queues):
         rounds_results[queue_name+'e2e_vs_poisson_consistent'] = []
         rounds_results[queue_name+'e2e_vs_poisson_consistent_with_bias'] = []
         rounds_results[queue_name+'bias'] = []
+        rounds_results[queue_name+'NPkts'] = []
+        rounds_results[queue_name+'NBytes'] = []
     rounds_results['experiment'] = []
     return rounds_results
             
@@ -67,6 +69,8 @@ def merge_results(return_dict, merged_results, queues):
             merged_results[queue_name+'e2e_vs_poisson_consistent'].append(return_dict[exp][queue_name+'e2e_vs_poisson_consistent'])
             merged_results[queue_name+'e2e_vs_poisson_consistent_with_bias'].append(return_dict[exp][queue_name+'e2e_vs_poisson_consistent_with_bias'])
             merged_results[queue_name+'bias'].append(return_dict[exp][queue_name+'bias'])
+            merged_results[queue_name+'NPkts'].append(return_dict[exp][queue_name+'NPkts'])
+            merged_results[queue_name+'NBytes'].append(return_dict[exp][queue_name+'NBytes'])
         
         merged_results['e2e_vs_sum_error_bound'].append(return_dict[exp]['e2e_vs_sum_error_bound'])
         merged_results['sum_poisson_samples_queue_delay_mean'].append(return_dict[exp]['sum_poisson_samples_queue_delay_mean'])
@@ -88,7 +92,7 @@ def analyze_all_experiments(rate, steadyStart, steadyEnd, dir, config, experimen
 
     rounds_results = prepare_results(queues_names)
     merged_results = prepare_results(queues_names)
-    batch_size = 30
+    batch_size = 15
     for i in range(int(experiments_end / batch_size) + 1):
         ths = []
         return_dict = multiprocessing.Manager().dict()
@@ -139,11 +143,11 @@ def __main__():
     serviceRateScales = [float(x) for x in config.get('Settings', 'serviceRateScales').split(',')]
     # serviceRateScales = [0.5]
     loads = [float(x) for x in config.get('Settings', 'load').split(',')]
-    loads = [0.1, 0.2, 0.3, 0.4, 0.7, 0.95]
-    # loads = [0.95]
+    loads = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.95]
+    # loads = [0.1]
     traffics = config.get('Settings', 'traffic').split(',')
     traffics = ["Google_AllRPC", "Fabricated_Heavy_Head", "Fabricated_Heavy_Middle", "Google_SearchRPC", "Facebook_HadoopDist_All"]
-    # traffics = ["Google_SearchRPC"]
+    # traffics = ["Google_AllRPC"]
     errorRates = [float(x) for x in config.get('Settings', 'errorRate').split(',')]
     # errorRates = [0.1, 0.3, 0.5, 0.7, 0.9]
     # errorRates = [0.1]

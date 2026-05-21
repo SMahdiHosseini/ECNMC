@@ -6,9 +6,13 @@ from matplotlib.cm import get_cmap
 from matplotlib.lines import Line2D
 import matplotlib.pyplot as plt
 import numpy as np
+from Utils import compute_average_packet_size
 
 confidenceValue = 1.96 # 95% confidence interval
 maxError = 0.40
+estimated_bias_thresholds = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+per_queue_size_thresholds_bytes = [100, 250, 500, 750, 1000, 1250, 1500, 1750]
+per_queue_size_thresholds_packets = [0.25, 0.5, 0.75, 1.0, 1.25]
 colors = ['b', 'g', 'r', 'c', 'm', 'y', 'k', 'b', 'g', 'r', 'c', 'm', 'y', 'k']
 def readResults(results_dict, results_dir, serviceRateScale, results_dir_file, differentiationDelay=0, errorRate=0, load=0, traffic='', queues=[]):
     rate_dir = traffic + "/" + str(serviceRateScale) + "/" + str(load)
@@ -21,13 +25,32 @@ def readResults(results_dict, results_dir, serviceRateScale, results_dir_file, d
             else:
                 continue
             print('../Results/results_' + results_dir + '/' + rate_dir + '/'+file)
+            e2e_vs_sum_consistency_check_filtered_estimated_bias = []
+            for idx in range(len(estimated_bias_thresholds)):
+                e2e_vs_sum_consistency_check_filtered_estimated_bias.append([])
+            e2e_vs_sum_consistency_check_filtered_queue_size_packets = []
+            for idx in range(len(per_queue_size_thresholds_packets)):
+                e2e_vs_sum_consistency_check_filtered_queue_size_packets.append([])
+            e2e_vs_sum_consistency_check_filtered_queue_size_bytes = []
+            for idx in range(len(per_queue_size_thresholds_bytes)):
+                e2e_vs_sum_consistency_check_filtered_queue_size_bytes.append([])
+            e2e_vs_sum_consistency_check_with_estimated_bias_added_to_bound = []
             for i in range(len(temp['experiment'])):
                 results_dict['e2e_vs_sum_error_bound'][traffic][load][serviceRateScale].append(temp['e2e_vs_sum_error_bound'][i])
                 results_dict['e2e_vs_sum_relative_error_bound'][traffic][load][serviceRateScale].append(temp['e2e_vs_sum_error_bound'][i] / temp['sum_poisson_samples_queue_delay_mean'][i])
                 results_dict['e2e_vs_sum_abs_error'][traffic][load][serviceRateScale].append(abs(temp['sum_poisson_samples_queue_delay_mean'][i] - temp['e2e_poisson_samples_queue_delay_mean'][i]))
                 results_dict['e2e_vs_sum_relative_error'][traffic][load][serviceRateScale].append(abs(temp['sum_poisson_samples_queue_delay_mean'][i] - temp['e2e_poisson_samples_queue_delay_mean'][i]) / temp['sum_poisson_samples_queue_delay_mean'][i])
                 results_dict['e2e_vs_sum_estimated_bias'][traffic][load][serviceRateScale].append(sum([temp[queue_name+'bias'][i] for queue_name in queues]))
+                results_dict['e2e_total_queuing_delay_time'][traffic][load][serviceRateScale].append(temp['e2e_poisson_samples_queue_delay_mean'][i])
+                results_dict['e2e_total_queuing_delay_packets'][traffic][load][serviceRateScale].append(sum([temp[queue_name+'NPkts'][i] for queue_name in queues]))
+                results_dict['e2e_total_queuing_delay_bytes'][traffic][load][serviceRateScale].append(sum([temp[queue_name+'NBytes'][i] for queue_name in queues]))
+                e2e_vs_sum_consistency_check_with_estimated_bias_added_to_bound.append(abs(temp['sum_poisson_samples_queue_delay_mean'][i] - temp['e2e_poisson_samples_queue_delay_mean'][i]) <= (temp['e2e_vs_sum_error_bound'][i] + results_dict['e2e_vs_sum_estimated_bias'][traffic][load][serviceRateScale][-1]))
+                for idx, trsh in enumerate(estimated_bias_thresholds):
+                    if results_dict['e2e_vs_sum_estimated_bias'][traffic][load][serviceRateScale][-1] < trsh * temp['e2e_vs_sum_error_bound'][i]:
+                        e2e_vs_sum_consistency_check_filtered_estimated_bias[idx].append(temp['e2e_vs_sum_consistent'][i])
 
+                queue_size_filtered_packets = [False for i in range(len(per_queue_size_thresholds_packets))]
+                queue_size_filtered_bytes = [False for i in range(len(per_queue_size_thresholds_bytes))]
                 for queue_name in queues:
                     results_dict['queue_error_bound'][queue_name][traffic][load][serviceRateScale].append(temp[queue_name+'error_bound'][i])
                     results_dict['queue_relative_error_bound'][queue_name][traffic][load][serviceRateScale].append(temp[queue_name+'error_bound'][i] / temp[queue_name+'poisson_samples_queue_delay_mean'][i])
@@ -35,9 +58,35 @@ def readResults(results_dict, results_dir, serviceRateScale, results_dir_file, d
                     results_dict['queue_error'][queue_name][traffic][load][serviceRateScale].append(temp[queue_name+'e2e_samples_queue_delay_mean'][i] - temp[queue_name+'poisson_samples_queue_delay_mean'][i])
                     results_dict['queue_relative_error'][queue_name][traffic][load][serviceRateScale].append(abs(temp[queue_name+'poisson_samples_queue_delay_mean'][i] - temp[queue_name+'e2e_samples_queue_delay_mean'][i]) / temp[queue_name+'poisson_samples_queue_delay_mean'][i])
                     results_dict['queue_estimated_bias'][queue_name][traffic][load][serviceRateScale].append(temp[queue_name+'bias'][i])
-            
+                    results_dict['queue_relative_error_bound_subtracted_relative_error'][queue_name][traffic][load][serviceRateScale].append(results_dict['queue_relative_error_bound'][queue_name][traffic][load][serviceRateScale][-1] - results_dict['queue_relative_error'][queue_name][traffic][load][serviceRateScale][-1])
+                    results_dict['queue_relative_error_bound_subtracted_relative_error_after_bias'][queue_name][traffic][load][serviceRateScale].append(results_dict['queue_relative_error_bound'][queue_name][traffic][load][serviceRateScale][-1] - (abs(temp[queue_name+'poisson_samples_queue_delay_mean'][i] + temp[queue_name+'bias'][i] - temp[queue_name+'e2e_samples_queue_delay_mean'][i]) / temp[queue_name+'poisson_samples_queue_delay_mean'][i]))
+                    results_dict['queue_delay_time'][queue_name][traffic][load][serviceRateScale].append(temp[queue_name+'poisson_samples_queue_delay_mean'][i])
+                    results_dict['queue_delay_packets'][queue_name][traffic][load][serviceRateScale].append(temp[queue_name+'NPkts'][i])
+                    results_dict['queue_delay_bytes'][queue_name][traffic][load][serviceRateScale].append(temp[queue_name+'NBytes'][i])                  
+                    for idx, trsh in enumerate(per_queue_size_thresholds_packets):
+                        if temp[queue_name+'NPkts'][i] < trsh:
+                            queue_size_filtered_packets[idx] = True
+                    for idx, trsh in enumerate(per_queue_size_thresholds_bytes):
+                        if temp[queue_name+'NBytes'][i] < trsh:
+                            queue_size_filtered_bytes[idx] = True
+                for idx, trsh in enumerate(per_queue_size_thresholds_packets):
+                    if not queue_size_filtered_packets[idx]:
+                        e2e_vs_sum_consistency_check_filtered_queue_size_packets[idx].append(temp['e2e_vs_sum_consistent'][i])
+                for idx, trsh in enumerate(per_queue_size_thresholds_bytes):
+                    if not queue_size_filtered_bytes[idx]:
+                        e2e_vs_sum_consistency_check_filtered_queue_size_bytes[idx].append(temp['e2e_vs_sum_consistent'][i])
+
+            results_dict['e2e_vs_sum_relative_error_bound_subtracted_relative_error'][traffic][load][serviceRateScale] = [results_dict['e2e_vs_sum_relative_error_bound'][traffic][load][serviceRateScale][i] - results_dict['e2e_vs_sum_relative_error'][traffic][load][serviceRateScale][i] for i in range(len(results_dict['e2e_vs_sum_relative_error_bound'][traffic][load][serviceRateScale]))]
+            results_dict['e2e_vs_sum_relative_error_bound_subtracted_relative_error_after_bias'][traffic][load][serviceRateScale] = [results_dict['e2e_vs_sum_relative_error_bound'][traffic][load][serviceRateScale][i] - abs(temp['sum_poisson_samples_queue_delay_mean'][i] + results_dict['e2e_vs_sum_estimated_bias'][traffic][load][serviceRateScale][i] - temp['e2e_poisson_samples_queue_delay_mean'][i]) / temp['sum_poisson_samples_queue_delay_mean'][i] for i in range(len(results_dict['e2e_vs_sum_relative_error_bound'][traffic][load][serviceRateScale]))]
             results_dict['e2e_vs_sum_consistency_check'][traffic][load][serviceRateScale] = sum(temp['e2e_vs_sum_consistent']) / len(temp['experiment']) * 100
             results_dict['e2e_vs_sum_consistency_check_with_estimated_bias'][traffic][load][serviceRateScale] = sum(temp['e2e_vs_sum_consistent_with_bias']) / len(temp['experiment']) * 100
+            results_dict['e2e_vs_sum_consistency_check_with_estimated_bias_added_to_bound'][traffic][load][serviceRateScale] = sum(e2e_vs_sum_consistency_check_with_estimated_bias_added_to_bound) / len(temp['experiment']) * 100
+            for idx in range(len(estimated_bias_thresholds)):
+                results_dict['e2e_vs_sum_consistency_check_filtered_estimated_bias'][idx][traffic][load][serviceRateScale] = sum(e2e_vs_sum_consistency_check_filtered_estimated_bias[idx]) / len(e2e_vs_sum_consistency_check_filtered_estimated_bias[idx]) * 100 if len(e2e_vs_sum_consistency_check_filtered_estimated_bias[idx]) > 0 else np.nan
+            for idx in range(len(per_queue_size_thresholds_packets)):
+                results_dict['e2e_vs_sum_consistency_check_filtered_queue_size_packets'][idx][traffic][load][serviceRateScale] = sum(e2e_vs_sum_consistency_check_filtered_queue_size_packets[idx]) / len(e2e_vs_sum_consistency_check_filtered_queue_size_packets[idx]) * 100 if len(e2e_vs_sum_consistency_check_filtered_queue_size_packets[idx]) > 0 else np.nan
+            for idx in range(len(per_queue_size_thresholds_bytes)):
+                results_dict['e2e_vs_sum_consistency_check_filtered_queue_size_bytes'][idx][traffic][load][serviceRateScale] = sum(e2e_vs_sum_consistency_check_filtered_queue_size_bytes[idx]) / len(e2e_vs_sum_consistency_check_filtered_queue_size_bytes[idx]) * 100 if len(e2e_vs_sum_consistency_check_filtered_queue_size_bytes[idx]) > 0 else np.nan
             for queue_name in queues:
                 results_dict['queue_consistency_check'][queue_name][traffic][load][serviceRateScale] = sum(temp[queue_name+'e2e_vs_poisson_consistent']) / len(temp['experiment']) * 100
                 results_dict['queue_consistency_check_with_estimated_bias_added_to_Poisson_mean'][queue_name][traffic][load][serviceRateScale] = sum(temp[queue_name+'e2e_vs_poisson_consistent_with_bias']) / len(temp['experiment']) * 100
@@ -98,6 +147,7 @@ def plot_forward_success_per_loads_traffic(results, loads, rates, results_dir, r
         ax.set_ylabel("Success Rate (%)", fontsize=14)
         ax.set_ylim(-5, 110)
         ax.set_yticks(np.arange(0, 101, 10))
+        ax.tick_params(axis='y', labelsize=12)
         ax.grid(True, which='both', linestyle='--', linewidth=0.5)
         ax.legend(loc='best', fontsize=10, fancybox=True, shadow=True)
 
@@ -246,17 +296,37 @@ def prepare_results_dict(results_dir, results_dir_file, rateScales, loads, traff
     e2e_vs_sum_abs_error = {}
     e2e_vs_sum_relative_error = {}
     e2e_vs_sum_estimated_bias = {}
+    e2e_vs_sum_relative_error_bound_subtracted_relative_error = {}
+    e2e_vs_sum_relative_error_bound_subtracted_relative_error_after_bias = {}
+    e2e_vs_sum_consistency_check_filtered_estimated_bias = []
+    for trsh in estimated_bias_thresholds:
+        e2e_vs_sum_consistency_check_filtered_estimated_bias.append({})
+    e2e_vs_sum_consistency_check_filtered_queue_size_packets = []
+    for trsh in per_queue_size_thresholds_packets:
+        e2e_vs_sum_consistency_check_filtered_queue_size_packets.append({})
+    e2e_vs_sum_consistency_check_filtered_queue_size_bytes = []
+    for trsh in per_queue_size_thresholds_bytes:
+        e2e_vs_sum_consistency_check_filtered_queue_size_bytes.append({})
     e2e_vs_sum_consistency_check = {}
     e2e_vs_sum_consistency_check_with_estimated_bias = {}
+    e2e_vs_sum_consistency_check_with_estimated_bias_added_to_bound = {}
+    e2e_total_queuing_delay_time = {}
+    e2e_total_queuing_delay_packets = {}
+    e2e_total_queuing_delay_bytes = {}
     queue_error_bound = {}
     queue_relative_error_bound = {}
     queue_abs_error = {}
     queue_error = {}
     queue_relative_error = {}
     queue_estimated_bias = {}
+    queue_relative_error_bound_subtracted_relative_error = {}
+    queue_relative_error_bound_subtracted_relative_error_after_bias = {}
     queue_consistency_check = {}
     queue_consistency_check_with_estimated_bias_added_to_Poisson_mean = {}
     queue_consistency_check_with_estimated_bias_added_to_bound = {}
+    queue_delay_time = {}
+    queue_delay_packets = {}
+    queue_delay_bytes = {}
 
     for queue_name in queues:
         queue_error_bound[queue_name] = {}
@@ -265,18 +335,35 @@ def prepare_results_dict(results_dir, results_dir_file, rateScales, loads, traff
         queue_error[queue_name] = {}
         queue_relative_error[queue_name] = {}
         queue_estimated_bias[queue_name] = {}
+        queue_relative_error_bound_subtracted_relative_error[queue_name] = {}
+        queue_relative_error_bound_subtracted_relative_error_after_bias[queue_name] = {}
         queue_consistency_check[queue_name] = {}
         queue_consistency_check_with_estimated_bias_added_to_Poisson_mean[queue_name] = {}
         queue_consistency_check_with_estimated_bias_added_to_bound[queue_name] = {}
-    
+        queue_delay_time[queue_name] = {}
+        queue_delay_packets[queue_name] = {}
+        queue_delay_bytes[queue_name] = {}
+
     for traffic in traffics:
         e2e_vs_sum_error_bound[traffic] = {}
         e2e_vs_sum_relative_error_bound[traffic] = {}
         e2e_vs_sum_abs_error[traffic] = {}
         e2e_vs_sum_relative_error[traffic] = {}
         e2e_vs_sum_estimated_bias[traffic] = {}
+        e2e_vs_sum_relative_error_bound_subtracted_relative_error[traffic] = {}
+        e2e_vs_sum_relative_error_bound_subtracted_relative_error_after_bias[traffic] = {}
+        for idx in range(len(estimated_bias_thresholds)):
+            e2e_vs_sum_consistency_check_filtered_estimated_bias[idx][traffic] = {}
+        for idx in range(len(per_queue_size_thresholds_packets)):
+            e2e_vs_sum_consistency_check_filtered_queue_size_packets[idx][traffic] = {}
+        for idx in range(len(per_queue_size_thresholds_bytes)):
+            e2e_vs_sum_consistency_check_filtered_queue_size_bytes[idx][traffic] = {}
         e2e_vs_sum_consistency_check[traffic] = {}
         e2e_vs_sum_consistency_check_with_estimated_bias[traffic] = {}
+        e2e_vs_sum_consistency_check_with_estimated_bias_added_to_bound[traffic] = {}
+        e2e_total_queuing_delay_time[traffic] = {}
+        e2e_total_queuing_delay_packets[traffic] = {}
+        e2e_total_queuing_delay_bytes[traffic] = {}
         for queue_name in queues:
             queue_error_bound[queue_name][traffic] = {}
             queue_relative_error_bound[queue_name][traffic] = {}
@@ -284,17 +371,34 @@ def prepare_results_dict(results_dir, results_dir_file, rateScales, loads, traff
             queue_error[queue_name][traffic] = {}
             queue_relative_error[queue_name][traffic] = {}
             queue_estimated_bias[queue_name][traffic] = {}
+            queue_relative_error_bound_subtracted_relative_error[queue_name][traffic] = {}
+            queue_relative_error_bound_subtracted_relative_error_after_bias[queue_name][traffic] = {}
             queue_consistency_check[queue_name][traffic] = {}
             queue_consistency_check_with_estimated_bias_added_to_Poisson_mean[queue_name][traffic] = {}
             queue_consistency_check_with_estimated_bias_added_to_bound[queue_name][traffic] = {}
+            queue_delay_time[queue_name][traffic] = {}
+            queue_delay_packets[queue_name][traffic] = {}
+            queue_delay_bytes[queue_name][traffic] = {}
         for load in loads:
                 e2e_vs_sum_error_bound[traffic][load] = {}
                 e2e_vs_sum_abs_error[traffic][load] = {}
                 e2e_vs_sum_relative_error[traffic][load] = {}
                 e2e_vs_sum_relative_error_bound[traffic][load] = {}
                 e2e_vs_sum_estimated_bias[traffic][load] = {}
+                e2e_vs_sum_relative_error_bound_subtracted_relative_error[traffic][load] = {}
+                e2e_vs_sum_relative_error_bound_subtracted_relative_error_after_bias[traffic][load] = {}
+                for idx in range(len(estimated_bias_thresholds)):
+                    e2e_vs_sum_consistency_check_filtered_estimated_bias[idx][traffic][load] = {}
+                for idx in range(len(per_queue_size_thresholds_packets)):
+                    e2e_vs_sum_consistency_check_filtered_queue_size_packets[idx][traffic][load] = {}
+                for idx in range(len(per_queue_size_thresholds_bytes)):
+                    e2e_vs_sum_consistency_check_filtered_queue_size_bytes[idx][traffic][load] = {}
                 e2e_vs_sum_consistency_check[traffic][load] = {}
                 e2e_vs_sum_consistency_check_with_estimated_bias[traffic][load] = {}
+                e2e_vs_sum_consistency_check_with_estimated_bias_added_to_bound[traffic][load] = {}
+                e2e_total_queuing_delay_time[traffic][load] = {}
+                e2e_total_queuing_delay_packets[traffic][load] = {}
+                e2e_total_queuing_delay_bytes[traffic][load] = {}
                 for queue_name in queues:
                     queue_error_bound[queue_name][traffic][load] = {}
                     queue_relative_error_bound[queue_name][traffic][load] = {}
@@ -302,17 +406,34 @@ def prepare_results_dict(results_dir, results_dir_file, rateScales, loads, traff
                     queue_error[queue_name][traffic][load] = {}
                     queue_relative_error[queue_name][traffic][load] = {}
                     queue_estimated_bias[queue_name][traffic][load] = {}
+                    queue_relative_error_bound_subtracted_relative_error[queue_name][traffic][load] = {}
+                    queue_relative_error_bound_subtracted_relative_error_after_bias[queue_name][traffic][load] = {}
                     queue_consistency_check[queue_name][traffic][load] = {}
                     queue_consistency_check_with_estimated_bias_added_to_Poisson_mean[queue_name][traffic][load] = {}
                     queue_consistency_check_with_estimated_bias_added_to_bound[queue_name][traffic][load] = {}
+                    queue_delay_time[queue_name][traffic][load] = {}
+                    queue_delay_packets[queue_name][traffic][load] = {}
+                    queue_delay_bytes[queue_name][traffic][load] = {}
                 for rate in rateScales:
                     e2e_vs_sum_error_bound[traffic][load][rate] = []
                     e2e_vs_sum_relative_error_bound[traffic][load][rate] = []
                     e2e_vs_sum_abs_error[traffic][load][rate] = []
                     e2e_vs_sum_relative_error[traffic][load][rate] = []
                     e2e_vs_sum_estimated_bias[traffic][load][rate] = []
+                    e2e_vs_sum_relative_error_bound_subtracted_relative_error[traffic][load][rate] = []
+                    e2e_vs_sum_relative_error_bound_subtracted_relative_error_after_bias[traffic][load][rate] = []
+                    for idx in range(len(estimated_bias_thresholds)):
+                        e2e_vs_sum_consistency_check_filtered_estimated_bias[idx][traffic][load][rate] = np.nan
+                    for idx in range(len(per_queue_size_thresholds_packets)):
+                        e2e_vs_sum_consistency_check_filtered_queue_size_packets[idx][traffic][load][rate] = np.nan
+                    for idx in range(len(per_queue_size_thresholds_bytes)):
+                        e2e_vs_sum_consistency_check_filtered_queue_size_bytes[idx][traffic][load][rate] = np.nan
                     e2e_vs_sum_consistency_check[traffic][load][rate] = np.nan
                     e2e_vs_sum_consistency_check_with_estimated_bias[traffic][load][rate] = np.nan
+                    e2e_vs_sum_consistency_check_with_estimated_bias_added_to_bound[traffic][load][rate] = np.nan
+                    e2e_total_queuing_delay_time[traffic][load][rate] = []
+                    e2e_total_queuing_delay_packets[traffic][load][rate] = []
+                    e2e_total_queuing_delay_bytes[traffic][load][rate] = []
                     for queue_name in queues:
                         queue_error_bound[queue_name][traffic][load][rate] = []
                         queue_relative_error_bound[queue_name][traffic][load][rate] = []
@@ -320,25 +441,44 @@ def prepare_results_dict(results_dir, results_dir_file, rateScales, loads, traff
                         queue_error[queue_name][traffic][load][rate] = []
                         queue_relative_error[queue_name][traffic][load][rate] = []
                         queue_estimated_bias[queue_name][traffic][load][rate] = []
+                        queue_relative_error_bound_subtracted_relative_error[queue_name][traffic][load][rate] = []
+                        queue_relative_error_bound_subtracted_relative_error_after_bias[queue_name][traffic][load][rate] = []
                         queue_consistency_check[queue_name][traffic][load][rate] = np.nan
                         queue_consistency_check_with_estimated_bias_added_to_Poisson_mean[queue_name][traffic][load][rate] = np.nan
                         queue_consistency_check_with_estimated_bias_added_to_bound[queue_name][traffic][load][rate] = np.nan
+                        queue_delay_time[queue_name][traffic][load][rate] = []
+                        queue_delay_packets[queue_name][traffic][load][rate] = []
+                        queue_delay_bytes[queue_name][traffic][load][rate] = []
 
     results['e2e_vs_sum_error_bound'] = e2e_vs_sum_error_bound
     results['e2e_vs_sum_relative_error_bound'] = e2e_vs_sum_relative_error_bound
     results['e2e_vs_sum_abs_error'] = e2e_vs_sum_abs_error
     results['e2e_vs_sum_relative_error'] = e2e_vs_sum_relative_error
     results['e2e_vs_sum_estimated_bias'] = e2e_vs_sum_estimated_bias
+    results['e2e_vs_sum_relative_error_bound_subtracted_relative_error'] = e2e_vs_sum_relative_error_bound_subtracted_relative_error
+    results['e2e_vs_sum_relative_error_bound_subtracted_relative_error_after_bias'] = e2e_vs_sum_relative_error_bound_subtracted_relative_error_after_bias
+    results['e2e_vs_sum_consistency_check_filtered_estimated_bias'] = e2e_vs_sum_consistency_check_filtered_estimated_bias
+    results['e2e_vs_sum_consistency_check_filtered_queue_size_packets'] = e2e_vs_sum_consistency_check_filtered_queue_size_packets
+    results['e2e_vs_sum_consistency_check_filtered_queue_size_bytes'] = e2e_vs_sum_consistency_check_filtered_queue_size_bytes
     results['e2e_vs_sum_consistency_check'] = e2e_vs_sum_consistency_check
     results['e2e_vs_sum_consistency_check_with_estimated_bias'] = e2e_vs_sum_consistency_check_with_estimated_bias
+    results['e2e_vs_sum_consistency_check_with_estimated_bias_added_to_bound'] = e2e_vs_sum_consistency_check_with_estimated_bias_added_to_bound
+    results['e2e_total_queuing_delay_time'] = e2e_total_queuing_delay_time
+    results['e2e_total_queuing_delay_packets'] = e2e_total_queuing_delay_packets
+    results['e2e_total_queuing_delay_bytes'] = e2e_total_queuing_delay_bytes
     results['queue_error_bound'] = queue_error_bound
     results['queue_relative_error_bound'] = queue_relative_error_bound
     results['queue_abs_error'] = queue_abs_error
     results['queue_relative_error'] = queue_relative_error
     results['queue_estimated_bias'] = queue_estimated_bias
     results['queue_consistency_check'] = queue_consistency_check
+    results['queue_relative_error_bound_subtracted_relative_error'] = queue_relative_error_bound_subtracted_relative_error
+    results['queue_relative_error_bound_subtracted_relative_error_after_bias'] = queue_relative_error_bound_subtracted_relative_error_after_bias
     results['queue_consistency_check_with_estimated_bias_added_to_Poisson_mean'] = queue_consistency_check_with_estimated_bias_added_to_Poisson_mean
     results['queue_consistency_check_with_estimated_bias_added_to_bound'] = queue_consistency_check_with_estimated_bias_added_to_bound
+    results['queue_delay_time'] = queue_delay_time
+    results['queue_delay_packets'] = queue_delay_packets
+    results['queue_delay_bytes'] = queue_delay_bytes
     results['queue_error'] = queue_error
     return results
 
@@ -357,8 +497,20 @@ def analyse_forward_exp(results_dir, results_dir_file, rateScales, loads, traffi
     plot_metric_per_loads_traffic_boxplot(traffics, results['e2e_vs_sum_abs_error'], loads, rateScales, results_dir, results_dir_file, "e2e vs sum Absolute Error (ns)")
     plot_metric_per_loads_traffic_boxplot(traffics, results['e2e_vs_sum_relative_error'], loads, rateScales, results_dir, results_dir_file, "e2e vs sum Relative Error")
     plot_metric_per_loads_traffic_boxplot(traffics, results['e2e_vs_sum_estimated_bias'], loads, rateScales, results_dir, results_dir_file, "e2e vs sum Estimated Bias (ns)")
+    plot_metric_per_loads_traffic_boxplot(traffics, results['e2e_vs_sum_relative_error_bound_subtracted_relative_error'], loads, rateScales, results_dir, results_dir_file, "e2e vs sum Relative Error Bound Subtracted Relative Error")
+    plot_metric_per_loads_traffic_boxplot(traffics, results['e2e_vs_sum_relative_error_bound_subtracted_relative_error_after_bias'], loads, rateScales, results_dir, results_dir_file, "e2e vs sum Relative Error Bound Subtracted Relative Error After Bias")
     plot_forward_success_per_loads_traffic(results['e2e_vs_sum_consistency_check'], loads, rateScales, results_dir, results_dir_file, "consistency_check")
     plot_forward_success_per_loads_traffic(results['e2e_vs_sum_consistency_check_with_estimated_bias'], loads, rateScales, results_dir, results_dir_file, "consistency_check_with_estimated_bias")
+    plot_forward_success_per_loads_traffic(results['e2e_vs_sum_consistency_check_with_estimated_bias_added_to_bound'], loads, rateScales, results_dir, results_dir_file, "consistency_check_with_estimated_bias_added_to_bound")
+    plot_metric_per_loads_traffic_boxplot(traffics, results['e2e_total_queuing_delay_time'], loads, rateScales, results_dir, results_dir_file, f"e2e Total Queuing Delay Time (ns)")
+    plot_metric_per_loads_traffic_boxplot(traffics, results['e2e_total_queuing_delay_packets'], loads, rateScales, results_dir, results_dir_file, f"e2e Total Queuing Delay Packets")
+    plot_metric_per_loads_traffic_boxplot(traffics, results['e2e_total_queuing_delay_bytes'], loads, rateScales, results_dir, results_dir_file, f"e2e Total Queuing Delay Bytes")
+    for idx, trsh in enumerate(estimated_bias_thresholds):
+        plot_forward_success_per_loads_traffic(results['e2e_vs_sum_consistency_check_filtered_estimated_bias'][idx], loads, rateScales, results_dir, results_dir_file, f"consistency_check_filtered_by_estimated_bias_{trsh}")
+    for idx, trsh in enumerate(per_queue_size_thresholds_packets):
+        plot_forward_success_per_loads_traffic(results['e2e_vs_sum_consistency_check_filtered_queue_size_packets'][idx], loads, rateScales, results_dir, results_dir_file, f"consistency_check_filtered_by_queue_size_{trsh}pkts")
+    for idx, trsh in enumerate(per_queue_size_thresholds_bytes):
+        plot_forward_success_per_loads_traffic(results['e2e_vs_sum_consistency_check_filtered_queue_size_bytes'][idx], loads, rateScales, results_dir, results_dir_file, f"consistency_check_filtered_by_queue_size_{trsh}bytes")
 
     for queue_name in queues:
         plot_metric_per_loads_traffic_boxplot(traffics, results['queue_error_bound'][queue_name], loads, rateScales, results_dir, results_dir_file, f"{queue_name} Error Bound (ns)")
@@ -367,9 +519,14 @@ def analyse_forward_exp(results_dir, results_dir_file, rateScales, loads, traffi
         plot_metric_per_loads_traffic_boxplot(traffics, results['queue_error'][queue_name], loads, rateScales, results_dir, results_dir_file, f"{queue_name} Error (ns)")
         plot_metric_per_loads_traffic_boxplot(traffics, results['queue_relative_error'][queue_name], loads, rateScales, results_dir, results_dir_file, f"{queue_name} Relative Error")
         plot_metric_per_loads_traffic_boxplot(traffics, results['queue_estimated_bias'][queue_name], loads, rateScales, results_dir, results_dir_file, f"{queue_name} Estimated Bias (ns)")
+        plot_metric_per_loads_traffic_boxplot(traffics, results['queue_relative_error_bound_subtracted_relative_error'][queue_name], loads, rateScales, results_dir, results_dir_file, f"{queue_name} Relative Error Bound Subtracted Relative Error")
+        plot_metric_per_loads_traffic_boxplot(traffics, results['queue_relative_error_bound_subtracted_relative_error_after_bias'][queue_name], loads, rateScales, results_dir, results_dir_file, f"{queue_name} Relative Error Bound Subtracted Relative Error After Bias")
         plot_forward_success_per_loads_traffic(results['queue_consistency_check'][queue_name], loads, rateScales, results_dir, results_dir_file, f"{queue_name} Consistency Check")
         plot_forward_success_per_loads_traffic(results['queue_consistency_check_with_estimated_bias_added_to_bound'][queue_name], loads, rateScales, results_dir, results_dir_file, f"{queue_name} Consistency Check with Estimated Bias Added to Bound")
         plot_forward_success_per_loads_traffic(results['queue_consistency_check_with_estimated_bias_added_to_Poisson_mean'][queue_name], loads, rateScales, results_dir, results_dir_file, f"{queue_name} Consistency Check with Estimated Bias Added to Poisson Mean")
+        plot_metric_per_loads_traffic_boxplot(traffics, results['queue_delay_time'][queue_name], loads, rateScales, results_dir, results_dir_file, f"{queue_name} Queue Delay Time (ns)")
+        plot_metric_per_loads_traffic_boxplot(traffics, results['queue_delay_packets'][queue_name], loads, rateScales, results_dir, results_dir_file, f"{queue_name} Queue Delay Packets")
+        plot_metric_per_loads_traffic_boxplot(traffics, results['queue_delay_bytes'][queue_name], loads, rateScales, results_dir, results_dir_file, f"{queue_name} Queue Delay Bytes")
 
 def __main__():
     parser=argparse.ArgumentParser()
@@ -405,7 +562,7 @@ def __main__():
     differentiationDelays = [float(x) for x in config.get('Settings', 'differentiationDelay').split(',')]
     traffics = ["Google_AllRPC","Fabricated_Heavy_Head","Fabricated_Heavy_Middle","Google_SearchRPC", "Facebook_HadoopDist_All"]
     # traffics = ["Google_SearchRPC"]
-    loads = [0.1, 0.2, 0.3, 0.4, 0.7, 0.95]
+    loads = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.95]
     # loads = [0.95]
     numOfSteadyParts = 1
     for start in range(int(steadyStart), int(steadyEnd), int((steadyEnd - steadyStart) / numOfSteadyParts)):
