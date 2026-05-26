@@ -382,7 +382,7 @@ def calculate_offline_E2E_lossRates_DC(full_df, df_res, checkColumn, txDelay, df
                 print("Sample times are 'NOT' exponentially distributed.")
                 samples_times = []
         else:
-            # samples_times = find_samples_path(time, txDelay, df_res['RTT'][path], df_name, samplingMethod)
+            # samples_times, _ = find_samples_path(time, 0)
             samples_times = find_samples_path_new(time, txDelay, df_res['RTT'][path], df_name, samplingMethod, steadyStart, steadyEnd, steps=1)
 
         df_res['sampleSize']['successProb'][path] = len(samples_times)
@@ -438,7 +438,7 @@ def calculate_offline_E2E_lossRates(__ns3_path, full_df, df_res, checkColumn, tx
                 print("Sample times are 'NOT' exponentially distributed.")
                 samples_times = []
         else:
-            samples_times = find_samples_path(time, txDelay, df_res['RTT'][path], df_name, samplingMethod)
+            samples_times, _ = find_samples_path(time, 0)
         df_res['sampleSize']['successProb'][path] = len(samples_times)
         samples_values = df[df['SentTime'].isin(samples_times)]['nonDropEvent'].values
         if df_res['sampleSize']['successProb'][path] == 0:
@@ -697,7 +697,7 @@ def find_samples_path_new(time, txDelay, avg_interarrival_=None, df_name=None, s
     # #     # print("Interval from {} to {} has {} packets".format(intervalStart, intervalEnd, len(interval_times)))
     # #     t_sel_, report = e2e_poisson_like_sampler(interval_times, N_min=len(interval_times) * 0.7, max_delta_for_idc=avg_interarrival_ * 5, df_name=df_name)
     # #     # print("Poisson-like sampler selected {} packets".format(len(t_sel_)))
-    # #     # t_sel, intervalBrnval = find_samples_path(interval_times, txDelay, avg_interarrival_, df_name, samplingMethod, [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9])
+    # #     # t_sel, subSamplingError = find_samples_path(interval_times, MinimumNumberOfSamples=0)
     # #     # print("Bernoulli sampler selected {} packets".format(len(t_sel)))
     # #     if len(t_sel_) == 0:
     # #         return []
@@ -729,7 +729,7 @@ def find_samples_path_new(time, txDelay, avg_interarrival_=None, df_name=None, s
     #     intervalStart = steadyStart + (steadyEnd - steadyStart) / steps * step
     #     intervalEnd = steadyStart + (steadyEnd - steadyStart) / steps * (step + 1)
     #     interval_times = time[(time >= intervalStart) & (time < intervalEnd)]
-    #     intervalSamples, intervalBrnval = find_samples_path(interval_times, txDelay, avg_interarrival_, df_name, samplingMethod, [0.1, 0.2, 0.3, 0.5, 0.6, 0.7, 0.8, 0.18])
+    #     intervalSamples, subSamplingError = find_samples_path(interval_times, MinimumNumberOfSamples=0)
     #     if len(intervalSamples) == 0:
     #         return []
     #     aggregated_samples.extend(intervalSamples)
@@ -743,7 +743,7 @@ def find_samples_path_new(time, txDelay, avg_interarrival_=None, df_name=None, s
     #         intervalStart = steadyStart + (steadyEnd - steadyStart) / steps * step
     #         intervalEnd = steadyStart + (steadyEnd - steadyStart) / steps * (step + 1)
     #         interval_times = time[(time >= intervalStart) & (time < intervalEnd)]
-    #         intervalSamples, _ = find_samples_path(interval_times, txDelay, avg_interarrival_, df_name, samplingMethod, [min_brnval])
+    #         intervalSamples, _ = find_samples_path(interval_times, MinimumNumberOfSamples=0)
     #         if len(intervalSamples) == 0:
     #             return []
     #         aggregated_samples.extend(intervalSamples)
@@ -894,111 +894,110 @@ def randomSampling(time):
     print("Failed to find exponentially distributed interarrival times after 20 tries.")
     return []
 
-def find_samples_path(time, txDelay, avg_interarrival_=None, df_name=None, samplingMethod='Orig', brnval_list=[0.1, 0.2, 0.3, 0.5]):
-    if "P0" in df_name:
-        return time
-    # check the 99 percentile of the interarrival times
-    # interarrival_99 = np.percentile(np.diff(time), 99)
-    # # print("99 percentile of interarrival times:", interarrival_99, "txDelay:", txDelay * 1.05, "we use DA:", interarrival_99 < txDelay * 1.05)
-    # if interarrival_99 < txDelay * 1.05:
-    #     return distanceAwareSampling(time, 5e-7)
-    # interarrival_99 = np.percentile(np.diff(time), 99)
-    # if interarrival_99 > txDelay * 1.05:
-    #     return distanceAwareSampling(time, 3e-7)
-    
-    if samplingMethod == "DA":
-    # #     # rate = find_sampling_rate(time, 0.0075)
-        # sampling_rate = 1 / np.quantile(np.diff(time), 0.99)
-        # sampling_rate = 1 / np.mean(np.diff(time))
-        sampling_rate = 2e-6
-        return distanceAwareSampling(time, sampling_rate)
+def find_samples_path(time, MinimumNumberOfSamples=0):
+    subSamplingError = SubSamplingError.NoError
 
-    # return poissonLikeSampling(time, 3e-10, 3e6)
-    # return randomSampling(time)
-    # return find_samples_path_new(time, txDelay, 480*1e3)  
-    # Step 1: Compute interarrival times
-    interarrival = np.diff(time)
+    time = np.asarray(time)
+    if len(time) <= 1:
+        if MinimumNumberOfSamples > len(time):
+            subSamplingError = SubSamplingError.NotEnoughPackets + "+" + subSamplingError.value
+        return [], subSamplingError
 
-    # Step 2: Check if interarrivals follow an exponential distribution
-    # selection_mask = bernoulli.rvs(0.2, size=len(time))
-    # temp_times = time[selection_mask == 1]
-    # return temp_times
-    if len(interarrival) > 1:
-        anderson_statistic, anderson_critical_values, _ = anderson(interarrival, 'expon')
-        if anderson_statistic <= anderson_critical_values[4]:
-            print("Interarrival times are exponentially distributed.")
-            return time
-    
-    # print("Interarrival times are not exponentially distributed. Proceeding with sampling...")
-
-    # Step 3: Divide into chunks of average interarrival time
-    # avg_interarrival = np.mean(interarrival) * 10
-    # avg_interarrival  = avg_interarrival_ * 5
-    avg_interarrival = avg_interarrival_
-    # avg_interarrival = np.mean(interarrival[interarrival > txDelay])
-    # print("Average interarrival time:", avg_interarrival)
     start_time = time[0]
     end_time = time[-1]
-    bins = np.arange(start_time, end_time, avg_interarrival)
+    duration = end_time - start_time
+
+    try:
+        minimum_number_of_samples = int(np.ceil(float(MinimumNumberOfSamples)))
+    except (TypeError, ValueError):
+        minimum_number_of_samples = 0
+    minimum_number_of_samples = max(0, minimum_number_of_samples)
+
+    if minimum_number_of_samples > len(time):
+        subSamplingError = SubSamplingError.NotEnoughPackets + "+" + subSamplingError.value
+        return np.array([], dtype=time.dtype), subSamplingError
+    if duration <= 0:
+        return [], subSamplingError
+
+    try:
+        window, _ = find_delta_for_empty_prob(time, p0_max=0.01)
+    except ValueError:
+        subSamplingError = SubSamplingError.NotEnoughSamples + "+" + subSamplingError.value
+        return np.array([], dtype=time.dtype), subSamplingError
+
+    number_of_windows = max(int(np.floor(duration / window)) + 1, 1)
+    bin_ids = np.floor((time - start_time) / window).astype(int)
+    bin_ids = np.clip(bin_ids, 0, number_of_windows - 1)
+    counts = np.bincount(bin_ids, minlength=number_of_windows)
+    empty_fraction = np.mean(counts == 0)
+    # if empty_fraction > 0.01:
+    #     print("Failed to find a window where 99% of windows have at least one arrival. Empty-window fraction: {}".format(empty_fraction))
+    #     subSamplingError = SubSamplingError.NotEnoughSamples + "+" + subSamplingError.value
+    #     return np.array([], dtype=time.dtype), subSamplingError
+
+    window_sample_count = int(np.count_nonzero(counts))
+    if window_sample_count <= 1:
+        print("Failed to find enough non-empty windows for sampling.")
+        subSamplingError = SubSamplingError.NotEnoughSamples + "+" + subSamplingError.value
+        return np.array([], dtype=time.dtype), subSamplingError
+
+    if minimum_number_of_samples > window_sample_count:
+        print("Warning: Not enough windows after one-per-window sampling! Got {}, expected {}".format(
+            window_sample_count, minimum_number_of_samples
+        ))
+        subSamplingError = SubSamplingError.NotEnoughSamples + "+" + subSamplingError.value
+        return np.array([], dtype=time.dtype), subSamplingError
+
+    brnval = 1.0
+    if minimum_number_of_samples > 0:
+        brnval = min(1.0, max(0.0, minimum_number_of_samples / window_sample_count))
+
+    sorted_indices = np.argsort(bin_ids, kind='stable')
+    split_points = np.flatnonzero(np.diff(bin_ids[sorted_indices])) + 1
+    indices_per_window = np.split(sorted_indices, split_points)
+
     max_sample_size = 0
-    max_sample_size_times = []
-    max_sample_size_brnval = 0
-    # for brnval in [0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5]:
-    for brnval in brnval_list:
-        tries = 20
-        final_values = []
-        while tries > 0 :
-            selected_indices = []
-            for i in range(len(bins) - 1):
-                # Get indices in the current chunk
-                mask = (time >= bins[i]) & (time < bins[i+1])
-                indices = np.where(mask)[0]
-                if len(indices) > 0:
-                    # Randomly pick one index from the chunk
-                    selected_indices.append(np.random.choice(indices))
+    max_sample_size_times = np.array([], dtype=time.dtype)
+    tries = 20
+    while tries > 0:
+        selected_indices = np.array([
+            np.random.choice(indices)
+            for indices in indices_per_window
+            if len(indices) > 0
+        ], dtype=int)
+        selected_indices.sort()
+        selected_times = time[selected_indices]
 
-            if len(selected_indices) <= 1:
-                tries -= 1
-                continue
-            selected_indices = np.array(selected_indices)
-            selected_times = time[selected_indices]
-            # print("Selected times:", len(selected_times), "from", len(time), "total packets.")
-            # Step 4: Check if interarrival of selected packets is exponential
-            selected_interarrival = np.diff(selected_times)
-            anderson_statistic, anderson_critical_values, _ = anderson(selected_interarrival, 'expon')
-            if anderson_statistic <= anderson_critical_values[4]:
-                # print("Selected First interarrival times are exponentially distributed.")
-                if len(selected_times) > max_sample_size:
-                    max_sample_size = len(selected_times)
-                    max_sample_size_times = selected_times
-                    max_sample_size_brnval = brnval
-                    break
-                # return selected_times
+        if brnval < 1.0:
+            keep_mask = bernoulli.rvs(brnval, size=len(selected_times)).astype(bool)
+            final_times = selected_times[keep_mask]
+        else:
+            final_times = selected_times
 
-            # Step 5: Use Bernoulli sampling on selected packets
-            keep_mask = bernoulli.rvs(brnval, size=len(selected_times))
-            final_times = selected_times[keep_mask == 1]
-            # print("Final times after Bernoulli sampling:", len(final_times), "with brnval:", brnval)
-            if len(final_times) <= 1:
-                tries -= 1
-                continue
-            anderson_statistic, anderson_critical_values, _ = anderson(np.diff(final_times), 'expon')
-            if anderson_statistic <= anderson_critical_values[4]:
-                # print("Selected Second interarrival times are exponentially distributed.")
-                # return final_times
-                if len(final_times) > max_sample_size:
-                    max_sample_size = len(final_times)
-                    max_sample_size_times = final_times
-                    max_sample_size_brnval = brnval
-                    break
+        if minimum_number_of_samples > 0 and len(final_times) < minimum_number_of_samples:
             tries -= 1
-            # print("Tries left:", tries, "with brnval:", brnval)
-        # print("after brnval:", brnval, "max_sample_size:", max_sample_size)
+            continue
+        if len(final_times) <= 1:
+            tries -= 1
+            continue
+
+        # anderson_statistic, anderson_critical_values, _ = anderson(np.diff(final_times), 'expon')
+        # if anderson_statistic <= anderson_critical_values[4]:
+        anderson_res = anderson(np.diff(final_times), 'expon', method='interpolate')
+        if anderson_res.pvalue > 0.05:
+            if len(final_times) > max_sample_size:
+                max_sample_size = len(final_times)
+                max_sample_size_times = final_times
+                break
+        tries -= 1
+
     if max_sample_size:
-        # print("Max sample size found:", max_sample_size, len(max_sample_size_times))
-        return max_sample_size_times, max_sample_size_brnval
-    print("Failed to find exponentially distributed interarrival times after 20 tries.")
-    return [], 0
+        return max_sample_size_times, subSamplingError
+    print("Failed to find exponentially distributed interarrival times after 20 tries. Window: {}, Bernoulli probability: {}".format(
+        window, brnval
+    ))
+    subSamplingError = SubSamplingError.NotPoisson + "+" + subSamplingError.value
+    return np.array([], dtype=time.dtype), subSamplingError
 
 def e2e_poisson_sampling(time, values, delay=False, sizes=None):
     duration = time[-1] - time[0]
@@ -1098,7 +1097,7 @@ def calculate_offline_E2E_markingProb(full_df, df_res, checkColumn, txDelay, swt
                 print("Sample times are 'NOT' exponentially distributed.")
                 samples_times = []
         else:
-            # samples_times = find_samples_path(time, txDelay, df_res['RTT'][path], df_name, samplingMethod)
+            # samples_times, _ = find_samples_path(time, 0)
             samples_times = find_samples_path_new(time, txDelay, df_res['RTT'][path], df_name, samplingMethod, steadyStart, steadyEnd, steps=1)
         df_res['sampleSize']['nonMarkingProb'][path] = len(samples_times)
         samples_values = df[df['SentTime'].isin(samples_times)]['nonMarking'].values
@@ -1152,12 +1151,13 @@ def calculate_offline_E2E_delays(full_df, removeDrops, checkColumn, txDelay, df_
                 print("Sample times are 'NOT' exponentially distributed.")
                 samples_times = []
         else:
-            # samples_times = find_samples_path(time, txDelay, df_res['RTT'][path], df_name, samplingMethod)
+            # samples_times, _ = find_samples_path(time, 0)
             if path in samples_paths_aggregated_statistics.keys():
                 if samples_paths_aggregated_statistics[path]['MinimumE2ESampleSize'] is not None:
                 #    samples_times, subSamplingError = find_samples_path_new(time, txDelay, df_res['RTT'][path], df_name, samplingMethod, steadyStart, steadyEnd, steps=1, MinimumNumberOfSamples=samples_paths_aggregated_statistics[path]['MinimumE2ESampleSize'])
                     # samples_times, subSamplingError, result = find_samples_path_ccf(time, steadyStart, steadyEnd, queue_names, df_name, linkDelays, linkRates, queue_size_trshs, samples_paths_aggregated_statistics[path]['MinimumE2ESampleSize'])
-                    samples_times, subSamplingError, result = find_samples_path_chi_squared_test(time, steadyStart, steadyEnd, samples_paths_aggregated_statistics[path]['MinimumE2ESampleSize'])
+                    # samples_times, subSamplingError, result = find_samples_path_chi_squared_test(time, steadyStart, steadyEnd, samples_paths_aggregated_statistics[path]['MinimumE2ESampleSize'])
+                    samples_times, subSamplingError = find_samples_path(time, samples_paths_aggregated_statistics[path]['MinimumE2ESampleSize'])
                 else:
                     samples_times = []
             else:
@@ -1358,13 +1358,13 @@ def plot_queuingDelay_distribution(__ns3_path, results_folder, rate, experiment,
         # full_df_M = full_df_switch[full_df_switch['Label'].str.contains('10.1.1.1', na=False)]
         # time = full_df_M['Time'].values
 
-        samples_times = find_samples_path(time, 0, 200000, "Poisson", samplingMethod='Orig')
+        samples_times, _ = find_samples_path(time, 0)
         samples_values = full_df_M[full_df_M['SentTime'].isin(samples_times)]['Delay'].values
         # samples_values = full_df_M[full_df_M['Time'].isin(samples_times)]['Delay'].values
         d3 = np.asarray(samples_values, dtype=float)
         d3 = d3[np.isfinite(d3)]
 
-        distanceAwareSampling_samples_times = find_samples_path(time, 0, 200000, "Poisson", samplingMethod='DA')
+        distanceAwareSampling_samples_times = distanceAwareSampling(time, 2e-6)
         distanceAwareSampling_samples_values = full_df_M[full_df_M['SentTime'].isin(distanceAwareSampling_samples_times)]['Delay'].values
         d4 = np.asarray(distanceAwareSampling_samples_values, dtype=float)
         d4 = d4[np.isfinite(d4)]
@@ -1476,7 +1476,7 @@ def plot_interarrival_distribution(__ns3_path, results_folder, rate, experiment,
 
 def compute_mixing_poisson_e2e(switch_df, traffics_df, RTT):
     time = traffics_df['SentTime'].values
-    samples_times = find_samples_path(time, 0, RTT)
+    samples_times, _ = find_samples_path(time, 0)
     samples_times = samples_times.astype(int)
     switch_df = switch_df.copy()  # avoid modifying original
     for sample in samples_times:
@@ -1735,7 +1735,7 @@ def plot_queuingDelay_time_new(__ns3_path, results_folder, rate, experiment, seg
         if target_label in labels:
             g = full_df[full_df['Label'].str.contains(target_label, na=False)]
             time = g['Time'].values.astype(float)
-            samples_times = find_samples_path(time, 0, 200000, "Poisson")
+            samples_times, _ = find_samples_path(time, 0)
             samples_values = g[g['Time'].isin(samples_times)]['TotalQueueSize'].values
             plt.scatter(samples_times, samples_values, color='k', marker='^', s=10, label=f'Sampled {target_label}')
 
