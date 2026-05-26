@@ -34,7 +34,9 @@ def prepare_results(queues):
     rounds_results['experiment'] = []
     return rounds_results
             
-def analyze_single_experiment(return_dict, rate, queues_names, steadyStart, steadyEnd, rounds_results, results_folder, config, experiment=0, ns3_path=__ns3_path, differentiationDelay=None, errorRate=None, load=None, flow_names=[], queue_names=[]):
+def analyze_single_experiment(return_dict, rate, queues_names, steadyStart, steadyEnd, rounds_results, results_folder, config, 
+                              experiment=0, ns3_path=__ns3_path, differentiationDelay=None, errorRate=None, load=None, 
+                              flow_names=[], queue_names=[], sampling_factor=None):
     hostToTorLinkRate = convert_to_float(config.get('Settings', 'hostToTorLinkRate')) * 1e-3
     torToAggLinkRate = convert_to_float(config.get('Settings', 'torToAggLinkRate')) * rate * 1e-3
     switchSrcREDQueueDiscMaxSize = convert_to_float(config.get('Settings', 'switchSrcREDQueueDiscMaxSize'))
@@ -50,7 +52,7 @@ def analyze_single_experiment(return_dict, rate, queues_names, steadyStart, stea
                                     linkDelays=[linkDelay, linkDelay, linkDelay, linkDelay], 
                                     swtichDstREDQueueDiscMaxSize=[switchSrcREDQueueDiscMaxSize, switchREDQueueDiscMaxSize, switchREDQueueDiscMaxSize, switchSrcREDQueueDiscMaxSize], 
                                     tsh=0.15, differentiationDelay=differentiationDelay, errorRate=errorRate, load=load, 
-                                    queue_names=queue_names, flow_names=flow_names, e2e_intervals=10000)
+                                    queue_names=queue_names, flow_names=flow_names, e2e_intervals=10000, sampling_factor=sampling_factor)
     bias_res['experiment'] = experiment
     return_dict[experiment] = bias_res
 
@@ -89,38 +91,38 @@ def analyze_all_experiments(rate, steadyStart, steadyEnd, dir, config, experimen
     queues_names = ["T0A0", "A0T2", "T2H3"]
     flows_name.sort()
     queues_names.sort()
-
-    rounds_results = prepare_results(queues_names)
-    merged_results = prepare_results(queues_names)
-    batch_size = 15
-    for i in range(int(experiments_end / batch_size) + 1):
-        ths = []
-        return_dict = multiprocessing.Manager().dict()
-        for experiment in range(batch_size * i, min(experiments_end, batch_size * (i + 1))):
-            if differentiationDelay is not None and errorRate is not None:
-                if len(os.listdir('{}/scratch/{}/{}/{}/D_{}/f_{}/{}'.format(__ns3_path, results_folder, rate, load, differentiationDelay, errorRate, experiment))) == 0:
-                    print(experiment)
-                    continue
-            else:
-                if len(os.listdir('{}/scratch/{}/{}/{}/{}'.format(__ns3_path, results_folder, rate, load, experiment))) == 0:
-                    print(experiment)
-                    continue
-            print("Analyzing experiment: ", experiment)
-            ths.append(multiprocessing.Process(target=analyze_single_experiment, args=(return_dict, rate, queues_names, steadyStart, steadyEnd, rounds_results, results_folder, config, experiment, ns3_path, differentiationDelay, errorRate, load, flows_name, queues_names)))
-        
-        for th in ths:
-            th.start()
-        for th in ths:
-            th.join()
-        merge_results(return_dict, merged_results, queues_names)
-        print("{} joind".format(i))
-    if errorRate is not None:
-        os.system('mkdir -p ../Results/results_{}/{}/{}/D_{}/f_{}/'.format(dir, rate, load, differentiationDelay, errorRate))
-        with open('../Results/results_{}/{}/{}/D_{}/f_{}/delay_minimum_bias_e2e_vs_switch_poisson.0_{}_{}_to_{}.json'.format(dir, rate, load, differentiationDelay, errorRate, experiments_end, steadyStart, steadyEnd), 'w') as f:
-            js.dump(merged_results, f, indent=4)
-    else:
-        with open('../Results/results_{}/{}/{}/delay_minimum_bias_e2e_vs_switch_poisson.0_{}_{}_to_{}.json'.format(dir, rate, load, experiments_end, steadyStart, steadyEnd), 'w') as f:
-            js.dump(merged_results, f, indent=4)
+    for sampling_factor in [0.8, 0.4, 0.2, 0.1, 0.05, 0.025, 0.01]:
+        rounds_results = prepare_results(queues_names)
+        merged_results = prepare_results(queues_names)
+        batch_size = 15
+        for i in range(int(experiments_end / batch_size) + 1):
+            ths = []
+            return_dict = multiprocessing.Manager().dict()
+            for experiment in range(batch_size * i, min(experiments_end, batch_size * (i + 1))):
+                if differentiationDelay is not None and errorRate is not None:
+                    if len(os.listdir('{}/scratch/{}/{}/{}/D_{}/f_{}/{}'.format(__ns3_path, results_folder, rate, load, differentiationDelay, errorRate, experiment))) == 0:
+                        print(experiment)
+                        continue
+                else:
+                    if len(os.listdir('{}/scratch/{}/{}/{}/{}'.format(__ns3_path, results_folder, rate, load, experiment))) == 0:
+                        print(experiment)
+                        continue
+                print("Analyzing experiment: ", experiment)
+                ths.append(multiprocessing.Process(target=analyze_single_experiment, args=(return_dict, rate, queues_names, steadyStart, steadyEnd, rounds_results, results_folder, config, experiment, ns3_path, differentiationDelay, errorRate, load, flows_name, queues_names, sampling_factor)))
+            
+            for th in ths:
+                th.start()
+            for th in ths:
+                th.join()
+            merge_results(return_dict, merged_results, queues_names)
+            print("{} joind".format(i))
+        if errorRate is not None:
+            os.system('mkdir -p ../Results/results_{}/{}/{}/D_{}/f_{}/'.format(dir, rate, load, differentiationDelay, errorRate))
+            with open('../Results/results_{}/{}/{}/D_{}/f_{}/delay_minimum_bias_e2e_{}subsampling_vs_switch_poisson.0_{}_{}_to_{}.json'.format(dir, rate, load, differentiationDelay, errorRate, sampling_factor, experiments_end, steadyStart, steadyEnd), 'w') as f:
+                js.dump(merged_results, f, indent=4)
+        else:
+            with open('../Results/results_{}/{}/{}/delay_minimum_bias_e2e_{}subsampling_vs_switch_poisson.0_{}_{}_to_{}.json'.format(dir, rate, load, sampling_factor, experiments_end, steadyStart, steadyEnd), 'w') as f:
+                js.dump(merged_results, f, indent=4)
 
 # main function
 def __main__():
@@ -146,7 +148,7 @@ def __main__():
     loads = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.95]
     # loads = [0.1]
     traffics = config.get('Settings', 'traffic').split(',')
-    traffics = ["Google_AllRPC", "Fabricated_Heavy_Head", "Fabricated_Heavy_Middle", "Google_SearchRPC", "Facebook_HadoopDist_All"]
+    traffics = ["Google_AllRPC","Fabricated_Heavy_Head","Fabricated_Heavy_Middle","Google_SearchRPC", "Facebook_HadoopDist_All"]
     # traffics = ["Google_AllRPC"]
     errorRates = [float(x) for x in config.get('Settings', 'errorRate').split(',')]
     # errorRates = [0.1, 0.3, 0.5, 0.7, 0.9]

@@ -2241,6 +2241,84 @@ def chi_squared_test(
 
     return lags, res, chi2_res
 
+def sample_total_queue_size_non_combined(res, times, queue_names, dir_prefix, linkDelays, linkRates, queue_size_trshs, 
+                                     steadyStart=0.01e9, steadyEnd=0.1e9, intervals=10000, path_observation=False, sampling_factor=None):
+    queue_names, linkDelays, linkRates = sort_queues_by_path(queue_names, linkDelays, linkRates)
+    tag = 'poisson'
+    if path_observation:
+        tag = 'e2e'
+    for queue_name in queue_names:
+        res[queue_name+ tag + '_samples_queue_delay_mean'] = 0
+        res[queue_name+ tag + '_samples_queue_delay_std'] = 0
+        res[queue_name+ tag + '_samples_queue_delay_count'] = 0
+        res[queue_name+'poisson_prob_non_empty'] = 0
+        res[queue_name+'poisson_prev_queue_non_empty_prob_percentile'] = 0
+        res[queue_name+'bias'] = 0
+    
+    iterations = 1 if sampling_factor is None else 100
+    for itr in range(iterations):
+        sample_times_itr = np.asarray(times, dtype=float)
+        if sampling_factor is not None:
+            sample_mask = np.random.rand(len(sample_times_itr)) < sampling_factor
+            sample_times_itr = sample_times_itr[sample_mask]
+        # TODO: check why we have the same thing over different experiments
+        # print(f"Iteration {itr+1}/{iterations} - Sampling total {len(sample_times_itr)} with mean arrivlas: {np.mean(times)} first 10 times: {times[:10]}")
+        queue_size_samples = np.zeros((len(queue_names), len(sample_times_itr)))
+        queue_ECN_samples = np.zeros((len(queue_names), len(sample_times_itr)), dtype=int)
+        queue_delay_samples = np.zeros((len(queue_names), len(sample_times_itr)))
+        invalid_indices = np.zeros(len(sample_times_itr), dtype=bool)
+        sample_times = sample_times_itr
+
+        for queue_name in queue_names:
+            file_path = dir_prefix + queue_name + '_PoissonSampler_queueSize.csv'
+            idx = queue_names.index(queue_name)
+            queue_size_sample = sample_queue_size(sample_times, file_path, linkRates[idx])
+            queue_size_samples[idx][~invalid_indices] = queue_size_sample
+            queue_size_samples[idx][invalid_indices] = np.nan
+            new_invalid_indices = np.isnan(queue_size_sample)
+            invalid_indices = np.isnan(queue_size_samples[idx])
+            queue_ECN_samples[idx][~invalid_indices] = sample_ECN_marking(queue_size_samples[idx][~invalid_indices], queue_size_trshs[idx])
+            queue_ECN_samples[idx][invalid_indices] = 0
+            queue_delay_samples[idx][~invalid_indices] = sample_queueing_delay(queue_size_samples[idx][~invalid_indices], linkRates[idx])
+
+            prob_non_empty = queue_size_samples[idx][~invalid_indices] > 0
+            prob_non_empty = np.sum(prob_non_empty) / len(prob_non_empty)
+
+            res[queue_name+ tag + '_samples_queue_delay_mean'] = (res[queue_name+ tag + '_samples_queue_delay_mean'] * itr + np.nanmean(queue_delay_samples[idx])) / (itr + 1)
+            res[queue_name+ tag + '_samples_queue_delay_std'] = (res[queue_name+ tag + '_samples_queue_delay_std'] * itr + np.nanstd(queue_delay_samples[idx])) / (itr + 1)
+            res[queue_name+ tag + '_samples_queue_delay_count'] = (res[queue_name+ tag + '_samples_queue_delay_count'] * itr + len(queue_delay_samples[idx][~invalid_indices])) / (itr + 1)
+            if not path_observation:
+                res[queue_name+'poisson_prob_non_empty'] = prob_non_empty
+                if idx > 0:
+                    res[queue_name+'poisson_prev_queue_non_empty_prob_percentile'] = np.nanpercentile(queue_delay_samples[idx], res[queue_names[idx - 1]+'poisson_prob_non_empty'] * 100)
+                    bias = res[queue_name+'poisson_prev_queue_non_empty_prob_percentile'] * res[queue_names[idx - 1]+'poisson_prob_non_empty']
+                    res[queue_name+'bias'] = bias
+                else:
+                    res[queue_name+'poisson_prev_queue_non_empty_prob_percentile'] = np.nan
+                    bias = 0
+                    res[queue_name+'bias'] = bias
+            # shift sampling times for next queue for valid indices only (where we have valid samples)
+            if path_observation:
+                sample_times = (sample_times[~new_invalid_indices] + queue_size_samples[idx][~invalid_indices] * 8 / linkRates[idx] + linkDelays[idx]).round()
+            else:
+                invalid_indices = np.zeros(len(times), dtype=bool)
+                sample_times = np.asarray(times, dtype=float) + linkDelays[0] * (idx + 1)
+
+            queue_delay_samples[idx][invalid_indices] = np.nan
+    return remove_nan_samples(sample_times_itr, np.sum(queue_size_samples, axis=0), np.any(queue_ECN_samples, axis=0).astype(int), np.sum(queue_delay_samples, axis=0)), res
+
+def combine_sampling_results(res, queue_names):
+    queue_names, _, _ = sort_queues_by_path(queue_names, [None] * (len(queue_names) + 1), [None] * (len(queue_names) + 1))
+    for queue_name in queue_names:
+        idx = queue_names.index(queue_name)
+        res[queue_name+'error_bound'] = res[queue_name+'e2e_samples_queue_delay_std'] * 1.96 / np.sqrt(res[queue_name+'e2e_samples_queue_delay_count']) + res[queue_name+'poisson_samples_queue_delay_std'] * 1.96 / np.sqrt(res[queue_name+'poisson_samples_queue_delay_count'])
+        res[queue_name+'e2e_vs_poisson_consistent'] = int(abs(res[queue_name+'e2e_samples_queue_delay_mean'] - res[queue_name+'poisson_samples_queue_delay_mean']) <= res[queue_name+'error_bound'])
+        if idx > 0:
+            res[queue_name+'e2e_vs_poisson_consistent_with_bias'] = int(abs(res[queue_name+'e2e_samples_queue_delay_mean'] - (res[queue_name+'poisson_samples_queue_delay_mean'] + res[queue_name+'bias'])) <= res[queue_name+'error_bound'])
+        else:
+            res[queue_name+'e2e_vs_poisson_consistent_with_bias'] = res[queue_name+'e2e_vs_poisson_consistent']
+    return res
+
 def sample_total_queue_size(times, queue_names, dir_prefix, linkDelays, linkRates, queue_size_trshs, steadyStart=0.01e9, steadyEnd=0.1e9, intervals=10000):
     queue_names, linkDelays, linkRates = sort_queues_by_path(queue_names, linkDelays, linkRates)
     queue_size_samples = np.zeros((len(queue_names), len(times)))
@@ -2310,45 +2388,47 @@ def sample_total_queue_size(times, queue_names, dir_prefix, linkDelays, linkRate
             res[queue_name+'e2e_vs_poisson_consistent_with_bias'] = res[queue_name+'e2e_vs_poisson_consistent']
         ###########
         # if idx > 0:
-        #     # print(f"Correlation between queue size of {queue_names[idx - 1]} and {queue_name}")
-        #     # x = prev_poisson_samples
-        #     # y = curr_poisson_samples
-        #     x = queue_delay_samples[idx - 1]
-        #     y = queue_delay_samples[idx]
-        #     # print(f"x mean: {np.nanmean(x)}, y mean: {np.nanmean(y)}")
-        #     # corr_indices = (prev_poisson_samples > 0) & (~curr_invalid_indices) & (~prev_invalid_indices)
-        #     corr_indices = (queue_delay_samples[idx - 1] > 0) & (~invalid_indices)
-        #     x = x[corr_indices]
-        #     y = y[corr_indices]
-        #     x = x - x.mean()
-        #     y = y - y.mean()
-        #     corr = np.correlate(x, y, mode="full")
-        #     lags = np.arange(-len(x) + 1, len(x))
-        #     denom = np.sqrt(np.sum(x**2) * np.sum(y**2))
-        #     corr = corr / denom
-        #     mask = lags >= 0
-        #     lags = lags[mask]
-        #     corr = corr[mask]
-        #     plt.figure(figsize=(30, 10))
-        #     plt.plot(lags, corr, marker='o', linestyle='-', markersize=4, linewidth=2)
-        #     plt.axhline(0, linewidth=1)
-        #     plt.axvline(0, linewidth=1)
-        #     # band = 1.96 / np.sqrt(len(lags_time))  # 95% confidence interval for zero correlation
-        #     # plt.axhline(band, color='black', linestyle='dashed', linewidth=3, label='95% confidence band')
-        #     # plt.axhline(-band, color='black', linestyle='dashed', linewidth=3)
-        #     plt.xlabel("Lag ")
-        #     plt.ylabel("Cross-correlation")
-        #     plt.title("Cross-correlation")
-        #     plt.grid(True, alpha=0.5)
-        #     # plt.set_ylim(bottom=-0.4, top=1.0)
-        #     plt.ylim(bottom=-1.05 * max(corr), top=1.05 * max(corr))
-        #     # plt.set_yticks(np.arange(-0.4, 0.8, 0.2))
-        #     # plt.set_xticks(np.arange(0, np.max(lags_time), max(lags_time) / 20), labels=[f"{float(t/1000000):.1f}" for t in np.arange(0, np.max(lags_time), max(lags_time) / 20)])
-        #     # plt.set_xticks(np.arange(np.min(lags_time), np.max(lags_time), (np.max(lags_time) - np.min(lags_time)) / 20), labels=[f"{float(t/1000000):.1f}" for t in np.arange(np.min(lags_time), np.max(lags_time), (np.max(lags_time) - np.min(lags_time)) / 20)])
-        #     plt.tick_params(axis='y', labelsize=30)
-        #     plt.tight_layout()
-        #     plt.savefig(f'{dir_prefix}crosscorr_{queue_names[idx - 1]}_{queue_name}_pathObserver_Q_GT0_{res[queue_name+"e2e_samples_queue_delay_count"]}samples.png')
-        #     plt.close()
+            # print(f"Correlation between queue size of {queue_names[idx - 1]} and {queue_name}")
+            # x = prev_poisson_samples
+            # y = curr_poisson_samples
+            # x = queue_delay_samples[idx - 1]
+            # y = queue_delay_samples[idx]
+            # print(f"x mean: {np.nanmean(x)}, y mean: {np.nanmean(y)}")
+            # corr_indices = (prev_poisson_samples > 0) & (~curr_invalid_indices) & (~prev_invalid_indices)
+            # corr_indices = (queue_delay_samples[idx - 1] > 0) & (~invalid_indices)
+            # x = x[corr_indices]
+            # y = y[corr_indices]
+            # x = x - x.mean()
+            # y = y - y.mean()
+            # corr = np.correlate(x, y, mode="full")
+            # lags = np.arange(-len(x) + 1, len(x))
+            # denom = np.sqrt(np.sum(x**2) * np.sum(y**2))
+            # corr = corr / denom
+            # band = 1.96 / np.sqrt(len(lags))  # 95% confidence interval for zero correlation
+            # print(f"Correlation between queue delay samples of {queue_names[idx - 1]} and {queue_name} at lag 0: {corr[0]}, with Band at 95% confidence: {band}")
+            # mask = lags >= 0
+            # lags = lags[mask]
+            # corr = corr[mask]
+            # plt.figure(figsize=(30, 10))
+            # plt.plot(lags, corr, marker='o', linestyle='-', markersize=4, linewidth=2)
+            # plt.axhline(0, linewidth=1)
+            # plt.axvline(0, linewidth=1)
+            # band = 1.96 / np.sqrt(len(lags))  # 95% confidence interval for zero correlation
+            # plt.axhline(band, color='black', linestyle='dashed', linewidth=3, label='95% confidence band')
+            # plt.axhline(-band, color='black', linestyle='dashed', linewidth=3)
+            # plt.xlabel("Lag ")
+            # plt.ylabel("Cross-correlation")
+            # plt.title("Cross-correlation")
+            # plt.grid(True, alpha=0.5)
+            # plt.set_ylim(bottom=-0.4, top=1.0)
+            # plt.ylim(bottom=-1.05 * max(corr), top=1.05 * max(corr))
+            # plt.set_yticks(np.arange(-0.4, 0.8, 0.2))
+            # plt.set_xticks(np.arange(0, np.max(lags_time), max(lags_time) / 20), labels=[f"{float(t/1000000):.1f}" for t in np.arange(0, np.max(lags_time), max(lags_time) / 20)])
+            # plt.set_xticks(np.arange(np.min(lags_time), np.max(lags_time), (np.max(lags_time) - np.min(lags_time)) / 20), labels=[f"{float(t/1000000):.1f}" for t in np.arange(np.min(lags_time), np.max(lags_time), (np.max(lags_time) - np.min(lags_time)) / 20)])
+            # plt.tick_params(axis='y', labelsize=30)
+            # plt.tight_layout()
+            # plt.savefig(f'{dir_prefix}crosscorr_{queue_names[idx - 1]}_{queue_name}_pathObserver_Q_GT0_{res[queue_name+"e2e_samples_queue_delay_count"]}samples_withBands.png')
+            # plt.close()
         ###########
         # shift sampling times for next queue for valid indices only (where we have valid samples)
         sample_times = (sample_times[~new_invalid_indices] + queue_size_samples[idx][~invalid_indices] * 8 / linkRates[idx] + linkDelays[idx]).round()
@@ -4638,28 +4718,40 @@ def compute_average_packet_size(file_path):
     average_packet_size = sum_size / count if count > 0 else 0
     return average_packet_size
 
-def compute_bias_based_on_average_packet_size(sampling_results, average_packet_size, queue_names, linkRates, alternative_routes=3):
+def compute_bias_based_on_average_packet_size(sampling_results, average_packet_size, queue_names, linkRates, alternative_routes=[3, 6]):
     queue_names, _, linkRates = sort_queues_by_path(queue_names, [None, None, None, None], linkRates)
     
     for queue_name in queue_names:
         idx = queue_names.index(queue_name)
+        sampling_results[queue_name+'NPkts'] = sampling_results[queue_name+'e2e_samples_queue_delay_mean'] * linkRates[idx] / (average_packet_size * 8)
+        sampling_results[queue_name+'NBytes'] = sampling_results[queue_name+'NPkts'] * average_packet_size
         if idx == 0:
             continue
-        sampling_results[queue_name+'bias'] = sampling_results[queue_names[idx - 1]+'poisson_prob_non_empty'] * average_packet_size * 8 / linkRates[idx] * (1 / alternative_routes)
+        # sampling_results[queue_name+'bias'] = sampling_results[queue_names[idx - 1]+'poisson_prob_non_empty'] * average_packet_size * 8 / linkRates[idx] * (1 / alternative_routes[idx - 1])
+        if idx == 1:
+            sampling_results[queue_name+'bias'] = sampling_results[queue_names[idx - 1]+'poisson_prob_non_empty'] * average_packet_size * 8 / linkRates[idx] * (1 / alternative_routes[idx - 1])
+        if idx == 2:
+            sampling_results[queue_name+'bias'] = sampling_results[queue_names[idx - 2]+'poisson_prob_non_empty'] * average_packet_size * 8 / linkRates[idx] * (1 / alternative_routes[idx - 1]) * (1 / alternative_routes[idx - 2])
+            sampling_results[queue_name+'bias'] += sampling_results[queue_names[idx - 2]+'poisson_prob_non_empty'] * sampling_results[queue_names[idx - 1]+'poisson_prob_non_empty'] * average_packet_size * 8 / linkRates[idx] * (1 / alternative_routes[idx - 1]) * (1 - 1 / alternative_routes[idx - 2])
+            sampling_results[queue_name+'bias'] += sampling_results[queue_names[idx - 1]+'poisson_prob_non_empty'] * (1 - sampling_results[queue_names[idx - 2]+'poisson_prob_non_empty']) * average_packet_size * 8 / linkRates[idx] * (1 / alternative_routes[idx - 1])
         sampling_results[queue_name+'e2e_vs_poisson_consistent_with_bias'] = int(abs(sampling_results[queue_name+'e2e_samples_queue_delay_mean'] - (sampling_results[queue_name+'poisson_samples_queue_delay_mean'] + sampling_results[queue_name+'bias'])) <= sampling_results[queue_name+'error_bound'])
     
     return sampling_results
 
 def calculate_offline_delay_bias_DC(__ns3_path, rate, experiment, results_folder, steadyStart, steadyEnd, linkRates=[], linkDelays=[], 
-                                    swtichDstREDQueueDiscMaxSize=[0], tsh=0.15, differentiationDelay=None, errorRate=None, load=None, queue_names=[], flow_names=[], e2e_intervals=10000):
+                                    swtichDstREDQueueDiscMaxSize=[0], tsh=0.15, differentiationDelay=None, errorRate=None, load=None, 
+                                    queue_names=[], flow_names=[], e2e_intervals=10000, sampling_factor=None):
     if differentiationDelay is not None and errorRate is not None:
         file_path = '{}/scratch/{}/{}/{}/D_{}/f_{}/{}/'.format(__ns3_path, results_folder, rate, load, differentiationDelay, errorRate, experiment)
     else:
         file_path = '{}/scratch/{}/{}/{}/{}/'.format(__ns3_path, results_folder, rate, load, experiment)
 
     times = np.array(np.cumsum(np.random.exponential(e2e_intervals, size=int((steadyEnd - steadyStart) // e2e_intervals))) + steadyStart, dtype=np.int64)
-    (_, queue_size_samples, _, queue_delay_samples_poisson_e2e), res = sample_total_queue_size(times, queue_names, file_path, linkDelays, linkRates, np.array(swtichDstREDQueueDiscMaxSize[1:], dtype=float) * tsh)
-
+    # (_, queue_size_samples, _, queue_delay_samples_poisson_e2e), res = sample_total_queue_size(times, queue_names, file_path, linkDelays, linkRates, np.array(swtichDstREDQueueDiscMaxSize[1:], dtype=float) * tsh)
+    res = {}
+    (_, _, _, queue_delay_samples_poisson_e2e), res = sample_total_queue_size_non_combined(res, times, queue_names, file_path, linkDelays, linkRates, np.array(swtichDstREDQueueDiscMaxSize[1:], dtype=float) * tsh, path_observation=True, sampling_factor=sampling_factor)
+    (_, _, _, _), res = sample_total_queue_size_non_combined(res, times, queue_names, file_path, linkDelays, linkRates, np.array(swtichDstREDQueueDiscMaxSize[1:], dtype=float) * tsh, path_observation=False)
+    res = combine_sampling_results(res, queue_names)
     res = compute_bias_based_on_average_packet_size(res, compute_average_packet_size(file_path), queue_names, linkRates)
 
     res['sum_poisson_samples_queue_delay_mean'] = sum([res[queue_name+'poisson_samples_queue_delay_mean'] for queue_name in queue_names])
@@ -4670,8 +4762,6 @@ def calculate_offline_delay_bias_DC(__ns3_path, rate, experiment, results_folder
     res['e2e_vs_sum_consistent'] = int(abs(res['e2e_poisson_samples_queue_delay_mean'] - res['sum_poisson_samples_queue_delay_mean']) <= res['e2e_vs_sum_error_bound'])
     bias = sum([res[queue_name+'bias'] for queue_name in queue_names])
     res['e2e_vs_sum_consistent_with_bias'] = int(abs(res['e2e_poisson_samples_queue_delay_mean'] - (res['sum_poisson_samples_queue_delay_mean'] + bias)) <= res['e2e_vs_sum_error_bound'])
-    # pp = pprint.PrettyPrinter(indent=4)
-    # pp.pprint(res)
     return res
     
 def calculate_offline_computations_DC(__ns3_path, rate, segment, experiment, results_folder, steadyStart, steadyEnd, projectColumn, nHosts, removeDrops=True, checkColumn="", linkRates=[], linkDelays=[], 
@@ -4832,6 +4922,7 @@ def calculate_offline_computations_DC(__ns3_path, rate, segment, experiment, res
             df_res["Occupancy"] = full_df['QueueSize'].mean() / switchMaxSize * 100
             # compute the avergae packet size from the CDF
             avgPacktSize = 1500 if "Nagle" in results_folder.split('/')[0] else packets_cfd.compute_average_packet_size_from_cdf()
+            df_res["avgPacktSize"] = avgPacktSize
             df_res["PacktsInQueue"] = full_df['TotalQueueSize'].mean() / avgPacktSize
             df_res["BytesInQueue"] = full_df['TotalQueueSize'].mean()
             df_res["EmptyFrac"] = len(full_df[full_df['TotalQueueSize'] == 0]) / len(full_df) * 100
