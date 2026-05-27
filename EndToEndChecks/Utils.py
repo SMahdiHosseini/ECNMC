@@ -4921,7 +4921,9 @@ def calculate_offline_computations_DC(__ns3_path, rate, segment, experiment, res
             df_res['LastNonMarkingProbStd'] = full_df['LastMarkingProb'].std()
             df_res["Occupancy"] = full_df['QueueSize'].mean() / switchMaxSize * 100
             # compute the avergae packet size from the CDF
-            avgPacktSize = 1500 if "Nagle" in results_folder.split('/')[0] else packets_cfd.compute_average_packet_size_from_cdf()
+            # avgPacktSize = 1500 if "Nagle" in results_folder.split('/')[0] else packets_cfd.compute_average_packet_size_from_cdf()
+            # Keep up to last / in the file path to get the directory
+            avgPacktSize = compute_average_packet_size(file_path.rsplit('/', 1)[0] + '/')
             df_res["avgPacktSize"] = avgPacktSize
             df_res["PacktsInQueue"] = full_df['TotalQueueSize'].mean() / avgPacktSize
             df_res["BytesInQueue"] = full_df['TotalQueueSize'].mean()
