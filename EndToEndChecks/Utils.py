@@ -894,7 +894,7 @@ def randomSampling(time):
     print("Failed to find exponentially distributed interarrival times after 20 tries.")
     return []
 
-def find_samples_path(time, MinimumNumberOfSamples=0):
+def find_samples_path(time, MinimumNumberOfSamples=0, window=None):
     subSamplingError = SubSamplingError.NoError
 
     time = np.asarray(time)
@@ -913,27 +913,22 @@ def find_samples_path(time, MinimumNumberOfSamples=0):
         minimum_number_of_samples = 0
     minimum_number_of_samples = max(0, minimum_number_of_samples)
 
-    if minimum_number_of_samples > len(time):
+    if minimum_number_of_samples > 0 and minimum_number_of_samples > len(time):
         subSamplingError = SubSamplingError.NotEnoughPackets + "+" + subSamplingError.value
         return np.array([], dtype=time.dtype), subSamplingError
     if duration <= 0:
         return [], subSamplingError
-
-    try:
-        window, _ = find_delta_for_empty_prob(time, p0_max=0.01)
-    except ValueError:
-        subSamplingError = SubSamplingError.NotEnoughSamples + "+" + subSamplingError.value
-        return np.array([], dtype=time.dtype), subSamplingError
+    if window is None:
+        try:
+            window, _ = find_delta_for_empty_prob(time, p0_max=0.01)
+        except ValueError:
+            subSamplingError = SubSamplingError.NotEnoughSamples + "+" + subSamplingError.value
+            return np.array([], dtype=time.dtype), subSamplingError
 
     number_of_windows = max(int(np.floor(duration / window)) + 1, 1)
     bin_ids = np.floor((time - start_time) / window).astype(int)
     bin_ids = np.clip(bin_ids, 0, number_of_windows - 1)
     counts = np.bincount(bin_ids, minlength=number_of_windows)
-    empty_fraction = np.mean(counts == 0)
-    # if empty_fraction > 0.01:
-    #     print("Failed to find a window where 99% of windows have at least one arrival. Empty-window fraction: {}".format(empty_fraction))
-    #     subSamplingError = SubSamplingError.NotEnoughSamples + "+" + subSamplingError.value
-    #     return np.array([], dtype=time.dtype), subSamplingError
 
     window_sample_count = int(np.count_nonzero(counts))
     if window_sample_count <= 1:
@@ -941,60 +936,63 @@ def find_samples_path(time, MinimumNumberOfSamples=0):
         subSamplingError = SubSamplingError.NotEnoughSamples + "+" + subSamplingError.value
         return np.array([], dtype=time.dtype), subSamplingError
 
-    if minimum_number_of_samples > window_sample_count:
+    if minimum_number_of_samples > 0 and minimum_number_of_samples > window_sample_count:
         print("Warning: Not enough windows after one-per-window sampling! Got {}, expected {}".format(
             window_sample_count, minimum_number_of_samples
         ))
         subSamplingError = SubSamplingError.NotEnoughSamples + "+" + subSamplingError.value
         return np.array([], dtype=time.dtype), subSamplingError
 
-    brnval = 1.0
+    brnvals = []
     if minimum_number_of_samples > 0:
-        brnval = min(1.0, max(0.0, minimum_number_of_samples / window_sample_count))
-
+        brnvals.append(min(1.0, max(0.0, minimum_number_of_samples / window_sample_count)))
+    else:
+        brnvals = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+    
     sorted_indices = np.argsort(bin_ids, kind='stable')
     split_points = np.flatnonzero(np.diff(bin_ids[sorted_indices])) + 1
     indices_per_window = np.split(sorted_indices, split_points)
 
     max_sample_size = 0
     max_sample_size_times = np.array([], dtype=time.dtype)
-    tries = 20
-    while tries > 0:
-        selected_indices = np.array([
-            np.random.choice(indices)
-            for indices in indices_per_window
-            if len(indices) > 0
-        ], dtype=int)
-        selected_indices.sort()
-        selected_times = time[selected_indices]
+    for brnval in brnvals:
+        tries = 20
+        while tries > 0:
+            selected_indices = np.array([
+                np.random.choice(indices)
+                for indices in indices_per_window
+                if len(indices) > 0
+            ], dtype=int)
+            selected_indices.sort()
+            selected_times = time[selected_indices]
 
-        if brnval < 1.0:
-            keep_mask = bernoulli.rvs(brnval, size=len(selected_times)).astype(bool)
-            final_times = selected_times[keep_mask]
-        else:
-            final_times = selected_times
+            if brnval < 1.0:
+                keep_mask = bernoulli.rvs(brnval, size=len(selected_times)).astype(bool)
+                final_times = selected_times[keep_mask]
+            else:
+                final_times = selected_times
 
-        if minimum_number_of_samples > 0 and len(final_times) < minimum_number_of_samples:
+            if minimum_number_of_samples > 0 and len(final_times) < minimum_number_of_samples:
+                tries -= 1
+                continue
+            if len(final_times) <= 1:
+                tries -= 1
+                continue
+            
+            # anderson_statistic, anderson_critical_values, _ = anderson(np.diff(final_times), 'expon')
+            # if anderson_statistic <= anderson_critical_values[4]:
+            anderson_res = anderson(np.diff(final_times), 'expon', method='interpolate')
+            if anderson_res.pvalue > 0.05:
+                if len(final_times) > max_sample_size:
+                    max_sample_size = len(final_times)
+                    max_sample_size_times = final_times
+                    break
             tries -= 1
-            continue
-        if len(final_times) <= 1:
-            tries -= 1
-            continue
-
-        # anderson_statistic, anderson_critical_values, _ = anderson(np.diff(final_times), 'expon')
-        # if anderson_statistic <= anderson_critical_values[4]:
-        anderson_res = anderson(np.diff(final_times), 'expon', method='interpolate')
-        if anderson_res.pvalue > 0.05:
-            if len(final_times) > max_sample_size:
-                max_sample_size = len(final_times)
-                max_sample_size_times = final_times
-                break
-        tries -= 1
 
     if max_sample_size:
         return max_sample_size_times, subSamplingError
     print("Failed to find exponentially distributed interarrival times after 20 tries. Window: {}, Bernoulli probability: {}".format(
-        window, brnval
+        window, brnvals
     ))
     subSamplingError = SubSamplingError.NotPoisson + "+" + subSamplingError.value
     return np.array([], dtype=time.dtype), subSamplingError
@@ -1157,7 +1155,7 @@ def calculate_offline_E2E_delays(full_df, removeDrops, checkColumn, txDelay, df_
                 #    samples_times, subSamplingError = find_samples_path_new(time, txDelay, df_res['RTT'][path], df_name, samplingMethod, steadyStart, steadyEnd, steps=1, MinimumNumberOfSamples=samples_paths_aggregated_statistics[path]['MinimumE2ESampleSize'])
                     # samples_times, subSamplingError, result = find_samples_path_ccf(time, steadyStart, steadyEnd, queue_names, df_name, linkDelays, linkRates, queue_size_trshs, samples_paths_aggregated_statistics[path]['MinimumE2ESampleSize'])
                     # samples_times, subSamplingError, result = find_samples_path_chi_squared_test(time, steadyStart, steadyEnd, samples_paths_aggregated_statistics[path]['MinimumE2ESampleSize'])
-                    samples_times, subSamplingError = find_samples_path(time, samples_paths_aggregated_statistics[path]['MinimumE2ESampleSize'])
+                    samples_times, subSamplingError = find_samples_path(time, samples_paths_aggregated_statistics[path]['MinimumE2ESampleSize'], window=df_res['RTT'][path])
                 else:
                     samples_times = []
             else:
