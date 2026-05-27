@@ -474,8 +474,8 @@ def analyze_single_experiment(return_dict, rate, queues_names, confidenceValue, 
         rounds_results[q+'GT1PktsFrac'].append(samples_dfs[q]['GT1PktsFrac'])
     return_dict[experiment] = rounds_results
 
-def merge_results(return_dict, merged_results, flows, queues, num_of_paths):
-    for exp in return_dict.keys():
+def merge_results(return_dict, merged_results, flows, queues, num_of_paths, experiments):
+    for exp in experiments:
         merged_results['expSuccessDelay'] += return_dict[exp]['expSuccessDelay']
         for q in queues:
             merged_results[q+'Delaystd'] += return_dict[exp][q+'Delaystd']
@@ -500,7 +500,7 @@ def merge_results(return_dict, merged_results, flows, queues, num_of_paths):
 
     for flow in flows:
         for i in range(num_of_paths):
-            for exp in return_dict.keys():
+            for exp in experiments:
                 for var_method in merged_results['MaxEpsilonIneqDelay'].keys():
                     merged_results['MaxEpsilonIneqDelay'][var_method][flow][i][1] += return_dict[exp]['MaxEpsilonIneqDelay'][var_method][flow][i][1]
                     merged_results['MaxEpsilonIneqLastDelay'][var_method][flow][i][1] += return_dict[exp]['MaxEpsilonIneqLastDelay'][var_method][flow][i][1]
@@ -565,7 +565,7 @@ def merge_results(return_dict, merged_results, flows, queues, num_of_paths):
                 merged_results['e2eVsSwitchMaxCCF'][flow][i] += return_dict[exp]['e2eVsSwitchMaxCCF'][flow][i]
                 merged_results['e2eCorrArrivals'][flow][i] += return_dict[exp]['e2eCorrArrivals'][flow][i]
 
-    for exp in return_dict.keys():
+    for exp in experiments:
         merged_results['experiments'] += return_dict[exp]['experiments']
         merged_results['DropRate'] += return_dict[exp]['DropRate']
         merged_results['AverageWorkLoad'] += return_dict[exp]['AverageWorkLoad']
@@ -590,9 +590,10 @@ def analyze_all_experiments(rate, steadyStart, steadyEnd, confidenceValue, dir, 
 
     rounds_results = prepare_results(flows_name, queues_names, num_of_paths)
     merged_results = prepare_results(flows_name, queues_names, num_of_paths)
-    batch_size = 15
+    batch_size = 30
     for i in range(int(experiments_end / batch_size) + 1):
         ths = []
+        exps = []
         return_dict = multiprocessing.Manager().dict()
         for experiment in range(batch_size * i, min(experiments_end, batch_size * (i + 1))):
             if differentiationDelay is not None and errorRate is not None:
@@ -604,21 +605,22 @@ def analyze_all_experiments(rate, steadyStart, steadyEnd, confidenceValue, dir, 
                     print(experiment)
                     continue
             print("Analyzing experiment: ", experiment)
+            exps.append(experiment)
             ths.append(multiprocessing.Process(target=analyze_single_experiment, args=(return_dict, rate, queues_names, confidenceValue, steadyStart, steadyEnd, rounds_results, results_folder, config, experiment, ns3_path, differentiationDelay, errorRate, load, flows_name, queues_names)))
         
         for th in ths:
             th.start()
         for th in ths:
             th.join()
-        merge_results(return_dict, merged_results, flows_name, queues_names, num_of_paths)
+        merge_results(return_dict, merged_results, flows_name, queues_names, num_of_paths, exps)
         print("{} joind".format(i))
     # merged_results['AverageWorkLoad'] = sum(merged_results['AverageWorkLoad']) / merged_results['experiments']
     if errorRate is not None:
         os.system('mkdir -p ../Results/results_{}/{}/{}/D_{}/f_{}/'.format(dir, rate, load, differentiationDelay, errorRate))
-        with open('../Results/results_{}/{}/{}/D_{}/f_{}/test_maxE{}_minimumSamples_delay_window_devision_sampling_99percentNonEmpty.0_{}_{}_to_{}.json'.format(dir, rate, load, differentiationDelay, errorRate, DelayConsistencyGaurantee * 100, experiments_end, steadyStart, steadyEnd), 'w') as f:
+        with open('../Results/results_{}/{}/{}/D_{}/f_{}/maxE{}_minimumSamples_delay_window_devision_sampling_1RTT.0_{}_{}_to_{}.json'.format(dir, rate, load, differentiationDelay, errorRate, DelayConsistencyGaurantee * 100, experiments_end, steadyStart, steadyEnd), 'w') as f:
             js.dump(merged_results, f, indent=4)
     else:
-        with open('../Results/results_{}/{}/{}/test_maxE{}_minimumSamples_delay_window_devision_sampling_99percentNonEmpty.0_{}_{}_to_{}.json'.format(dir, rate, load, DelayConsistencyGaurantee * 100, experiments_end, steadyStart, steadyEnd), 'w') as f:
+        with open('../Results/results_{}/{}/{}/maxE{}_minimumSamples_delay_window_devision_sampling_1RTT.0_{}_{}_to_{}.json'.format(dir, rate, load, DelayConsistencyGaurantee * 100, experiments_end, steadyStart, steadyEnd), 'w') as f:
             js.dump(merged_results, f, indent=4)
 
 # main function
@@ -643,10 +645,10 @@ def __main__():
     # serviceRateScales = [0.5]
     loads = [float(x) for x in config.get('Settings', 'load').split(',')]
     loads = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.95]
-    loads = [0.8]
+    # loads = [0.8]
     traffics = config.get('Settings', 'traffic').split(',')
     traffics = ["Google_AllRPC", "Fabricated_Heavy_Head", "Fabricated_Heavy_Middle", "Google_SearchRPC", "Facebook_HadoopDist_All"]
-    traffics = ["Facebook_HadoopDist_All"]
+    # traffics = ["Facebook_HadoopDist_All"]
     errorRates = [float(x) for x in config.get('Settings', 'errorRate').split(',')]
     # errorRates = [0.1, 0.3, 0.5, 0.7, 0.9]
     # errorRates = [0.1]
