@@ -44,6 +44,20 @@ def readResults(results_dict, results_dir, serviceRateScale, results_dir_file, d
                 results_dict['e2e_total_queuing_delay_time'][traffic][load][serviceRateScale].append(temp['e2e_poisson_samples_queue_delay_mean'][i])
                 results_dict['e2e_total_queuing_delay_packets'][traffic][load][serviceRateScale].append(sum([temp[queue_name+'NPkts'][i] for queue_name in queues]))
                 results_dict['e2e_total_queuing_delay_bytes'][traffic][load][serviceRateScale].append(sum([temp[queue_name+'NBytes'][i] for queue_name in queues]))
+                success_prob_error = temp['e2e_poisson_samples_queue_success_prob_mean'][i] - temp['sum_poisson_samples_queue_success_prob_mean'][i]
+                nonmarking_prob_error = temp['e2e_poisson_samples_queue_nonmarking_prob_mean'][i] - temp['sum_poisson_samples_queue_nonmarking_prob_mean'][i]
+                results_dict['e2e_vs_sum_success_prob_error'][traffic][load][serviceRateScale].append(success_prob_error)
+                results_dict['e2e_vs_sum_success_prob_abs_error'][traffic][load][serviceRateScale].append(abs(success_prob_error))
+                results_dict['e2e_vs_sum_success_prob_error_bound_upper'][traffic][load][serviceRateScale].append(temp['e2e_vs_sum_error_success_prob_bound'][i][0])
+                results_dict['e2e_vs_sum_success_prob_error_bound_lower'][traffic][load][serviceRateScale].append(temp['e2e_vs_sum_error_success_prob_bound'][i][1])
+                results_dict['e2e_vs_sum_success_prob_e2e_mean'][traffic][load][serviceRateScale].append(temp['e2e_poisson_samples_queue_success_prob_mean'][i])
+                results_dict['e2e_vs_sum_success_prob_sum_mean'][traffic][load][serviceRateScale].append(temp['sum_poisson_samples_queue_success_prob_mean'][i])
+                results_dict['e2e_vs_sum_nonmarking_prob_error'][traffic][load][serviceRateScale].append(nonmarking_prob_error)
+                results_dict['e2e_vs_sum_nonmarking_prob_abs_error'][traffic][load][serviceRateScale].append(abs(nonmarking_prob_error))
+                results_dict['e2e_vs_sum_nonmarking_prob_error_bound_upper'][traffic][load][serviceRateScale].append(temp['e2e_vs_sum_error_nonmarking_prob_bound'][i][0])
+                results_dict['e2e_vs_sum_nonmarking_prob_error_bound_lower'][traffic][load][serviceRateScale].append(temp['e2e_vs_sum_error_nonmarking_prob_bound'][i][1])
+                results_dict['e2e_vs_sum_nonmarking_prob_e2e_mean'][traffic][load][serviceRateScale].append(temp['e2e_poisson_samples_queue_nonmarking_prob_mean'][i])
+                results_dict['e2e_vs_sum_nonmarking_prob_sum_mean'][traffic][load][serviceRateScale].append(temp['sum_poisson_samples_queue_nonmarking_prob_mean'][i])
                 e2e_vs_sum_consistency_check_with_estimated_bias_added_to_bound.append(abs(temp['sum_poisson_samples_queue_delay_mean'][i] - temp['e2e_poisson_samples_queue_delay_mean'][i]) <= (temp['e2e_vs_sum_error_bound'][i] + results_dict['e2e_vs_sum_estimated_bias'][traffic][load][serviceRateScale][-1]))
                 for idx, trsh in enumerate(estimated_bias_thresholds):
                     if results_dict['e2e_vs_sum_estimated_bias'][traffic][load][serviceRateScale][-1] < trsh * temp['e2e_vs_sum_error_bound'][i]:
@@ -63,6 +77,18 @@ def readResults(results_dict, results_dir, serviceRateScale, results_dir_file, d
                     results_dict['queue_delay_time'][queue_name][traffic][load][serviceRateScale].append(temp[queue_name+'poisson_samples_queue_delay_mean'][i])
                     results_dict['queue_delay_packets'][queue_name][traffic][load][serviceRateScale].append(temp[queue_name+'NPkts'][i])
                     results_dict['queue_delay_bytes'][queue_name][traffic][load][serviceRateScale].append(temp[queue_name+'NBytes'][i])                  
+                    queue_success_prob_error = temp[queue_name+'e2e_samples_queue_success_prob_mean'][i] - temp[queue_name+'poisson_samples_queue_success_prob_mean'][i]
+                    queue_nonmarking_prob_error = temp[queue_name+'e2e_samples_queue_nonmarking_prob_mean'][i] - temp[queue_name+'poisson_samples_queue_nonmarking_prob_mean'][i]
+                    results_dict['queue_success_prob_error_bound'][queue_name][traffic][load][serviceRateScale].append(temp[queue_name+'success_prob_error_bound'][i])
+                    results_dict['queue_success_prob_error'][queue_name][traffic][load][serviceRateScale].append(queue_success_prob_error)
+                    results_dict['queue_success_prob_abs_error'][queue_name][traffic][load][serviceRateScale].append(abs(queue_success_prob_error))
+                    results_dict['queue_e2e_success_prob_mean'][queue_name][traffic][load][serviceRateScale].append(temp[queue_name+'e2e_samples_queue_success_prob_mean'][i])
+                    results_dict['queue_poisson_success_prob_mean'][queue_name][traffic][load][serviceRateScale].append(temp[queue_name+'poisson_samples_queue_success_prob_mean'][i])
+                    results_dict['queue_nonmarking_prob_error_bound'][queue_name][traffic][load][serviceRateScale].append(temp[queue_name+'nonmarking_prob_error_bound'][i])
+                    results_dict['queue_nonmarking_prob_error'][queue_name][traffic][load][serviceRateScale].append(queue_nonmarking_prob_error)
+                    results_dict['queue_nonmarking_prob_abs_error'][queue_name][traffic][load][serviceRateScale].append(abs(queue_nonmarking_prob_error))
+                    results_dict['queue_e2e_nonmarking_prob_mean'][queue_name][traffic][load][serviceRateScale].append(temp[queue_name+'e2e_samples_queue_nonmarking_prob_mean'][i])
+                    results_dict['queue_poisson_nonmarking_prob_mean'][queue_name][traffic][load][serviceRateScale].append(temp[queue_name+'poisson_samples_queue_nonmarking_prob_mean'][i])
                     for idx, trsh in enumerate(per_queue_size_thresholds_packets):
                         if temp[queue_name+'NPkts'][i] < trsh:
                             queue_size_filtered_packets[idx] = True
@@ -81,6 +107,8 @@ def readResults(results_dict, results_dir, serviceRateScale, results_dir_file, d
             results_dict['e2e_vs_sum_consistency_check'][traffic][load][serviceRateScale] = sum(temp['e2e_vs_sum_consistent']) / len(temp['experiment']) * 100
             results_dict['e2e_vs_sum_consistency_check_with_estimated_bias'][traffic][load][serviceRateScale] = sum(temp['e2e_vs_sum_consistent_with_bias']) / len(temp['experiment']) * 100
             results_dict['e2e_vs_sum_consistency_check_with_estimated_bias_added_to_bound'][traffic][load][serviceRateScale] = sum(e2e_vs_sum_consistency_check_with_estimated_bias_added_to_bound) / len(temp['experiment']) * 100
+            results_dict['e2e_vs_sum_success_prob_consistency_check'][traffic][load][serviceRateScale] = sum(temp['e2e_vs_sum_consistent_success_prob']) / len(temp['experiment']) * 100
+            results_dict['e2e_vs_sum_nonmarking_prob_consistency_check'][traffic][load][serviceRateScale] = sum(temp['e2e_vs_sum_consistent_nonmarking_prob']) / len(temp['experiment']) * 100
             for idx in range(len(estimated_bias_thresholds)):
                 results_dict['e2e_vs_sum_consistency_check_filtered_estimated_bias'][idx][traffic][load][serviceRateScale] = sum(e2e_vs_sum_consistency_check_filtered_estimated_bias[idx]) / len(e2e_vs_sum_consistency_check_filtered_estimated_bias[idx]) * 100 if len(e2e_vs_sum_consistency_check_filtered_estimated_bias[idx]) > 0 else np.nan
             for idx in range(len(per_queue_size_thresholds_packets)):
@@ -92,6 +120,8 @@ def readResults(results_dict, results_dir, serviceRateScale, results_dir_file, d
                 results_dict['queue_consistency_check_with_estimated_bias_added_to_Poisson_mean'][queue_name][traffic][load][serviceRateScale] = sum(temp[queue_name+'e2e_vs_poisson_consistent_with_bias']) / len(temp['experiment']) * 100
                 consistency_check_with_estimated_bias_added_to_bound = [abs(temp[queue_name+'e2e_samples_queue_delay_mean'][i] - temp[queue_name+'poisson_samples_queue_delay_mean'][i]) <= (temp[queue_name+'error_bound'][i] + temp[queue_name+'bias'][i]) for i in range(len(temp['experiment']))]
                 results_dict['queue_consistency_check_with_estimated_bias_added_to_bound'][queue_name][traffic][load][serviceRateScale] = sum(consistency_check_with_estimated_bias_added_to_bound) / len(temp['experiment']) * 100
+                results_dict['queue_success_prob_consistency_check'][queue_name][traffic][load][serviceRateScale] = sum(temp[queue_name+'e2e_vs_poisson_consistent_success_prob']) / len(temp['experiment']) * 100
+                results_dict['queue_nonmarking_prob_consistency_check'][queue_name][traffic][load][serviceRateScale] = sum(temp[queue_name+'e2e_vs_poisson_consistent_nonmarking_prob']) / len(temp['experiment']) * 100
 
 def plot_forward_success_per_loads_traffic(results, loads, rates, results_dir, results_dir_file, biasTag):
     print("Generating forward success rate subplots per load (1 per α, shape per traffic)...")
@@ -269,12 +299,13 @@ def plot_metric_per_loads_traffic_boxplot(traffic_list, metric, loads, rates, re
     if not np.isfinite(max_y) or not np.isfinite(min_y):
         max_y, min_y = 1.0, 0.0
 
+    span = max_y - min_y
+    padding = 0.05 * span if span > 0 else (0.05 if max_y == 0 else 0.05 * abs(max_y))
+
     for ax in axs:
-        # Same y-scale across subplots
-        bottom = 0.95 * min_y if min_y >= 0 else 1.05 * min_y
-        top = 1.05 * max_y
-        # bottom = 0
-        # top = 15
+        # Same y-scale across subplots.
+        bottom = min_y - padding
+        top = max_y + padding
         ax.set_ylim(bottom=bottom, top=top)
         ax.tick_params(axis='y', labelsize=12)
 
@@ -292,6 +323,18 @@ def plot_metric_per_loads_traffic_boxplot(traffic_list, metric, loads, rates, re
 def prepare_results_dict(results_dir, results_dir_file, rateScales, loads, traffics, queues):
     results = {}
     e2e_vs_sum_error_bound = {}
+    e2e_vs_sum_success_prob_error = {}
+    e2e_vs_sum_success_prob_abs_error = {}
+    e2e_vs_sum_success_prob_error_bound_upper = {}
+    e2e_vs_sum_success_prob_error_bound_lower = {}
+    e2e_vs_sum_success_prob_e2e_mean = {}
+    e2e_vs_sum_success_prob_sum_mean = {}
+    e2e_vs_sum_nonmarking_prob_error = {}
+    e2e_vs_sum_nonmarking_prob_abs_error = {}
+    e2e_vs_sum_nonmarking_prob_error_bound_upper = {}
+    e2e_vs_sum_nonmarking_prob_error_bound_lower = {}
+    e2e_vs_sum_nonmarking_prob_e2e_mean = {}
+    e2e_vs_sum_nonmarking_prob_sum_mean = {}
     e2e_vs_sum_relative_error_bound = {}
     e2e_vs_sum_abs_error = {}
     e2e_vs_sum_relative_error = {}
@@ -310,6 +353,8 @@ def prepare_results_dict(results_dir, results_dir_file, rateScales, loads, traff
     e2e_vs_sum_consistency_check = {}
     e2e_vs_sum_consistency_check_with_estimated_bias = {}
     e2e_vs_sum_consistency_check_with_estimated_bias_added_to_bound = {}
+    e2e_vs_sum_success_prob_consistency_check = {}
+    e2e_vs_sum_nonmarking_prob_consistency_check = {}
     e2e_total_queuing_delay_time = {}
     e2e_total_queuing_delay_packets = {}
     e2e_total_queuing_delay_bytes = {}
@@ -324,6 +369,18 @@ def prepare_results_dict(results_dir, results_dir_file, rateScales, loads, traff
     queue_consistency_check = {}
     queue_consistency_check_with_estimated_bias_added_to_Poisson_mean = {}
     queue_consistency_check_with_estimated_bias_added_to_bound = {}
+    queue_success_prob_error_bound = {}
+    queue_success_prob_error = {}
+    queue_success_prob_abs_error = {}
+    queue_success_prob_consistency_check = {}
+    queue_e2e_success_prob_mean = {}
+    queue_poisson_success_prob_mean = {}
+    queue_nonmarking_prob_error_bound = {}
+    queue_nonmarking_prob_error = {}
+    queue_nonmarking_prob_abs_error = {}
+    queue_nonmarking_prob_consistency_check = {}
+    queue_e2e_nonmarking_prob_mean = {}
+    queue_poisson_nonmarking_prob_mean = {}
     queue_delay_time = {}
     queue_delay_packets = {}
     queue_delay_bytes = {}
@@ -340,12 +397,36 @@ def prepare_results_dict(results_dir, results_dir_file, rateScales, loads, traff
         queue_consistency_check[queue_name] = {}
         queue_consistency_check_with_estimated_bias_added_to_Poisson_mean[queue_name] = {}
         queue_consistency_check_with_estimated_bias_added_to_bound[queue_name] = {}
+        queue_success_prob_error_bound[queue_name] = {}
+        queue_success_prob_error[queue_name] = {}
+        queue_success_prob_abs_error[queue_name] = {}
+        queue_success_prob_consistency_check[queue_name] = {}
+        queue_e2e_success_prob_mean[queue_name] = {}
+        queue_poisson_success_prob_mean[queue_name] = {}
+        queue_nonmarking_prob_error_bound[queue_name] = {}
+        queue_nonmarking_prob_error[queue_name] = {}
+        queue_nonmarking_prob_abs_error[queue_name] = {}
+        queue_nonmarking_prob_consistency_check[queue_name] = {}
+        queue_e2e_nonmarking_prob_mean[queue_name] = {}
+        queue_poisson_nonmarking_prob_mean[queue_name] = {}
         queue_delay_time[queue_name] = {}
         queue_delay_packets[queue_name] = {}
         queue_delay_bytes[queue_name] = {}
 
     for traffic in traffics:
         e2e_vs_sum_error_bound[traffic] = {}
+        e2e_vs_sum_success_prob_error[traffic] = {}
+        e2e_vs_sum_success_prob_abs_error[traffic] = {}
+        e2e_vs_sum_success_prob_error_bound_upper[traffic] = {}
+        e2e_vs_sum_success_prob_error_bound_lower[traffic] = {}
+        e2e_vs_sum_success_prob_e2e_mean[traffic] = {}
+        e2e_vs_sum_success_prob_sum_mean[traffic] = {}
+        e2e_vs_sum_nonmarking_prob_error[traffic] = {}
+        e2e_vs_sum_nonmarking_prob_abs_error[traffic] = {}
+        e2e_vs_sum_nonmarking_prob_error_bound_upper[traffic] = {}
+        e2e_vs_sum_nonmarking_prob_error_bound_lower[traffic] = {}
+        e2e_vs_sum_nonmarking_prob_e2e_mean[traffic] = {}
+        e2e_vs_sum_nonmarking_prob_sum_mean[traffic] = {}
         e2e_vs_sum_relative_error_bound[traffic] = {}
         e2e_vs_sum_abs_error[traffic] = {}
         e2e_vs_sum_relative_error[traffic] = {}
@@ -361,6 +442,8 @@ def prepare_results_dict(results_dir, results_dir_file, rateScales, loads, traff
         e2e_vs_sum_consistency_check[traffic] = {}
         e2e_vs_sum_consistency_check_with_estimated_bias[traffic] = {}
         e2e_vs_sum_consistency_check_with_estimated_bias_added_to_bound[traffic] = {}
+        e2e_vs_sum_success_prob_consistency_check[traffic] = {}
+        e2e_vs_sum_nonmarking_prob_consistency_check[traffic] = {}
         e2e_total_queuing_delay_time[traffic] = {}
         e2e_total_queuing_delay_packets[traffic] = {}
         e2e_total_queuing_delay_bytes[traffic] = {}
@@ -376,11 +459,35 @@ def prepare_results_dict(results_dir, results_dir_file, rateScales, loads, traff
             queue_consistency_check[queue_name][traffic] = {}
             queue_consistency_check_with_estimated_bias_added_to_Poisson_mean[queue_name][traffic] = {}
             queue_consistency_check_with_estimated_bias_added_to_bound[queue_name][traffic] = {}
+            queue_success_prob_error_bound[queue_name][traffic] = {}
+            queue_success_prob_error[queue_name][traffic] = {}
+            queue_success_prob_abs_error[queue_name][traffic] = {}
+            queue_success_prob_consistency_check[queue_name][traffic] = {}
+            queue_e2e_success_prob_mean[queue_name][traffic] = {}
+            queue_poisson_success_prob_mean[queue_name][traffic] = {}
+            queue_nonmarking_prob_error_bound[queue_name][traffic] = {}
+            queue_nonmarking_prob_error[queue_name][traffic] = {}
+            queue_nonmarking_prob_abs_error[queue_name][traffic] = {}
+            queue_nonmarking_prob_consistency_check[queue_name][traffic] = {}
+            queue_e2e_nonmarking_prob_mean[queue_name][traffic] = {}
+            queue_poisson_nonmarking_prob_mean[queue_name][traffic] = {}
             queue_delay_time[queue_name][traffic] = {}
             queue_delay_packets[queue_name][traffic] = {}
             queue_delay_bytes[queue_name][traffic] = {}
         for load in loads:
                 e2e_vs_sum_error_bound[traffic][load] = {}
+                e2e_vs_sum_success_prob_error[traffic][load] = {}
+                e2e_vs_sum_success_prob_abs_error[traffic][load] = {}
+                e2e_vs_sum_success_prob_error_bound_upper[traffic][load] = {}
+                e2e_vs_sum_success_prob_error_bound_lower[traffic][load] = {}
+                e2e_vs_sum_success_prob_e2e_mean[traffic][load] = {}
+                e2e_vs_sum_success_prob_sum_mean[traffic][load] = {}
+                e2e_vs_sum_nonmarking_prob_error[traffic][load] = {}
+                e2e_vs_sum_nonmarking_prob_abs_error[traffic][load] = {}
+                e2e_vs_sum_nonmarking_prob_error_bound_upper[traffic][load] = {}
+                e2e_vs_sum_nonmarking_prob_error_bound_lower[traffic][load] = {}
+                e2e_vs_sum_nonmarking_prob_e2e_mean[traffic][load] = {}
+                e2e_vs_sum_nonmarking_prob_sum_mean[traffic][load] = {}
                 e2e_vs_sum_abs_error[traffic][load] = {}
                 e2e_vs_sum_relative_error[traffic][load] = {}
                 e2e_vs_sum_relative_error_bound[traffic][load] = {}
@@ -396,6 +503,8 @@ def prepare_results_dict(results_dir, results_dir_file, rateScales, loads, traff
                 e2e_vs_sum_consistency_check[traffic][load] = {}
                 e2e_vs_sum_consistency_check_with_estimated_bias[traffic][load] = {}
                 e2e_vs_sum_consistency_check_with_estimated_bias_added_to_bound[traffic][load] = {}
+                e2e_vs_sum_success_prob_consistency_check[traffic][load] = {}
+                e2e_vs_sum_nonmarking_prob_consistency_check[traffic][load] = {}
                 e2e_total_queuing_delay_time[traffic][load] = {}
                 e2e_total_queuing_delay_packets[traffic][load] = {}
                 e2e_total_queuing_delay_bytes[traffic][load] = {}
@@ -411,11 +520,35 @@ def prepare_results_dict(results_dir, results_dir_file, rateScales, loads, traff
                     queue_consistency_check[queue_name][traffic][load] = {}
                     queue_consistency_check_with_estimated_bias_added_to_Poisson_mean[queue_name][traffic][load] = {}
                     queue_consistency_check_with_estimated_bias_added_to_bound[queue_name][traffic][load] = {}
+                    queue_success_prob_error_bound[queue_name][traffic][load] = {}
+                    queue_success_prob_error[queue_name][traffic][load] = {}
+                    queue_success_prob_abs_error[queue_name][traffic][load] = {}
+                    queue_success_prob_consistency_check[queue_name][traffic][load] = {}
+                    queue_e2e_success_prob_mean[queue_name][traffic][load] = {}
+                    queue_poisson_success_prob_mean[queue_name][traffic][load] = {}
+                    queue_nonmarking_prob_error_bound[queue_name][traffic][load] = {}
+                    queue_nonmarking_prob_error[queue_name][traffic][load] = {}
+                    queue_nonmarking_prob_abs_error[queue_name][traffic][load] = {}
+                    queue_nonmarking_prob_consistency_check[queue_name][traffic][load] = {}
+                    queue_e2e_nonmarking_prob_mean[queue_name][traffic][load] = {}
+                    queue_poisson_nonmarking_prob_mean[queue_name][traffic][load] = {}
                     queue_delay_time[queue_name][traffic][load] = {}
                     queue_delay_packets[queue_name][traffic][load] = {}
                     queue_delay_bytes[queue_name][traffic][load] = {}
                 for rate in rateScales:
                     e2e_vs_sum_error_bound[traffic][load][rate] = []
+                    e2e_vs_sum_success_prob_error[traffic][load][rate] = []
+                    e2e_vs_sum_success_prob_abs_error[traffic][load][rate] = []
+                    e2e_vs_sum_success_prob_error_bound_upper[traffic][load][rate] = []
+                    e2e_vs_sum_success_prob_error_bound_lower[traffic][load][rate] = []
+                    e2e_vs_sum_success_prob_e2e_mean[traffic][load][rate] = []
+                    e2e_vs_sum_success_prob_sum_mean[traffic][load][rate] = []
+                    e2e_vs_sum_nonmarking_prob_error[traffic][load][rate] = []
+                    e2e_vs_sum_nonmarking_prob_abs_error[traffic][load][rate] = []
+                    e2e_vs_sum_nonmarking_prob_error_bound_upper[traffic][load][rate] = []
+                    e2e_vs_sum_nonmarking_prob_error_bound_lower[traffic][load][rate] = []
+                    e2e_vs_sum_nonmarking_prob_e2e_mean[traffic][load][rate] = []
+                    e2e_vs_sum_nonmarking_prob_sum_mean[traffic][load][rate] = []
                     e2e_vs_sum_relative_error_bound[traffic][load][rate] = []
                     e2e_vs_sum_abs_error[traffic][load][rate] = []
                     e2e_vs_sum_relative_error[traffic][load][rate] = []
@@ -431,6 +564,8 @@ def prepare_results_dict(results_dir, results_dir_file, rateScales, loads, traff
                     e2e_vs_sum_consistency_check[traffic][load][rate] = np.nan
                     e2e_vs_sum_consistency_check_with_estimated_bias[traffic][load][rate] = np.nan
                     e2e_vs_sum_consistency_check_with_estimated_bias_added_to_bound[traffic][load][rate] = np.nan
+                    e2e_vs_sum_success_prob_consistency_check[traffic][load][rate] = np.nan
+                    e2e_vs_sum_nonmarking_prob_consistency_check[traffic][load][rate] = np.nan
                     e2e_total_queuing_delay_time[traffic][load][rate] = []
                     e2e_total_queuing_delay_packets[traffic][load][rate] = []
                     e2e_total_queuing_delay_bytes[traffic][load][rate] = []
@@ -446,11 +581,35 @@ def prepare_results_dict(results_dir, results_dir_file, rateScales, loads, traff
                         queue_consistency_check[queue_name][traffic][load][rate] = np.nan
                         queue_consistency_check_with_estimated_bias_added_to_Poisson_mean[queue_name][traffic][load][rate] = np.nan
                         queue_consistency_check_with_estimated_bias_added_to_bound[queue_name][traffic][load][rate] = np.nan
+                        queue_success_prob_error_bound[queue_name][traffic][load][rate] = []
+                        queue_success_prob_error[queue_name][traffic][load][rate] = []
+                        queue_success_prob_abs_error[queue_name][traffic][load][rate] = []
+                        queue_success_prob_consistency_check[queue_name][traffic][load][rate] = np.nan
+                        queue_e2e_success_prob_mean[queue_name][traffic][load][rate] = []
+                        queue_poisson_success_prob_mean[queue_name][traffic][load][rate] = []
+                        queue_nonmarking_prob_error_bound[queue_name][traffic][load][rate] = []
+                        queue_nonmarking_prob_error[queue_name][traffic][load][rate] = []
+                        queue_nonmarking_prob_abs_error[queue_name][traffic][load][rate] = []
+                        queue_nonmarking_prob_consistency_check[queue_name][traffic][load][rate] = np.nan
+                        queue_e2e_nonmarking_prob_mean[queue_name][traffic][load][rate] = []
+                        queue_poisson_nonmarking_prob_mean[queue_name][traffic][load][rate] = []
                         queue_delay_time[queue_name][traffic][load][rate] = []
                         queue_delay_packets[queue_name][traffic][load][rate] = []
                         queue_delay_bytes[queue_name][traffic][load][rate] = []
 
     results['e2e_vs_sum_error_bound'] = e2e_vs_sum_error_bound
+    results['e2e_vs_sum_success_prob_error'] = e2e_vs_sum_success_prob_error
+    results['e2e_vs_sum_success_prob_abs_error'] = e2e_vs_sum_success_prob_abs_error
+    results['e2e_vs_sum_success_prob_error_bound_upper'] = e2e_vs_sum_success_prob_error_bound_upper
+    results['e2e_vs_sum_success_prob_error_bound_lower'] = e2e_vs_sum_success_prob_error_bound_lower
+    results['e2e_vs_sum_success_prob_e2e_mean'] = e2e_vs_sum_success_prob_e2e_mean
+    results['e2e_vs_sum_success_prob_sum_mean'] = e2e_vs_sum_success_prob_sum_mean
+    results['e2e_vs_sum_nonmarking_prob_error'] = e2e_vs_sum_nonmarking_prob_error
+    results['e2e_vs_sum_nonmarking_prob_abs_error'] = e2e_vs_sum_nonmarking_prob_abs_error
+    results['e2e_vs_sum_nonmarking_prob_error_bound_upper'] = e2e_vs_sum_nonmarking_prob_error_bound_upper
+    results['e2e_vs_sum_nonmarking_prob_error_bound_lower'] = e2e_vs_sum_nonmarking_prob_error_bound_lower
+    results['e2e_vs_sum_nonmarking_prob_e2e_mean'] = e2e_vs_sum_nonmarking_prob_e2e_mean
+    results['e2e_vs_sum_nonmarking_prob_sum_mean'] = e2e_vs_sum_nonmarking_prob_sum_mean
     results['e2e_vs_sum_relative_error_bound'] = e2e_vs_sum_relative_error_bound
     results['e2e_vs_sum_abs_error'] = e2e_vs_sum_abs_error
     results['e2e_vs_sum_relative_error'] = e2e_vs_sum_relative_error
@@ -463,6 +622,8 @@ def prepare_results_dict(results_dir, results_dir_file, rateScales, loads, traff
     results['e2e_vs_sum_consistency_check'] = e2e_vs_sum_consistency_check
     results['e2e_vs_sum_consistency_check_with_estimated_bias'] = e2e_vs_sum_consistency_check_with_estimated_bias
     results['e2e_vs_sum_consistency_check_with_estimated_bias_added_to_bound'] = e2e_vs_sum_consistency_check_with_estimated_bias_added_to_bound
+    results['e2e_vs_sum_success_prob_consistency_check'] = e2e_vs_sum_success_prob_consistency_check
+    results['e2e_vs_sum_nonmarking_prob_consistency_check'] = e2e_vs_sum_nonmarking_prob_consistency_check
     results['e2e_total_queuing_delay_time'] = e2e_total_queuing_delay_time
     results['e2e_total_queuing_delay_packets'] = e2e_total_queuing_delay_packets
     results['e2e_total_queuing_delay_bytes'] = e2e_total_queuing_delay_bytes
@@ -476,6 +637,18 @@ def prepare_results_dict(results_dir, results_dir_file, rateScales, loads, traff
     results['queue_relative_error_bound_subtracted_relative_error_after_bias'] = queue_relative_error_bound_subtracted_relative_error_after_bias
     results['queue_consistency_check_with_estimated_bias_added_to_Poisson_mean'] = queue_consistency_check_with_estimated_bias_added_to_Poisson_mean
     results['queue_consistency_check_with_estimated_bias_added_to_bound'] = queue_consistency_check_with_estimated_bias_added_to_bound
+    results['queue_success_prob_error_bound'] = queue_success_prob_error_bound
+    results['queue_success_prob_error'] = queue_success_prob_error
+    results['queue_success_prob_abs_error'] = queue_success_prob_abs_error
+    results['queue_success_prob_consistency_check'] = queue_success_prob_consistency_check
+    results['queue_e2e_success_prob_mean'] = queue_e2e_success_prob_mean
+    results['queue_poisson_success_prob_mean'] = queue_poisson_success_prob_mean
+    results['queue_nonmarking_prob_error_bound'] = queue_nonmarking_prob_error_bound
+    results['queue_nonmarking_prob_error'] = queue_nonmarking_prob_error
+    results['queue_nonmarking_prob_abs_error'] = queue_nonmarking_prob_abs_error
+    results['queue_nonmarking_prob_consistency_check'] = queue_nonmarking_prob_consistency_check
+    results['queue_e2e_nonmarking_prob_mean'] = queue_e2e_nonmarking_prob_mean
+    results['queue_poisson_nonmarking_prob_mean'] = queue_poisson_nonmarking_prob_mean
     results['queue_delay_time'] = queue_delay_time
     results['queue_delay_packets'] = queue_delay_packets
     results['queue_delay_bytes'] = queue_delay_bytes
@@ -502,6 +675,20 @@ def analyse_forward_exp(results_dir, results_dir_file, rateScales, loads, traffi
     plot_forward_success_per_loads_traffic(results['e2e_vs_sum_consistency_check'], loads, rateScales, results_dir, results_dir_file, "consistency_check")
     plot_forward_success_per_loads_traffic(results['e2e_vs_sum_consistency_check_with_estimated_bias'], loads, rateScales, results_dir, results_dir_file, "consistency_check_with_estimated_bias")
     plot_forward_success_per_loads_traffic(results['e2e_vs_sum_consistency_check_with_estimated_bias_added_to_bound'], loads, rateScales, results_dir, results_dir_file, "consistency_check_with_estimated_bias_added_to_bound")
+    plot_metric_per_loads_traffic_boxplot(traffics, results['e2e_vs_sum_success_prob_e2e_mean'], loads, rateScales, results_dir, results_dir_file, "e2e vs sum Success Prob E2E Mean")
+    plot_metric_per_loads_traffic_boxplot(traffics, results['e2e_vs_sum_success_prob_sum_mean'], loads, rateScales, results_dir, results_dir_file, "e2e vs sum Success Prob Sum Mean")
+    plot_metric_per_loads_traffic_boxplot(traffics, results['e2e_vs_sum_success_prob_error'], loads, rateScales, results_dir, results_dir_file, "e2e vs sum Success Prob Error")
+    plot_metric_per_loads_traffic_boxplot(traffics, results['e2e_vs_sum_success_prob_abs_error'], loads, rateScales, results_dir, results_dir_file, "e2e vs sum Success Prob Absolute Error")
+    plot_metric_per_loads_traffic_boxplot(traffics, results['e2e_vs_sum_success_prob_error_bound_upper'], loads, rateScales, results_dir, results_dir_file, "e2e vs sum Success Prob Upper Error Bound")
+    plot_metric_per_loads_traffic_boxplot(traffics, results['e2e_vs_sum_success_prob_error_bound_lower'], loads, rateScales, results_dir, results_dir_file, "e2e vs sum Success Prob Lower Error Bound")
+    plot_forward_success_per_loads_traffic(results['e2e_vs_sum_success_prob_consistency_check'], loads, rateScales, results_dir, results_dir_file, "success_prob_consistency_check")
+    plot_metric_per_loads_traffic_boxplot(traffics, results['e2e_vs_sum_nonmarking_prob_e2e_mean'], loads, rateScales, results_dir, results_dir_file, "e2e vs sum Non-Marking Prob E2E Mean")
+    plot_metric_per_loads_traffic_boxplot(traffics, results['e2e_vs_sum_nonmarking_prob_sum_mean'], loads, rateScales, results_dir, results_dir_file, "e2e vs sum Non-Marking Prob Sum Mean")
+    plot_metric_per_loads_traffic_boxplot(traffics, results['e2e_vs_sum_nonmarking_prob_error'], loads, rateScales, results_dir, results_dir_file, "e2e vs sum Non-Marking Prob Error")
+    plot_metric_per_loads_traffic_boxplot(traffics, results['e2e_vs_sum_nonmarking_prob_abs_error'], loads, rateScales, results_dir, results_dir_file, "e2e vs sum Non-Marking Prob Absolute Error")
+    plot_metric_per_loads_traffic_boxplot(traffics, results['e2e_vs_sum_nonmarking_prob_error_bound_upper'], loads, rateScales, results_dir, results_dir_file, "e2e vs sum Non-Marking Prob Upper Error Bound")
+    plot_metric_per_loads_traffic_boxplot(traffics, results['e2e_vs_sum_nonmarking_prob_error_bound_lower'], loads, rateScales, results_dir, results_dir_file, "e2e vs sum Non-Marking Prob Lower Error Bound")
+    plot_forward_success_per_loads_traffic(results['e2e_vs_sum_nonmarking_prob_consistency_check'], loads, rateScales, results_dir, results_dir_file, "nonmarking_prob_consistency_check")
     plot_metric_per_loads_traffic_boxplot(traffics, results['e2e_total_queuing_delay_time'], loads, rateScales, results_dir, results_dir_file, f"e2e Total Queuing Delay Time (ns)")
     plot_metric_per_loads_traffic_boxplot(traffics, results['e2e_total_queuing_delay_packets'], loads, rateScales, results_dir, results_dir_file, f"e2e Total Queuing Delay Packets")
     plot_metric_per_loads_traffic_boxplot(traffics, results['e2e_total_queuing_delay_bytes'], loads, rateScales, results_dir, results_dir_file, f"e2e Total Queuing Delay Bytes")
@@ -524,6 +711,18 @@ def analyse_forward_exp(results_dir, results_dir_file, rateScales, loads, traffi
         plot_forward_success_per_loads_traffic(results['queue_consistency_check'][queue_name], loads, rateScales, results_dir, results_dir_file, f"{queue_name} Consistency Check")
         plot_forward_success_per_loads_traffic(results['queue_consistency_check_with_estimated_bias_added_to_bound'][queue_name], loads, rateScales, results_dir, results_dir_file, f"{queue_name} Consistency Check with Estimated Bias Added to Bound")
         plot_forward_success_per_loads_traffic(results['queue_consistency_check_with_estimated_bias_added_to_Poisson_mean'][queue_name], loads, rateScales, results_dir, results_dir_file, f"{queue_name} Consistency Check with Estimated Bias Added to Poisson Mean")
+        plot_metric_per_loads_traffic_boxplot(traffics, results['queue_e2e_success_prob_mean'][queue_name], loads, rateScales, results_dir, results_dir_file, f"{queue_name} E2E Success Prob Mean")
+        plot_metric_per_loads_traffic_boxplot(traffics, results['queue_poisson_success_prob_mean'][queue_name], loads, rateScales, results_dir, results_dir_file, f"{queue_name} Poisson Success Prob Mean")
+        plot_metric_per_loads_traffic_boxplot(traffics, results['queue_success_prob_error_bound'][queue_name], loads, rateScales, results_dir, results_dir_file, f"{queue_name} Success Prob Error Bound")
+        plot_metric_per_loads_traffic_boxplot(traffics, results['queue_success_prob_error'][queue_name], loads, rateScales, results_dir, results_dir_file, f"{queue_name} Success Prob Error")
+        plot_metric_per_loads_traffic_boxplot(traffics, results['queue_success_prob_abs_error'][queue_name], loads, rateScales, results_dir, results_dir_file, f"{queue_name} Success Prob Absolute Error")
+        plot_forward_success_per_loads_traffic(results['queue_success_prob_consistency_check'][queue_name], loads, rateScales, results_dir, results_dir_file, f"{queue_name} Success Prob Consistency Check")
+        plot_metric_per_loads_traffic_boxplot(traffics, results['queue_e2e_nonmarking_prob_mean'][queue_name], loads, rateScales, results_dir, results_dir_file, f"{queue_name} E2E Non-Marking Prob Mean")
+        plot_metric_per_loads_traffic_boxplot(traffics, results['queue_poisson_nonmarking_prob_mean'][queue_name], loads, rateScales, results_dir, results_dir_file, f"{queue_name} Poisson Non-Marking Prob Mean")
+        plot_metric_per_loads_traffic_boxplot(traffics, results['queue_nonmarking_prob_error_bound'][queue_name], loads, rateScales, results_dir, results_dir_file, f"{queue_name} Non-Marking Prob Error Bound")
+        plot_metric_per_loads_traffic_boxplot(traffics, results['queue_nonmarking_prob_error'][queue_name], loads, rateScales, results_dir, results_dir_file, f"{queue_name} Non-Marking Prob Error")
+        plot_metric_per_loads_traffic_boxplot(traffics, results['queue_nonmarking_prob_abs_error'][queue_name], loads, rateScales, results_dir, results_dir_file, f"{queue_name} Non-Marking Prob Absolute Error")
+        plot_forward_success_per_loads_traffic(results['queue_nonmarking_prob_consistency_check'][queue_name], loads, rateScales, results_dir, results_dir_file, f"{queue_name} Non-Marking Prob Consistency Check")
         plot_metric_per_loads_traffic_boxplot(traffics, results['queue_delay_time'][queue_name], loads, rateScales, results_dir, results_dir_file, f"{queue_name} Queue Delay Time (ns)")
         plot_metric_per_loads_traffic_boxplot(traffics, results['queue_delay_packets'][queue_name], loads, rateScales, results_dir, results_dir_file, f"{queue_name} Queue Delay Packets")
         plot_metric_per_loads_traffic_boxplot(traffics, results['queue_delay_bytes'][queue_name], loads, rateScales, results_dir, results_dir_file, f"{queue_name} Queue Delay Bytes")
@@ -567,7 +766,8 @@ def __main__():
     numOfSteadyParts = 1
     for start in range(int(steadyStart), int(steadyEnd), int((steadyEnd - steadyStart) / numOfSteadyParts)):
         print("Steady period: {} to {}".format(start, start + int((steadyEnd - steadyStart) / numOfSteadyParts)))
-        results_dir_file = "delay_minimum_bias_e2e_vs_switch_poisson.0_30_{}_to_{}".format(start, start + int((steadyEnd - steadyStart) / numOfSteadyParts))
+        # results_dir_file = "delay_minimum_bias_e2e_0.01subsampling_vs_switch_poisson.0_30_{}_to_{}".format(start, start + int((steadyEnd - steadyStart) / numOfSteadyParts))
+        results_dir_file = "delay_minimum_bias_e2e_vs_switch_poisson.0_None_30_to_10000000"
         if args.IsForward == 1:
             os.system('mkdir -p ../Results/results_' + results_dir + '/' + results_dir_file)
             analyse_forward_exp(results_dir, results_dir_file, rateScales, loads, traffics, queues)

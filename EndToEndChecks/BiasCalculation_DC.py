@@ -11,23 +11,44 @@ __ns3_path = "/media/experiments/ns-allinone-3.41/ns-3.41"
 def prepare_results(queues):
     rounds_results = {}
     rounds_results['e2e_vs_sum_error_bound'] = []
+    rounds_results['e2e_vs_sum_error_success_prob_bound'] = []
+    rounds_results['e2e_vs_sum_error_nonmarking_prob_bound'] = []
     rounds_results['sum_poisson_samples_queue_delay_mean'] = []
     rounds_results['e2e_poisson_samples_queue_delay_mean'] = []
     rounds_results['e2e_poisson_samples_queue_delay_std'] = []
+    rounds_results['sum_poisson_samples_queue_success_prob_mean'] = []
+    rounds_results['e2e_poisson_samples_queue_success_prob_mean'] = []
+    rounds_results['e2e_poisson_samples_queue_success_prob_std'] = []
+    rounds_results['sum_poisson_samples_queue_nonmarking_prob_mean'] = []
+    rounds_results['e2e_poisson_samples_queue_nonmarking_prob_mean'] = []
+    rounds_results['e2e_poisson_samples_queue_nonmarking_prob_std'] = []
     rounds_results['e2e_vs_sum_consistent'] = []
     rounds_results['e2e_vs_sum_consistent_with_bias'] = []
+    rounds_results['e2e_vs_sum_consistent_success_prob'] = []
+    rounds_results['e2e_vs_sum_consistent_nonmarking_prob'] = []
     for queue_name in queues:
         rounds_results[queue_name+'e2e_samples_queue_delay_mean'] = []
         rounds_results[queue_name+'e2e_samples_queue_delay_std'] = []
         rounds_results[queue_name+'e2e_samples_queue_delay_count'] = []
+        rounds_results[queue_name+'e2e_samples_queue_success_prob_mean'] = []
+        rounds_results[queue_name+'e2e_samples_queue_success_prob_std'] = []
+        rounds_results[queue_name+'e2e_samples_queue_nonmarking_prob_mean'] = []
+        rounds_results[queue_name+'e2e_samples_queue_nonmarking_prob_std'] = []
         rounds_results[queue_name+'poisson_samples_queue_delay_mean'] = []
         rounds_results[queue_name+'poisson_samples_queue_delay_std'] = []
+        rounds_results[queue_name+'poisson_samples_queue_success_prob_mean'] = []
+        rounds_results[queue_name+'poisson_samples_queue_success_prob_std'] = []
+        rounds_results[queue_name+'poisson_samples_queue_nonmarking_prob_mean'] = []
+        rounds_results[queue_name+'poisson_samples_queue_nonmarking_prob_std'] = []
         rounds_results[queue_name+'poisson_samples_queue_delay_count'] = []
         rounds_results[queue_name+'poisson_prob_non_empty'] = []
         rounds_results[queue_name+'error_bound'] = []
-        rounds_results[queue_name+'poisson_prev_queue_non_empty_prob_percentile'] = []
+        rounds_results[queue_name+'success_prob_error_bound'] = []
+        rounds_results[queue_name+'nonmarking_prob_error_bound'] = []
         rounds_results[queue_name+'e2e_vs_poisson_consistent'] = []
         rounds_results[queue_name+'e2e_vs_poisson_consistent_with_bias'] = []
+        rounds_results[queue_name+'e2e_vs_poisson_consistent_success_prob'] = []
+        rounds_results[queue_name+'e2e_vs_poisson_consistent_nonmarking_prob'] = []
         rounds_results[queue_name+'bias'] = []
         rounds_results[queue_name+'NPkts'] = []
         rounds_results[queue_name+'NBytes'] = []
@@ -57,30 +78,52 @@ def analyze_single_experiment(return_dict, rate, queues_names, steadyStart, stea
     return_dict[experiment] = bias_res
 
 def merge_results(return_dict, merged_results, queues):
-    for exp in return_dict.keys():
+    for exp in sorted(return_dict.keys()):
         for queue_name in queues:
             merged_results[queue_name+'e2e_samples_queue_delay_mean'].append(return_dict[exp][queue_name+'e2e_samples_queue_delay_mean'])
             merged_results[queue_name+'e2e_samples_queue_delay_std'].append(return_dict[exp][queue_name+'e2e_samples_queue_delay_std'])
             merged_results[queue_name+'e2e_samples_queue_delay_count'].append(return_dict[exp][queue_name+'e2e_samples_queue_delay_count'])
+            merged_results[queue_name+'e2e_samples_queue_success_prob_mean'].append(return_dict[exp][queue_name+'e2e_samples_queue_success_prob_mean'])
+            merged_results[queue_name+'e2e_samples_queue_success_prob_std'].append(return_dict[exp][queue_name+'e2e_samples_queue_success_prob_std'])
+            merged_results[queue_name+'e2e_samples_queue_nonmarking_prob_mean'].append(return_dict[exp][queue_name+'e2e_samples_queue_nonmarking_prob_mean'])
+            merged_results[queue_name+'e2e_samples_queue_nonmarking_prob_std'].append(return_dict[exp][queue_name+'e2e_samples_queue_nonmarking_prob_std'])
             merged_results[queue_name+'poisson_samples_queue_delay_mean'].append(return_dict[exp][queue_name+'poisson_samples_queue_delay_mean'])
             merged_results[queue_name+'poisson_samples_queue_delay_std'].append(return_dict[exp][queue_name+'poisson_samples_queue_delay_std'])
             merged_results[queue_name+'poisson_samples_queue_delay_count'].append(return_dict[exp][queue_name+'poisson_samples_queue_delay_count'])
+            merged_results[queue_name+'poisson_samples_queue_success_prob_mean'].append(return_dict[exp][queue_name+'poisson_samples_queue_success_prob_mean'])
+            merged_results[queue_name+'poisson_samples_queue_success_prob_std'].append(return_dict[exp][queue_name+'poisson_samples_queue_success_prob_std'])
+            merged_results[queue_name+'poisson_samples_queue_nonmarking_prob_mean'].append(return_dict[exp][queue_name+'poisson_samples_queue_nonmarking_prob_mean'])
+            merged_results[queue_name+'poisson_samples_queue_nonmarking_prob_std'].append(return_dict[exp][queue_name+'poisson_samples_queue_nonmarking_prob_std'])
             merged_results[queue_name+'poisson_prob_non_empty'].append(return_dict[exp][queue_name+'poisson_prob_non_empty'])
             merged_results[queue_name+'error_bound'].append(return_dict[exp][queue_name+'error_bound'])
-            merged_results[queue_name+'poisson_prev_queue_non_empty_prob_percentile'].append(return_dict[exp][queue_name+'poisson_prev_queue_non_empty_prob_percentile'])
+            merged_results[queue_name+'success_prob_error_bound'].append(return_dict[exp][queue_name+'success_prob_error_bound'])
+            merged_results[queue_name+'nonmarking_prob_error_bound'].append(return_dict[exp][queue_name+'nonmarking_prob_error_bound'])
             merged_results[queue_name+'e2e_vs_poisson_consistent'].append(return_dict[exp][queue_name+'e2e_vs_poisson_consistent'])
+            merged_results[queue_name+'e2e_vs_poisson_consistent_success_prob'].append(return_dict[exp][queue_name+'e2e_vs_poisson_consistent_success_prob'])
+            merged_results[queue_name+'e2e_vs_poisson_consistent_nonmarking_prob'].append(return_dict[exp][queue_name+'e2e_vs_poisson_consistent_nonmarking_prob'])
             merged_results[queue_name+'e2e_vs_poisson_consistent_with_bias'].append(return_dict[exp][queue_name+'e2e_vs_poisson_consistent_with_bias'])
             merged_results[queue_name+'bias'].append(return_dict[exp][queue_name+'bias'])
             merged_results[queue_name+'NPkts'].append(return_dict[exp][queue_name+'NPkts'])
             merged_results[queue_name+'NBytes'].append(return_dict[exp][queue_name+'NBytes'])
         
         merged_results['e2e_vs_sum_error_bound'].append(return_dict[exp]['e2e_vs_sum_error_bound'])
+        merged_results['e2e_vs_sum_error_success_prob_bound'].append(return_dict[exp]['e2e_vs_sum_error_success_prob_bound'])
+        merged_results['e2e_vs_sum_error_nonmarking_prob_bound'].append(return_dict[ exp]['e2e_vs_sum_error_nonmarking_prob_bound'])
         merged_results['sum_poisson_samples_queue_delay_mean'].append(return_dict[exp]['sum_poisson_samples_queue_delay_mean'])
+        merged_results['sum_poisson_samples_queue_success_prob_mean'].append(return_dict[exp]['sum_poisson_samples_queue_success_prob_mean'])
+        merged_results['sum_poisson_samples_queue_nonmarking_prob_mean'].append(return_dict[exp]['sum_poisson_samples_queue_nonmarking_prob_mean'])
         merged_results['e2e_poisson_samples_queue_delay_mean'].append(return_dict[exp]['e2e_poisson_samples_queue_delay_mean'])
+        merged_results['e2e_poisson_samples_queue_success_prob_mean'].append(return_dict[exp]['e2e_poisson_samples_queue_success_prob_mean'])
+        merged_results['e2e_poisson_samples_queue_nonmarking_prob_mean'].append(return_dict[exp]['e2e_poisson_samples_queue_nonmarking_prob_mean'])
         merged_results['e2e_poisson_samples_queue_delay_std'].append(return_dict[exp]['e2e_poisson_samples_queue_delay_std'])
+        merged_results['e2e_poisson_samples_queue_success_prob_std'].append(return_dict[exp]['e2e_poisson_samples_queue_success_prob_std'])
+        merged_results['e2e_poisson_samples_queue_nonmarking_prob_std'].append(return_dict[exp]['e2e_poisson_samples_queue_nonmarking_prob_std'])
         merged_results['e2e_vs_sum_consistent'].append(return_dict[exp]['e2e_vs_sum_consistent'])
+        merged_results['e2e_vs_sum_consistent_success_prob'].append(return_dict[exp]['e2e_vs_sum_consistent_success_prob'])
+        merged_results['e2e_vs_sum_consistent_nonmarking_prob'].append(return_dict[exp]['e2e_vs_sum_consistent_nonmarking_prob'])
         merged_results['e2e_vs_sum_consistent_with_bias'].append(return_dict[exp]['e2e_vs_sum_consistent_with_bias'])
         merged_results['experiment'].append(return_dict[exp]['experiment'])
+
 def analyze_all_experiments(rate, steadyStart, steadyEnd, dir, config, experiments_end=3, ns3_path=__ns3_path, load=None, differentiationDelay=None, errorRate=None):
     # if ("delay" in dir) and ("reverse" in dir):
     #     # remove reverse from dir
@@ -91,10 +134,11 @@ def analyze_all_experiments(rate, steadyStart, steadyEnd, dir, config, experimen
     queues_names = ["T0A0", "A0T2", "T2H3"]
     flows_name.sort()
     queues_names.sort()
-    for sampling_factor in [0.8, 0.4, 0.2, 0.1, 0.05, 0.025, 0.01]:
+    # for sampling_factor in [0.8, 0.4, 0.2, 0.1, 0.05, 0.025, 0.01]:
+    for sampling_factor in [None]:
         rounds_results = prepare_results(queues_names)
         merged_results = prepare_results(queues_names)
-        batch_size = 15
+        batch_size = 30
         for i in range(int(experiments_end / batch_size) + 1):
             ths = []
             return_dict = multiprocessing.Manager().dict()
@@ -118,10 +162,10 @@ def analyze_all_experiments(rate, steadyStart, steadyEnd, dir, config, experimen
             print("{} joind".format(i))
         if errorRate is not None:
             os.system('mkdir -p ../Results/results_{}/{}/{}/D_{}/f_{}/'.format(dir, rate, load, differentiationDelay, errorRate))
-            with open('../Results/results_{}/{}/{}/D_{}/f_{}/delay_minimum_bias_e2e_{}subsampling_vs_switch_poisson.0_{}_{}_to_{}.json'.format(dir, rate, load, differentiationDelay, errorRate, sampling_factor, experiments_end, steadyStart, steadyEnd), 'w') as f:
+            with open('../Results/results_{}/{}/{}/D_{}/f_{}/delay_minimum_bias_e2e_vs_switch_poisson.0_{}_{}_to_{}.json'.format(dir, rate, load, differentiationDelay, errorRate, sampling_factor, experiments_end, steadyStart, steadyEnd), 'w') as f:
                 js.dump(merged_results, f, indent=4)
         else:
-            with open('../Results/results_{}/{}/{}/delay_minimum_bias_e2e_{}subsampling_vs_switch_poisson.0_{}_{}_to_{}.json'.format(dir, rate, load, sampling_factor, experiments_end, steadyStart, steadyEnd), 'w') as f:
+            with open('../Results/results_{}/{}/{}/delay_minimum_bias_e2e_vs_switch_poisson.0_{}_{}_to_{}.json'.format(dir, rate, load, sampling_factor, experiments_end, steadyStart, steadyEnd), 'w') as f:
                 js.dump(merged_results, f, indent=4)
 
 # main function
@@ -146,7 +190,7 @@ def __main__():
     # serviceRateScales = [0.5]
     loads = [float(x) for x in config.get('Settings', 'load').split(',')]
     loads = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.95]
-    # loads = [0.1]
+    # loads = [0.2]
     traffics = config.get('Settings', 'traffic').split(',')
     traffics = ["Google_AllRPC","Fabricated_Heavy_Head","Fabricated_Heavy_Middle","Google_SearchRPC", "Facebook_HadoopDist_All"]
     # traffics = ["Google_AllRPC"]
