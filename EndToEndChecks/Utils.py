@@ -15,6 +15,7 @@ from scipy.stats import bernoulli, ks_2samp
 from math import factorial, exp
 import csv
 from collections import defaultdict
+from colorama import Fore, Back, Style
 import pprint
 
 estimation_gain = 0.0625
@@ -342,7 +343,8 @@ def calculate_offline_E2E_workload(full_df, df_res, steadyStart, steadyEnd):
     full_df_ = None
     return df_res
 
-def calculate_offline_E2E_lossRates_DC(full_df, df_res, checkColumn, txDelay, df_name, passiveProbe, samplingMethod, steadyStart, steadyEnd):
+def calculate_offline_E2E_lossRates_DC(full_df, df_res, checkColumn, txDelay, df_name, passiveProbe, samplingMethod, steadyStart, steadyEnd, 
+                                 samples_paths_aggregated_statistics=None, queue_names=None, linkDelays=None, linkRates=None, queue_size_trshs=None):
     df_res['successProb'] = {}
     for var in ['event']:
         for method in ['rightCont_timeAvg', 'leftCont_timeAvg', 'linearInterp_timeAvg', 'poisson_eventAvg', 'eventAvg']:
@@ -383,8 +385,10 @@ def calculate_offline_E2E_lossRates_DC(full_df, df_res, checkColumn, txDelay, df
                 samples_times = []
         else:
             # samples_times, _ = find_samples_path(time, 0)
-            samples_times = find_samples_path_new(time, txDelay, df_res['RTT'][path], df_name, samplingMethod, steadyStart, steadyEnd, steps=1)
-
+            if path in samples_paths_aggregated_statistics.keys():
+                samples_times = find_samples_path_new(time, txDelay, df_res['RTT'][path], df_name, samplingMethod, steadyStart, steadyEnd, steps=1)
+            else:
+                samples_times = []
         df_res['sampleSize']['successProb'][path] = len(samples_times)
         samples_values = df[df['SentTime'].isin(samples_times)]['nonDropEvent'].values
         if df_res['sampleSize']['successProb'][path] == 0:
@@ -1151,11 +1155,11 @@ def calculate_offline_E2E_delays(full_df, removeDrops, checkColumn, txDelay, df_
         else:
             # samples_times, _ = find_samples_path(time, 0)
             if path in samples_paths_aggregated_statistics.keys():
-                if samples_paths_aggregated_statistics[path]['MinimumE2ESampleSize'] is not None:
-                #    samples_times, subSamplingError = find_samples_path_new(time, txDelay, df_res['RTT'][path], df_name, samplingMethod, steadyStart, steadyEnd, steps=1, MinimumNumberOfSamples=samples_paths_aggregated_statistics[path]['MinimumE2ESampleSize'])
-                    # samples_times, subSamplingError, result = find_samples_path_ccf(time, steadyStart, steadyEnd, queue_names, df_name, linkDelays, linkRates, queue_size_trshs, samples_paths_aggregated_statistics[path]['MinimumE2ESampleSize'])
-                    # samples_times, subSamplingError, result = find_samples_path_chi_squared_test(time, steadyStart, steadyEnd, samples_paths_aggregated_statistics[path]['MinimumE2ESampleSize'])
-                    samples_times, subSamplingError = find_samples_path(time, samples_paths_aggregated_statistics[path]['MinimumE2ESampleSize'], window=df_res['RTT'][path])
+                if samples_paths_aggregated_statistics[path]['MinimumE2ESampleSizeDelay'] is not None:
+                #    samples_times, subSamplingError = find_samples_path_new(time, txDelay, df_res['RTT'][path], df_name, samplingMethod, steadyStart, steadyEnd, steps=1, MinimumNumberOfSamples=samples_paths_aggregated_statistics[path]['MinimumE2ESampleSizeDelay'])
+                    # samples_times, subSamplingError, result = find_samples_path_ccf(time, steadyStart, steadyEnd, queue_names, df_name, linkDelays, linkRates, queue_size_trshs, samples_paths_aggregated_statistics[path]['MinimumE2ESampleSizeDelay'])
+                    # samples_times, subSamplingError, result = find_samples_path_chi_squared_test(time, steadyStart, steadyEnd, samples_paths_aggregated_statistics[path]['MinimumE2ESampleSizeDelay'])
+                    samples_times, subSamplingError = find_samples_path(time, 0, window=None)
                 else:
                     samples_times = []
             else:
@@ -2019,13 +2023,57 @@ def find_queue_size_at_time(times, queue_sizes, target_time, link_rate):
     final_queue_sizes[invalid] = np.nan  
     return final_queue_sizes
 
-def remove_nan_samples(times, queue_sizes, queue_ECN_samples, queue_delay_samples):
+def remove_nan_samples(times, queue_sizes, queue_ECN_samples, queue_delay_samples, queue_drop_prob_samples):
     valid_indices = ~np.isnan(queue_sizes)
-    return times[valid_indices], queue_sizes[valid_indices], queue_ECN_samples[valid_indices], queue_delay_samples[valid_indices]
+    return times[valid_indices], queue_sizes[valid_indices], queue_ECN_samples[valid_indices], queue_delay_samples[valid_indices], queue_drop_prob_samples[valid_indices]
 
 def sample_queue_size(times, file_path, link_rate):
     # print(f"Sampling total queue size from {file_path} with link rate {link_rate} bpns")
     full_df = pd.read_csv(file_path)
+    # queue_name = file_path.split('/')[-1].split('_')[0]
+    # exp = file_path.split('/')[-2]
+    # # if "T0A0" in queue_name or "A0T2" in queue_name:
+    # # times_t = [[10000000, 20000000], [20000000, 30000000], [30000000, 40000000], [40000000, 50000000], [50000000, 60000000], [60000000, 70000000], 
+    # #             [70000000, 80000000], [80000000, 90000000], [90000000, 100000000], [10000000, 100000000]]
+    # times_t = [[10000000, 100000000]]
+    # if "T0A0" in queue_name:
+    #     for t in times_t:
+    #         temp_10_1_1 = len(full_df[(full_df['Label'].str.contains('10.1.1.', na=False, regex=False)) & (full_df['Action'] == 'E') & (full_df['Time'] >= t[0]) & (full_df['Time'] <= t[-1])])
+    #         temp_10_1_2 = len(full_df[(full_df['Label'].str.contains('10.1.2.', na=False, regex=False)) & (full_df['Action'] == 'E') & (full_df['Time'] >= t[0]) & (full_df['Time'] <= t[-1])])
+    #         temp_10_1_3 = len(full_df[(full_df['Label'].str.contains('10.1.3.', na=False, regex=False)) & (full_df['Action'] == 'E') & (full_df['Time'] >= t[0]) & (full_df['Time'] <= t[-1])])
+    #         temp_10_1_4 = len(full_df[(full_df['Label'].str.contains('10.1.4.', na=False, regex=False)) & (full_df['Action'] == 'E') & (full_df['Time'] >= t[0]) & (full_df['Time'] <= t[-1])])
+    #         temp_10_1_5 = len(full_df[(full_df['Label'].str.contains('10.1.5.', na=False, regex=False)) & (full_df['Action'] == 'E') & (full_df['Time'] >= t[0]) & (full_df['Time'] <= t[-1])])
+    #         temp_10_1_6 = len(full_df[(full_df['Label'].str.contains('10.1.6.', na=False, regex=False)) & (full_df['Action'] == 'E') & (full_df['Time'] >= t[0]) & (full_df['Time'] <= t[-1])])
+    #         temp_total = len(full_df[(full_df['Action'] == 'E') & (full_df['Time'] >= t[0]) & (full_df['Time'] <= t[-1])])
+    #         print(f"Number of packets for experiment {exp}, queue {Fore.GREEN} {queue_name} {Fore.RESET} from {t[0]} to {t[-1]}: {temp_total}")
+    #         print(f"percentage of 10.1.1 : {Fore.RED} {temp_10_1_1/temp_total:.2%} {Fore.RESET} expected around {Fore.BLUE} 16.67% {Fore.RESET}. Number of packets: {temp_10_1_1}")
+    #         print(f"percentage of 10.1.2 : {Fore.RED} {temp_10_1_2/temp_total:.2%} {Fore.RESET} expected around {Fore.BLUE} 16.67% {Fore.RESET}. Number of packets: {temp_10_1_2}")
+    #         print(f"percentage of 10.1.3 : {Fore.RED} {temp_10_1_3/temp_total:.2%} {Fore.RESET} expected around {Fore.BLUE} 16.67% {Fore.RESET}. Number of packets: {temp_10_1_3}")
+    #         print(f"percentage of 10.1.4 : {Fore.RED} {temp_10_1_4/temp_total:.2%} {Fore.RESET} expected around {Fore.BLUE} 16.67% {Fore.RESET}. Number of packets: {temp_10_1_4}")
+    #         print(f"percentage of 10.1.5 : {Fore.RED} {temp_10_1_5/temp_total:.2%} {Fore.RESET} expected around {Fore.BLUE} 16.67% {Fore.RESET}. Number of packets: {temp_10_1_5}")
+    #         print(f"percentage of 10.1.6 : {Fore.RED} {temp_10_1_6/temp_total:.2%} {Fore.RESET} expected around {Fore.BLUE} 16.67% {Fore.RESET}. Number of packets: {temp_10_1_6}")
+    # if "A0T2" in queue_name:
+    #     for t in times_t:
+    #         temp_10_1 = len(full_df[(full_df['Label'].str.contains('10.1.', na=False, regex=False)) & (full_df['Action'] == 'E') & (full_df['Time'] >= t[0]) & (full_df['Time'] <= t[-1])])
+    #         temp_10_2 = len(full_df[(full_df['Label'].str.contains('10.2.', na=False, regex=False)) & (full_df['Action'] == 'E') & (full_df['Time'] >= t[0]) & (full_df['Time'] <= t[-1])])
+    #         temp_10_4 = len(full_df[(full_df['Label'].str.contains('10.4.', na=False, regex=False)) & (full_df['Action'] == 'E') & (full_df['Time'] >= t[0]) & (full_df['Time'] <= t[-1])])
+    #         temp_total = len(full_df[(full_df['Action'] == 'E') & (full_df['Time'] >= t[0]) & (full_df['Time'] <= t[-1])])
+    #         print(f"Number of packets for experiment {exp}, queue {Fore.GREEN} {queue_name} {Fore.RESET} from {t[0]} to {t[-1]}: {temp_total}")
+    #         print(f"percentage of 10.1 : {Fore.RED} {temp_10_1/temp_total:.2%} {Fore.RESET} expected around {Fore.BLUE} 33.33% {Fore.RESET}. Number of packets: {temp_10_1}")
+    #         print(f"percentage of 10.2 : {Fore.RED} {temp_10_2/temp_total:.2%} {Fore.RESET} expected around {Fore.BLUE} 33.33% {Fore.RESET}. Number of packets: {temp_10_2}")
+    #         print(f"percentage of 10.4 : {Fore.RED} {temp_10_4/temp_total:.2%} {Fore.RESET} expected around {Fore.BLUE} 33.33% {Fore.RESET}. Number of packets: {temp_10_4}")
+    # if "T2H3" in queue_name:
+    #     for t in times_t:
+    #         temp_10_1 = len(full_df[(full_df['Label'].str.contains('10.1.', na=False, regex=False)) & (full_df['Action'] == 'E') & (full_df['Time'] >= t[0]) & (full_df['Time'] <= t[-1])])
+    #         temp_10_2 = len(full_df[(full_df['Label'].str.contains('10.2.', na=False, regex=False)) & (full_df['Action'] == 'E') & (full_df['Time'] >= t[0]) & (full_df['Time'] <= t[-1])])
+    #         temp_10_3 = len(full_df[(full_df['Label'].str.contains('10.3.', na=False, regex=False)) & (full_df['Action'] == 'E') & (full_df['Time'] >= t[0]) & (full_df['Time'] <= t[-1])])
+    #         temp_10_4 = len(full_df[(full_df['Label'].str.contains('10.4.', na=False, regex=False)) & (full_df['Action'] == 'E') & (full_df['Time'] >= t[0]) & (full_df['Time'] <= t[-1])])
+    #         temp_total = len(full_df[(full_df['Action'] == 'E') & (full_df['Time'] >= t[0]) & (full_df['Time'] <= t[-1])])
+    #         print(f"Number of packets for experiment {exp}, queue {Fore.GREEN} {queue_name} {Fore.RESET} from {t[0]} to {t[-1]}: {temp_total}")
+    #         print(f"percentage of 10.1 : {Fore.RED} {temp_10_1/temp_total:.2%} {Fore.RESET} expected around {Fore.BLUE} 25% {Fore.RESET}. Number of packets: {temp_10_1}")
+    #         print(f"percentage of 10.2 : {Fore.RED} {temp_10_2/temp_total:.2%} {Fore.RESET} expected around {Fore.BLUE} 25% {Fore.RESET}. Number of packets: {temp_10_2}")
+    #         print(f"percentage of 10.3 : {Fore.RED} {temp_10_3/temp_total:.2%} {Fore.RESET} expected around {Fore.BLUE} 25% {Fore.RESET}. Number of packets: {temp_10_3}")
+    #         print(f"percentage of 10.4 : {Fore.RED} {temp_10_4/temp_total:.2%} {Fore.RESET} expected around {Fore.BLUE} 25% {Fore.RESET}. Number of packets: {temp_10_4}")
     full_df = full_df.sort_values(by=['Time', 'TotalQueueSize'], ascending=[True, False]).reset_index(drop=True)
     # print(f"file_path: {file_path}\n")
     sample_times = np.asarray(times, dtype=float)
@@ -2035,6 +2083,13 @@ def sample_queue_size(times, file_path, link_rate):
 
 def sample_ECN_marking(queue_size_samples, queue_size_trsh):
     return (queue_size_samples >= queue_size_trsh).astype(int)
+
+def sample_drop_probability(queue_size_samples, queue_capacity, packets_cfd):
+    drop_prob = np.zeros(queue_size_samples.shape, dtype=float)
+    available_space = queue_capacity - queue_size_samples
+    for i in range(len(queue_size_samples)):
+        drop_prob[i] = packets_cfd.calculate_probability_greater_than(available_space[i])
+    return drop_prob
 
 def sample_queueing_delay(queue_size_samples, link_rate):
     return (queue_size_samples * 8) / link_rate
@@ -2239,15 +2294,21 @@ def chi_squared_test(
 
     return lags, res, chi2_res
 
-def sample_total_queue_size_non_combined(res, times, queue_names, dir_prefix, linkDelays, linkRates, queue_size_trshs, 
+def sample_total_queue_size_non_combined(res, times, queue_names, dir_prefix, linkDelays, linkRates, queue_size_trshs, queue_capacity, 
                                      steadyStart=0.01e9, steadyEnd=0.1e9, intervals=10000, path_observation=False, sampling_factor=None):
     queue_names, linkDelays, linkRates = sort_queues_by_path(queue_names, linkDelays, linkRates)
+    packets_cfd = PacketCDF()
+    packets_cfd.load_cdf_data('/media/experiments/ns-allinone-3.41/ns-3.41/scratch/ECNMC/DCWorkloads/packet_size_cdf_{}.csv'.format(dir_prefix.split('/')[-5]))
     tag = 'poisson'
     if path_observation:
         tag = 'e2e'
     for queue_name in queue_names:
         res[queue_name+ tag + '_samples_queue_delay_mean'] = 0
+        res[queue_name+ tag + '_samples_queue_success_prob_mean'] = 0
+        res[queue_name+ tag + '_samples_queue_nonmarking_prob_mean'] = 0
         res[queue_name+ tag + '_samples_queue_delay_std'] = 0
+        res[queue_name+ tag + '_samples_queue_success_prob_std'] = 0
+        res[queue_name+ tag + '_samples_queue_nonmarking_prob_std'] = 0
         res[queue_name+ tag + '_samples_queue_delay_count'] = 0
         res[queue_name+'poisson_prob_non_empty'] = 0
         res[queue_name+'poisson_prev_queue_non_empty_prob_percentile'] = 0
@@ -2262,7 +2323,8 @@ def sample_total_queue_size_non_combined(res, times, queue_names, dir_prefix, li
         # TODO: check why we have the same thing over different experiments
         # print(f"Iteration {itr+1}/{iterations} - Sampling total {len(sample_times_itr)} with mean arrivlas: {np.mean(times)} first 10 times: {times[:10]}")
         queue_size_samples = np.zeros((len(queue_names), len(sample_times_itr)))
-        queue_ECN_samples = np.zeros((len(queue_names), len(sample_times_itr)), dtype=int)
+        queue_ECN_samples = np.zeros((len(queue_names), len(sample_times_itr)))
+        queue_success_prob_samples = np.zeros((len(queue_names), len(sample_times_itr)))
         queue_delay_samples = np.zeros((len(queue_names), len(sample_times_itr)))
         invalid_indices = np.zeros(len(sample_times_itr), dtype=bool)
         sample_times = sample_times_itr
@@ -2276,14 +2338,20 @@ def sample_total_queue_size_non_combined(res, times, queue_names, dir_prefix, li
             new_invalid_indices = np.isnan(queue_size_sample)
             invalid_indices = np.isnan(queue_size_samples[idx])
             queue_ECN_samples[idx][~invalid_indices] = sample_ECN_marking(queue_size_samples[idx][~invalid_indices], queue_size_trshs[idx])
-            queue_ECN_samples[idx][invalid_indices] = 0
+            queue_ECN_samples[idx][invalid_indices] = np.nan
+            queue_success_prob_samples[idx][~invalid_indices] = 1 - sample_drop_probability(queue_size_samples[idx][~invalid_indices], queue_capacity[idx], packets_cfd)
+            queue_success_prob_samples[idx][invalid_indices] = np.nan
             queue_delay_samples[idx][~invalid_indices] = sample_queueing_delay(queue_size_samples[idx][~invalid_indices], linkRates[idx])
 
             prob_non_empty = queue_size_samples[idx][~invalid_indices] > 0
             prob_non_empty = np.sum(prob_non_empty) / len(prob_non_empty)
 
             res[queue_name+ tag + '_samples_queue_delay_mean'] = (res[queue_name+ tag + '_samples_queue_delay_mean'] * itr + np.nanmean(queue_delay_samples[idx])) / (itr + 1)
+            res[queue_name+ tag + '_samples_queue_success_prob_mean'] = (res[queue_name+ tag + '_samples_queue_success_prob_mean'] * itr + np.nanmean(queue_success_prob_samples[idx])) / (itr + 1)
+            res[queue_name+ tag + '_samples_queue_nonmarking_prob_mean'] = (res[queue_name+ tag + '_samples_queue_nonmarking_prob_mean'] * itr + (1 - np.nanmean(queue_ECN_samples[idx][~invalid_indices]))) / (itr + 1)
             res[queue_name+ tag + '_samples_queue_delay_std'] = (res[queue_name+ tag + '_samples_queue_delay_std'] * itr + np.nanstd(queue_delay_samples[idx])) / (itr + 1)
+            res[queue_name+ tag + '_samples_queue_success_prob_std'] = (res[queue_name+ tag + '_samples_queue_success_prob_std'] * itr + np.nanstd(queue_success_prob_samples[idx][~invalid_indices])) / (itr + 1)
+            res[queue_name+ tag + '_samples_queue_nonmarking_prob_std'] = (res[queue_name+ tag + '_samples_queue_nonmarking_prob_std'] * itr + np.nanstd(queue_ECN_samples[idx][~invalid_indices])) / (itr + 1)
             res[queue_name+ tag + '_samples_queue_delay_count'] = (res[queue_name+ tag + '_samples_queue_delay_count'] * itr + len(queue_delay_samples[idx][~invalid_indices])) / (itr + 1)
             if not path_observation:
                 res[queue_name+'poisson_prob_non_empty'] = prob_non_empty
@@ -2303,7 +2371,7 @@ def sample_total_queue_size_non_combined(res, times, queue_names, dir_prefix, li
                 sample_times = np.asarray(times, dtype=float) + linkDelays[0] * (idx + 1)
 
             queue_delay_samples[idx][invalid_indices] = np.nan
-    return remove_nan_samples(sample_times_itr, np.sum(queue_size_samples, axis=0), np.any(queue_ECN_samples, axis=0).astype(int), np.sum(queue_delay_samples, axis=0)), res
+    return remove_nan_samples(sample_times_itr, np.sum(queue_size_samples, axis=0), np.any(queue_ECN_samples, axis=0).astype(int), np.sum(queue_delay_samples, axis=0), np.prod(queue_success_prob_samples, axis=0)), res
 
 def combine_sampling_results(res, queue_names):
     queue_names, _, _ = sort_queues_by_path(queue_names, [None] * (len(queue_names) + 1), [None] * (len(queue_names) + 1))
@@ -2311,6 +2379,12 @@ def combine_sampling_results(res, queue_names):
         idx = queue_names.index(queue_name)
         res[queue_name+'error_bound'] = res[queue_name+'e2e_samples_queue_delay_std'] * 1.96 / np.sqrt(res[queue_name+'e2e_samples_queue_delay_count']) + res[queue_name+'poisson_samples_queue_delay_std'] * 1.96 / np.sqrt(res[queue_name+'poisson_samples_queue_delay_count'])
         res[queue_name+'e2e_vs_poisson_consistent'] = int(abs(res[queue_name+'e2e_samples_queue_delay_mean'] - res[queue_name+'poisson_samples_queue_delay_mean']) <= res[queue_name+'error_bound'])
+
+        res[queue_name+'success_prob_error_bound'] = res[queue_name+'e2e_samples_queue_success_prob_std'] * 1.96 / np.sqrt(res[queue_name+'e2e_samples_queue_delay_count']) + res[queue_name+'poisson_samples_queue_success_prob_std'] * 1.96 / np.sqrt(res[queue_name+'poisson_samples_queue_delay_count'])
+        res[queue_name+'e2e_vs_poisson_consistent_success_prob'] = int(abs(res[queue_name+'e2e_samples_queue_success_prob_mean'] - res[queue_name+'poisson_samples_queue_success_prob_mean']) <= res[queue_name+'success_prob_error_bound'])
+
+        res[queue_name+'nonmarking_prob_error_bound'] = res[queue_name+'e2e_samples_queue_nonmarking_prob_std'] * 1.96 / np.sqrt(res[queue_name+'e2e_samples_queue_delay_count']) + res[queue_name+'poisson_samples_queue_nonmarking_prob_std'] * 1.96 / np.sqrt(res[queue_name+'poisson_samples_queue_delay_count'])
+        res[queue_name+'e2e_vs_poisson_consistent_nonmarking_prob'] = int(abs(res[queue_name+'e2e_samples_queue_nonmarking_prob_mean'] - res[queue_name+'poisson_samples_queue_nonmarking_prob_mean']) <= res[queue_name+'nonmarking_prob_error_bound'])
         if idx > 0:
             res[queue_name+'e2e_vs_poisson_consistent_with_bias'] = int(abs(res[queue_name+'e2e_samples_queue_delay_mean'] - (res[queue_name+'poisson_samples_queue_delay_mean'] + res[queue_name+'bias'])) <= res[queue_name+'error_bound'])
         else:
@@ -4708,12 +4782,15 @@ def compute_average_packet_size(file_path):
     # read all csv files in file_path ending with 'EndToEnd_packets.csv' and compute the average packet size
     sum_size = 0
     count = 0
+    # count_path = 0
     for file in glob.glob(file_path + '*EndToEnd_packets.csv'):
         df = pd.read_csv(file)
         if 'PayloadSize' in df.columns:
             sum_size += df['PayloadSize'].sum()
             count += df['PayloadSize'].count()
+            # count_path += len(df[df['Path'] == 0])
     average_packet_size = sum_size / count if count > 0 else 0
+    # print("total path packets: ", count_path, "total packets: ", count, " Percent: ", count_path / count if count > 0 else 0)
     return average_packet_size
 
 def compute_bias_based_on_average_packet_size(sampling_results, average_packet_size, queue_names, linkRates, alternative_routes=[3, 6]):
@@ -4747,19 +4824,38 @@ def calculate_offline_delay_bias_DC(__ns3_path, rate, experiment, results_folder
     times = np.array(np.cumsum(np.random.exponential(e2e_intervals, size=int((steadyEnd - steadyStart) // e2e_intervals))) + steadyStart, dtype=np.int64)
     # (_, queue_size_samples, _, queue_delay_samples_poisson_e2e), res = sample_total_queue_size(times, queue_names, file_path, linkDelays, linkRates, np.array(swtichDstREDQueueDiscMaxSize[1:], dtype=float) * tsh)
     res = {}
-    (_, _, _, queue_delay_samples_poisson_e2e), res = sample_total_queue_size_non_combined(res, times, queue_names, file_path, linkDelays, linkRates, np.array(swtichDstREDQueueDiscMaxSize[1:], dtype=float) * tsh, path_observation=True, sampling_factor=sampling_factor)
-    (_, _, _, _), res = sample_total_queue_size_non_combined(res, times, queue_names, file_path, linkDelays, linkRates, np.array(swtichDstREDQueueDiscMaxSize[1:], dtype=float) * tsh, path_observation=False)
+    (_, _, queue_ECN_samples_poisson_e2e, queue_delay_samples_poisson_e2e, queue_success_prob_samples_poisson_e2e), res = sample_total_queue_size_non_combined(res, times, queue_names, file_path, linkDelays, linkRates, np.array(swtichDstREDQueueDiscMaxSize[1:], dtype=float) * tsh, swtichDstREDQueueDiscMaxSize[1:], path_observation=True, sampling_factor=sampling_factor)
+    (_, _, _, _, _), res = sample_total_queue_size_non_combined(res, times, queue_names, file_path, linkDelays, linkRates, np.array(swtichDstREDQueueDiscMaxSize[1:], dtype=float) * tsh, swtichDstREDQueueDiscMaxSize[1:], path_observation=False)
     res = combine_sampling_results(res, queue_names)
     res = compute_bias_based_on_average_packet_size(res, compute_average_packet_size(file_path), queue_names, linkRates)
 
     res['sum_poisson_samples_queue_delay_mean'] = sum([res[queue_name+'poisson_samples_queue_delay_mean'] for queue_name in queue_names])
+    res['sum_poisson_samples_queue_success_prob_mean'] = np.prod(np.array([res[queue_name+'poisson_samples_queue_success_prob_mean'] for queue_name in queue_names]), axis=0)
+    res['sum_poisson_samples_queue_nonmarking_prob_mean'] = np.prod(np.array([res[queue_name+'poisson_samples_queue_nonmarking_prob_mean'] for queue_name in queue_names]), axis=0)
+    # sum_poisson_samples_queue_delay_std = sum([res[queue_name+'poisson_samples_queue_delay_std'] for queue_name in queue_names])
     res['e2e_poisson_samples_queue_delay_mean'] = np.mean(queue_delay_samples_poisson_e2e)
+    res['e2e_poisson_samples_queue_success_prob_mean'] = np.mean(queue_success_prob_samples_poisson_e2e)
+    res['e2e_poisson_samples_queue_nonmarking_prob_mean'] = np.mean(1 - queue_ECN_samples_poisson_e2e)
     res['e2e_poisson_samples_queue_delay_std'] = np.std(queue_delay_samples_poisson_e2e)
+    res['e2e_poisson_samples_queue_success_prob_std'] = np.std(queue_success_prob_samples_poisson_e2e)
+    res['e2e_poisson_samples_queue_nonmarking_prob_std'] = np.std(1 - queue_ECN_samples_poisson_e2e)
     res['e2e_vs_sum_error_bound'] = 1.96 * res['sum_poisson_samples_queue_delay_mean'] * np.max([res[queue_name+'poisson_samples_queue_delay_std'] / (np.sqrt(res[queue_name+'poisson_samples_queue_delay_count']) * res[queue_name+'poisson_samples_queue_delay_mean']) for queue_name in queue_names])
     res['e2e_vs_sum_error_bound'] += 1.96 * res['e2e_poisson_samples_queue_delay_std'] / np.sqrt(len(queue_delay_samples_poisson_e2e))
+    # res['e2e_vs_sum_error_bound'] += 1.96 * sum_poisson_samples_queue_delay_std / np.sqrt(len(queue_delay_samples_poisson_e2e))
     res['e2e_vs_sum_consistent'] = int(abs(res['e2e_poisson_samples_queue_delay_mean'] - res['sum_poisson_samples_queue_delay_mean']) <= res['e2e_vs_sum_error_bound'])
     bias = sum([res[queue_name+'bias'] for queue_name in queue_names])
     res['e2e_vs_sum_consistent_with_bias'] = int(abs(res['e2e_poisson_samples_queue_delay_mean'] - (res['sum_poisson_samples_queue_delay_mean'] + bias)) <= res['e2e_vs_sum_error_bound'])
+
+    X = 1.96 * np.max([res[queue_name+'poisson_samples_queue_success_prob_std'] / (np.sqrt(res[queue_name+'poisson_samples_queue_delay_count']) * res[queue_name+'poisson_samples_queue_success_prob_mean']) for queue_name in queue_names])
+    Y = 1.96 * res['e2e_poisson_samples_queue_success_prob_std'] / np.sqrt(len(queue_success_prob_samples_poisson_e2e))
+    res['e2e_vs_sum_error_success_prob_bound'] = [res['sum_poisson_samples_queue_success_prob_mean'] * (((1 + X) ** len(queue_names)) / (1 - Y) - 1), res['sum_poisson_samples_queue_success_prob_mean'] * (((1 - X) ** len(queue_names)) / (1 + Y) - 1)]
+    res['e2e_vs_sum_consistent_success_prob'] = int((res['e2e_poisson_samples_queue_success_prob_mean'] - res['sum_poisson_samples_queue_success_prob_mean'] <= res['e2e_vs_sum_error_success_prob_bound'][0]) and (res['e2e_poisson_samples_queue_success_prob_mean'] - res['sum_poisson_samples_queue_success_prob_mean'] >= res['e2e_vs_sum_error_success_prob_bound'][1]))
+
+    X = 1.96 * np.max([res[queue_name+'poisson_samples_queue_nonmarking_prob_std'] / (np.sqrt(res[queue_name+'poisson_samples_queue_delay_count']) * res[queue_name+'poisson_samples_queue_nonmarking_prob_mean']) for queue_name in queue_names])
+    Y = 1.96 * res['e2e_poisson_samples_queue_nonmarking_prob_std'] / np.sqrt(len(queue_ECN_samples_poisson_e2e))
+    res['e2e_vs_sum_error_nonmarking_prob_bound'] = [res['sum_poisson_samples_queue_nonmarking_prob_mean'] * (((1 + X) ** len(queue_names)) / (1 - Y) - 1), res['sum_poisson_samples_queue_nonmarking_prob_mean'] * (((1 - X) ** len(queue_names)) / (1 + Y) - 1)]
+    res['e2e_vs_sum_consistent_nonmarking_prob'] = int((res['e2e_poisson_samples_queue_nonmarking_prob_mean'] - res['sum_poisson_samples_queue_nonmarking_prob_mean'] <= res['e2e_vs_sum_error_nonmarking_prob_bound'][0]) and (res['e2e_poisson_samples_queue_nonmarking_prob_mean'] - res['sum_poisson_samples_queue_nonmarking_prob_mean'] >= res['e2e_vs_sum_error_nonmarking_prob_bound'][1]))
+
     return res
     
 def calculate_offline_computations_DC(__ns3_path, rate, segment, experiment, results_folder, steadyStart, steadyEnd, projectColumn, nHosts, removeDrops=True, checkColumn="", linkRates=[], linkDelays=[], 
@@ -4859,7 +4955,11 @@ def calculate_offline_computations_DC(__ns3_path, rate, segment, experiment, res
             #     result['T'] = 8000 * scale
             #     res.append(result)
             # visualize_crosscorr_Ts(res, ('/'.join(file_path.split('/')[:-1])) + '/')
-            # df_res = calculate_offline_E2E_lossRates_DC(full_df, df_res, checkColumn, txDelay_to_firstQ, df_name, passiveProbe, samplingMethod, steadyStart, steadyEnd)
+            # df_res = calculate_offline_E2E_lossRates_DC(full_df, df_res, checkColumn, txDelay_to_firstQ,
+            #                                       '{}/scratch/{}/{}/{}/{}/'.format(__ns3_path, results_folder, rate, load, experiment), 
+            #                                       passiveProbe, samplingMethod, steadyStart, steadyEnd, samples_paths_aggregated_statistics[df_name], queue_names, linkDelays, linkRates, 
+            #                                       np.array(swtichDstREDQueueDiscMaxSize, dtype=float) * tsh)
+        
             df_res = calculate_offline_E2E_delays(full_df, removeDrops, checkColumn, txDelay_to_firstQ, df_res, 
                                                   '{}/scratch/{}/{}/{}/{}/'.format(__ns3_path, results_folder, rate, load, experiment), 
                                                   passiveProbe, samplingMethod, steadyStart, steadyEnd, samples_paths_aggregated_statistics[df_name], queue_names, linkDelays, linkRates, 
@@ -5163,11 +5263,15 @@ def calc_epsilon_loss_2(confidenceValue, segement_statistics):
 def calc_error(confidenceValue, segement_statistics):
     return (confidenceValue * segement_statistics['DelayStd']) / np.sqrt(segement_statistics['sampleSize'])
 
-def calc_min_e2e_samples(confidenceValue, maxError, samples_paths_aggregated_statistics):
-    if samples_paths_aggregated_statistics['MaxEpsilonDelay'] >= maxError:
-        print("Warning: MaxEpsilonDelay is greater than or equal to maxError. Cannot achieve the desired confidence level with the current data.")
+def calc_min_e2e_samples(confidenceValue, maxError, samples_paths_aggregated_statistics, metric='Delay'):
+    print(f"samples_paths_aggregated_statistics['' + {metric} + 'Mean']: ", samples_paths_aggregated_statistics['' + metric + 'Mean'])
+    if samples_paths_aggregated_statistics['MaxEpsilon' + metric] >= maxError:
+        print(f"Warning: MaxEpsilon{metric} is greater than or equal to maxError. Cannot achieve the desired confidence level with the current data.")
         return None
-    return int(((confidenceValue * samples_paths_aggregated_statistics['e2eDelayStd']) / ((maxError - samples_paths_aggregated_statistics['MaxEpsilonDelay']) * samples_paths_aggregated_statistics['DelayMean'])) ** 2)
+    if samples_paths_aggregated_statistics['' + metric + 'Mean'] == 0:
+        print(f"Warning: Mean {metric} is zero. Cannot calculate the required sample size. Picking the default of 1000 samples.")
+        return 100
+    return int(((confidenceValue * samples_paths_aggregated_statistics['e2e' + metric + 'Std']) / ((maxError - samples_paths_aggregated_statistics['MaxEpsilon' + metric]) * samples_paths_aggregated_statistics['' + metric + 'Mean'])) ** 2)
 
 def sample_data(data, sample_column):
     exit = False
