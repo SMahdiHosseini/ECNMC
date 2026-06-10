@@ -53,6 +53,7 @@ def prepare_results(queues):
         rounds_results[queue_name+'e2e_vs_poisson_consistent_with_bias'] = []
         rounds_results[queue_name+'e2e_vs_poisson_consistent_success_prob'] = []
         rounds_results[queue_name+'e2e_vs_poisson_consistent_nonmarking_prob'] = []
+        rounds_results[queue_name+'split_ratio'] = []
         rounds_results[queue_name+'bias'] = []
         rounds_results[queue_name+'NPkts'] = []
         rounds_results[queue_name+'NBytes'] = []
@@ -106,6 +107,7 @@ def merge_results(return_dict, merged_results, queues):
             merged_results[queue_name+'e2e_vs_poisson_consistent_success_prob'].append(return_dict[exp][queue_name+'e2e_vs_poisson_consistent_success_prob'])
             merged_results[queue_name+'e2e_vs_poisson_consistent_nonmarking_prob'].append(return_dict[exp][queue_name+'e2e_vs_poisson_consistent_nonmarking_prob'])
             merged_results[queue_name+'e2e_vs_poisson_consistent_with_bias'].append(return_dict[exp][queue_name+'e2e_vs_poisson_consistent_with_bias'])
+            merged_results[queue_name+'split_ratio'].append(return_dict[exp][queue_name+'split_ratio'])
             merged_results[queue_name+'bias'].append(return_dict[exp][queue_name+'bias'])
             merged_results[queue_name+'NPkts'].append(return_dict[exp][queue_name+'NPkts'])
             merged_results[queue_name+'NBytes'].append(return_dict[exp][queue_name+'NBytes'])

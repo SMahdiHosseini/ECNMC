@@ -2027,6 +2027,11 @@ def remove_nan_samples(times, queue_sizes, queue_ECN_samples, queue_delay_sample
     valid_indices = ~np.isnan(queue_sizes)
     return times[valid_indices], queue_sizes[valid_indices], queue_ECN_samples[valid_indices], queue_delay_samples[valid_indices], queue_drop_prob_samples[valid_indices]
 
+def total_packets_of_interest(file_path, start_time, end_time):
+    full_df = pd.read_csv(file_path)
+    total_packets = len(full_df[(full_df['Label'].str.contains('10.1.', na=False, regex=False)) & (full_df['Action'] == 'E') & (full_df['Time'] >= start_time) & (full_df['Time'] <= end_time)])
+    return total_packets
+
 def sample_queue_size(times, file_path, link_rate):
     # print(f"Sampling total queue size from {file_path} with link rate {link_rate} bpns")
     full_df = pd.read_csv(file_path)
@@ -2294,8 +2299,8 @@ def chi_squared_test(
 
     return lags, res, chi2_res
 
-def sample_total_queue_size_non_combined(res, times, queue_names, dir_prefix, linkDelays, linkRates, queue_size_trshs, queue_capacity, 
-                                     steadyStart=0.01e9, steadyEnd=0.1e9, intervals=10000, path_observation=False, sampling_factor=None):
+def sample_total_queue_size_non_combined(res, times, queue_names, dir_prefix, linkDelays, linkRates, queue_size_trshs, queue_capacity,
+                                         path_observation=False, sampling_factor=None):
     queue_names, linkDelays, linkRates = sort_queues_by_path(queue_names, linkDelays, linkRates)
     packets_cfd = PacketCDF()
     packets_cfd.load_cdf_data('/media/experiments/ns-allinone-3.41/ns-3.41/scratch/ECNMC/DCWorkloads/packet_size_cdf_{}.csv'.format(dir_prefix.split('/')[-5]))
@@ -2346,6 +2351,8 @@ def sample_total_queue_size_non_combined(res, times, queue_names, dir_prefix, li
             prob_non_empty = queue_size_samples[idx][~invalid_indices] > 0
             prob_non_empty = np.sum(prob_non_empty) / len(prob_non_empty)
 
+            if path_observation:
+                res[queue_name+ 'packets_of_interest'] = total_packets_of_interest(file_path, sample_times[0], sample_times[-1])
             res[queue_name+ tag + '_samples_queue_delay_mean'] = (res[queue_name+ tag + '_samples_queue_delay_mean'] * itr + np.nanmean(queue_delay_samples[idx])) / (itr + 1)
             res[queue_name+ tag + '_samples_queue_success_prob_mean'] = (res[queue_name+ tag + '_samples_queue_success_prob_mean'] * itr + np.nanmean(queue_success_prob_samples[idx])) / (itr + 1)
             res[queue_name+ tag + '_samples_queue_nonmarking_prob_mean'] = (res[queue_name+ tag + '_samples_queue_nonmarking_prob_mean'] * itr + (1 - np.nanmean(queue_ECN_samples[idx][~invalid_indices]))) / (itr + 1)
@@ -4808,7 +4815,6 @@ def compute_average_packet_size(file_path):
             count += df['PayloadSize'].count()
             # count_path += len(df[df['Path'] == 0])
     average_packet_size = sum_size / count if count > 0 else 0
-    # print("total path packets: ", count_path, "total packets: ", count, " Percent: ", count_path / count if count > 0 else 0)
     return average_packet_size
 
 def compute_bias_based_on_average_packet_size(sampling_results, average_packet_size, queue_names, linkRates, alternative_routes=[3, 6]):
@@ -4818,16 +4824,19 @@ def compute_bias_based_on_average_packet_size(sampling_results, average_packet_s
         idx = queue_names.index(queue_name)
         sampling_results[queue_name+'NPkts'] = sampling_results[queue_name+'e2e_samples_queue_delay_mean'] * linkRates[idx] / (average_packet_size * 8)
         sampling_results[queue_name+'NBytes'] = sampling_results[queue_name+'NPkts'] * average_packet_size
-        # TODO: correct the bias calculation to consider the actual packet splits not the assumed one.
         if idx == 0:
+            sampling_results[queue_name+'split_ratio'] = 1.0
             continue
         # sampling_results[queue_name+'bias'] = sampling_results[queue_names[idx - 1]+'poisson_prob_non_empty'] * average_packet_size * 8 / linkRates[idx] * (1 / alternative_routes[idx - 1])
         if idx == 1:
-            sampling_results[queue_name+'bias'] = sampling_results[queue_names[idx - 1]+'poisson_prob_non_empty'] * average_packet_size * 8 / linkRates[idx] * (1 / alternative_routes[idx - 1])
+        #     sampling_results[queue_name+'bias'] = sampling_results[queue_names[idx - 1]+'poisson_prob_non_empty'] * average_packet_size * 8 / linkRates[idx] * (1 / alternative_routes[idx - 1])
+            sampling_results[queue_name+'bias'] = sampling_results[queue_names[idx - 1]+'poisson_prob_non_empty'] * average_packet_size * 8 / linkRates[idx] * (sampling_results[queue_name+ 'packets_of_interest'] / sampling_results[queue_names[idx - 1]+ 'packets_of_interest'])
+            sampling_results[queue_name+'split_ratio'] = sampling_results[queue_name+ 'packets_of_interest'] / sampling_results[queue_names[idx - 1]+ 'packets_of_interest']
         if idx == 2:
             sampling_results[queue_name+'bias'] = sampling_results[queue_names[idx - 2]+'poisson_prob_non_empty'] * average_packet_size * 8 / linkRates[idx] * (1 / alternative_routes[idx - 1]) * (1 / alternative_routes[idx - 2])
             sampling_results[queue_name+'bias'] += sampling_results[queue_names[idx - 2]+'poisson_prob_non_empty'] * sampling_results[queue_names[idx - 1]+'poisson_prob_non_empty'] * average_packet_size * 8 / linkRates[idx] * (1 / alternative_routes[idx - 1]) * (1 - 1 / alternative_routes[idx - 2])
             sampling_results[queue_name+'bias'] += sampling_results[queue_names[idx - 1]+'poisson_prob_non_empty'] * (1 - sampling_results[queue_names[idx - 2]+'poisson_prob_non_empty']) * average_packet_size * 8 / linkRates[idx] * (1 / alternative_routes[idx - 1])
+            sampling_results[queue_name+'split_ratio'] = 1 / alternative_routes[idx - 1]
         sampling_results[queue_name+'e2e_vs_poisson_consistent_with_bias'] = int(abs(sampling_results[queue_name+'e2e_samples_queue_delay_mean'] - (sampling_results[queue_name+'poisson_samples_queue_delay_mean'] + sampling_results[queue_name+'bias'])) <= sampling_results[queue_name+'error_bound'])
     
     return sampling_results
