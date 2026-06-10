@@ -11,6 +11,7 @@ from Utils import compute_average_packet_size
 confidenceValue = 1.96 # 95% confidence interval
 maxError = 0.40
 estimated_bias_thresholds = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+nonmarking_prob_thresholds = [0.995, 0.99, 0.985, 0.98, 0.9775, 0.975]
 per_queue_size_thresholds_bytes = [100, 250, 500, 750, 1000, 1250, 1500, 1750]
 per_queue_size_thresholds_packets = [0.25, 0.5, 0.75, 1.0, 1.25]
 colors = ['b', 'g', 'r', 'c', 'm', 'y', 'k', 'b', 'g', 'r', 'c', 'm', 'y', 'k']
@@ -34,6 +35,9 @@ def readResults(results_dict, results_dir, serviceRateScale, results_dir_file, d
             e2e_vs_sum_consistency_check_filtered_queue_size_bytes = []
             for idx in range(len(per_queue_size_thresholds_bytes)):
                 e2e_vs_sum_consistency_check_filtered_queue_size_bytes.append([])
+            e2e_vs_sum_consistency_check_filtered_nonmarking_prob = []
+            for idx in range(len(nonmarking_prob_thresholds)):
+                e2e_vs_sum_consistency_check_filtered_nonmarking_prob.append([])
             e2e_vs_sum_consistency_check_with_estimated_bias_added_to_bound = []
             e2e_vs_sum_success_prob_pair_covariance_consistency_check = []
             e2e_vs_sum_success_prob_pair_and_triple_covariance_consistency_check = []
@@ -101,6 +105,9 @@ def readResults(results_dict, results_dir, serviceRateScale, results_dir_file, d
                 for idx, trsh in enumerate(estimated_bias_thresholds):
                     if results_dict['e2e_vs_sum_estimated_bias'][traffic][load][serviceRateScale][-1] < trsh * temp['e2e_vs_sum_error_bound'][i]:
                         e2e_vs_sum_consistency_check_filtered_estimated_bias[idx].append(temp['e2e_vs_sum_consistent'][i])
+                for idx, trsh in enumerate(nonmarking_prob_thresholds):
+                    if temp['sum_poisson_samples_queue_nonmarking_prob_mean'][i] < trsh:
+                        e2e_vs_sum_consistency_check_filtered_nonmarking_prob[idx].append(temp['e2e_vs_sum_consistent'][i])
 
                 queue_size_filtered_packets = [False for i in range(len(per_queue_size_thresholds_packets))]
                 queue_size_filtered_bytes = [False for i in range(len(per_queue_size_thresholds_bytes))]
@@ -158,6 +165,8 @@ def readResults(results_dict, results_dir, serviceRateScale, results_dir_file, d
                 results_dict['e2e_vs_sum_consistency_check_filtered_queue_size_packets'][idx][traffic][load][serviceRateScale] = sum(e2e_vs_sum_consistency_check_filtered_queue_size_packets[idx]) / len(e2e_vs_sum_consistency_check_filtered_queue_size_packets[idx]) * 100 if len(e2e_vs_sum_consistency_check_filtered_queue_size_packets[idx]) > 0 else np.nan
             for idx in range(len(per_queue_size_thresholds_bytes)):
                 results_dict['e2e_vs_sum_consistency_check_filtered_queue_size_bytes'][idx][traffic][load][serviceRateScale] = sum(e2e_vs_sum_consistency_check_filtered_queue_size_bytes[idx]) / len(e2e_vs_sum_consistency_check_filtered_queue_size_bytes[idx]) * 100 if len(e2e_vs_sum_consistency_check_filtered_queue_size_bytes[idx]) > 0 else np.nan
+            for idx in range(len(nonmarking_prob_thresholds)):
+                results_dict['e2e_vs_sum_consistency_check_filtered_nonmarking_prob'][idx][traffic][load][serviceRateScale] = sum(e2e_vs_sum_consistency_check_filtered_nonmarking_prob[idx]) / len(e2e_vs_sum_consistency_check_filtered_nonmarking_prob[idx]) * 100 if len(e2e_vs_sum_consistency_check_filtered_nonmarking_prob[idx]) > 0 else np.nan
             for queue_name in queues:
                 results_dict['queue_consistency_check'][queue_name][traffic][load][serviceRateScale] = sum(temp[queue_name+'e2e_vs_poisson_consistent']) / len(temp['experiment']) * 100
                 results_dict['queue_consistency_check_with_estimated_bias_added_to_Poisson_mean'][queue_name][traffic][load][serviceRateScale] = sum(temp[queue_name+'e2e_vs_poisson_consistent_with_bias']) / len(temp['experiment']) * 100
@@ -409,6 +418,9 @@ def prepare_results_dict(results_dir, results_dir_file, rateScales, loads, traff
     e2e_vs_sum_consistency_check_filtered_queue_size_bytes = []
     for trsh in per_queue_size_thresholds_bytes:
         e2e_vs_sum_consistency_check_filtered_queue_size_bytes.append({})
+    e2e_vs_sum_consistency_check_filtered_nonmarking_prob = []
+    for trsh in nonmarking_prob_thresholds:
+        e2e_vs_sum_consistency_check_filtered_nonmarking_prob.append({})
     e2e_vs_sum_consistency_check = {}
     e2e_vs_sum_consistency_check_with_estimated_bias = {}
     e2e_vs_sum_consistency_check_with_estimated_bias_added_to_bound = {}
@@ -518,6 +530,8 @@ def prepare_results_dict(results_dir, results_dir_file, rateScales, loads, traff
             e2e_vs_sum_consistency_check_filtered_queue_size_packets[idx][traffic] = {}
         for idx in range(len(per_queue_size_thresholds_bytes)):
             e2e_vs_sum_consistency_check_filtered_queue_size_bytes[idx][traffic] = {}
+        for idx in range(len(nonmarking_prob_thresholds)):
+            e2e_vs_sum_consistency_check_filtered_nonmarking_prob[idx][traffic] = {}
         e2e_vs_sum_consistency_check[traffic] = {}
         e2e_vs_sum_consistency_check_with_estimated_bias[traffic] = {}
         e2e_vs_sum_consistency_check_with_estimated_bias_added_to_bound[traffic] = {}
@@ -599,6 +613,8 @@ def prepare_results_dict(results_dir, results_dir_file, rateScales, loads, traff
                     e2e_vs_sum_consistency_check_filtered_queue_size_packets[idx][traffic][load] = {}
                 for idx in range(len(per_queue_size_thresholds_bytes)):
                     e2e_vs_sum_consistency_check_filtered_queue_size_bytes[idx][traffic][load] = {}
+                for idx in range(len(nonmarking_prob_thresholds)):
+                    e2e_vs_sum_consistency_check_filtered_nonmarking_prob[idx][traffic][load] = {}
                 e2e_vs_sum_consistency_check[traffic][load] = {}
                 e2e_vs_sum_consistency_check_with_estimated_bias[traffic][load] = {}
                 e2e_vs_sum_consistency_check_with_estimated_bias_added_to_bound[traffic][load] = {}
@@ -680,6 +696,8 @@ def prepare_results_dict(results_dir, results_dir_file, rateScales, loads, traff
                         e2e_vs_sum_consistency_check_filtered_queue_size_packets[idx][traffic][load][rate] = np.nan
                     for idx in range(len(per_queue_size_thresholds_bytes)):
                         e2e_vs_sum_consistency_check_filtered_queue_size_bytes[idx][traffic][load][rate] = np.nan
+                    for idx in range(len(nonmarking_prob_thresholds)):
+                        e2e_vs_sum_consistency_check_filtered_nonmarking_prob[idx][traffic][load][rate] = np.nan
                     e2e_vs_sum_consistency_check[traffic][load][rate] = np.nan
                     e2e_vs_sum_consistency_check_with_estimated_bias[traffic][load][rate] = np.nan
                     e2e_vs_sum_consistency_check_with_estimated_bias_added_to_bound[traffic][load][rate] = np.nan
@@ -758,6 +776,7 @@ def prepare_results_dict(results_dir, results_dir_file, rateScales, loads, traff
     results['e2e_vs_sum_consistency_check_filtered_estimated_bias'] = e2e_vs_sum_consistency_check_filtered_estimated_bias
     results['e2e_vs_sum_consistency_check_filtered_queue_size_packets'] = e2e_vs_sum_consistency_check_filtered_queue_size_packets
     results['e2e_vs_sum_consistency_check_filtered_queue_size_bytes'] = e2e_vs_sum_consistency_check_filtered_queue_size_bytes
+    results['e2e_vs_sum_consistency_check_filtered_nonmarking_prob'] = e2e_vs_sum_consistency_check_filtered_nonmarking_prob
     results['e2e_vs_sum_consistency_check'] = e2e_vs_sum_consistency_check
     results['e2e_vs_sum_consistency_check_with_estimated_bias'] = e2e_vs_sum_consistency_check_with_estimated_bias
     results['e2e_vs_sum_consistency_check_with_estimated_bias_added_to_bound'] = e2e_vs_sum_consistency_check_with_estimated_bias_added_to_bound
@@ -862,6 +881,8 @@ def analyse_forward_exp(results_dir, results_dir_file, rateScales, loads, traffi
         plot_forward_success_per_loads_traffic(results['e2e_vs_sum_consistency_check_filtered_queue_size_packets'][idx], loads, rateScales, results_dir, results_dir_file, f"consistency_check_filtered_by_queue_size_{trsh}pkts")
     for idx, trsh in enumerate(per_queue_size_thresholds_bytes):
         plot_forward_success_per_loads_traffic(results['e2e_vs_sum_consistency_check_filtered_queue_size_bytes'][idx], loads, rateScales, results_dir, results_dir_file, f"consistency_check_filtered_by_queue_size_{trsh}bytes")
+    for idx, trsh in enumerate(nonmarking_prob_thresholds):
+        plot_forward_success_per_loads_traffic(results['e2e_vs_sum_consistency_check_filtered_nonmarking_prob'][idx], loads, rateScales, results_dir, results_dir_file, f"consistency_check_filtered_by_nonmarking_prob_{trsh}")
 
     for queue_name in queues:
         plot_metric_per_loads_traffic_boxplot(traffics, results['queue_error_bound'][queue_name], loads, rateScales, results_dir, results_dir_file, f"{queue_name} Error Bound (ns)")
