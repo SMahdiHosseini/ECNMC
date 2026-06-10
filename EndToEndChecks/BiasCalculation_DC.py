@@ -17,9 +17,13 @@ def prepare_results(queues):
     rounds_results['e2e_poisson_samples_queue_delay_mean'] = []
     rounds_results['e2e_poisson_samples_queue_delay_std'] = []
     rounds_results['sum_poisson_samples_queue_success_prob_mean'] = []
+    rounds_results['sum_poisson_samples_queue_success_prob_pair_covariance'] = []
+    rounds_results['sum_poisson_samples_queue_success_prob_triple_covariance'] = []
     rounds_results['e2e_poisson_samples_queue_success_prob_mean'] = []
     rounds_results['e2e_poisson_samples_queue_success_prob_std'] = []
     rounds_results['sum_poisson_samples_queue_nonmarking_prob_mean'] = []
+    rounds_results['sum_poisson_samples_queue_nonmarking_prob_pair_covariance'] = []
+    rounds_results['sum_poisson_samples_queue_nonmarking_prob_triple_covariance'] = []
     rounds_results['e2e_poisson_samples_queue_nonmarking_prob_mean'] = []
     rounds_results['e2e_poisson_samples_queue_nonmarking_prob_std'] = []
     rounds_results['e2e_vs_sum_consistent'] = []
@@ -111,7 +115,11 @@ def merge_results(return_dict, merged_results, queues):
         merged_results['e2e_vs_sum_error_nonmarking_prob_bound'].append(return_dict[ exp]['e2e_vs_sum_error_nonmarking_prob_bound'])
         merged_results['sum_poisson_samples_queue_delay_mean'].append(return_dict[exp]['sum_poisson_samples_queue_delay_mean'])
         merged_results['sum_poisson_samples_queue_success_prob_mean'].append(return_dict[exp]['sum_poisson_samples_queue_success_prob_mean'])
+        merged_results['sum_poisson_samples_queue_success_prob_pair_covariance'].append(return_dict[exp]['sum_poisson_samples_queue_success_prob_pair_covariance'])
+        merged_results['sum_poisson_samples_queue_success_prob_triple_covariance'].append(return_dict[exp]['sum_poisson_samples_queue_success_prob_triple_covariance'])
         merged_results['sum_poisson_samples_queue_nonmarking_prob_mean'].append(return_dict[exp]['sum_poisson_samples_queue_nonmarking_prob_mean'])
+        merged_results['sum_poisson_samples_queue_nonmarking_prob_pair_covariance'].append(return_dict[exp]['sum_poisson_samples_queue_nonmarking_prob_pair_covariance'])
+        merged_results['sum_poisson_samples_queue_nonmarking_prob_triple_covariance'].append(return_dict[exp]['sum_poisson_samples_queue_nonmarking_prob_triple_covariance'])
         merged_results['e2e_poisson_samples_queue_delay_mean'].append(return_dict[exp]['e2e_poisson_samples_queue_delay_mean'])
         merged_results['e2e_poisson_samples_queue_success_prob_mean'].append(return_dict[exp]['e2e_poisson_samples_queue_success_prob_mean'])
         merged_results['e2e_poisson_samples_queue_nonmarking_prob_mean'].append(return_dict[exp]['e2e_poisson_samples_queue_nonmarking_prob_mean'])
@@ -190,7 +198,7 @@ def __main__():
     # serviceRateScales = [0.5]
     loads = [float(x) for x in config.get('Settings', 'load').split(',')]
     loads = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.95]
-    # loads = [0.2]
+    # loads = [0.7]
     traffics = config.get('Settings', 'traffic').split(',')
     traffics = ["Google_AllRPC","Fabricated_Heavy_Head","Fabricated_Heavy_Middle","Google_SearchRPC", "Facebook_HadoopDist_All"]
     # traffics = ["Google_AllRPC"]

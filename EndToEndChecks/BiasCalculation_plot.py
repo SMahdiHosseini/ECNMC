@@ -35,6 +35,10 @@ def readResults(results_dict, results_dir, serviceRateScale, results_dir_file, d
             for idx in range(len(per_queue_size_thresholds_bytes)):
                 e2e_vs_sum_consistency_check_filtered_queue_size_bytes.append([])
             e2e_vs_sum_consistency_check_with_estimated_bias_added_to_bound = []
+            e2e_vs_sum_success_prob_pair_covariance_consistency_check = []
+            e2e_vs_sum_success_prob_pair_and_triple_covariance_consistency_check = []
+            e2e_vs_sum_nonmarking_prob_pair_covariance_consistency_check = []
+            e2e_vs_sum_nonmarking_prob_pair_and_triple_covariance_consistency_check = []
             for i in range(len(temp['experiment'])):
                 results_dict['e2e_vs_sum_error_bound'][traffic][load][serviceRateScale].append(temp['e2e_vs_sum_error_bound'][i])
                 results_dict['e2e_vs_sum_relative_error_bound'][traffic][load][serviceRateScale].append(temp['e2e_vs_sum_error_bound'][i] / temp['sum_poisson_samples_queue_delay_mean'][i])
@@ -58,6 +62,41 @@ def readResults(results_dict, results_dir, serviceRateScale, results_dir_file, d
                 results_dict['e2e_vs_sum_nonmarking_prob_error_bound_lower'][traffic][load][serviceRateScale].append(temp['e2e_vs_sum_error_nonmarking_prob_bound'][i][1])
                 results_dict['e2e_vs_sum_nonmarking_prob_e2e_mean'][traffic][load][serviceRateScale].append(temp['e2e_poisson_samples_queue_nonmarking_prob_mean'][i])
                 results_dict['e2e_vs_sum_nonmarking_prob_sum_mean'][traffic][load][serviceRateScale].append(temp['sum_poisson_samples_queue_nonmarking_prob_mean'][i])
+                success_prob_pair_covariance = temp['sum_poisson_samples_queue_success_prob_pair_covariance'][i]
+                success_prob_triple_covariance = temp['sum_poisson_samples_queue_success_prob_triple_covariance'][i]
+                success_prob_pair_covariance_sum_mean = temp['sum_poisson_samples_queue_success_prob_mean'][i] + success_prob_pair_covariance
+                success_prob_pair_and_triple_covariance_added_covariance = success_prob_pair_covariance + success_prob_triple_covariance
+                success_prob_pair_and_triple_covariance_sum_mean = temp['sum_poisson_samples_queue_success_prob_mean'][i] + success_prob_pair_and_triple_covariance_added_covariance
+                success_prob_pair_covariance_error = temp['e2e_poisson_samples_queue_success_prob_mean'][i] - success_prob_pair_covariance_sum_mean
+                success_prob_pair_and_triple_covariance_error = temp['e2e_poisson_samples_queue_success_prob_mean'][i] - success_prob_pair_and_triple_covariance_sum_mean
+                results_dict['e2e_vs_sum_success_prob_pair_covariance_sum_mean'][traffic][load][serviceRateScale].append(success_prob_pair_covariance_sum_mean)
+                results_dict['e2e_vs_sum_success_prob_pair_covariance_added_covariance'][traffic][load][serviceRateScale].append(success_prob_pair_covariance)
+                results_dict['e2e_vs_sum_success_prob_pair_covariance_error'][traffic][load][serviceRateScale].append(success_prob_pair_covariance_error)
+                results_dict['e2e_vs_sum_success_prob_pair_covariance_abs_error'][traffic][load][serviceRateScale].append(abs(success_prob_pair_covariance_error))
+                results_dict['e2e_vs_sum_success_prob_pair_and_triple_covariance_sum_mean'][traffic][load][serviceRateScale].append(success_prob_pair_and_triple_covariance_sum_mean)
+                results_dict['e2e_vs_sum_success_prob_pair_and_triple_covariance_added_covariance'][traffic][load][serviceRateScale].append(success_prob_pair_and_triple_covariance_added_covariance)
+                results_dict['e2e_vs_sum_success_prob_pair_and_triple_covariance_error'][traffic][load][serviceRateScale].append(success_prob_pair_and_triple_covariance_error)
+                results_dict['e2e_vs_sum_success_prob_pair_and_triple_covariance_abs_error'][traffic][load][serviceRateScale].append(abs(success_prob_pair_and_triple_covariance_error))
+                e2e_vs_sum_success_prob_pair_covariance_consistency_check.append((success_prob_pair_covariance_error <= temp['e2e_vs_sum_error_success_prob_bound'][i][0]) and (success_prob_pair_covariance_error >= temp['e2e_vs_sum_error_success_prob_bound'][i][1]))
+                e2e_vs_sum_success_prob_pair_and_triple_covariance_consistency_check.append((success_prob_pair_and_triple_covariance_error <= temp['e2e_vs_sum_error_success_prob_bound'][i][0]) and (success_prob_pair_and_triple_covariance_error >= temp['e2e_vs_sum_error_success_prob_bound'][i][1]))
+
+                nonmarking_prob_pair_covariance = temp['sum_poisson_samples_queue_nonmarking_prob_pair_covariance'][i]
+                nonmarking_prob_triple_covariance = temp['sum_poisson_samples_queue_nonmarking_prob_triple_covariance'][i]
+                nonmarking_prob_pair_covariance_sum_mean = temp['sum_poisson_samples_queue_nonmarking_prob_mean'][i] + nonmarking_prob_pair_covariance
+                nonmarking_prob_pair_and_triple_covariance_added_covariance = nonmarking_prob_pair_covariance + nonmarking_prob_triple_covariance
+                nonmarking_prob_pair_and_triple_covariance_sum_mean = temp['sum_poisson_samples_queue_nonmarking_prob_mean'][i] + nonmarking_prob_pair_and_triple_covariance_added_covariance
+                nonmarking_prob_pair_covariance_error = temp['e2e_poisson_samples_queue_nonmarking_prob_mean'][i] - nonmarking_prob_pair_covariance_sum_mean
+                nonmarking_prob_pair_and_triple_covariance_error = temp['e2e_poisson_samples_queue_nonmarking_prob_mean'][i] - nonmarking_prob_pair_and_triple_covariance_sum_mean
+                results_dict['e2e_vs_sum_nonmarking_prob_pair_covariance_sum_mean'][traffic][load][serviceRateScale].append(nonmarking_prob_pair_covariance_sum_mean)
+                results_dict['e2e_vs_sum_nonmarking_prob_pair_covariance_added_covariance'][traffic][load][serviceRateScale].append(nonmarking_prob_pair_covariance)
+                results_dict['e2e_vs_sum_nonmarking_prob_pair_covariance_error'][traffic][load][serviceRateScale].append(nonmarking_prob_pair_covariance_error)
+                results_dict['e2e_vs_sum_nonmarking_prob_pair_covariance_abs_error'][traffic][load][serviceRateScale].append(abs(nonmarking_prob_pair_covariance_error))
+                results_dict['e2e_vs_sum_nonmarking_prob_pair_and_triple_covariance_sum_mean'][traffic][load][serviceRateScale].append(nonmarking_prob_pair_and_triple_covariance_sum_mean)
+                results_dict['e2e_vs_sum_nonmarking_prob_pair_and_triple_covariance_added_covariance'][traffic][load][serviceRateScale].append(nonmarking_prob_pair_and_triple_covariance_added_covariance)
+                results_dict['e2e_vs_sum_nonmarking_prob_pair_and_triple_covariance_error'][traffic][load][serviceRateScale].append(nonmarking_prob_pair_and_triple_covariance_error)
+                results_dict['e2e_vs_sum_nonmarking_prob_pair_and_triple_covariance_abs_error'][traffic][load][serviceRateScale].append(abs(nonmarking_prob_pair_and_triple_covariance_error))
+                e2e_vs_sum_nonmarking_prob_pair_covariance_consistency_check.append((nonmarking_prob_pair_covariance_error <= temp['e2e_vs_sum_error_nonmarking_prob_bound'][i][0]) and (nonmarking_prob_pair_covariance_error >= temp['e2e_vs_sum_error_nonmarking_prob_bound'][i][1]))
+                e2e_vs_sum_nonmarking_prob_pair_and_triple_covariance_consistency_check.append((nonmarking_prob_pair_and_triple_covariance_error <= temp['e2e_vs_sum_error_nonmarking_prob_bound'][i][0]) and (nonmarking_prob_pair_and_triple_covariance_error >= temp['e2e_vs_sum_error_nonmarking_prob_bound'][i][1]))
                 e2e_vs_sum_consistency_check_with_estimated_bias_added_to_bound.append(abs(temp['sum_poisson_samples_queue_delay_mean'][i] - temp['e2e_poisson_samples_queue_delay_mean'][i]) <= (temp['e2e_vs_sum_error_bound'][i] + results_dict['e2e_vs_sum_estimated_bias'][traffic][load][serviceRateScale][-1]))
                 for idx, trsh in enumerate(estimated_bias_thresholds):
                     if results_dict['e2e_vs_sum_estimated_bias'][traffic][load][serviceRateScale][-1] < trsh * temp['e2e_vs_sum_error_bound'][i]:
@@ -109,6 +148,10 @@ def readResults(results_dict, results_dir, serviceRateScale, results_dir_file, d
             results_dict['e2e_vs_sum_consistency_check_with_estimated_bias_added_to_bound'][traffic][load][serviceRateScale] = sum(e2e_vs_sum_consistency_check_with_estimated_bias_added_to_bound) / len(temp['experiment']) * 100
             results_dict['e2e_vs_sum_success_prob_consistency_check'][traffic][load][serviceRateScale] = sum(temp['e2e_vs_sum_consistent_success_prob']) / len(temp['experiment']) * 100
             results_dict['e2e_vs_sum_nonmarking_prob_consistency_check'][traffic][load][serviceRateScale] = sum(temp['e2e_vs_sum_consistent_nonmarking_prob']) / len(temp['experiment']) * 100
+            results_dict['e2e_vs_sum_success_prob_pair_covariance_consistency_check'][traffic][load][serviceRateScale] = sum(e2e_vs_sum_success_prob_pair_covariance_consistency_check) / len(e2e_vs_sum_success_prob_pair_covariance_consistency_check) * 100 if len(e2e_vs_sum_success_prob_pair_covariance_consistency_check) > 0 else np.nan
+            results_dict['e2e_vs_sum_success_prob_pair_and_triple_covariance_consistency_check'][traffic][load][serviceRateScale] = sum(e2e_vs_sum_success_prob_pair_and_triple_covariance_consistency_check) / len(e2e_vs_sum_success_prob_pair_and_triple_covariance_consistency_check) * 100 if len(e2e_vs_sum_success_prob_pair_and_triple_covariance_consistency_check) > 0 else np.nan
+            results_dict['e2e_vs_sum_nonmarking_prob_pair_covariance_consistency_check'][traffic][load][serviceRateScale] = sum(e2e_vs_sum_nonmarking_prob_pair_covariance_consistency_check) / len(e2e_vs_sum_nonmarking_prob_pair_covariance_consistency_check) * 100 if len(e2e_vs_sum_nonmarking_prob_pair_covariance_consistency_check) > 0 else np.nan
+            results_dict['e2e_vs_sum_nonmarking_prob_pair_and_triple_covariance_consistency_check'][traffic][load][serviceRateScale] = sum(e2e_vs_sum_nonmarking_prob_pair_and_triple_covariance_consistency_check) / len(e2e_vs_sum_nonmarking_prob_pair_and_triple_covariance_consistency_check) * 100 if len(e2e_vs_sum_nonmarking_prob_pair_and_triple_covariance_consistency_check) > 0 else np.nan
             for idx in range(len(estimated_bias_thresholds)):
                 results_dict['e2e_vs_sum_consistency_check_filtered_estimated_bias'][idx][traffic][load][serviceRateScale] = sum(e2e_vs_sum_consistency_check_filtered_estimated_bias[idx]) / len(e2e_vs_sum_consistency_check_filtered_estimated_bias[idx]) * 100 if len(e2e_vs_sum_consistency_check_filtered_estimated_bias[idx]) > 0 else np.nan
             for idx in range(len(per_queue_size_thresholds_packets)):
@@ -335,6 +378,22 @@ def prepare_results_dict(results_dir, results_dir_file, rateScales, loads, traff
     e2e_vs_sum_nonmarking_prob_error_bound_lower = {}
     e2e_vs_sum_nonmarking_prob_e2e_mean = {}
     e2e_vs_sum_nonmarking_prob_sum_mean = {}
+    e2e_vs_sum_success_prob_pair_covariance_sum_mean = {}
+    e2e_vs_sum_success_prob_pair_covariance_added_covariance = {}
+    e2e_vs_sum_success_prob_pair_covariance_error = {}
+    e2e_vs_sum_success_prob_pair_covariance_abs_error = {}
+    e2e_vs_sum_success_prob_pair_and_triple_covariance_sum_mean = {}
+    e2e_vs_sum_success_prob_pair_and_triple_covariance_added_covariance = {}
+    e2e_vs_sum_success_prob_pair_and_triple_covariance_error = {}
+    e2e_vs_sum_success_prob_pair_and_triple_covariance_abs_error = {}
+    e2e_vs_sum_nonmarking_prob_pair_covariance_sum_mean = {}
+    e2e_vs_sum_nonmarking_prob_pair_covariance_added_covariance = {}
+    e2e_vs_sum_nonmarking_prob_pair_covariance_error = {}
+    e2e_vs_sum_nonmarking_prob_pair_covariance_abs_error = {}
+    e2e_vs_sum_nonmarking_prob_pair_and_triple_covariance_sum_mean = {}
+    e2e_vs_sum_nonmarking_prob_pair_and_triple_covariance_added_covariance = {}
+    e2e_vs_sum_nonmarking_prob_pair_and_triple_covariance_error = {}
+    e2e_vs_sum_nonmarking_prob_pair_and_triple_covariance_abs_error = {}
     e2e_vs_sum_relative_error_bound = {}
     e2e_vs_sum_abs_error = {}
     e2e_vs_sum_relative_error = {}
@@ -355,6 +414,10 @@ def prepare_results_dict(results_dir, results_dir_file, rateScales, loads, traff
     e2e_vs_sum_consistency_check_with_estimated_bias_added_to_bound = {}
     e2e_vs_sum_success_prob_consistency_check = {}
     e2e_vs_sum_nonmarking_prob_consistency_check = {}
+    e2e_vs_sum_success_prob_pair_covariance_consistency_check = {}
+    e2e_vs_sum_success_prob_pair_and_triple_covariance_consistency_check = {}
+    e2e_vs_sum_nonmarking_prob_pair_covariance_consistency_check = {}
+    e2e_vs_sum_nonmarking_prob_pair_and_triple_covariance_consistency_check = {}
     e2e_total_queuing_delay_time = {}
     e2e_total_queuing_delay_packets = {}
     e2e_total_queuing_delay_bytes = {}
@@ -427,6 +490,22 @@ def prepare_results_dict(results_dir, results_dir_file, rateScales, loads, traff
         e2e_vs_sum_nonmarking_prob_error_bound_lower[traffic] = {}
         e2e_vs_sum_nonmarking_prob_e2e_mean[traffic] = {}
         e2e_vs_sum_nonmarking_prob_sum_mean[traffic] = {}
+        e2e_vs_sum_success_prob_pair_covariance_sum_mean[traffic] = {}
+        e2e_vs_sum_success_prob_pair_covariance_added_covariance[traffic] = {}
+        e2e_vs_sum_success_prob_pair_covariance_error[traffic] = {}
+        e2e_vs_sum_success_prob_pair_covariance_abs_error[traffic] = {}
+        e2e_vs_sum_success_prob_pair_and_triple_covariance_sum_mean[traffic] = {}
+        e2e_vs_sum_success_prob_pair_and_triple_covariance_added_covariance[traffic] = {}
+        e2e_vs_sum_success_prob_pair_and_triple_covariance_error[traffic] = {}
+        e2e_vs_sum_success_prob_pair_and_triple_covariance_abs_error[traffic] = {}
+        e2e_vs_sum_nonmarking_prob_pair_covariance_sum_mean[traffic] = {}
+        e2e_vs_sum_nonmarking_prob_pair_covariance_added_covariance[traffic] = {}
+        e2e_vs_sum_nonmarking_prob_pair_covariance_error[traffic] = {}
+        e2e_vs_sum_nonmarking_prob_pair_covariance_abs_error[traffic] = {}
+        e2e_vs_sum_nonmarking_prob_pair_and_triple_covariance_sum_mean[traffic] = {}
+        e2e_vs_sum_nonmarking_prob_pair_and_triple_covariance_added_covariance[traffic] = {}
+        e2e_vs_sum_nonmarking_prob_pair_and_triple_covariance_error[traffic] = {}
+        e2e_vs_sum_nonmarking_prob_pair_and_triple_covariance_abs_error[traffic] = {}
         e2e_vs_sum_relative_error_bound[traffic] = {}
         e2e_vs_sum_abs_error[traffic] = {}
         e2e_vs_sum_relative_error[traffic] = {}
@@ -444,6 +523,10 @@ def prepare_results_dict(results_dir, results_dir_file, rateScales, loads, traff
         e2e_vs_sum_consistency_check_with_estimated_bias_added_to_bound[traffic] = {}
         e2e_vs_sum_success_prob_consistency_check[traffic] = {}
         e2e_vs_sum_nonmarking_prob_consistency_check[traffic] = {}
+        e2e_vs_sum_success_prob_pair_covariance_consistency_check[traffic] = {}
+        e2e_vs_sum_success_prob_pair_and_triple_covariance_consistency_check[traffic] = {}
+        e2e_vs_sum_nonmarking_prob_pair_covariance_consistency_check[traffic] = {}
+        e2e_vs_sum_nonmarking_prob_pair_and_triple_covariance_consistency_check[traffic] = {}
         e2e_total_queuing_delay_time[traffic] = {}
         e2e_total_queuing_delay_packets[traffic] = {}
         e2e_total_queuing_delay_bytes[traffic] = {}
@@ -488,6 +571,22 @@ def prepare_results_dict(results_dir, results_dir_file, rateScales, loads, traff
                 e2e_vs_sum_nonmarking_prob_error_bound_lower[traffic][load] = {}
                 e2e_vs_sum_nonmarking_prob_e2e_mean[traffic][load] = {}
                 e2e_vs_sum_nonmarking_prob_sum_mean[traffic][load] = {}
+                e2e_vs_sum_success_prob_pair_covariance_sum_mean[traffic][load] = {}
+                e2e_vs_sum_success_prob_pair_covariance_added_covariance[traffic][load] = {}
+                e2e_vs_sum_success_prob_pair_covariance_error[traffic][load] = {}
+                e2e_vs_sum_success_prob_pair_covariance_abs_error[traffic][load] = {}
+                e2e_vs_sum_success_prob_pair_and_triple_covariance_sum_mean[traffic][load] = {}
+                e2e_vs_sum_success_prob_pair_and_triple_covariance_added_covariance[traffic][load] = {}
+                e2e_vs_sum_success_prob_pair_and_triple_covariance_error[traffic][load] = {}
+                e2e_vs_sum_success_prob_pair_and_triple_covariance_abs_error[traffic][load] = {}
+                e2e_vs_sum_nonmarking_prob_pair_covariance_sum_mean[traffic][load] = {}
+                e2e_vs_sum_nonmarking_prob_pair_covariance_added_covariance[traffic][load] = {}
+                e2e_vs_sum_nonmarking_prob_pair_covariance_error[traffic][load] = {}
+                e2e_vs_sum_nonmarking_prob_pair_covariance_abs_error[traffic][load] = {}
+                e2e_vs_sum_nonmarking_prob_pair_and_triple_covariance_sum_mean[traffic][load] = {}
+                e2e_vs_sum_nonmarking_prob_pair_and_triple_covariance_added_covariance[traffic][load] = {}
+                e2e_vs_sum_nonmarking_prob_pair_and_triple_covariance_error[traffic][load] = {}
+                e2e_vs_sum_nonmarking_prob_pair_and_triple_covariance_abs_error[traffic][load] = {}
                 e2e_vs_sum_abs_error[traffic][load] = {}
                 e2e_vs_sum_relative_error[traffic][load] = {}
                 e2e_vs_sum_relative_error_bound[traffic][load] = {}
@@ -505,6 +604,10 @@ def prepare_results_dict(results_dir, results_dir_file, rateScales, loads, traff
                 e2e_vs_sum_consistency_check_with_estimated_bias_added_to_bound[traffic][load] = {}
                 e2e_vs_sum_success_prob_consistency_check[traffic][load] = {}
                 e2e_vs_sum_nonmarking_prob_consistency_check[traffic][load] = {}
+                e2e_vs_sum_success_prob_pair_covariance_consistency_check[traffic][load] = {}
+                e2e_vs_sum_success_prob_pair_and_triple_covariance_consistency_check[traffic][load] = {}
+                e2e_vs_sum_nonmarking_prob_pair_covariance_consistency_check[traffic][load] = {}
+                e2e_vs_sum_nonmarking_prob_pair_and_triple_covariance_consistency_check[traffic][load] = {}
                 e2e_total_queuing_delay_time[traffic][load] = {}
                 e2e_total_queuing_delay_packets[traffic][load] = {}
                 e2e_total_queuing_delay_bytes[traffic][load] = {}
@@ -549,6 +652,22 @@ def prepare_results_dict(results_dir, results_dir_file, rateScales, loads, traff
                     e2e_vs_sum_nonmarking_prob_error_bound_lower[traffic][load][rate] = []
                     e2e_vs_sum_nonmarking_prob_e2e_mean[traffic][load][rate] = []
                     e2e_vs_sum_nonmarking_prob_sum_mean[traffic][load][rate] = []
+                    e2e_vs_sum_success_prob_pair_covariance_sum_mean[traffic][load][rate] = []
+                    e2e_vs_sum_success_prob_pair_covariance_added_covariance[traffic][load][rate] = []
+                    e2e_vs_sum_success_prob_pair_covariance_error[traffic][load][rate] = []
+                    e2e_vs_sum_success_prob_pair_covariance_abs_error[traffic][load][rate] = []
+                    e2e_vs_sum_success_prob_pair_and_triple_covariance_sum_mean[traffic][load][rate] = []
+                    e2e_vs_sum_success_prob_pair_and_triple_covariance_added_covariance[traffic][load][rate] = []
+                    e2e_vs_sum_success_prob_pair_and_triple_covariance_error[traffic][load][rate] = []
+                    e2e_vs_sum_success_prob_pair_and_triple_covariance_abs_error[traffic][load][rate] = []
+                    e2e_vs_sum_nonmarking_prob_pair_covariance_sum_mean[traffic][load][rate] = []
+                    e2e_vs_sum_nonmarking_prob_pair_covariance_added_covariance[traffic][load][rate] = []
+                    e2e_vs_sum_nonmarking_prob_pair_covariance_error[traffic][load][rate] = []
+                    e2e_vs_sum_nonmarking_prob_pair_covariance_abs_error[traffic][load][rate] = []
+                    e2e_vs_sum_nonmarking_prob_pair_and_triple_covariance_sum_mean[traffic][load][rate] = []
+                    e2e_vs_sum_nonmarking_prob_pair_and_triple_covariance_added_covariance[traffic][load][rate] = []
+                    e2e_vs_sum_nonmarking_prob_pair_and_triple_covariance_error[traffic][load][rate] = []
+                    e2e_vs_sum_nonmarking_prob_pair_and_triple_covariance_abs_error[traffic][load][rate] = []
                     e2e_vs_sum_relative_error_bound[traffic][load][rate] = []
                     e2e_vs_sum_abs_error[traffic][load][rate] = []
                     e2e_vs_sum_relative_error[traffic][load][rate] = []
@@ -566,6 +685,10 @@ def prepare_results_dict(results_dir, results_dir_file, rateScales, loads, traff
                     e2e_vs_sum_consistency_check_with_estimated_bias_added_to_bound[traffic][load][rate] = np.nan
                     e2e_vs_sum_success_prob_consistency_check[traffic][load][rate] = np.nan
                     e2e_vs_sum_nonmarking_prob_consistency_check[traffic][load][rate] = np.nan
+                    e2e_vs_sum_success_prob_pair_covariance_consistency_check[traffic][load][rate] = np.nan
+                    e2e_vs_sum_success_prob_pair_and_triple_covariance_consistency_check[traffic][load][rate] = np.nan
+                    e2e_vs_sum_nonmarking_prob_pair_covariance_consistency_check[traffic][load][rate] = np.nan
+                    e2e_vs_sum_nonmarking_prob_pair_and_triple_covariance_consistency_check[traffic][load][rate] = np.nan
                     e2e_total_queuing_delay_time[traffic][load][rate] = []
                     e2e_total_queuing_delay_packets[traffic][load][rate] = []
                     e2e_total_queuing_delay_bytes[traffic][load][rate] = []
@@ -610,6 +733,22 @@ def prepare_results_dict(results_dir, results_dir_file, rateScales, loads, traff
     results['e2e_vs_sum_nonmarking_prob_error_bound_lower'] = e2e_vs_sum_nonmarking_prob_error_bound_lower
     results['e2e_vs_sum_nonmarking_prob_e2e_mean'] = e2e_vs_sum_nonmarking_prob_e2e_mean
     results['e2e_vs_sum_nonmarking_prob_sum_mean'] = e2e_vs_sum_nonmarking_prob_sum_mean
+    results['e2e_vs_sum_success_prob_pair_covariance_sum_mean'] = e2e_vs_sum_success_prob_pair_covariance_sum_mean
+    results['e2e_vs_sum_success_prob_pair_covariance_added_covariance'] = e2e_vs_sum_success_prob_pair_covariance_added_covariance
+    results['e2e_vs_sum_success_prob_pair_covariance_error'] = e2e_vs_sum_success_prob_pair_covariance_error
+    results['e2e_vs_sum_success_prob_pair_covariance_abs_error'] = e2e_vs_sum_success_prob_pair_covariance_abs_error
+    results['e2e_vs_sum_success_prob_pair_and_triple_covariance_sum_mean'] = e2e_vs_sum_success_prob_pair_and_triple_covariance_sum_mean
+    results['e2e_vs_sum_success_prob_pair_and_triple_covariance_added_covariance'] = e2e_vs_sum_success_prob_pair_and_triple_covariance_added_covariance
+    results['e2e_vs_sum_success_prob_pair_and_triple_covariance_error'] = e2e_vs_sum_success_prob_pair_and_triple_covariance_error
+    results['e2e_vs_sum_success_prob_pair_and_triple_covariance_abs_error'] = e2e_vs_sum_success_prob_pair_and_triple_covariance_abs_error
+    results['e2e_vs_sum_nonmarking_prob_pair_covariance_sum_mean'] = e2e_vs_sum_nonmarking_prob_pair_covariance_sum_mean
+    results['e2e_vs_sum_nonmarking_prob_pair_covariance_added_covariance'] = e2e_vs_sum_nonmarking_prob_pair_covariance_added_covariance
+    results['e2e_vs_sum_nonmarking_prob_pair_covariance_error'] = e2e_vs_sum_nonmarking_prob_pair_covariance_error
+    results['e2e_vs_sum_nonmarking_prob_pair_covariance_abs_error'] = e2e_vs_sum_nonmarking_prob_pair_covariance_abs_error
+    results['e2e_vs_sum_nonmarking_prob_pair_and_triple_covariance_sum_mean'] = e2e_vs_sum_nonmarking_prob_pair_and_triple_covariance_sum_mean
+    results['e2e_vs_sum_nonmarking_prob_pair_and_triple_covariance_added_covariance'] = e2e_vs_sum_nonmarking_prob_pair_and_triple_covariance_added_covariance
+    results['e2e_vs_sum_nonmarking_prob_pair_and_triple_covariance_error'] = e2e_vs_sum_nonmarking_prob_pair_and_triple_covariance_error
+    results['e2e_vs_sum_nonmarking_prob_pair_and_triple_covariance_abs_error'] = e2e_vs_sum_nonmarking_prob_pair_and_triple_covariance_abs_error
     results['e2e_vs_sum_relative_error_bound'] = e2e_vs_sum_relative_error_bound
     results['e2e_vs_sum_abs_error'] = e2e_vs_sum_abs_error
     results['e2e_vs_sum_relative_error'] = e2e_vs_sum_relative_error
@@ -624,6 +763,10 @@ def prepare_results_dict(results_dir, results_dir_file, rateScales, loads, traff
     results['e2e_vs_sum_consistency_check_with_estimated_bias_added_to_bound'] = e2e_vs_sum_consistency_check_with_estimated_bias_added_to_bound
     results['e2e_vs_sum_success_prob_consistency_check'] = e2e_vs_sum_success_prob_consistency_check
     results['e2e_vs_sum_nonmarking_prob_consistency_check'] = e2e_vs_sum_nonmarking_prob_consistency_check
+    results['e2e_vs_sum_success_prob_pair_covariance_consistency_check'] = e2e_vs_sum_success_prob_pair_covariance_consistency_check
+    results['e2e_vs_sum_success_prob_pair_and_triple_covariance_consistency_check'] = e2e_vs_sum_success_prob_pair_and_triple_covariance_consistency_check
+    results['e2e_vs_sum_nonmarking_prob_pair_covariance_consistency_check'] = e2e_vs_sum_nonmarking_prob_pair_covariance_consistency_check
+    results['e2e_vs_sum_nonmarking_prob_pair_and_triple_covariance_consistency_check'] = e2e_vs_sum_nonmarking_prob_pair_and_triple_covariance_consistency_check
     results['e2e_total_queuing_delay_time'] = e2e_total_queuing_delay_time
     results['e2e_total_queuing_delay_packets'] = e2e_total_queuing_delay_packets
     results['e2e_total_queuing_delay_bytes'] = e2e_total_queuing_delay_bytes
@@ -653,6 +796,7 @@ def prepare_results_dict(results_dir, results_dir_file, rateScales, loads, traff
     results['queue_delay_packets'] = queue_delay_packets
     results['queue_delay_bytes'] = queue_delay_bytes
     results['queue_error'] = queue_error
+
     return results
 
 def analyse_forward_exp(results_dir, results_dir_file, rateScales, loads, traffics, queues):
@@ -689,6 +833,26 @@ def analyse_forward_exp(results_dir, results_dir_file, rateScales, loads, traffi
     plot_metric_per_loads_traffic_boxplot(traffics, results['e2e_vs_sum_nonmarking_prob_error_bound_upper'], loads, rateScales, results_dir, results_dir_file, "e2e vs sum Non-Marking Prob Upper Error Bound")
     plot_metric_per_loads_traffic_boxplot(traffics, results['e2e_vs_sum_nonmarking_prob_error_bound_lower'], loads, rateScales, results_dir, results_dir_file, "e2e vs sum Non-Marking Prob Lower Error Bound")
     plot_forward_success_per_loads_traffic(results['e2e_vs_sum_nonmarking_prob_consistency_check'], loads, rateScales, results_dir, results_dir_file, "nonmarking_prob_consistency_check")
+    plot_metric_per_loads_traffic_boxplot(traffics, results['e2e_vs_sum_success_prob_pair_covariance_sum_mean'], loads, rateScales, results_dir, results_dir_file, "e2e vs sum Success Prob with Pair Covariance Sum Mean")
+    plot_metric_per_loads_traffic_boxplot(traffics, results['e2e_vs_sum_success_prob_pair_covariance_added_covariance'], loads, rateScales, results_dir, results_dir_file, "e2e vs sum Success Prob with Pair Covariance Added Covariance")
+    plot_metric_per_loads_traffic_boxplot(traffics, results['e2e_vs_sum_success_prob_pair_covariance_error'], loads, rateScales, results_dir, results_dir_file, "e2e vs sum Success Prob with Pair Covariance Error")
+    plot_metric_per_loads_traffic_boxplot(traffics, results['e2e_vs_sum_success_prob_pair_covariance_abs_error'], loads, rateScales, results_dir, results_dir_file, "e2e vs sum Success Prob with Pair Covariance Absolute Error")
+    plot_forward_success_per_loads_traffic(results['e2e_vs_sum_success_prob_pair_covariance_consistency_check'], loads, rateScales, results_dir, results_dir_file, "success_prob_pair_covariance_consistency_check")
+    plot_metric_per_loads_traffic_boxplot(traffics, results['e2e_vs_sum_success_prob_pair_and_triple_covariance_sum_mean'], loads, rateScales, results_dir, results_dir_file, "e2e vs sum Success Prob with Pair and Triple Covariance Sum Mean")
+    plot_metric_per_loads_traffic_boxplot(traffics, results['e2e_vs_sum_success_prob_pair_and_triple_covariance_added_covariance'], loads, rateScales, results_dir, results_dir_file, "e2e vs sum Success Prob with Pair and Triple Covariance Added Covariance")
+    plot_metric_per_loads_traffic_boxplot(traffics, results['e2e_vs_sum_success_prob_pair_and_triple_covariance_error'], loads, rateScales, results_dir, results_dir_file, "e2e vs sum Success Prob with Pair and Triple Covariance Error")
+    plot_metric_per_loads_traffic_boxplot(traffics, results['e2e_vs_sum_success_prob_pair_and_triple_covariance_abs_error'], loads, rateScales, results_dir, results_dir_file, "e2e vs sum Success Prob with Pair and Triple Covariance Absolute Error")
+    plot_forward_success_per_loads_traffic(results['e2e_vs_sum_success_prob_pair_and_triple_covariance_consistency_check'], loads, rateScales, results_dir, results_dir_file, "success_prob_pair_and_triple_covariance_consistency_check")
+    plot_metric_per_loads_traffic_boxplot(traffics, results['e2e_vs_sum_nonmarking_prob_pair_covariance_sum_mean'], loads, rateScales, results_dir, results_dir_file, "e2e vs sum Non-Marking Prob with Pair Covariance Sum Mean")
+    plot_metric_per_loads_traffic_boxplot(traffics, results['e2e_vs_sum_nonmarking_prob_pair_covariance_added_covariance'], loads, rateScales, results_dir, results_dir_file, "e2e vs sum Non-Marking Prob with Pair Covariance Added Covariance")
+    plot_metric_per_loads_traffic_boxplot(traffics, results['e2e_vs_sum_nonmarking_prob_pair_covariance_error'], loads, rateScales, results_dir, results_dir_file, "e2e vs sum Non-Marking Prob with Pair Covariance Error")
+    plot_metric_per_loads_traffic_boxplot(traffics, results['e2e_vs_sum_nonmarking_prob_pair_covariance_abs_error'], loads, rateScales, results_dir, results_dir_file, "e2e vs sum Non-Marking Prob with Pair Covariance Absolute Error")
+    plot_forward_success_per_loads_traffic(results['e2e_vs_sum_nonmarking_prob_pair_covariance_consistency_check'], loads, rateScales, results_dir, results_dir_file, "nonmarking_prob_pair_covariance_consistency_check")
+    plot_metric_per_loads_traffic_boxplot(traffics, results['e2e_vs_sum_nonmarking_prob_pair_and_triple_covariance_sum_mean'], loads, rateScales, results_dir, results_dir_file, "e2e vs sum Non-Marking Prob with Pair and Triple Covariance Sum Mean")
+    plot_metric_per_loads_traffic_boxplot(traffics, results['e2e_vs_sum_nonmarking_prob_pair_and_triple_covariance_added_covariance'], loads, rateScales, results_dir, results_dir_file, "e2e vs sum Non-Marking Prob with Pair and Triple Covariance Added Covariance")
+    plot_metric_per_loads_traffic_boxplot(traffics, results['e2e_vs_sum_nonmarking_prob_pair_and_triple_covariance_error'], loads, rateScales, results_dir, results_dir_file, "e2e vs sum Non-Marking Prob with Pair and Triple Covariance Error")
+    plot_metric_per_loads_traffic_boxplot(traffics, results['e2e_vs_sum_nonmarking_prob_pair_and_triple_covariance_abs_error'], loads, rateScales, results_dir, results_dir_file, "e2e vs sum Non-Marking Prob with Pair and Triple Covariance Absolute Error")
+    plot_forward_success_per_loads_traffic(results['e2e_vs_sum_nonmarking_prob_pair_and_triple_covariance_consistency_check'], loads, rateScales, results_dir, results_dir_file, "nonmarking_prob_pair_and_triple_covariance_consistency_check")
     plot_metric_per_loads_traffic_boxplot(traffics, results['e2e_total_queuing_delay_time'], loads, rateScales, results_dir, results_dir_file, f"e2e Total Queuing Delay Time (ns)")
     plot_metric_per_loads_traffic_boxplot(traffics, results['e2e_total_queuing_delay_packets'], loads, rateScales, results_dir, results_dir_file, f"e2e Total Queuing Delay Packets")
     plot_metric_per_loads_traffic_boxplot(traffics, results['e2e_total_queuing_delay_bytes'], loads, rateScales, results_dir, results_dir_file, f"e2e Total Queuing Delay Bytes")

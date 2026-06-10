@@ -2371,6 +2371,24 @@ def sample_total_queue_size_non_combined(res, times, queue_names, dir_prefix, li
                 sample_times = np.asarray(times, dtype=float) + linkDelays[0] * (idx + 1)
 
             queue_delay_samples[idx][invalid_indices] = np.nan
+    nonmarking_samples = 1 - queue_ECN_samples
+    nonmarking_samples = nonmarking_samples[:, ~np.isnan(nonmarking_samples).any(axis=0)]
+    covariances = np.cov(nonmarking_samples)
+    means = np.nanmean(nonmarking_samples, axis=1)
+    tempECN_prod = np.prod(means, axis=0)
+    diff = np.sum([means[i] * covariances[(i + 1) % 3][(i + 2) % 3] for i in range(len(means))], axis=0)
+    diff_extra = np.mean(np.prod(np.array([nonmarking_samples[i] - means[i] for i in range(len(means))]), axis=0))
+    res['sum_poisson_samples_queue_nonmarking_prob_pair_covariance'] = diff
+    res['sum_poisson_samples_queue_nonmarking_prob_triple_covariance'] = diff_extra
+
+    queue_success_prob_samples_ = queue_success_prob_samples[:, ~np.isnan(queue_success_prob_samples).any(axis=0)]
+    covariances_success_prob = np.cov(queue_success_prob_samples_)
+    means_success_prob = np.nanmean(queue_success_prob_samples_, axis=1)
+    temp_success_prob_prod = np.prod(means_success_prob, axis=0)
+    diff_success_prob = np.sum([means_success_prob[i] * covariances_success_prob[(i + 1) % 3][(i + 2) % 3] for i in range(len(means_success_prob))], axis=0)
+    diff_success_prob_extra = np.mean(np.prod(np.array([queue_success_prob_samples_[i] - means_success_prob[i] for i in range(len(means_success_prob))]), axis=0))
+    res['sum_poisson_samples_queue_success_prob_pair_covariance'] = diff_success_prob
+    res['sum_poisson_samples_queue_success_prob_triple_covariance'] = diff_success_prob_extra
     return remove_nan_samples(sample_times_itr, np.sum(queue_size_samples, axis=0), np.any(queue_ECN_samples, axis=0).astype(int), np.sum(queue_delay_samples, axis=0), np.prod(queue_success_prob_samples, axis=0)), res
 
 def combine_sampling_results(res, queue_names):
@@ -4800,6 +4818,7 @@ def compute_bias_based_on_average_packet_size(sampling_results, average_packet_s
         idx = queue_names.index(queue_name)
         sampling_results[queue_name+'NPkts'] = sampling_results[queue_name+'e2e_samples_queue_delay_mean'] * linkRates[idx] / (average_packet_size * 8)
         sampling_results[queue_name+'NBytes'] = sampling_results[queue_name+'NPkts'] * average_packet_size
+        # TODO: correct the bias calculation to consider the actual packet splits not the assumed one.
         if idx == 0:
             continue
         # sampling_results[queue_name+'bias'] = sampling_results[queue_names[idx - 1]+'poisson_prob_non_empty'] * average_packet_size * 8 / linkRates[idx] * (1 / alternative_routes[idx - 1])
