@@ -7,6 +7,7 @@
 
 #include "ns3/core-module.h"
 #include "ns3/internet-module.h"
+#include <unordered_map>
 
 #include "../../helper_classes/HelperMethods.h"
 #include "../background_replay/TraceReplayReceiverHelper.h"
@@ -19,7 +20,7 @@ using namespace helper_methods;
 class DCWorkloadGenerator {
 
 private:
-    static uint32_t SOCKET_COUNT;
+    static std::unordered_map<uint32_t, uint32_t> SOCKET_COUNT;
     Ptr<Node> _sender;
     vector<Ptr<Node>> _receivers;
     double _avgRate;

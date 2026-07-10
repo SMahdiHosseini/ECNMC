@@ -5,7 +5,8 @@
 #include "ns3/applications-module.h"
 #include "DCWorkloadGenerator.h"
 
-uint32_t DCWorkloadGenerator::SOCKET_COUNT = 0;
+
+std::unordered_map<uint32_t, uint32_t> DCWorkloadGenerator::SOCKET_COUNT;
 
 DCWorkloadGenerator::DCWorkloadGenerator(const Ptr<Node>& sender, const vector<Ptr<Node>>& receivers, double avgRate, uint32_t poolSize, const string workloadPath, const string protocol, Time trafficStartTime, Time trafficEndTime) :
         _sender(sender), _receivers(receivers), _avgRate(avgRate), _poolSize(poolSize), _workloadPath(workloadPath), protocol(protocol), trafficStartTime(trafficStartTime), trafficEndTime(trafficEndTime) {}
@@ -15,7 +16,10 @@ DCWorkloadGenerator::establishPairConnections(uint32_t receiverId) {
     Ptr<Node> receiver = _receivers[receiverId];
     vector<Address> receiverAddresses;
     for (uint32_t i = 0; i < _poolSize; i++) {
-        uint32_t connectionId = ++SOCKET_COUNT;
+        if (SOCKET_COUNT.find(receiverId) == SOCKET_COUNT.end()) {
+            SOCKET_COUNT[receiverId] = 0;
+        }
+        uint32_t connectionId = ++SOCKET_COUNT[receiverId];
         InetSocketAddress receiverAddress = InetSocketAddress(GetNodeIP(receiver, 1), 4000 + connectionId);
         receiverAddresses.push_back(receiverAddress.ConvertTo());
 

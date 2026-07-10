@@ -124,8 +124,9 @@ void WorkloadApp::PrepareConnections() {
         ConnectionPool* connectionPool = new ConnectionPool(addresses[0], _protocol, GetNode(), _probeInterval);
         connectionPool->CreateSockets(addresses, _enablePacing, _probe, _probeStartTime, _probeStopTime);
         _connectionPools.push_back(connectionPool);
-        cout << "Connection Pool of: Sender Address: " << GetNode()->GetObject<Ipv4>()->GetAddress(1, 0).GetLocal() << " Receiver Address: " << InetSocketAddress::ConvertFrom(addresses[0]).GetIpv4() << " created!" << endl;
+        // cout << "Connection Pool of: Sender Address: " << GetNode()->GetObject<Ipv4>()->GetAddress(1, 0).GetLocal() << " Receiver Address: " << InetSocketAddress::ConvertFrom(addresses[0]).GetIpv4() << " created!" << endl;
     }
+    cout << "Connection Pool of: Sender Address: " << GetNode()->GetObject<Ipv4>()->GetAddress(1, 0).GetLocal() << " created!" << endl;
 }
 
 void WorkloadApp::StopApplication() {
@@ -144,18 +145,18 @@ void WorkloadApp::Send() {
     uint32_t selectedReceiver = m_uniform->GetInteger(0, _receiversNumber - 1);
     // cout << "Node " << GetNodeIP(GetNode(), 1) << " WorkloadApp sending to receiver size of: " << segmentSize << " at: " << Simulator::Now().GetNanoSeconds() << endl;
     // check if the node IP address contains "10.2."
-    stringstream ss;
-    ss << GetNodeIP(GetNode(), 1);
-    string nodeIp = ss.str();
-    if (nodeIp.find("10.2.") != string::npos || nodeIp.find("10.4.") != string::npos) {
-        stringstream receiverSs;
-        receiverSs << InetSocketAddress::ConvertFrom(_receiverAddress[selectedReceiver][0]).GetIpv4();
-        string receiverIp = receiverSs.str();
-        if (receiverIp.find("10.2.") != string::npos || receiverIp.find("10.4.") != string::npos) {
-            // cout << "Not Sending Message of size " << segmentSize << "from : " << GetNodeIP(GetNode(), 1) << " to receiver " << InetSocketAddress::ConvertFrom(_receiverAddress[selectedReceiver][0]).GetIpv4() << endl;
-            return;
-        }
-    }
+    // stringstream ss;
+    // ss << GetNodeIP(GetNode(), 1);
+    // string nodeIp = ss.str();
+    // if (nodeIp.find("10.2.") != string::npos || nodeIp.find("10.4.") != string::npos) {
+    //     stringstream receiverSs;
+    //     receiverSs << InetSocketAddress::ConvertFrom(_receiverAddress[selectedReceiver][0]).GetIpv4();
+    //     string receiverIp = receiverSs.str();
+    //     if (receiverIp.find("10.2.") != string::npos || receiverIp.find("10.4.") != string::npos) {
+    //         // cout << "Not Sending Message of size " << segmentSize << "from : " << GetNodeIP(GetNode(), 1) << " to receiver " << InetSocketAddress::ConvertFrom(_receiverAddress[selectedReceiver][0]).GetIpv4() << endl;
+    //         return;
+    //     }
+    // }
     // cout << "Node " << GetNodeIP(GetNode(), 1) << " WorkloadApp sending to receiver " << InetSocketAddress::ConvertFrom(_receiverAddress[selectedReceiver][0]).GetIpv4() << " size of: " << segmentSize << " at: " << Simulator::Now().GetNanoSeconds() << endl;
     _connectionPools[selectedReceiver]->SendData(Create<Packet>(segmentSize));
 }
