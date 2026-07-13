@@ -61,6 +61,31 @@ E2EMonitor::E2EMonitor(const Time &startTime, const Time &duration, const Time &
     Simulator::Schedule(_startTime + _duration, &E2EMonitor::Disconnect, this, netDevice, rxNode->GetId(), txNode->GetId());
 }
 
+E2EMonitor::~E2EMonitor() {
+    if (_packetsFileStream.is_open()) {
+        _packetsFileStream.close();
+    }
+    ClearRecordedPackets();
+}
+
+void E2EMonitor::InitializePacketsFile(const string &filename) {
+    if (_packetsFileInitialized) {
+        return;
+    }
+    _packetsFilePath = filename.substr(0, filename.size() - 4) + "_packets.csv";
+    _packetsFileStream.open(_packetsFilePath, ios::out | ios::trunc);
+    _packetsFileStream << "SourceIp,SourcePort,DestinationIp,DestinationPort,SequenceNb,ACKNb,Id,PayloadSize,Path,SentTime,IsReceived,ReceiveTime,transmissionDelay,ECN,Tagged" << endl;
+    _packetsFileInitialized = true;
+}
+
+void E2EMonitor::ClearRecordedPackets() {
+    for (auto &packetKeyEventPair : _recordedPackets) {
+        delete packetKeyEventPair.second->GetPacketKey();
+        delete packetKeyEventPair.second;
+    }
+    _recordedPackets.clear();
+}
+
 uint64_t E2EMonitor::GetHashValue(const Ipv4Address src, const Ipv4Address dst, const uint16_t srcPort, const uint16_t dstPort, const uint8_t protocol) {
     hasher.clear();
     std::ostringstream oss;
@@ -364,21 +389,7 @@ double E2EMonitor::calculateUnbiasedGTDrop() {
 
 }
 void E2EMonitor::SaveMonitorRecords(const string& filename) {
-    // ofstream outfile;
-    // outfile.open(filename);
-    // outfile << "path,sampleDelayMean,unbiasedSmapleDelayVariance,averagePacketSize,receivedPackets,sentPackets,markedPackets,timeAverage,sentPacketsOnLink,GTDropMean,UnbiasedGTDropMean,OWAQsize" << endl;
-    // for (int i = 0; i < numOfPaths; i++) {
-    //     outfile << i << "," << sampleMean[i] << "," << unbiasedSmapleVariance[i] << "," << sumOfPacketSizes[i] / sampleSize[i] << "," << sampleSize[i] << "," << sentPackets[i] << "," << markedPackets[i] 
-    //     << "," << timeAverageIntegral[i].GetNanoSeconds() / (integralEndTime[i] - integralStartTime[i]).GetNanoSeconds() << "," << sentPackets_onlink[i]
-    //     << "," << GTDropMean << "," << calculateUnbiasedGTDrop() 
-    //     << "," << (Time(timeAverageIntegral[i].GetNanoSeconds() / (integralEndTime[i] - integralStartTime[i]).GetNanoSeconds()) * torToAggLinkRate) / 8 << endl;
-
-    // }
-    // outfile.close();
-
-    ofstream packetsFile;
-    packetsFile.open(filename.substr(0, filename.size() - 4) + "_packets.csv");
-    packetsFile << "SourceIp,SourcePort,DestinationIp,DestinationPort,SequenceNb,ACKNb,Id,PayloadSize,Path,SentTime,IsReceived,ReceiveTime,transmissionDelay,ECN,Tagged" << endl;
+    InitializePacketsFile(filename);
     vector<PacketKey> keysToErase;
     for (auto& packetKeyEventPair: _recordedPackets) {
         PacketKey key = packetKeyEventPair.first;
@@ -397,20 +408,24 @@ void E2EMonitor::SaveMonitorRecords(const string& filename) {
                                     + torToAggLinkRate.CalculateBytesTxTime(key.GetPacketSize())
                                     + hostToTorLinkDelay * 2;
             }
-            packetsFile << key.GetSrcIp() << "," << key.GetSrcPort() << ",";
-            packetsFile << key.GetDstIp() << "," << key.GetDstPort() << "," << key.GetSeqNb() << "," << key.GetAckNb() << "," << key.GetId()  << "," << key.GetPacketSize() << ",";
-            packetsFile << event->GetPath() << ",";
-            // packetsFile << event->GetTxEnqueueTime().GetNanoSeconds() << "," << event->GetTxDequeueTime().GetNanoSeconds() << ",";
-            packetsFile << event->GetSentTime().GetNanoSeconds() << ",";
-            packetsFile << event->IsReceived() << "," << event->GetReceivedTime().GetNanoSeconds() << "," << transmissionDelay.GetNanoSeconds() << "," << event->GetEcn() << "," << event->GetPacketKey()->IsTagged() << endl;
+            _packetsFileStream << key.GetSrcIp() << "," << key.GetSrcPort() << ",";
+            _packetsFileStream << key.GetDstIp() << "," << key.GetDstPort() << "," << key.GetSeqNb() << "," << key.GetAckNb() << "," << key.GetId()  << "," << key.GetPacketSize() << ",";
+            _packetsFileStream << event->GetPath() << ",";
+            _packetsFileStream << event->GetSentTime().GetNanoSeconds() << ",";
+            _packetsFileStream << event->IsReceived() << "," << event->GetReceivedTime().GetNanoSeconds() << "," << transmissionDelay.GetNanoSeconds() << "," << event->GetEcn() << "," << event->GetPacketKey()->IsTagged() << endl;
             keysToErase.push_back(packetKeyEventPair.first);
         }
     }
     for (auto &key : keysToErase) {
-        _recordedPackets.erase(key);
+        auto packetKeyEventPair = _recordedPackets.find(key);
+        if (packetKeyEventPair != _recordedPackets.end()) {
+            delete packetKeyEventPair->second->GetPacketKey();
+            delete packetKeyEventPair->second;
+            _recordedPackets.erase(packetKeyEventPair);
+        }
     }
     keysToErase.clear();
-    packetsFile.close();
+    _packetsFileStream.flush();
 
     // ofstream markingsFile;
     // markingsFile.open(filename.substr(0, filename.size() - 4) + "_markings.csv");
