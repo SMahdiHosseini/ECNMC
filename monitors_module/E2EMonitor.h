@@ -70,9 +70,11 @@ private:
     set<AppKey> _observedAppsKey;
     Ptr<Node> _txNode;
     bool _isDifferentiate;
+    bool _connectAllRxNodes = false;
     std::vector<std::tuple<Time, uint32_t, double, Time>> markingProbProcess;
     std::unordered_map<uint64_t, Ptr<TcpSocketBase>> tracesSockets;
     std::unordered_map<PacketKey, E2EMonitorEvent*, PacketKeyHash> _recordedPackets;
+    Time _stalePacketTimeout = MilliSeconds(50);
     std::ofstream _packetsFileStream;
     std::string _packetsFilePath;
     bool _packetsFileInitialized = false;
