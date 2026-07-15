@@ -103,7 +103,11 @@ private:
     double _lastDropProb;
     uint32_t _lastQueueSize;
     uint32_t _lastTotalQueueSize;
+    bool _logFilesInitialized = false;
+    std::ofstream _eventsFileStream;
+    std::ofstream _queueSizeFileStream;
     
+    void InitializeLogFiles(const string &filename);
     void Connect(Ptr<PointToPointNetDevice> outgoingNetDevice);
     void Disconnect(Ptr<PointToPointNetDevice> outgoingNetDevice);
     void EnqueueQueueDisc(Ptr<const QueueDiscItem> item);
@@ -120,6 +124,7 @@ public:
     PoissonSampler(const Time &steadyStartTime, const Time &steadyStopTime, Ptr<RedQueueDisc> queueDisc, Ptr<Queue<Packet>> queue, Ptr<PointToPointNetDevice> outgoingNetDevice, const string &sampleTag, double sampleRate);
     PoissonSampler(const Time &steadyStartTime, const Time &steadyStopTime, Ptr<RedQueueDisc> queueDisc, Ptr<Queue<Packet>> queue, Ptr<PointToPointNetDevice> outgoingNetDevice, const string &sampleTag, double sampleRate, Ptr<PointToPointNetDevice> incomingNetDevice, Ptr<PointToPointNetDevice> incomingNetDevice_1, const string cdfFileName);
     void SaveMonitorRecords(const string &filename);
+    ~PoissonSampler();
 };
 
 #endif //ECC_SWITCHMONITOR_H

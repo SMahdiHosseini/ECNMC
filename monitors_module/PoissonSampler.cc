@@ -72,6 +72,31 @@ PoissonSampler::PoissonSampler(const Time &steadyStartTime, const Time &steadySt
     Simulator::Schedule(steadyStopTime, &PoissonSampler::Disconnect, this, outgoingNetDevice);
 }
 
+PoissonSampler::~PoissonSampler() {
+    if (_eventsFileStream.is_open()) {
+        _eventsFileStream.close();
+    }
+    if (_queueSizeFileStream.is_open()) {
+        _queueSizeFileStream.close();
+    }
+}
+
+void PoissonSampler::InitializeLogFiles(const string &filename) {
+    if (_logFilesInitialized) {
+        return;
+    }
+
+    std::string _eventsFilePath = filename.substr(0, filename.size() - 4) + "_events.csv";
+    _eventsFileStream.open(_eventsFilePath, ios::out | ios::trunc);
+    _eventsFileStream << "Time,QueuingDelay,DropProb,MarkingProb,QueueSize,TotalQueueSize,LastMarkingProb,LastDropProb,LastQueueSize,LastTotalQueueSize" << endl;
+
+    std::string _queueSizeFilePath = filename.substr(0, filename.size() - 4) + "_queueSize.csv";
+    _queueSizeFileStream.open(_queueSizeFilePath, ios::out | ios::trunc);
+    _queueSizeFileStream << "Time,QueuingDelay,DropProb,MarkingProb,QueueSize,TotalQueueSize,LastMarkingProb,Label,Action" << endl;
+
+    _logFilesInitialized = true;
+}
+
 uint32_t PoissonSampler::ComputeQueueSize() {
     uint32_t TXedBytes = (outgoingDataRate * (Simulator::Now() - lastLeftTime)) / 8;
     uint32_t remainedBytes = (lastLeftSize > TXedBytes) ? lastLeftSize - TXedBytes : 0;
@@ -216,7 +241,7 @@ void PoissonSampler::EnqueueQueueDisc(Ptr<const QueueDiscItem> item) {
     // if (ipHeader.GetSource() == Ipv4Address("10.1.1.1")) {
     //     cout << "### POISSON ### Enqueuing Time at switch of : " << ipHeader.GetIdentification() << " Time: " << Simulator::Now().GetNanoSeconds() << endl;
     // }
-    updateGTCounters();
+    // updateGTCounters();
 }
 
 void PoissonSampler::DequeueQueueDisc(Ptr<const QueueDiscItem> item) {
@@ -266,7 +291,7 @@ void PoissonSampler::DequeueQueueDisc(Ptr<const QueueDiscItem> item) {
     event.SetEventAction("D");
     queueSizeProcess.push_back(std::make_tuple(Simulator::Now(), event));
     // cout << "### POISSON ### Time: " << Simulator::Now().GetNanoSeconds() << " *** Dequeue *** " << " Queue Size: " << queueSize << " Total Queue Size: " << ComputeQueueSize() + item->GetSize() + 2 << " Queuing Delay: " << queuingDelay.GetNanoSeconds() << " packet size: " << item->GetSize() << endl;
-    updateGTCounters();
+    // updateGTCounters();
 }
 
 void PoissonSampler::EnqueueNetDeviceQueue(Ptr<const Packet> packet) {
@@ -309,14 +334,14 @@ void PoissonSampler::EnqueueNetDeviceQueue(Ptr<const Packet> packet) {
 }
 
 void PoissonSampler::Connect(Ptr<PointToPointNetDevice> outgoingNetDevice) {
-    if (REDQueueDisc != nullptr) {
-        REDQueueDisc->TraceConnectWithoutContext("Enqueue", MakeCallback(&PoissonSampler::EnqueueQueueDisc, this));
-        REDQueueDisc->TraceConnectWithoutContext("Dequeue", MakeCallback(&PoissonSampler::DequeueQueueDisc, this));
-        if (incomingNetDevice != nullptr && incomingNetDevice_1 != nullptr) {
-            incomingNetDevice->TraceConnectWithoutContext("PromiscSniffer", MakeCallback(&PoissonSampler::RecordIncomingPacket, this));
-            incomingNetDevice_1->TraceConnectWithoutContext("PromiscSniffer", MakeCallback(&PoissonSampler::RecordIncomingPacket, this));
-        }
-    }
+    // if (REDQueueDisc != nullptr) {
+    //     REDQueueDisc->TraceConnectWithoutContext("Enqueue", MakeCallback(&PoissonSampler::EnqueueQueueDisc, this));
+    //     REDQueueDisc->TraceConnectWithoutContext("Dequeue", MakeCallback(&PoissonSampler::DequeueQueueDisc, this));
+    //     if (incomingNetDevice != nullptr && incomingNetDevice_1 != nullptr) {
+    //         incomingNetDevice->TraceConnectWithoutContext("PromiscSniffer", MakeCallback(&PoissonSampler::RecordIncomingPacket, this));
+    //         incomingNetDevice_1->TraceConnectWithoutContext("PromiscSniffer", MakeCallback(&PoissonSampler::RecordIncomingPacket, this));
+    //     }
+    // }
     // NetDeviceQueue->TraceConnectWithoutContext("Enqueue", MakeCallback(&PoissonSampler::EnqueueNetDeviceQueue, this));
     outgoingNetDevice->TraceConnectWithoutContext("StartTxOut", MakeCallback(&PoissonSampler::RecordPacket, this));
     // generate the first event
@@ -326,14 +351,14 @@ void PoissonSampler::Connect(Ptr<PointToPointNetDevice> outgoingNetDevice) {
 
 void PoissonSampler::Disconnect(Ptr<PointToPointNetDevice> outgoingNetDevice) {
     outgoingNetDevice->TraceDisconnectWithoutContext("StartTxOut", MakeCallback(&PoissonSampler::RecordPacket, this));
-    if (REDQueueDisc != nullptr) {
-        REDQueueDisc->TraceDisconnectWithoutContext("Enqueue", MakeCallback(&PoissonSampler::EnqueueQueueDisc, this));
-        REDQueueDisc->TraceDisconnectWithoutContext("Dequeue", MakeCallback(&PoissonSampler::DequeueQueueDisc, this));
-        if (incomingNetDevice != nullptr && incomingNetDevice_1 != nullptr) {
-            incomingNetDevice->TraceDisconnectWithoutContext("PromiscSniffer", MakeCallback(&PoissonSampler::RecordIncomingPacket, this));
-            incomingNetDevice_1->TraceDisconnectWithoutContext("PromiscSniffer", MakeCallback(&PoissonSampler::RecordIncomingPacket, this));
-        }
-    }
+    // if (REDQueueDisc != nullptr) {
+    //     REDQueueDisc->TraceDisconnectWithoutContext("Enqueue", MakeCallback(&PoissonSampler::EnqueueQueueDisc, this));
+    //     REDQueueDisc->TraceDisconnectWithoutContext("Dequeue", MakeCallback(&PoissonSampler::DequeueQueueDisc, this));
+    //     if (incomingNetDevice != nullptr && incomingNetDevice_1 != nullptr) {
+    //         incomingNetDevice->TraceDisconnectWithoutContext("PromiscSniffer", MakeCallback(&PoissonSampler::RecordIncomingPacket, this));
+    //         incomingNetDevice_1->TraceDisconnectWithoutContext("PromiscSniffer", MakeCallback(&PoissonSampler::RecordIncomingPacket, this));
+    //     }
+    // }
     // NetDeviceQueue->TraceDisconnectWithoutContext("Enqueue", MakeCallback(&PoissonSampler::EnqueueNetDeviceQueue, this));
 }
 
@@ -416,90 +441,98 @@ void PoissonSampler::RecordPacket(Ptr<const Packet> packet) {
     pktCopy->RemoveHeader(ipHeader);
     lastLeftTime = Simulator::Now();
     lastLeftSize = packet->GetSize();
-    // if (ipHeader.GetSource() == Ipv4Address("10.1.1.1")) {
-    //     if (!(Simulator::Now() < _steadyStartTime || Simulator::Now() > _steadyStopTime)) {
-    //         cout << "### POISSON ### Start tx Time at switch of : " << ipHeader.GetIdentification() << " Time: " << Simulator::Now().GetNanoSeconds() << endl;
+    // the following lines are for the tagged packets. They are not used in the current version of the code.
+    // PacketKey* packetKey = PacketKey::Packet2PacketKey(packet, FIRST_HEADER_PPP);
+    // if (_recordedSamples.find(*packetKey) != _recordedSamples.end()) {
+    //     _recordedSamples[*packetKey]->SetDepartureTime();
+    //     updateCounters(_recordedSamples[*packetKey]);
+    //     // remove the packet from the map to reduce the memory usage of the simulation
+    //     _recordedSamples.erase(*packetKey);
+    //     // bool ECNFlag = false;
+    //     // if (REDQueueDisc == nullptr) {
+    //     //     const Ptr<Packet> &pktCopy = packet->Copy();
+    //     //     PppHeader pppHeader;
+    //     //     Ipv4Header header;
+    //     //     pktCopy->RemoveHeader(pppHeader);
+    //     //     pktCopy->RemoveHeader(header);
+    //     //     if (header.EcnTypeToString(header.GetEcn()) == "CE") {
+    //     //         _recordedSamples[*packetKey]->SetMarkingProb(1.0);
+    //     //         ECNFlag = true;
+    //     //     }
+    //     // }
+
+    //     // check if there exists a packet with the same key but different record field
+    //     packetKey->SetRecords(packetKey->GetRecords() + 1);
+    //     while (_recordedSamples.find(*packetKey) != _recordedSamples.end())
+    //     {
+    //         _recordedSamples[*packetKey]->SetDepartureTime();
+    //         updateCounters(_recordedSamples[*packetKey]);
+    //         // remove the packet from the map to reduce the memory usage of the simulation
+    //         _recordedSamples.erase(*packetKey);
+    //         // if (ECNFlag) {
+    //         //     _recordedSamples[*packetKey]->SetMarkingProb(1.0);
+    //         // }
+    //         packetKey->SetRecords(packetKey->GetRecords() + 1);
     //     }
     // }
-    PacketKey* packetKey = PacketKey::Packet2PacketKey(packet, FIRST_HEADER_PPP);
-    if (_recordedSamples.find(*packetKey) != _recordedSamples.end()) {
-        _recordedSamples[*packetKey]->SetDepartureTime();
-        updateCounters(_recordedSamples[*packetKey]);
-        // remove the packet from the map to reduce the memory usage of the simulation
-        _recordedSamples.erase(*packetKey);
-        // bool ECNFlag = false;
-        // if (REDQueueDisc == nullptr) {
-        //     const Ptr<Packet> &pktCopy = packet->Copy();
-        //     PppHeader pppHeader;
-        //     Ipv4Header header;
-        //     pktCopy->RemoveHeader(pppHeader);
-        //     pktCopy->RemoveHeader(header);
-        //     if (header.EcnTypeToString(header.GetEcn()) == "CE") {
-        //         _recordedSamples[*packetKey]->SetMarkingProb(1.0);
-        //         ECNFlag = true;
-        //     }
-        // }
 
-        // check if there exists a packet with the same key but different record field
-        packetKey->SetRecords(packetKey->GetRecords() + 1);
-        while (_recordedSamples.find(*packetKey) != _recordedSamples.end())
-        {
-            _recordedSamples[*packetKey]->SetDepartureTime();
-            updateCounters(_recordedSamples[*packetKey]);
-            // remove the packet from the map to reduce the memory usage of the simulation
-            _recordedSamples.erase(*packetKey);
-            // if (ECNFlag) {
-            //     _recordedSamples[*packetKey]->SetMarkingProb(1.0);
-            // }
-            packetKey->SetRecords(packetKey->GetRecords() + 1);
+    Time queuingDelay = outgoingDataRate.CalculateBytesTxTime(REDQueueDisc->GetNBytes() + NetDeviceQueue->GetNBytes() + packet->GetSize() + 2);
+    double dropProbDynamicCDF = packetCDF.calculateProbabilityGreaterThan(REDQueueDisc->GetMaxSize().GetValue() - REDQueueDisc->GetNBytes());
+    double markingProbDynamic = REDQueueDisc->GetMarkingProbability();
+
+    samplingEvent event = samplingEvent();
+    event.SetSampleTime(Simulator::Now());
+    event.SetDepartureTime(Simulator::Now() + queuingDelay);
+    event.SetLossProb(dropProbDynamicCDF);
+    event.SetMarkingProb(markingProbDynamic);
+    event.SetQueueSize(REDQueueDisc->GetNBytes());
+    event.SetTotalQueueSize(ComputeQueueSize());
+    event.SetLastMarkingProb(REDQueueDisc->_lastMarkingProb);
+    uint16_t sourcePort = 0;
+    if (ipHeader.GetFragmentOffset() == 0) {
+        if (ipHeader.GetProtocol() == 6) {
+            TcpHeader tcpHeader;
+            pktCopy->PeekHeader(tcpHeader);
+            sourcePort = tcpHeader.GetSourcePort();
+        }
+        else if (ipHeader.GetProtocol() == 17) {
+            UdpHeader udpHeader;
+            pktCopy->PeekHeader(udpHeader);
+            sourcePort = udpHeader.GetSourcePort();
         }
     }
+    std::ostringstream oss;
+    ipHeader.GetSource().Print(oss);
+    std::string headerString = oss.str();
+    string label = headerString + ":" + to_string(sourcePort);
+    event.SetLabel(label);
+    event.SetEventAction("D");
+    queueSizeProcess.push_back(std::make_tuple(Simulator::Now(), event));
+    _lastDropProb = packetCDF.calculateProbabilityGreaterThan(REDQueueDisc->GetMaxSize().GetValue() - REDQueueDisc->GetNBytes());
+    _lastQueueSize = REDQueueDisc->GetNBytes() + packet->GetSize() + 2;
+    _lastTotalQueueSize = ComputeQueueSize() + packet->GetSize() + 2;
 }
 
 
 void PoissonSampler::SaveMonitorRecords(const string& filename) {
-    // ofstream outfile;
-    // outfile.open(filename);
-    // outfile << "sampleDelayMean,unbiasedSmapleDelayVariance,sampleSize,samplesDropMean,samplesDropVariance,samplesMarkingProbMean,samplesMarkingProbVariance,GTSampleSize,GTPacketSizeMean,GTDropMean,GTQueuingDelay,GTMarkingProbMean" << endl;
-    // outfile << sampleMean[0] << "," << unbiasedSmapleVariance[0] << "," << sampleSize[0] << "," << samplesLossProbMean << "," << samplesLossProbVariance << "," << samplesMarkingProbMean << "," << samplesMarkingProbVariance
-    // << "," << numOfGTSamples << "," << GTPacketSizeMean << "," << GTDropMean << "," << GTQueuingDelay << "," << GTMarkingProbMean << endl;
-    // outfile.close();
-
-    ofstream eventsFile;
-    eventsFile.open(filename.substr(0, filename.size() - 4) + "_events.csv");
-
-    eventsFile << "Time,QueuingDelay,DropProb,MarkingProb,QueueSize,TotalQueueSize,LastMarkingProb,LastDropProb,LastQueueSize,LastTotalQueueSize" << endl;
+    InitializeLogFiles(filename);
     for (auto &item : _recordedSamples) {
-        eventsFile << item.second->GetSampleTime().GetNanoSeconds() << "," << (item.second->GetDepartureTime() - item.second->GetSampleTime()).GetNanoSeconds() << "," << item.second->GetLossProb() << "," << item.second->GetMarkingProb() << "," << item.second->GetQueueSize() << 
+        _eventsFileStream << item.second->GetSampleTime().GetNanoSeconds() << "," << (item.second->GetDepartureTime() - item.second->GetSampleTime()).GetNanoSeconds() << "," << item.second->GetLossProb() << "," << item.second->GetMarkingProb() << "," << item.second->GetQueueSize() << 
         "," << item.second->GetTotalQueueSize() << "," << item.second->GetLastMarkingProb() << "," << item.second->GetLastDropProb() << "," << item.second->GetLastQueueSize() << "," << item.second->GetLastTotalQueueSize() << endl;
+        
+        delete item.second->GetPacketKey();
+        delete item.second;
     }
     _recordedSamples.clear();
-    eventsFile.close();
+    _eventsFileStream.flush();
 
-    ofstream queueSizeFile;
-    queueSizeFile.open(filename.substr(0, filename.size() - 4) + "_queueSize.csv");
-    queueSizeFile << "Time,QueuingDelay,DropProb,MarkingProb,QueueSize,TotalQueueSize,LastMarkingProb,Label,Action" << endl;
     for (auto &item : queueSizeProcess) {
         samplingEvent event = std::get<1>(item);
-        queueSizeFile << std::get<0>(item).GetNanoSeconds() << "," << (event.GetDepartureTime() - event.GetSampleTime()).GetNanoSeconds() << "," << event.GetLossProb() << "," << event.GetMarkingProb() << "," << event.GetQueueSize() << 
+        _queueSizeFileStream << std::get<0>(item).GetNanoSeconds() << "," << (event.GetDepartureTime() - event.GetSampleTime()).GetNanoSeconds() << "," << event.GetLossProb() << "," << event.GetMarkingProb() << "," << event.GetQueueSize() << 
         "," << event.GetTotalQueueSize() << "," << event.GetLastMarkingProb() << "," << event.GetLabel() << "," << event.GetEventAction() << endl;
+
+        delete event.GetPacketKey();
     }
-    // erase the events to reduce memory usage
     queueSizeProcess.clear();
-    queueSizeFile.close();
-
-    // ofstream queueSizeByPacketsFile;
-    // queueSizeByPacketsFile.open(filename.substr(0, filename.size() - 4) + "_queueSizeByPackets.csv");
-    // queueSizeByPacketsFile << "Time,QueuingDelay,DropProb,MarkingProb,QueueSize,TotalQueueSize,LastMarkingProb,Label,Action" << endl;
-    // for (auto &item : queueSizeProcessByPackets) {
-    //     samplingEvent event = std::get<1>(item);
-    //     queueSizeByPacketsFile << std::get<0>(item).GetNanoSeconds() << "," << (event.GetDepartureTime() - event.GetSampleTime()).GetNanoSeconds() << "," << event.GetLossProb() << "," << event.GetMarkingProb() << "," << event.GetQueueSize() << 
-    //     "," << event.GetTotalQueueSize() << "," << event.GetLastMarkingProb() << "," << event.GetLabel() << "," << event.GetEventAction() << endl;
-    // }
-    // queueSizeByPacketsFile.close();
-
-    // if (_monitorTag == "SD0") {
-    //     // packetCDF.printCDF();
-    //     packetCDF.saveCDFData();
-    // }
+    _queueSizeFileStream.flush();
 }
