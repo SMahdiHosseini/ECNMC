@@ -1,8 +1,10 @@
 import os
 import time
+import csv
 import configparser
 import threading
 import argparse
+from datetime import datetime
 from enum import Enum
 import subprocess
 import random
@@ -105,37 +107,159 @@ def get_ns3_path(): return __ns3_path
 def rebuild_project():
     os.system('{}/ns3 build'.format(get_ns3_path()))
 
-def run_ns3_with_timeout(base_cmd, output_file, timeout_seconds=180, initial_seed=1):
+def monitor_simulation_memory(process, output_csv, stop_event, interval=0.5):
+    """Write aggregate memory usage for an ns-3 launcher and its process tree."""
+    os.makedirs(os.path.dirname(output_csv) or ".", exist_ok=True)
+    start = time.monotonic()
+    rss_samples = []
+    vms_samples = []
+    elapsed_samples = []
+    known_processes = {}
+
+    with open(output_csv, "w", newline="") as csv_file:
+        writer = csv.writer(csv_file)
+        writer.writerow([
+            "timestamp", "elapsed_sec", "rss_MB", "vms_MB",
+            "cpu_percent", "threads",
+        ])
+
+        while not stop_event.is_set():
+            try:
+                root = psutil.Process(process.pid)
+                discovered = [root] + root.children(recursive=True)
+                for discovered_proc in discovered:
+                    known_processes.setdefault(discovered_proc.pid, discovered_proc)
+                processes = [known_processes[proc.pid] for proc in discovered]
+            except psutil.NoSuchProcess:
+                break
+
+            rss_bytes = 0
+            vms_bytes = 0
+            cpu_percent = 0.0
+            threads = 0
+            sampled_pids = set()
+
+            for proc in processes:
+                if proc.pid in sampled_pids:
+                    continue
+                sampled_pids.add(proc.pid)
+                try:
+                    memory = proc.memory_info()
+                    rss_bytes += memory.rss
+                    vms_bytes += memory.vms
+                    cpu_percent += proc.cpu_percent(interval=None)
+                    threads += proc.num_threads()
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    continue
+
+            rss_mb = rss_bytes / 1024**2
+            vms_mb = vms_bytes / 1024**2
+            rss_samples.append(rss_mb)
+            vms_samples.append(vms_mb)
+            elapsed = time.monotonic() - start
+            elapsed_samples.append(elapsed)
+            writer.writerow([
+                datetime.now().isoformat(timespec="seconds"),
+                round(elapsed, 3),
+                round(rss_mb, 3),
+                round(vms_mb, 3),
+                round(cpu_percent, 1),
+                threads,
+            ])
+            csv_file.flush()
+
+            if process.poll() is not None:
+                break
+            stop_event.wait(interval)
+
+    if rss_samples:
+        print(
+            "Memory monitor: {} samples, peak RSS {:.2f} MB, "
+            "average RSS {:.2f} MB, peak VMS {:.2f} MB -> {}".format(
+                len(rss_samples), max(rss_samples),
+                sum(rss_samples) / len(rss_samples), max(vms_samples),
+                output_csv,
+            )
+        )
+    else:
+        print("Memory monitor: no samples collected -> {}".format(output_csv))
+
+
+    if rss_samples:
+        plot_output = os.path.splitext(output_csv)[0] + ".png"
+        try:
+            import matplotlib.pyplot as plt
+
+            plt.figure(figsize=(10,5))
+            plt.plot(elapsed_samples, rss_samples, linewidth=2, label="RSS")
+            plt.plot(elapsed_samples, vms_samples, linewidth=2, label="VMS")
+
+            plt.xlabel("Time (s)")
+            plt.ylabel("Memory (MB)")
+            plt.title("NS-3 Memory Usage")
+            plt.grid(True)
+            plt.legend()
+
+            plt.tight_layout()
+            plt.savefig(plot_output, dpi=300)
+
+            print(f"CSV saved to  : {output_csv}")
+            print(f"Plot saved to : {plot_output}")
+        except Exception as error:
+            print(
+                "Unable to create memory plot {}: {}".format(
+                    plot_output, error
+                )
+            )
+
+
+def run_ns3_with_timeout(base_cmd, output_file, timeout_seconds=180,
+                         initial_seed=1, memory_output_file=None,
+                         memory_interval=30):
     seed = initial_seed or int(time.time())
     attempt = 1
 
     while attempt <= 1:
         print(f"Attempt {attempt}: Running simulation with seed {seed}")
-
-        # Add the seed to the command
         full_cmd = f"{base_cmd} --seed={seed} \' > {output_file}"
 
         try:
-            # Start the process
             process = subprocess.Popen(full_cmd, shell=True)
             proc = psutil.Process(process.pid)
+            memory_stop_event = threading.Event()
+            monitor_csv = memory_output_file or "{}_memory_usage.csv".format(
+                os.path.splitext(output_file)[0]
+            )
+            memory_thread = threading.Thread(
+                target=monitor_simulation_memory,
+                args=(process, monitor_csv, memory_stop_event, memory_interval),
+                name="ns3-memory-monitor-{}".format(process.pid),
+            )
+            memory_thread.start()
 
-            # Wait for the timeout
             try:
                 process.wait(timeout=timeout_seconds)
-                print(f"Simulation completed successfully with seed {seed}")
-                break  # success
+                if process.returncode == 0:
+                    print(f"Simulation completed successfully with seed {seed}")
+                else:
+                    print(
+                        f"Simulation with seed {seed} exited with status "
+                        f"{process.returncode}"
+                    )
+                break
             except subprocess.TimeoutExpired:
                 print(f"Timeout expired for seed {seed}. Killing process tree...")
                 for child in proc.children(recursive=True):
                     child.kill()
                 proc.kill()
-                time.sleep(1)  # Give the system a moment to reclaim resources
+                time.sleep(1)
+            finally:
+                memory_stop_event.set()
+                memory_thread.join()
 
         except Exception as e:
             print(f"Error running simulation with seed {seed}: {e}")
 
-        # Retry with a new seed
         seed = int(time.time()) + random.randint(0, 10000)
         attempt += 1
 
@@ -230,9 +354,16 @@ def run_forward_experiment(exp, singleQueue=False):
                             '--incastperiod={} '.format(expConfig.incastperiod)
                         )
                     output_file = '{}/scratch/ECNMC/Results/results_forward/result_{}.txt'.format(get_ns3_path(), i)
-                    run_ns3_with_timeout(cmd, output_file, timeout_seconds=72000, initial_seed=i + 1)
+                    memory_output_file = (
+                        '{}/scratch/ECNMC/Results/results_forward/{}/memory_usage.csv'
+                        .format(get_ns3_path(), i + 1)
+                    )
+                    run_ns3_with_timeout(
+                        cmd, output_file, timeout_seconds=120,
+                        initial_seed=i + 1, memory_output_file=memory_output_file)
                     os.system('mkdir -p {}/scratch/Results_forward/{}/{}/{}/{}'.format(get_ns3_path(), traffic, rate, load, i))
                     os.system('mv {}/scratch/ECNMC/Results/results_forward/{}/*.csv {}/scratch/Results_forward/{}/{}/{}/{}'.format(get_ns3_path(), i + 1, get_ns3_path(), traffic, rate, load, i))
+                    os.system('mv {}/scratch/ECNMC/Results/results_forward/{}/*.png {}/scratch/Results_forward/{}/{}/{}/{}'.format(get_ns3_path(), i + 1, get_ns3_path(), traffic, rate, load, i))
                     # os.system('mv {}/scratch/ECNMC/Results/*_cwnd.csv {}/scratch/Results_forward/{}/{}'.format(get_ns3_path(), get_ns3_path(), rate, i))
                     os.system('mkdir -p {}/scratch/ECNMC/Results/results_forward/{}/{}/{}'.format(get_ns3_path(), traffic, rate, load))
                     print('\tExperiment {} with rate {} and load {} done'.format(i, rate, load))
@@ -336,9 +467,16 @@ def run_reverse_experiment(exp, singleQueue=False, type=ReverseType.Delay):
                                     '--incastperiod={} '.format(expConfig.incastperiod)
                                 )
                             output_file = '{}/scratch/ECNMC/Results/results_reverse_{}/result_{}.txt'.format(get_ns3_path(), type_name, i)
-                            run_ns3_with_timeout(cmd, output_file, timeout_seconds=72000, initial_seed=i + 1)
+                            memory_output_file = (
+                                '{}/scratch/ECNMC/Results/results_reverse_{}/{}/memory_usage.csv'
+                                .format(get_ns3_path(), type_name, i + 1)
+                            )
+                            run_ns3_with_timeout(
+                                cmd, output_file, timeout_seconds=72000,
+                                initial_seed=i + 1, memory_output_file=memory_output_file)
                             os.system('mkdir -p {}/scratch/Results_reverse_{}/{}/{}/{}/D_{}/f_{}/{}'.format(get_ns3_path(), type_name, traffic, CRate, load, DiffRate, errorRate, i))
                             os.system('mv {}/scratch/ECNMC/Results/results_reverse_{}/{}/*.csv {}/scratch/Results_reverse_{}/{}/{}/{}/D_{}/f_{}/{}'.format(get_ns3_path(), type_name, i + 1, get_ns3_path(), type_name, traffic, CRate, load, DiffRate, errorRate, i))
+                            os.system('mv {}/scratch/ECNMC/Results/results_reverse_{}/{}/*.png {}/scratch/Results_reverse_{}/{}/{}/{}/D_{}/f_{}/{}'.format(get_ns3_path(), type_name, i + 1, get_ns3_path(), type_name, traffic, CRate, load, DiffRate, errorRate, i))
                             os.system('mkdir -p {}/scratch/ECNMC/Results/results_reverse_{}/{}/{}/{}/D_{}/f_{}'.format(get_ns3_path(), type_name, traffic, CRate, load, DiffRate, errorRate))
                             print('\tExperiment {} with {} rate {} load {} and diff {} with fraction {} done'.format(i, traffic, CRate, load, DiffRate, errorRate))
                         print('traffic {} Rate {} load {}, diff {} with fraction {} done'.format(traffic, CRate, load, DiffRate, errorRate))
@@ -356,7 +494,7 @@ def run_param_experiments(exp):
         exp_sampleRate = "{}".format(float(expConfig.sampleRate) * rate)
         for i in exp:
             os.system('mkdir -p {}/scratch/ECNMC/Results/results_params/{}'.format(get_ns3_path(), i + 1))
-            os.system(
+            cmd = (
                 '{}/ns3 run \'DatacenterSimulation '.format(get_ns3_path()) +
                 '--hostToTorLinkRate={} '.format(expConfig.host_to_tor_link_rate) +
                 '--hostToTorLinkRateCrossTraffic={} '.format(expConfig.host_to_tor_cross_traffic_rate) +
@@ -375,12 +513,23 @@ def run_param_experiments(exp):
                 '--trafficStopTime={} '.format((i + 1) * float(expConfig.duration)) +
                 '--steadyStartTime={} '.format(expConfig.steadyStart) +
                 '--steadyStopTime={} '.format(expConfig.steadyEnd) +
-                '--dirName=' + 'params' +
-                '\' > {}/scratch/ECNMC/Results/results_params/result_{}.txt'.format(get_ns3_path(), i)
+                '--dirName=' + 'params '
             )
+            output_file = (
+                '{}/scratch/ECNMC/Results/results_params/result_{}.txt'
+                .format(get_ns3_path(), i)
+            )
+            memory_output_file = (
+                '{}/scratch/ECNMC/Results/results_params/{}/memory_usage.csv'
+                .format(get_ns3_path(), i + 1)
+            )
+            run_ns3_with_timeout(
+                cmd, output_file, timeout_seconds=72000,
+                initial_seed=i + 1, memory_output_file=memory_output_file)
     
             os.system('mkdir -p {}/scratch/Results_params/{}/{}'.format(get_ns3_path(), rate, i))
             os.system('mv {}/scratch/ECNMC/Results/results_params/{}/*.csv {}/scratch/Results_params/{}/{}'.format(get_ns3_path(), i + 1, get_ns3_path(), rate, i))
+            os.system('mv {}/scratch/ECNMC/Results/results_params/{}/*.png {}/scratch/Results_params/{}/{}'.format(get_ns3_path(), i + 1, get_ns3_path(), rate, i))
             os.system('mkdir -p {}/scratch/ECNMC/Results/results_params/{}'.format(get_ns3_path(), rate))
             print('\tExperiment {} done'.format(i))
         print('Rate {} done'.format(rate))
@@ -388,11 +537,11 @@ def run_param_experiments(exp):
 def run_burst_experiment(exp, rate):
     expConfig = ExperimentConfig()
     expConfig.read_config_file('Parameters.config')
-    os.system('mkdir -p {}/scratch/ECNMC/results_burst/'.format(get_ns3_path()))
+    os.system('mkdir -p {}/scratch/ECNMC/Results/results_burst/'.format(get_ns3_path()))
     exp_tor_to_agg_link_rate = "{}Mbps".format(round(float(expConfig.tor_to_agg_link_rate.split('M')[0]) * rate, 1))
     for i in exp:
-        os.system('mkdir -p {}/scratch/ECNMC/results_burst/{}'.format(get_ns3_path(), i + 1))
-        os.system(
+        os.system('mkdir -p {}/scratch/ECNMC/Results/results_burst/{}'.format(get_ns3_path(), i + 1))
+        cmd = (
             '{}/ns3 run \'DatacenterSimulation '.format(get_ns3_path()) +
             '--hostToTorLinkRate={} '.format(expConfig.host_to_tor_link_rate) +
             '--hostToTorLinkRateCrossTraffic={} '.format(expConfig.host_to_tor_cross_traffic_rate) +
@@ -411,12 +560,23 @@ def run_burst_experiment(exp, rate):
             '--trafficStopTime={} '.format((i + 1) * float(expConfig.duration)) +
             '--steadyStartTime={} '.format(expConfig.steadyStart) +
             '--steadyStopTime={} '.format(expConfig.steadyEnd) +
-            '--dirName=' + 'burst' +
-            '\' > {}/scratch/ECNMC/Results/results_burst/result_{}.txt'.format(get_ns3_path(), i)
+            '--dirName=' + 'burst '
         )
+        output_file = (
+            '{}/scratch/ECNMC/Results/results_burst/result_{}.txt'
+            .format(get_ns3_path(), i)
+        )
+        memory_output_file = (
+            '{}/scratch/ECNMC/Results/results_burst/{}/memory_usage.csv'
+            .format(get_ns3_path(), i + 1)
+        )
+        run_ns3_with_timeout(
+            cmd, output_file, timeout_seconds=72000,
+            initial_seed=i + 1, memory_output_file=memory_output_file)
 
         os.system('mkdir -p {}/scratch/Results_burst/{}/{}'.format(get_ns3_path(), rate, 0))
         os.system('mv {}/scratch/ECNMC/Results/results_burst/{}/*.csv {}/scratch/Results_burst/{}/{}'.format(get_ns3_path(), i + 1, get_ns3_path(), rate, 0))
+        os.system('mv {}/scratch/ECNMC/Results/results_burst/{}/*.png {}/scratch/Results_burst/{}/{}'.format(get_ns3_path(), i + 1, get_ns3_path(), rate, 0))
         os.system('mkdir -p {}/scratch/ECNMC/Results/results_burst/{}'.format(get_ns3_path(), rate))
         print('\tExperiment {} done'.format(i))
         print('Rate {} done'.format(rate))
@@ -465,7 +625,7 @@ if (args.IsForward == 1):
         expConfig.read_config_file('Parameters.config')
         expConfig.experiments = int(expConfig.experiments)
         ths = []
-        numOfThs = 10
+        numOfThs = 2
         for th in range(numOfThs):
             ths.append(threading.Thread(target=run_forward_experiment, args=([i for i in range(int(th * expConfig.experiments / numOfThs), int((th + 1) * expConfig.experiments / numOfThs))], args.IsSingleQueue, )))
 
@@ -482,7 +642,7 @@ elif(args.IsForward == 0):
         expConfig.read_config_file('Parameters.config')
         expConfig.experiments = int(expConfig.experiments)
         ths = []
-        numOfThs = 15
+        numOfThs = 2
         for th in range(numOfThs):
             ths.append(threading.Thread(target=run_reverse_experiment, args=([i for i in range(int(th * expConfig.experiments / numOfThs), int((th + 1) * expConfig.experiments / numOfThs))], args.IsSingleQueue, args.reverseType, )))
 
