@@ -4,12 +4,15 @@ import csv
 import configparser
 import threading
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from enum import Enum
 import subprocess
 import random
 import psutil
 # __ns3_path = os.popen('locate "ns-3.41" | grep /ns-3.41$').read().splitlines()[0]
+MAX_SIMULATION_THREADS = 4
+_PLOT_LOCK = threading.Lock()
 __ns3_path = "/media/experiments/ns-allinone-3.41/ns-3.41"
 # __ns3_path = '/Users/shossein/Documents/NAL/Flwo-Path_Consistency/ns-allinone-3.41/ns-3.41'
 
@@ -187,6 +190,7 @@ def monitor_simulation_memory(process, output_csv, stop_event, interval=0.5):
 
     if rss_samples:
         plot_output = os.path.splitext(output_csv)[0] + ".png"
+        _PLOT_LOCK.acquire()
         try:
             import matplotlib.pyplot as plt
 
@@ -202,6 +206,7 @@ def monitor_simulation_memory(process, output_csv, stop_event, interval=0.5):
 
             plt.tight_layout()
             plt.savefig(plot_output, dpi=300)
+            plt.close()
 
             print(f"CSV saved to  : {output_csv}")
             print(f"Plot saved to : {plot_output}")
@@ -212,6 +217,9 @@ def monitor_simulation_memory(process, output_csv, stop_event, interval=0.5):
                 )
             )
 
+
+        finally:
+            _PLOT_LOCK.release()
 
 def run_ns3_with_timeout(base_cmd, output_file, timeout_seconds=180,
                          initial_seed=1, memory_output_file=None,
@@ -263,9 +271,10 @@ def run_ns3_with_timeout(base_cmd, output_file, timeout_seconds=180,
         seed = int(time.time()) + random.randint(0, 10000)
         attempt += 1
 
-def run_forward_experiment(exp, singleQueue=False):
+def run_forward_experiment(exp, singleQueue=False, loads=None):
     expConfig = ExperimentConfig()
     expConfig.read_config_file('Parameters.config')
+    selected_loads = expConfig.load if loads is None else loads
     expConfig.isDifferentating = False
     expConfig.silentPacketDrop = False
     os.system('mkdir -p {}/scratch/ECNMC/Results/results_forward/'.format(get_ns3_path()))
@@ -278,9 +287,10 @@ def run_forward_experiment(exp, singleQueue=False):
             exp_switchREDQueueDiscMaxSize = "{}KB".format(round(float(expConfig.switchREDQueueDiscMaxSize.split('K')[0]) * rate, 1))
             # exp_errorRate = "{}".format(float(expConfig.errorRate) * expConfig.errorRateScale[0])
             exp_errorRate = "0.0"
-            for load in expConfig.load:
+            for load in selected_loads:
+                staging_name = 'forward_load_{}'.format(load)
                 for i in exp:
-                    os.system('mkdir -p {}/scratch/ECNMC/Results/results_forward/{}'.format(get_ns3_path(), i + 1))
+                    os.system('mkdir -p {}/scratch/ECNMC/Results/results_{}/{}'.format(get_ns3_path(), staging_name, i + 1))
                     if singleQueue:
                         # NS_LOG="DefaultSimulatorImpl=*" 
                         cmd = ('{}/ns3 run \'DatacenterSimulation '.format(get_ns3_path()) +
@@ -304,7 +314,7 @@ def run_forward_experiment(exp, singleQueue=False):
                             '--switchTXMaxSize={} '.format(expConfig.switchTXMaxSize) +
                             '--minTh={} '.format(expConfig.MinTh) +
                             '--maxTh={} '.format(expConfig.MaxTh) +
-                            '--dirName=' + 'forward ' +
+                            '--dirName={} '.format(staging_name) +
                             '--traffic={} '.format(traffic) +
                             '--Nagle={} '.format(expConfig.NagleIsEnabled) +
                             '--ActiveProbe={} '.format(expConfig.ActiveProbeIsEnabled) +
@@ -340,7 +350,7 @@ def run_forward_experiment(exp, singleQueue=False):
                             '--switchTXMaxSize={} '.format(expConfig.switchTXMaxSize) +
                             '--minTh={} '.format(expConfig.MinTh) +
                             '--maxTh={} '.format(expConfig.MaxTh) +
-                            '--dirName=' + 'forward ' +
+                            '--dirName={} '.format(staging_name) +
                             '--traffic={} '.format(traffic) +
                             '--Nagle={} '.format(expConfig.NagleIsEnabled) +
                             '--ActiveProbe={} '.format(expConfig.ActiveProbeIsEnabled) +
@@ -353,17 +363,17 @@ def run_forward_experiment(exp, singleQueue=False):
                             '--incastFactor={} '.format(expConfig.incastFactor) +
                             '--incastperiod={} '.format(expConfig.incastperiod)
                         )
-                    output_file = '{}/scratch/ECNMC/Results/results_forward/result_{}.txt'.format(get_ns3_path(), i)
+                    output_file = '{}/scratch/ECNMC/Results/results_{}/result_{}.txt'.format(get_ns3_path(), staging_name, i)
                     memory_output_file = (
-                        '{}/scratch/ECNMC/Results/results_forward/{}/memory_usage.csv'
-                        .format(get_ns3_path(), i + 1)
+                        '{}/scratch/ECNMC/Results/results_{}/{}/memory_usage.csv'
+                        .format(get_ns3_path(), staging_name, i + 1)
                     )
                     run_ns3_with_timeout(
                         cmd, output_file, timeout_seconds=120,
                         initial_seed=i + 1, memory_output_file=memory_output_file)
                     os.system('mkdir -p {}/scratch/Results_forward/{}/{}/{}/{}'.format(get_ns3_path(), traffic, rate, load, i))
-                    os.system('mv {}/scratch/ECNMC/Results/results_forward/{}/*.csv {}/scratch/Results_forward/{}/{}/{}/{}'.format(get_ns3_path(), i + 1, get_ns3_path(), traffic, rate, load, i))
-                    os.system('mv {}/scratch/ECNMC/Results/results_forward/{}/*.png {}/scratch/Results_forward/{}/{}/{}/{}'.format(get_ns3_path(), i + 1, get_ns3_path(), traffic, rate, load, i))
+                    os.system('mv {}/scratch/ECNMC/Results/results_{}/{}/*.csv {}/scratch/Results_forward/{}/{}/{}/{}'.format(get_ns3_path(), staging_name, i + 1, get_ns3_path(), traffic, rate, load, i))
+                    os.system('mv {}/scratch/ECNMC/Results/results_{}/{}/*.png {}/scratch/Results_forward/{}/{}/{}/{}'.format(get_ns3_path(), staging_name, i + 1, get_ns3_path(), traffic, rate, load, i))
                     # os.system('mv {}/scratch/ECNMC/Results/*_cwnd.csv {}/scratch/Results_forward/{}/{}'.format(get_ns3_path(), get_ns3_path(), rate, i))
                     os.system('mkdir -p {}/scratch/ECNMC/Results/results_forward/{}/{}/{}'.format(get_ns3_path(), traffic, rate, load))
                     print('\tExperiment {} with rate {} and load {} done'.format(i, rate, load))
@@ -371,9 +381,11 @@ def run_forward_experiment(exp, singleQueue=False):
             print('Rate {} done'.format(rate))
         print('Traffic {} done'.format(traffic))
 
-def run_reverse_experiment(exp, singleQueue=False, type=ReverseType.Delay):
+def run_reverse_experiment(exp, singleQueue=False, type=ReverseType.Delay,
+                           loads=None):
     expConfig = ExperimentConfig()
     expConfig.read_config_file('Parameters.config')
+    selected_loads = expConfig.load if loads is None else loads
     type_name = 'delay' if type == ReverseType.Delay else 'loss'
     if type == ReverseType.Delay:
         expConfig.isDifferentating = True
@@ -385,14 +397,15 @@ def run_reverse_experiment(exp, singleQueue=False, type=ReverseType.Delay):
     os.system('cp Parameters.config {}/scratch/ECNMC/Results/results_reverse_{}/'.format(get_ns3_path(), type_name))
     for traffic in expConfig.traffic:
         for CRate in expConfig.serviceRateScales:
-            for load in expConfig.load:
+            for load in selected_loads:
+                staging_name = 'reverse_{}_load_{}'.format(type_name, load)
                 for DiffRate in expConfig.differentiationDelay: 
                     for errorRate in expConfig.errorRate:
                         exp_tor_to_agg_link_rate = "{}Mbps".format(round(float(expConfig.tor_to_agg_link_rate.split('M')[0]) * CRate, 1))
                         exp_bottleNeckLinkRate = "{}Mbps".format(round(float(expConfig.bottleneckLinkRate.split('M')[0]) * CRate, 1))
                         exp_switchREDQueueDiscMaxSize = "{}KB".format(round(float(expConfig.switchREDQueueDiscMaxSize.split('K')[0]) * CRate, 1))
                         for i in exp:
-                            os.system('mkdir -p {}/scratch/ECNMC/Results/results_reverse_{}/{}'.format(get_ns3_path(), type_name, i + 1))
+                            os.system('mkdir -p {}/scratch/ECNMC/Results/results_{}/{}'.format(get_ns3_path(), staging_name, i + 1))
                             if singleQueue:
                                 cmd = (
                                     '{}/ns3 run \'DatacenterSimulation '.format(get_ns3_path()) +
@@ -416,7 +429,7 @@ def run_reverse_experiment(exp, singleQueue=False, type=ReverseType.Delay):
                                     '--switchTXMaxSize={} '.format(expConfig.switchTXMaxSize) +
                                     '--minTh={} '.format(expConfig.MinTh) +
                                     '--maxTh={} '.format(expConfig.MaxTh) +
-                                    '--dirName=' + 'reverse ' +
+                                    '--dirName={} '.format(staging_name) +
                                     '--traffic={} '.format(traffic) +
                                     '--Nagle={} '.format(expConfig.NagleIsEnabled) +
                                     '--ActiveProbe={} '.format(expConfig.ActiveProbeIsEnabled) +
@@ -425,7 +438,7 @@ def run_reverse_experiment(exp, singleQueue=False, type=ReverseType.Delay):
                                     '--differentiationDelay={} '.format(DiffRate) +
                                     '--isDifferentating={} '.format(expConfig.isDifferentating) +
                                     '--silentPacketDrop={} '.format(expConfig.silentPacketDrop) + 
-                                    '--dirName=' + 'reverse_{} '.format(type_name)
+                                    '--dirName={} '.format(staging_name)
                                 )
                             else:
                                 cmd = (
@@ -453,7 +466,7 @@ def run_reverse_experiment(exp, singleQueue=False, type=ReverseType.Delay):
                                     '--switchTXMaxSize={} '.format(expConfig.switchTXMaxSize) +
                                     '--minTh={} '.format(expConfig.MinTh) +
                                     '--maxTh={} '.format(expConfig.MaxTh) +
-                                    '--dirName=' + 'reverse_{} '.format(type_name) +
+                                    '--dirName={} '.format(staging_name) +
                                     '--traffic={} '.format(traffic) +
                                     '--Nagle={} '.format(expConfig.NagleIsEnabled) +
                                     '--ActiveProbe={} '.format(expConfig.ActiveProbeIsEnabled) +
@@ -466,17 +479,17 @@ def run_reverse_experiment(exp, singleQueue=False, type=ReverseType.Delay):
                                     '--incastFactor={} '.format(expConfig.incastFactor) +
                                     '--incastperiod={} '.format(expConfig.incastperiod)
                                 )
-                            output_file = '{}/scratch/ECNMC/Results/results_reverse_{}/result_{}.txt'.format(get_ns3_path(), type_name, i)
+                            output_file = '{}/scratch/ECNMC/Results/results_{}/result_{}.txt'.format(get_ns3_path(), staging_name, i)
                             memory_output_file = (
-                                '{}/scratch/ECNMC/Results/results_reverse_{}/{}/memory_usage.csv'
-                                .format(get_ns3_path(), type_name, i + 1)
+                                '{}/scratch/ECNMC/Results/results_{}/{}/memory_usage.csv'
+                                .format(get_ns3_path(), staging_name, i + 1)
                             )
                             run_ns3_with_timeout(
                                 cmd, output_file, timeout_seconds=72000,
                                 initial_seed=i + 1, memory_output_file=memory_output_file)
                             os.system('mkdir -p {}/scratch/Results_reverse_{}/{}/{}/{}/D_{}/f_{}/{}'.format(get_ns3_path(), type_name, traffic, CRate, load, DiffRate, errorRate, i))
-                            os.system('mv {}/scratch/ECNMC/Results/results_reverse_{}/{}/*.csv {}/scratch/Results_reverse_{}/{}/{}/{}/D_{}/f_{}/{}'.format(get_ns3_path(), type_name, i + 1, get_ns3_path(), type_name, traffic, CRate, load, DiffRate, errorRate, i))
-                            os.system('mv {}/scratch/ECNMC/Results/results_reverse_{}/{}/*.png {}/scratch/Results_reverse_{}/{}/{}/{}/D_{}/f_{}/{}'.format(get_ns3_path(), type_name, i + 1, get_ns3_path(), type_name, traffic, CRate, load, DiffRate, errorRate, i))
+                            os.system('mv {}/scratch/ECNMC/Results/results_{}/{}/*.csv {}/scratch/Results_reverse_{}/{}/{}/{}/D_{}/f_{}/{}'.format(get_ns3_path(), staging_name, i + 1, get_ns3_path(), type_name, traffic, CRate, load, DiffRate, errorRate, i))
+                            os.system('mv {}/scratch/ECNMC/Results/results_{}/{}/*.png {}/scratch/Results_reverse_{}/{}/{}/{}/D_{}/f_{}/{}'.format(get_ns3_path(), staging_name, i + 1, get_ns3_path(), type_name, traffic, CRate, load, DiffRate, errorRate, i))
                             os.system('mkdir -p {}/scratch/ECNMC/Results/results_reverse_{}/{}/{}/{}/D_{}/f_{}'.format(get_ns3_path(), type_name, traffic, CRate, load, DiffRate, errorRate))
                             print('\tExperiment {} with {} rate {} load {} and diff {} with fraction {} done'.format(i, traffic, CRate, load, DiffRate, errorRate))
                         print('traffic {} Rate {} load {}, diff {} with fraction {} done'.format(traffic, CRate, load, DiffRate, errorRate))
@@ -581,7 +594,26 @@ def run_burst_experiment(exp, rate):
         print('\tExperiment {} done'.format(i))
         print('Rate {} done'.format(rate))
 
-# main
+def run_load_jobs(loads, experiments, max_workers, runner):
+    """Run load/experiment pairs concurrently without exceeding max_workers."""
+    jobs = [
+        (load, experiment)
+        for experiment in experiments
+        for load in loads
+    ]
+    if not jobs:
+        return
+
+    worker_count = min(max_workers, len(jobs))
+    print("Running {} simulations with up to {} concurrent workers".format(
+        len(jobs), worker_count
+    ))
+    with ThreadPoolExecutor(max_workers=worker_count) as executor:
+        futures = [executor.submit(runner, load, experiment)
+                   for load, experiment in jobs]
+        for future in futures:
+            future.result()
+
 parser=argparse.ArgumentParser()
 parser.add_argument("--IsForward",
                     required=True, 
@@ -611,76 +643,53 @@ parser.add_argument("--ReverseType",
                     type=int,
                     default=1)
 
+parser.add_argument("--NumThreads", required=False, dest="numThreads",
+                    help="Maximum concurrent ns-3 simulations (1-4).",
+                    type=int, default=MAX_SIMULATION_THREADS)
+
 args = parser.parse_args()
+if not 1 <= args.numThreads <= MAX_SIMULATION_THREADS:
+    parser.error("--NumThreads must be between 1 and {}".format(
+        MAX_SIMULATION_THREADS))
 args.IsForward = int(args.IsForward)
 args.IsTest = bool(args.IsTest)
 args.IsSingleQueue = bool(args.IsSingleQueue)
 args.reverseType = ReverseType(int(args.reverseType))
 # rebuild_project()
-if (args.IsForward == 1):
-    if (args.IsTest):
-        run_forward_experiment([0], args.IsSingleQueue)
-    else:
-        expConfig = ExperimentConfig()
-        expConfig.read_config_file('Parameters.config')
-        expConfig.experiments = int(expConfig.experiments)
-        ths = []
-        numOfThs = 2
-        for th in range(numOfThs):
-            ths.append(threading.Thread(target=run_forward_experiment, args=([i for i in range(int(th * expConfig.experiments / numOfThs), int((th + 1) * expConfig.experiments / numOfThs))], args.IsSingleQueue, )))
-
-        for th in ths:
-            th.start()
-
-        for th in ths:
-            th.join()
-elif(args.IsForward == 0):
-    if (args.IsTest):
-        run_reverse_experiment([0], args.IsSingleQueue, args.reverseType)
-    else:
-        expConfig = ExperimentConfig()
-        expConfig.read_config_file('Parameters.config')
-        expConfig.experiments = int(expConfig.experiments)
-        ths = []
-        numOfThs = 2
-        for th in range(numOfThs):
-            ths.append(threading.Thread(target=run_reverse_experiment, args=([i for i in range(int(th * expConfig.experiments / numOfThs), int((th + 1) * expConfig.experiments / numOfThs))], args.IsSingleQueue, args.reverseType, )))
-
-        for th in ths:
-            th.start()
-
-        for th in ths:
-            th.join()
-elif(args.IsForward == 2):
+if args.IsForward in (0, 1):
     expConfig = ExperimentConfig()
     expConfig.read_config_file('Parameters.config')
-    ths = []
-    numOfThs = len(expConfig.serviceRateScales)
-    # numOfThs = 1
-    for th in range(numOfThs):
-        ths.append(threading.Thread(target=run_burst_experiment, args=([th], expConfig.serviceRateScales[th], )))
-
-    for th in ths:
-        th.start()
-
-    for th in ths:
-        th.join()
-
-elif(args.IsForward == 3):
-    if (args.IsTest):
-        run_param_experiments([0])
+    experiment_indices = ([0] if args.IsTest else
+                          range(int(expConfig.experiments)))
+    if args.IsForward == 1:
+        def load_job(load, experiment):
+            run_forward_experiment([experiment], args.IsSingleQueue, [load])
+        runner = load_job
     else:
-        expConfig = ExperimentConfig()
-        expConfig.read_config_file('Parameters.config')
-        expConfig.experiments = int(expConfig.experiments)
-        ths = []
-        numOfThs = 30
-        for th in range(numOfThs):
-            ths.append(threading.Thread(target=run_param_experiments, args=([i for i in range(int(th * expConfig.experiments / numOfThs), int((th + 1) * expConfig.experiments / numOfThs))], )))
+        def load_job(load, experiment):
+            run_reverse_experiment(
+                [experiment], args.IsSingleQueue, args.reverseType, [load])
+        runner = load_job
+    run_load_jobs(expConfig.load, experiment_indices, args.numThreads, runner)
+elif args.IsForward == 2:
+    expConfig = ExperimentConfig()
+    expConfig.read_config_file('Parameters.config')
+    jobs = list(enumerate(expConfig.serviceRateScales))
+    with ThreadPoolExecutor(max_workers=min(args.numThreads, len(jobs) or 1)) as executor:
+        futures = [executor.submit(run_burst_experiment, [index], rate)
+                   for index, rate in jobs]
+        for future in futures:
+            future.result()
 
-        for th in ths:
-            th.start()
-
-        for th in ths:
-            th.join()
+elif args.IsForward == 3:
+    expConfig = ExperimentConfig()
+    expConfig.read_config_file('Parameters.config')
+    experiment_indices = ([0] if args.IsTest else
+                          range(int(expConfig.experiments)))
+    with ThreadPoolExecutor(max_workers=min(
+            args.numThreads, len(experiment_indices) or 1)) as executor:
+        futures = [executor.submit(run_param_experiments, [experiment])
+                   for experiment in experiment_indices]
+        for future in futures:
+            future.result()
 
