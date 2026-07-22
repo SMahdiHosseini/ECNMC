@@ -20,7 +20,7 @@ void TraceReplaySender::cwndTrace(Ptr<OutputStreamWrapper> stream, uint32_t oldC
         // if (InetSocketAddress::ConvertFrom(_receiverAddress).GetPort() == 5905 || InetSocketAddress::ConvertFrom(_receiverAddress).GetPort() == 5595) {
             // cout << Simulator::Now().GetNanoSeconds() << " RemoteAddress:" << GetNodeIP(_socket->GetNode(), 1) << "->" << InetSocketAddress::ConvertFrom(_receiverAddress).GetIpv4() << ":" << InetSocketAddress::ConvertFrom(_receiverAddress).GetPort() << " DCTCP: cwnd from: " << oldCwnd << " to: " << newCwnd << endl;
         // }
-        *stream->GetStream() << Simulator::Now().GetNanoSeconds() << "," << newCwnd << endl;
+        *stream->GetStream() << Simulator::Now().GetNanoSeconds() << "," << newCwnd << '\n';
     }
 }
 
@@ -202,4 +202,3 @@ void TraceReplaySender::ScheduleNextSend() {
     Time remainingTime = nextItem.timestamp + NanoSeconds(helper_methods::GetRandomNumber(0, 7)); // to add randomness
     _sendEvent = Simulator::Schedule(remainingTime, &TraceReplaySender::ScheduleNextSend, this);
 }
-
