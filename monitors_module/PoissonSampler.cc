@@ -88,11 +88,11 @@ void PoissonSampler::InitializeLogFiles(const string &filename) {
 
     std::string _eventsFilePath = filename.substr(0, filename.size() - 4) + "_events.csv";
     _eventsFileStream.open(_eventsFilePath, ios::out | ios::trunc);
-    _eventsFileStream << "Time,QueuingDelay,DropProb,MarkingProb,QueueSize,TotalQueueSize,LastMarkingProb,LastDropProb,LastQueueSize,LastTotalQueueSize" << endl;
+    _eventsFileStream << "Time,QueuingDelay,DropProb,MarkingProb,QueueSize,TotalQueueSize,LastMarkingProb,LastDropProb,LastQueueSize,LastTotalQueueSize\n";
 
     std::string _queueSizeFilePath = filename.substr(0, filename.size() - 4) + "_queueSize.csv";
     _queueSizeFileStream.open(_queueSizeFilePath, ios::out | ios::trunc);
-    _queueSizeFileStream << "Time,QueuingDelay,DropProb,MarkingProb,QueueSize,TotalQueueSize,LastMarkingProb,Label,Action" << endl;
+    _queueSizeFileStream << "Time,QueuingDelay,DropProb,MarkingProb,QueueSize,TotalQueueSize,LastMarkingProb,Label,Action\n";
 
     _logFilesInitialized = true;
 }
@@ -518,7 +518,7 @@ void PoissonSampler::SaveMonitorRecords(const string& filename) {
     InitializeLogFiles(filename);
     for (auto &item : _recordedSamples) {
         _eventsFileStream << item.second->GetSampleTime().GetNanoSeconds() << "," << (item.second->GetDepartureTime() - item.second->GetSampleTime()).GetNanoSeconds() << "," << item.second->GetLossProb() << "," << item.second->GetMarkingProb() << "," << item.second->GetQueueSize() << 
-        "," << item.second->GetTotalQueueSize() << "," << item.second->GetLastMarkingProb() << "," << item.second->GetLastDropProb() << "," << item.second->GetLastQueueSize() << "," << item.second->GetLastTotalQueueSize() << endl;
+        "," << item.second->GetTotalQueueSize() << "," << item.second->GetLastMarkingProb() << "," << item.second->GetLastDropProb() << "," << item.second->GetLastQueueSize() << "," << item.second->GetLastTotalQueueSize() << '\n';
         
         delete item.second->GetPacketKey();
         delete item.second;
@@ -529,7 +529,7 @@ void PoissonSampler::SaveMonitorRecords(const string& filename) {
     for (auto &item : queueSizeProcess) {
         samplingEvent event = std::get<1>(item);
         _queueSizeFileStream << std::get<0>(item).GetNanoSeconds() << "," << (event.GetDepartureTime() - event.GetSampleTime()).GetNanoSeconds() << "," << event.GetLossProb() << "," << event.GetMarkingProb() << "," << event.GetQueueSize() << 
-        "," << event.GetTotalQueueSize() << "," << event.GetLastMarkingProb() << "," << event.GetLabel() << "," << event.GetEventAction() << endl;
+        "," << event.GetTotalQueueSize() << "," << event.GetLastMarkingProb() << "," << event.GetLabel() << "," << event.GetEventAction() << '\n';
 
         delete event.GetPacketKey();
     }

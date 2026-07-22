@@ -77,9 +77,9 @@ void BurstMonitor::RecordPacket(Ptr<const Packet> packet) {
 void BurstMonitor::SaveRecords(const string& filename) {
     ofstream outfile;
     outfile.open(filename);
-    outfile << "sampleTime, isHotThroughputUtilization,queueSize" << endl;
+    outfile << "sampleTime, isHotThroughputUtilization,queueSize\n";
     for (auto &event : _recordedSamples) {
-        outfile << event.GetSampleTime() << ", " << event.IsHotThroughputUtilization() << "," << event.GetQueueSize() << endl;
+        outfile << event.GetSampleTime() << ", " << event.IsHotThroughputUtilization() << "," << event.GetQueueSize() << '\n';
     }
     outfile.close();
 }

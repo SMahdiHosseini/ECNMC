@@ -79,7 +79,7 @@ void E2EMonitor::InitializePacketsFile(const string &filename) {
     }
     _packetsFilePath = filename.substr(0, filename.size() - 4) + "_packets.csv";
     _packetsFileStream.open(_packetsFilePath, ios::out | ios::trunc);
-    _packetsFileStream << "SourceIp,SourcePort,DestinationIp,DestinationPort,SequenceNb,ACKNb,Id,PayloadSize,Path,SentTime,IsReceived,ReceiveTime,transmissionDelay,ECN,Tagged" << endl;
+    _packetsFileStream << "SourceIp,SourcePort,DestinationIp,DestinationPort,SequenceNb,ACKNb,Id,PayloadSize,Path,SentTime,IsReceived,ReceiveTime,transmissionDelay,ECN,Tagged\n";
     _packetsFileInitialized = true;
 }
 
@@ -479,7 +479,7 @@ void E2EMonitor::SaveMonitorRecords(const string& filename) {
             _packetsFileStream << key.GetDstIp() << "," << key.GetDstPort() << "," << key.GetSeqNb() << "," << key.GetAckNb() << "," << key.GetId()  << "," << key.GetPacketSize() << ",";
             _packetsFileStream << event->GetPath() << ",";
             _packetsFileStream << event->GetSentTime().GetNanoSeconds() << ",";
-            _packetsFileStream << event->IsReceived() << "," << event->GetReceivedTime().GetNanoSeconds() << "," << transmissionDelay.GetNanoSeconds() << "," << event->GetEcn() << "," << event->GetPacketKey()->IsTagged() << endl;
+            _packetsFileStream << event->IsReceived() << "," << event->GetReceivedTime().GetNanoSeconds() << "," << transmissionDelay.GetNanoSeconds() << "," << event->GetEcn() << "," << event->GetPacketKey()->IsTagged() << '\n';
             keysToErase.push_back(packetKeyEventPair.first);
         }
         else if (event->IsSent() && (Simulator::Now() - event->GetSentTime()) > _stalePacketTimeout) {
@@ -487,7 +487,7 @@ void E2EMonitor::SaveMonitorRecords(const string& filename) {
             _packetsFileStream << key.GetDstIp() << "," << key.GetDstPort() << "," << key.GetSeqNb() << "," << key.GetAckNb() << "," << key.GetId()  << "," << key.GetPacketSize() << ",";
             _packetsFileStream << event->GetPath() << ",";
             _packetsFileStream << event->GetSentTime().GetNanoSeconds() << ",";
-            _packetsFileStream << event->IsReceived() << "," << event->GetReceivedTime().GetNanoSeconds() << "," << -1 << "," << -1 << "," << -1 << endl;
+            _packetsFileStream << event->IsReceived() << "," << event->GetReceivedTime().GetNanoSeconds() << "," << -1 << "," << -1 << "," << -1 << '\n';
             // Bound memory when packets are dropped or never matched at Rx.
             keysToErase.push_back(packetKeyEventPair.first);
         }

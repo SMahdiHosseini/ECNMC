@@ -76,7 +76,7 @@ void NetDeviceMonitor::Dequeue(Ptr<const Packet> packet) {
 void NetDeviceMonitor::SavePacketRecords(const string &filename) {
     ofstream outfile;
     outfile.open(filename);
-    outfile << "SourceIp,SourcePort,DestinationIp,DestinationPort,SequenceNb,Id,PayloadSize,ReceiveTime,IsSent,SentTime,ECN" << endl;
+    outfile << "SourceIp,SourcePort,DestinationIp,DestinationPort,SequenceNb,Id,PayloadSize,ReceiveTime,IsSent,SentTime,ECN\n";
     for (auto& packetKeyEventPair: _recordedPackets) {
         PacketKey key = packetKeyEventPair.first;
         NetDeviceMonitorEvent* event = packetKeyEventPair.second;
@@ -85,7 +85,7 @@ void NetDeviceMonitor::SavePacketRecords(const string &filename) {
         outfile << key.GetDstIp() << "," << key.GetDstPort() << "," << key.GetSeqNb() << "," << key.GetId()  << "," << key.GetSize() << ",";
         outfile << GetRelativeTime(event->GetReceivedTime()).GetNanoSeconds() << ",";
         outfile << event->IsSent() << "," << GetRelativeTime(event->GetSentTime()).GetNanoSeconds() << ",";
-        outfile << event->GetEcn() << endl;
+        outfile << event->GetEcn() << '\n';
     }
     outfile.close();
 }

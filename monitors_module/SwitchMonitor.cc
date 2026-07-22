@@ -99,7 +99,7 @@ uint64_t SwitchMonitor::GetHashValue(const Ipv4Address src, const Ipv4Address ds
 void SwitchMonitor::SavePacketRecords(const string& filename) {
     ofstream outfile;
     outfile.open(filename);
-    outfile << "SourceIp,SourcePort,DestinationIp,DestinationPort,SequenceNb,Id,PayloadSize,ReceiveTime,IsSent,SentTime,path" << endl;
+    outfile << "SourceIp,SourcePort,DestinationIp,DestinationPort,SequenceNb,Id,PayloadSize,ReceiveTime,IsSent,SentTime,path\n";
     for (auto& packetKeyEventPair: _recordedPackets) {
         PacketKey key = packetKeyEventPair.first;
         SwitchMonitorEvent* event = packetKeyEventPair.second;
@@ -108,11 +108,10 @@ void SwitchMonitor::SavePacketRecords(const string& filename) {
         outfile << key.GetSrcIp() << "," << key.GetSrcPort() << ",";
         outfile << key.GetDstIp() << "," << key.GetDstPort() << "," << key.GetSeqNb() << "," << key.GetId()  << "," << key.GetSize() << ",";
         outfile << GetRelativeTime(event->GetReceivedTime()).GetNanoSeconds() << ",";
-        outfile << event->IsSent() << "," << GetRelativeTime(event->GetSentTime()).GetNanoSeconds() << "," << path << endl;
+        outfile << event->IsSent() << "," << GetRelativeTime(event->GetSentTime()).GetNanoSeconds() << "," << path << '\n';
     }
     outfile.close();
 }
 
 string SwitchMonitor::GetMonitorTag() const { return _monitorTag; }
 ns3::Time SwitchMonitor::GetRelativeTime(const Time &time){ return time - _startTime; }
-

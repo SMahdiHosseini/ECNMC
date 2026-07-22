@@ -101,7 +101,7 @@ void RegularSampler::RecordPacket(Ptr<const Packet> packet) {
 void RegularSampler::SaveSamples(const string& filename) {
     ofstream outfile;
     outfile.open(filename);
-    outfile << "SourceIp,SourcePort,DestinationIp,DestinationPort,SequenceNb,PayloadSize,SampleTime,IsDeparted,DepartTime" << endl;
+    outfile << "SourceIp,SourcePort,DestinationIp,DestinationPort,SequenceNb,PayloadSize,SampleTime,IsDeparted,DepartTime\n";
     for (auto& packetKeyEventPair: _recordedSamples) {
         PacketKey key = packetKeyEventPair.first;
         samplingEvent* event = packetKeyEventPair.second;
@@ -109,9 +109,9 @@ void RegularSampler::SaveSamples(const string& filename) {
         outfile << key.GetSrcIp() << "," << key.GetSrcPort() << ",";
         outfile << key.GetDstIp() << "," << key.GetDstPort() << "," << key.GetSeqNb() << "," << key.GetSize() << ",";
         outfile << GetRelativeTime(event->GetSampleTime()).GetNanoSeconds() << ",";
-        outfile << event->IsDeparted() << "," << GetRelativeTime(event->GetDepartureTime()).GetNanoSeconds() << endl;
+        outfile << event->IsDeparted() << "," << GetRelativeTime(event->GetDepartureTime()).GetNanoSeconds() << '\n';
     }
-    outfile << "DroppedPackets: " << droppedPackets << endl;
+    outfile << "DroppedPackets: " << droppedPackets << '\n';
     outfile.close();
 }
 
