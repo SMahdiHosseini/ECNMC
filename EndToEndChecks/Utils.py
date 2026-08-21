@@ -18,6 +18,7 @@ from collections import defaultdict
 from colorama import Fore, Back, Style
 import pprint
 from functools import lru_cache
+import re
 
 estimation_gain = 0.0625
 init_alpha = 1
@@ -4851,7 +4852,32 @@ def compute_average_packet_size(file_path):
     average_packet_size = sum_size / count if count > 0 else 0
     return average_packet_size
 
-def compute_bias_based_on_average_packet_size(sampling_results, average_packet_size, queue_names, linkRates, alternative_routes=[3, 6]):
+def infer_alternative_routes(file_path):
+    """Infer [other racks, hosts per rack] from recorded queue filenames."""
+    racks = set()
+    hosts_by_rack = defaultdict(set)
+    for path in glob.glob(file_path + 'T*_PoissonSampler_queueSize.csv'):
+        queue_name = os.path.basename(path).split('_', 1)[0]
+        tor_agg = re.fullmatch(r'T(\d+)A(\d+)', queue_name)
+        tor_host = re.fullmatch(r'T(\d+)H(\d+)', queue_name)
+        if tor_agg:
+            racks.add(int(tor_agg.group(1)))
+        elif tor_host:
+            rack = int(tor_host.group(1))
+            racks.add(rack)
+            hosts_by_rack[rack].add(int(tor_host.group(2)))
+
+    host_counts = {len(hosts) for hosts in hosts_by_rack.values()}
+    if len(racks) < 2 or len(host_counts) != 1:
+        raise ValueError(
+            'Could not infer a uniform rack/host topology from {}'.format(file_path)
+        )
+    return [len(racks) - 1, host_counts.pop()]
+
+
+def compute_bias_based_on_average_packet_size(sampling_results, average_packet_size, queue_names, linkRates, alternative_routes):
+    if len(alternative_routes) != 2 or any(value <= 0 for value in alternative_routes):
+        raise ValueError('alternative_routes must be [number_of_racks - 1, hosts_per_rack]')
     queue_names, _, linkRates = sort_queues_by_path(queue_names, [None, None, None, None], linkRates)
     
     for queue_name in queue_names:
@@ -4878,7 +4904,7 @@ def compute_bias_based_on_average_packet_size(sampling_results, average_packet_s
 def calculate_offline_delay_bias_DC(__ns3_path, rate, experiment, results_folder, steadyStart, steadyEnd, linkRates=[], linkDelays=[], 
                                     swtichDstREDQueueDiscMaxSize=[0], tsh=0.15, differentiationDelay=None, errorRate=None, load=None, 
                                     queue_names=[], flow_names=[], e2e_intervals=10000, sampling_factor=None,
-                                    average_packet_size=None):
+                                    average_packet_size=None, alternative_routes=None):
     if differentiationDelay is not None and errorRate is not None:
         file_path = '{}/scratch/{}/{}/{}/D_{}/f_{}/{}/'.format(__ns3_path, results_folder, rate, load, differentiationDelay, errorRate, experiment)
     else:
@@ -4892,7 +4918,11 @@ def calculate_offline_delay_bias_DC(__ns3_path, rate, experiment, results_folder
     res = combine_sampling_results(res, queue_names)
     if average_packet_size is None:
         average_packet_size = compute_average_packet_size(file_path)
-    res = compute_bias_based_on_average_packet_size(res, average_packet_size, queue_names, linkRates)
+    if alternative_routes is None:
+        alternative_routes = infer_alternative_routes(file_path)
+    res = compute_bias_based_on_average_packet_size(
+        res, average_packet_size, queue_names, linkRates, alternative_routes
+    )
 
     res['sum_poisson_samples_queue_delay_mean'] = sum([res[queue_name+'poisson_samples_queue_delay_mean'] for queue_name in queue_names])
     res['sum_poisson_samples_queue_success_prob_mean'] = np.prod(np.array([res[queue_name+'poisson_samples_queue_success_prob_mean'] for queue_name in queue_names]), axis=0)

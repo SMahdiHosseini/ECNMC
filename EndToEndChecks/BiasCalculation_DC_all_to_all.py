@@ -20,10 +20,12 @@ import argparse
 import configparser
 import json
 import math
+import random
 import re
+import tempfile
 from pathlib import Path
 from typing import Any, Iterable
-import random
+
 import numpy as np
 import pandas as pd
 
@@ -40,6 +42,8 @@ NS3_PATH = Path(__file__).resolve().parents[3]
 SOURCE_FILE_RE = re.compile(r"^(R(?P<rack>\d+)H(?P<host>\d+))_ALL_EndToEnd_packets\.csv$")
 HOST_RE = re.compile(r"^R(?P<rack>\d+)H(?P<host>\d+)$")
 REQUIRED_E2E_COLUMNS = {"SourceIp", "DestinationIp", "Path", "PayloadSize"}
+FLOW_INVENTORY_FILE = "all_to_all_flow_inventory.json"
+FLOW_INVENTORY_VERSION = 1
 
 
 def host_coordinates(host_name: str) -> tuple[int, int]:
@@ -69,33 +73,32 @@ def _read_source_ip(file_path: Path) -> str | None:
     return str(frame.iloc[0]["SourceIp"])
 
 
-def build_ip_to_host(experiment_dir: Path) -> dict[str, str]:
-    """Build the address mapping from monitor files rather than assuming IPs."""
+def _source_fingerprint(source_files: list[Path]) -> list[dict[str, int | str]]:
+    return [
+        {
+            "name": path.name,
+            "size": path.stat().st_size,
+            "mtime_ns": path.stat().st_mtime_ns,
+        }
+        for path in source_files
+    ]
+
+
+def _build_flow_inventory(
+    source_files: list[Path],
+) -> tuple[dict[str, str], dict[tuple[str, str, int], int]]:
+    """Read aggregate CSVs once to build the complete experiment inventory."""
     mapping: dict[str, str] = {}
-    for file_path in sorted(experiment_dir.glob("*_ALL_EndToEnd_packets.csv")):
+    for file_path in source_files:
         match = SOURCE_FILE_RE.fullmatch(file_path.name)
         if match is None:
             continue
         source_ip = _read_source_ip(file_path)
         if source_ip is not None:
             mapping[source_ip] = match.group(1)
-    return mapping
-
-
-def discover_flow_paths(
-    experiment_dir: Path,
-    max_flows: int | None = None,
-    randomize: bool = False,
-) -> dict[tuple[str, str, int], int]:
-    """Discover observed flow/path pairs and their packet counts.
-
-    ``max_flows`` limits distinct source/destination pairs, not individual
-    paths. All observed paths belonging to a selected flow are retained.
-    """
-    ip_to_host = build_ip_to_host(experiment_dir)
     discovered: dict[tuple[str, str, int], int] = {}
 
-    for file_path in sorted(experiment_dir.glob("*_ALL_EndToEnd_packets.csv")):
+    for file_path in source_files:
         match = SOURCE_FILE_RE.fullmatch(file_path.name)
         if match is None:
             continue
@@ -107,7 +110,7 @@ def discover_flow_paths(
 
         grouped = frame.groupby(["DestinationIp", "Path"], sort=True).size()
         for (destination_ip, path_id), packet_count in grouped.items():
-            destination = ip_to_host.get(str(destination_ip))
+            destination = mapping.get(str(destination_ip))
             if destination is None:
                 raise ValueError(
                     f"Destination IP {destination_ip} in {file_path} has no matching "
@@ -115,18 +118,132 @@ def discover_flow_paths(
                 )
             discovered[(source, destination, int(path_id))] = int(packet_count)
 
-        if max_flows is not None:
-            flow_pairs = sorted({(src, dst) for src, dst, _ in discovered})
-            if len(flow_pairs) >= max_flows:
-                if randomize:
-                    selected = set(random.sample(flow_pairs, max_flows))
-                else:
-                    selected = set(flow_pairs[:max_flows])
-                return {
-                    key: count
-                    for key, count in discovered.items()
-                    if key[:2] in selected
+    return mapping, discovered
+
+
+def _write_flow_inventory(
+    cache_path: Path,
+    fingerprint: list[dict[str, int | str]],
+    ip_to_host: dict[str, str],
+    discovered: dict[tuple[str, str, int], int],
+) -> None:
+    host_to_ip = {host: ip for ip, host in ip_to_host.items()}
+    flow_pairs = sorted({(source, destination) for source, destination, _ in discovered})
+    number_of_racks, hosts_per_rack = infer_topology(ip_to_host)
+    payload = {
+        "version": FLOW_INVENTORY_VERSION,
+        "source_files": fingerprint,
+        "ip_to_host": ip_to_host,
+        "host_to_ip": host_to_ip,
+        "topology": {
+            "number_of_racks": number_of_racks,
+            "hosts_per_rack": hosts_per_rack,
+            "alternative_routes": [number_of_racks - 1, hosts_per_rack],
+        },
+        "existing_flows": [source + destination for source, destination in flow_pairs],
+        "flow_to_ips": {
+            source + destination: [host_to_ip[source], host_to_ip[destination]]
+            for source, destination in flow_pairs
+        },
+        "flow_paths": [
+            [source, destination, path_id, packet_count]
+            for (source, destination, path_id), packet_count in sorted(discovered.items())
+        ],
+    }
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        dir=cache_path.parent,
+        prefix=cache_path.name + ".",
+        suffix=".tmp",
+        delete=False,
+    ) as cache_file:
+        json.dump(payload, cache_file, separators=(",", ":"))
+        temporary_path = Path(cache_file.name)
+    temporary_path.chmod(0o644)
+    temporary_path.replace(cache_path)
+
+
+def load_flow_inventory(
+    experiment_dir: Path,
+) -> tuple[dict[str, str], dict[tuple[str, str, int], int]]:
+    """Load a valid inventory cache or build and atomically save it once."""
+    source_files = sorted(experiment_dir.glob("*_ALL_EndToEnd_packets.csv"))
+    if not source_files:
+        raise FileNotFoundError(
+            f"No RiHj_ALL_EndToEnd_packets.csv files found in {experiment_dir}"
+        )
+    fingerprint = _source_fingerprint(source_files)
+    cache_path = experiment_dir / FLOW_INVENTORY_FILE
+
+    if cache_path.is_file():
+        try:
+            with cache_path.open() as cache_file:
+                payload = json.load(cache_file)
+            if (
+                payload.get("version") == FLOW_INVENTORY_VERSION
+                and payload.get("source_files") == fingerprint
+            ):
+                discovered = {
+                    (source, destination, int(path_id)): int(packet_count)
+                    for source, destination, path_id, packet_count
+                    in payload["flow_paths"]
                 }
+                print(f"Loaded flow inventory: {cache_path}")
+                return dict(payload["ip_to_host"]), discovered
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+            pass
+
+    ip_to_host, discovered = _build_flow_inventory(source_files)
+    _write_flow_inventory(cache_path, fingerprint, ip_to_host, discovered)
+    print(f"Saved flow inventory: {cache_path}")
+    return ip_to_host, discovered
+
+
+def build_ip_to_host(experiment_dir: Path) -> dict[str, str]:
+    """Return the cached address-to-host mapping for an experiment."""
+    ip_to_host, _ = load_flow_inventory(experiment_dir)
+    return ip_to_host
+
+
+def infer_topology(ip_to_host: dict[str, str]) -> tuple[int, int]:
+    """Return (number of racks, hosts per rack) from recorded source hosts."""
+    hosts_by_rack: dict[int, set[int]] = {}
+    for host_name in ip_to_host.values():
+        rack, host = host_coordinates(host_name)
+        hosts_by_rack.setdefault(rack, set()).add(host)
+    host_counts = {len(hosts) for hosts in hosts_by_rack.values()}
+    if len(hosts_by_rack) < 2 or len(host_counts) != 1:
+        raise ValueError("Flow inventory does not describe a uniform multi-rack topology")
+    return len(hosts_by_rack), host_counts.pop()
+
+
+def discover_flow_paths(
+    experiment_dir: Path,
+    max_flows: int | None = None,
+    randomize: bool = False,
+) -> dict[tuple[str, str, int], int]:
+    """Return cached flow/path pairs, optionally selecting distinct flows."""
+    _, discovered = load_flow_inventory(experiment_dir)
+
+    return select_flow_paths(discovered, max_flows, randomize)
+
+
+def select_flow_paths(
+    discovered: dict[tuple[str, str, int], int],
+    max_flows: int | None,
+    randomize: bool,
+) -> dict[tuple[str, str, int], int]:
+    """Select flows from a complete inventory while retaining all their paths."""
+
+    if max_flows is not None:
+        flow_pairs = sorted({(src, dst) for src, dst, _ in discovered})
+        selected = set(
+            random.sample(flow_pairs, min(max_flows, len(flow_pairs)))
+            if randomize else flow_pairs[:max_flows]
+        )
+        return {
+            key: count for key, count in discovered.items() if key[:2] in selected
+        }
 
     return discovered
 
@@ -300,16 +417,20 @@ def analyze_experiment(
     max_flows: int | None = None,
     randomize: bool = False,
 ) -> dict[tuple[str, int], dict[str, Any]]:
-    discovered = discover_flow_paths(experiment_dir, max_flows=max_flows, randomize=randomize)
+    ip_to_host, all_discovered = load_flow_inventory(experiment_dir)
+    discovered = select_flow_paths(all_discovered, max_flows, randomize)
     if not discovered:
         raise FileNotFoundError(f"No aggregate end-to-end records found in {experiment_dir}")
 
+    number_of_racks, hosts_per_rack = infer_topology(ip_to_host)
+    alternative_routes = [number_of_racks - 1, hosts_per_rack]
     direct = DirectQueueCalculator(experiment_dir, traffic)
     average_packet_size = compute_average_packet_size(str(experiment_dir) + "/")
     route_cache: dict[tuple[str, ...], dict[str, Any]] = {}
     flow_results: dict[tuple[str, int], dict[str, Any]] = {}
 
     for source, destination, path_id in sorted(discovered):
+        print(f"Analyzing flow {source} -> {destination}, path {path_id}")
         flow_name = source + destination
         queue_names = queues_for_flow(source, destination, path_id)
         # mahdi: code checked by this line
@@ -340,6 +461,7 @@ def analyze_experiment(
                             e2e_intervals=10000,
                             sampling_factor=sampling_factor,
                             average_packet_size=average_packet_size,
+                            alternative_routes=alternative_routes,
                         )
                     )
             route_cache[cache_key] = average_repetitions(runs)
