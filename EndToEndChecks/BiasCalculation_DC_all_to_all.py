@@ -462,6 +462,7 @@ def analyze_experiment(
                             sampling_factor=sampling_factor,
                             average_packet_size=average_packet_size,
                             alternative_routes=alternative_routes,
+                            source_rack=host_coordinates(source)[0],
                         )
                     )
             route_cache[cache_key] = average_repetitions(runs)

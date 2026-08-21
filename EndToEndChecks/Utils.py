@@ -2049,7 +2049,7 @@ def remove_nan_samples(times, queue_sizes, queue_ECN_samples, queue_delay_sample
 
 @lru_cache(maxsize=12)
 def _load_queue_trace(file_path):
-    """Load the arrays reused by stochastic offline sampling."""
+    """Load all queue events plus enqueue times partitioned by source rack."""
     full_df = pd.read_csv(
         file_path,
         usecols=['Time', 'TotalQueueSize', 'Label', 'Action'],
@@ -2058,15 +2058,23 @@ def _load_queue_trace(file_path):
     queue_sizes = full_df['TotalQueueSize'].to_numpy(dtype=float)
     order = np.lexsort((-queue_sizes, times))
 
-    interest_mask = (
-        full_df['Label'].str.contains('10.1.', na=False, regex=False)
-        & (full_df['Action'] == 'E')
+    enqueue_df = full_df[full_df['Action'] == 'E']
+    rack_octets = pd.to_numeric(
+        enqueue_df['Label'].str.extract(r'^10\.(\d+)\.', expand=False),
+        errors='coerce',
     )
-    return times[order], queue_sizes[order], times[interest_mask]
+    enqueue_times_by_rack = {
+        int(rack_octet) - 1: enqueue_df.loc[rack_octets == rack_octet, 'Time'].to_numpy(dtype=float)
+        for rack_octet in rack_octets.dropna().unique()
+    }
+
+    # Queue sampling uses every event. Only packets_of_interest is rack-filtered.
+    return times[order], queue_sizes[order], enqueue_times_by_rack
 
 
-def total_packets_of_interest(file_path, start_time, end_time):
-    _, _, interest_times = _load_queue_trace(file_path)
+def total_packets_of_interest(file_path, start_time, end_time, source_rack):
+    _, _, enqueue_times_by_rack = _load_queue_trace(file_path)
+    interest_times = enqueue_times_by_rack.get(source_rack, np.array([], dtype=float))
     return int(np.count_nonzero(
         (interest_times >= start_time) & (interest_times <= end_time)
     ))
@@ -2335,7 +2343,7 @@ def chi_squared_test(
     return lags, res, chi2_res
 
 def sample_total_queue_size_non_combined(res, times, queue_names, dir_prefix, linkDelays, linkRates, queue_size_trshs, queue_capacity,
-                                         path_observation=False, sampling_factor=None):
+                                         path_observation=False, sampling_factor=None, source_rack=None):
     queue_names, linkDelays, linkRates = sort_queues_by_path(queue_names, linkDelays, linkRates)
     packets_cfd = PacketCDF()
     packets_cfd.load_cdf_data('/media/experiments/ns-allinone-3.41/ns-3.41/scratch/ECNMC/DCWorkloads/packet_size_cdf_{}.csv'.format(dir_prefix.split('/')[-5]))
@@ -2387,7 +2395,11 @@ def sample_total_queue_size_non_combined(res, times, queue_names, dir_prefix, li
             prob_non_empty = np.sum(prob_non_empty) / len(prob_non_empty)
 
             if path_observation:
-                res[queue_name+ 'packets_of_interest'] = total_packets_of_interest(file_path, sample_times[0], sample_times[-1])
+                if source_rack is None:
+                    raise ValueError('source_rack is required for path-observation packet counts')
+                res[queue_name+ 'packets_of_interest'] = total_packets_of_interest(
+                    file_path, sample_times[0], sample_times[-1], source_rack
+                )
             res[queue_name+ tag + '_samples_queue_delay_mean'] = (res[queue_name+ tag + '_samples_queue_delay_mean'] * itr + np.nanmean(queue_delay_samples[idx])) / (itr + 1)
             res[queue_name+ tag + '_samples_queue_success_prob_mean'] = (res[queue_name+ tag + '_samples_queue_success_prob_mean'] * itr + np.nanmean(queue_success_prob_samples[idx])) / (itr + 1)
             res[queue_name+ tag + '_samples_queue_nonmarking_prob_mean'] = (res[queue_name+ tag + '_samples_queue_nonmarking_prob_mean'] * itr + (1 - np.nanmean(queue_ECN_samples[idx][~invalid_indices]))) / (itr + 1)
@@ -4904,16 +4916,20 @@ def compute_bias_based_on_average_packet_size(sampling_results, average_packet_s
 def calculate_offline_delay_bias_DC(__ns3_path, rate, experiment, results_folder, steadyStart, steadyEnd, linkRates=[], linkDelays=[], 
                                     swtichDstREDQueueDiscMaxSize=[0], tsh=0.15, differentiationDelay=None, errorRate=None, load=None, 
                                     queue_names=[], flow_names=[], e2e_intervals=10000, sampling_factor=None,
-                                    average_packet_size=None, alternative_routes=None):
+                                    average_packet_size=None, alternative_routes=None, source_rack=None):
     if differentiationDelay is not None and errorRate is not None:
         file_path = '{}/scratch/{}/{}/{}/D_{}/f_{}/{}/'.format(__ns3_path, results_folder, rate, load, differentiationDelay, errorRate, experiment)
     else:
         file_path = '{}/scratch/{}/{}/{}/{}/'.format(__ns3_path, results_folder, rate, load, experiment)
 
     times = np.array(np.cumsum(np.random.exponential(e2e_intervals, size=int((steadyEnd - steadyStart) // e2e_intervals))) + steadyStart, dtype=np.int64)
+    if source_rack is None and flow_names:
+        source_match = re.match(r'^R(\d+)H\d+', flow_names[0])
+        if source_match:
+            source_rack = int(source_match.group(1))
     # (_, queue_size_samples, _, queue_delay_samples_poisson_e2e), res = sample_total_queue_size(times, queue_names, file_path, linkDelays, linkRates, np.array(swtichDstREDQueueDiscMaxSize[1:], dtype=float) * tsh)
     res = {}
-    (_, _, queue_ECN_samples_poisson_e2e, queue_delay_samples_poisson_e2e, queue_success_prob_samples_poisson_e2e), res = sample_total_queue_size_non_combined(res, times, queue_names, file_path, linkDelays, linkRates, np.array(swtichDstREDQueueDiscMaxSize[1:], dtype=float) * tsh, swtichDstREDQueueDiscMaxSize[1:], path_observation=True, sampling_factor=sampling_factor)
+    (_, _, queue_ECN_samples_poisson_e2e, queue_delay_samples_poisson_e2e, queue_success_prob_samples_poisson_e2e), res = sample_total_queue_size_non_combined(res, times, queue_names, file_path, linkDelays, linkRates, np.array(swtichDstREDQueueDiscMaxSize[1:], dtype=float) * tsh, swtichDstREDQueueDiscMaxSize[1:], path_observation=True, sampling_factor=sampling_factor, source_rack=source_rack)
     (_, _, _, _, _), res = sample_total_queue_size_non_combined(res, times, queue_names, file_path, linkDelays, linkRates, np.array(swtichDstREDQueueDiscMaxSize[1:], dtype=float) * tsh, swtichDstREDQueueDiscMaxSize[1:], path_observation=False)
     res = combine_sampling_results(res, queue_names)
     if average_packet_size is None:
