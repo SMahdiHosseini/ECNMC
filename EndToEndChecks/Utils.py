@@ -17,6 +17,7 @@ import csv
 from collections import defaultdict
 from colorama import Fore, Back, Style
 import pprint
+from functools import lru_cache
 
 estimation_gain = 0.0625
 init_alpha = 1
@@ -384,11 +385,18 @@ def calculate_offline_E2E_lossRates_DC(full_df, df_res, checkColumn, txDelay, df
                 print("Sample times are 'NOT' exponentially distributed.")
                 samples_times = []
         else:
-            # samples_times, _ = find_samples_path(time, 0)
-            if path in samples_paths_aggregated_statistics.keys():
-                samples_times = find_samples_path_new(time, txDelay, df_res['RTT'][path], df_name, samplingMethod, steadyStart, steadyEnd, steps=1)
-            else:
-                samples_times = []
+            minimum_samples = 0 if samples_paths_aggregated_statistics is None else samples_paths_aggregated_statistics.get(path, {}).get('MinimumE2ESampleSizeSuccessProb', 0)
+            samples_times = find_samples_path_new(
+                time,
+                txDelay,
+                df_res['RTT'][path],
+                df_name,
+                samplingMethod,
+                steadyStart,
+                steadyEnd,
+                steps=1,
+                MinimumNumberOfSamples=minimum_samples,
+            )
         df_res['sampleSize']['successProb'][path] = len(samples_times)
         samples_values = df[df['SentTime'].isin(samples_times)]['nonDropEvent'].values
         if df_res['sampleSize']['successProb'][path] == 0:
@@ -664,7 +672,7 @@ def find_samples_path_new(time, txDelay, avg_interarrival_=None, df_name=None, s
     # print("Estimated derivative of exp:", df_name, "is", deriv)
 
     # stage 3: see if we have enough packets to sample form
-    if len(time) < MinimumNumberOfSamples:
+    if minimum_number_of_samples > 0 and len(time) < minimum_number_of_samples:
         print ("Warning: Not enough e2e packets!")
         subSamplingError = SubSamplingError.NotEnoughPackets + "+" + subSamplingError.value
         return [], subSamplingError
@@ -680,7 +688,7 @@ def find_samples_path_new(time, txDelay, avg_interarrival_=None, df_name=None, s
     samples = distanceAwareSampling(time, 1.0 / minD)
 
     # stage 5: see if we have enough samples after distance-aware sampling
-    if len(samples) < (MinimumNumberOfSamples * 0.95):
+    if minimum_number_of_samples > 0 and len(samples) < (minimum_number_of_samples * 0.95):
         print ("Warning: Not enough samples after distance-aware sampling!", "Got {}, expected {}".format(len(samples), MinimumNumberOfSamples))
         subSamplingError = SubSamplingError.NotEnoughSamples + "+" + subSamplingError.value
         return [], subSamplingError
@@ -1060,7 +1068,7 @@ def calculate_offline_markingProbMean_at_receiver_poisson(df, swtichDstREDQueueD
         markingProbs.append(1 - (df_sample['ECN'].sum() / len(df_sample)))
     return np.mean(markingProbs)
 
-def calculate_offline_E2E_markingProb(full_df, df_res, checkColumn, txDelay, swtichDstREDQueueDiscMaxSize, linkRate, __ns3_path, tsh, df_name, passiveProbe, samplingMethod, steadyStart, steadyEnd):
+def calculate_offline_E2E_markingProb(full_df, df_res, checkColumn, txDelay, swtichDstREDQueueDiscMaxSize, linkRate, __ns3_path, tsh, df_name, passiveProbe, samplingMethod, steadyStart, steadyEnd, samples_paths_aggregated_statistics=None):
     # timeAvg_methods = ['rightCont_timeAvg', 'leftCont_timeAvg', 'linearInterp_timeAvg']
     # nonMarkingProb_timeAvg_vars = ['event_currentProb', 'event_lastProb']
     df_res['nonMarkingProb'] = {}
@@ -1099,8 +1107,18 @@ def calculate_offline_E2E_markingProb(full_df, df_res, checkColumn, txDelay, swt
                 print("Sample times are 'NOT' exponentially distributed.")
                 samples_times = []
         else:
-            # samples_times, _ = find_samples_path(time, 0)
-            samples_times = find_samples_path_new(time, txDelay, df_res['RTT'][path], df_name, samplingMethod, steadyStart, steadyEnd, steps=1)
+            minimum_samples = 0 if samples_paths_aggregated_statistics is None else samples_paths_aggregated_statistics.get(path, {}).get('MinimumE2ESampleSizeNonMarkingProb', 0)
+            samples_times = find_samples_path_new(
+                time,
+                txDelay,
+                df_res['RTT'][path],
+                df_name,
+                samplingMethod,
+                steadyStart,
+                steadyEnd,
+                steps=1,
+                MinimumNumberOfSamples=minimum_samples,
+            )
         df_res['sampleSize']['nonMarkingProb'][path] = len(samples_times)
         samples_values = df[df['SentTime'].isin(samples_times)]['nonMarking'].values
         if df_res['sampleSize']['nonMarkingProb'][path] == 0:
@@ -1153,17 +1171,18 @@ def calculate_offline_E2E_delays(full_df, removeDrops, checkColumn, txDelay, df_
                 print("Sample times are 'NOT' exponentially distributed.")
                 samples_times = []
         else:
-            # samples_times, _ = find_samples_path(time, 0)
-            if path in samples_paths_aggregated_statistics.keys():
-                if samples_paths_aggregated_statistics[path]['MinimumE2ESampleSizeDelay'] is not None:
-                #    samples_times, subSamplingError = find_samples_path_new(time, txDelay, df_res['RTT'][path], df_name, samplingMethod, steadyStart, steadyEnd, steps=1, MinimumNumberOfSamples=samples_paths_aggregated_statistics[path]['MinimumE2ESampleSizeDelay'])
-                    # samples_times, subSamplingError, result = find_samples_path_ccf(time, steadyStart, steadyEnd, queue_names, df_name, linkDelays, linkRates, queue_size_trshs, samples_paths_aggregated_statistics[path]['MinimumE2ESampleSizeDelay'])
-                    # samples_times, subSamplingError, result = find_samples_path_chi_squared_test(time, steadyStart, steadyEnd, samples_paths_aggregated_statistics[path]['MinimumE2ESampleSizeDelay'])
-                    samples_times, subSamplingError = find_samples_path(time, 0, window=None)
-                else:
-                    samples_times = []
-            else:
-                samples_times = []
+            minimum_samples = 0 if samples_paths_aggregated_statistics is None else samples_paths_aggregated_statistics.get(path, {}).get('MinimumE2ESampleSizeDelay', 0)
+            samples_times, subSamplingError = find_samples_path_new(
+                time,
+                txDelay,
+                df_res['RTT'][path],
+                df_name,
+                samplingMethod,
+                steadyStart,
+                steadyEnd,
+                steps=1,
+                MinimumNumberOfSamples=minimum_samples,
+            )
         df_res['Corr'][path] = result
         samples = df[df['SentTime'].isin(samples_times)]
         df_res['bias']['delay'][path] = (samples['PayloadSize'] - (samples['BitsTag'] / 8)).mean()
@@ -2027,14 +2046,33 @@ def remove_nan_samples(times, queue_sizes, queue_ECN_samples, queue_delay_sample
     valid_indices = ~np.isnan(queue_sizes)
     return times[valid_indices], queue_sizes[valid_indices], queue_ECN_samples[valid_indices], queue_delay_samples[valid_indices], queue_drop_prob_samples[valid_indices]
 
+@lru_cache(maxsize=12)
+def _load_queue_trace(file_path):
+    """Load the arrays reused by stochastic offline sampling."""
+    full_df = pd.read_csv(
+        file_path,
+        usecols=['Time', 'TotalQueueSize', 'Label', 'Action'],
+    )
+    times = full_df['Time'].to_numpy(dtype=float)
+    queue_sizes = full_df['TotalQueueSize'].to_numpy(dtype=float)
+    order = np.lexsort((-queue_sizes, times))
+
+    interest_mask = (
+        full_df['Label'].str.contains('10.1.', na=False, regex=False)
+        & (full_df['Action'] == 'E')
+    )
+    return times[order], queue_sizes[order], times[interest_mask]
+
+
 def total_packets_of_interest(file_path, start_time, end_time):
-    full_df = pd.read_csv(file_path)
-    total_packets = len(full_df[(full_df['Label'].str.contains('10.1.', na=False, regex=False)) & (full_df['Action'] == 'E') & (full_df['Time'] >= start_time) & (full_df['Time'] <= end_time)])
-    return total_packets
+    _, _, interest_times = _load_queue_trace(file_path)
+    return int(np.count_nonzero(
+        (interest_times >= start_time) & (interest_times <= end_time)
+    ))
 
 def sample_queue_size(times, file_path, link_rate):
     # print(f"Sampling total queue size from {file_path} with link rate {link_rate} bpns")
-    full_df = pd.read_csv(file_path)
+    df_times, df_queue_sizes, _ = _load_queue_trace(file_path)
     # queue_name = file_path.split('/')[-1].split('_')[0]
     # exp = file_path.split('/')[-2]
     # # if "T0A0" in queue_name or "A0T2" in queue_name:
@@ -2079,11 +2117,7 @@ def sample_queue_size(times, file_path, link_rate):
     #         print(f"percentage of 10.2 : {Fore.RED} {temp_10_2/temp_total:.2%} {Fore.RESET} expected around {Fore.BLUE} 25% {Fore.RESET}. Number of packets: {temp_10_2}")
     #         print(f"percentage of 10.3 : {Fore.RED} {temp_10_3/temp_total:.2%} {Fore.RESET} expected around {Fore.BLUE} 25% {Fore.RESET}. Number of packets: {temp_10_3}")
     #         print(f"percentage of 10.4 : {Fore.RED} {temp_10_4/temp_total:.2%} {Fore.RESET} expected around {Fore.BLUE} 25% {Fore.RESET}. Number of packets: {temp_10_4}")
-    full_df = full_df.sort_values(by=['Time', 'TotalQueueSize'], ascending=[True, False]).reset_index(drop=True)
-    # print(f"file_path: {file_path}\n")
     sample_times = np.asarray(times, dtype=float)
-    df_times = full_df['Time'].to_numpy(dtype=float)
-    df_queue_sizes = full_df['TotalQueueSize'].to_numpy(dtype=float)
     return find_queue_size_at_time(df_times, df_queue_sizes, sample_times, link_rate)
 
 def sample_ECN_marking(queue_size_samples, queue_size_trsh):
@@ -4843,7 +4877,8 @@ def compute_bias_based_on_average_packet_size(sampling_results, average_packet_s
 
 def calculate_offline_delay_bias_DC(__ns3_path, rate, experiment, results_folder, steadyStart, steadyEnd, linkRates=[], linkDelays=[], 
                                     swtichDstREDQueueDiscMaxSize=[0], tsh=0.15, differentiationDelay=None, errorRate=None, load=None, 
-                                    queue_names=[], flow_names=[], e2e_intervals=10000, sampling_factor=None):
+                                    queue_names=[], flow_names=[], e2e_intervals=10000, sampling_factor=None,
+                                    average_packet_size=None):
     if differentiationDelay is not None and errorRate is not None:
         file_path = '{}/scratch/{}/{}/{}/D_{}/f_{}/{}/'.format(__ns3_path, results_folder, rate, load, differentiationDelay, errorRate, experiment)
     else:
@@ -4855,7 +4890,9 @@ def calculate_offline_delay_bias_DC(__ns3_path, rate, experiment, results_folder
     (_, _, queue_ECN_samples_poisson_e2e, queue_delay_samples_poisson_e2e, queue_success_prob_samples_poisson_e2e), res = sample_total_queue_size_non_combined(res, times, queue_names, file_path, linkDelays, linkRates, np.array(swtichDstREDQueueDiscMaxSize[1:], dtype=float) * tsh, swtichDstREDQueueDiscMaxSize[1:], path_observation=True, sampling_factor=sampling_factor)
     (_, _, _, _, _), res = sample_total_queue_size_non_combined(res, times, queue_names, file_path, linkDelays, linkRates, np.array(swtichDstREDQueueDiscMaxSize[1:], dtype=float) * tsh, swtichDstREDQueueDiscMaxSize[1:], path_observation=False)
     res = combine_sampling_results(res, queue_names)
-    res = compute_bias_based_on_average_packet_size(res, compute_average_packet_size(file_path), queue_names, linkRates)
+    if average_packet_size is None:
+        average_packet_size = compute_average_packet_size(file_path)
+    res = compute_bias_based_on_average_packet_size(res, average_packet_size, queue_names, linkRates)
 
     res['sum_poisson_samples_queue_delay_mean'] = sum([res[queue_name+'poisson_samples_queue_delay_mean'] for queue_name in queue_names])
     res['sum_poisson_samples_queue_success_prob_mean'] = np.prod(np.array([res[queue_name+'poisson_samples_queue_success_prob_mean'] for queue_name in queue_names]), axis=0)
@@ -5292,7 +5329,6 @@ def calc_error(confidenceValue, segement_statistics):
     return (confidenceValue * segement_statistics['DelayStd']) / np.sqrt(segement_statistics['sampleSize'])
 
 def calc_min_e2e_samples(confidenceValue, maxError, samples_paths_aggregated_statistics, metric='Delay'):
-    print(f"samples_paths_aggregated_statistics['' + {metric} + 'Mean']: ", samples_paths_aggregated_statistics['' + metric + 'Mean'])
     if samples_paths_aggregated_statistics['MaxEpsilon' + metric] >= maxError:
         print(f"Warning: MaxEpsilon{metric} is greater than or equal to maxError. Cannot achieve the desired confidence level with the current data.")
         return None
@@ -5300,6 +5336,34 @@ def calc_min_e2e_samples(confidenceValue, maxError, samples_paths_aggregated_sta
         print(f"Warning: Mean {metric} is zero. Cannot calculate the required sample size. Picking the default of 1000 samples.")
         return 100
     return int(((confidenceValue * samples_paths_aggregated_statistics['e2e' + metric + 'Std']) / ((maxError - samples_paths_aggregated_statistics['MaxEpsilon' + metric]) * samples_paths_aggregated_statistics['' + metric + 'Mean'])) ** 2)
+
+def calc_min_e2e_samples_prob(confidenceValue, maxError, samples_paths_aggregated_statistics, number_of_segments, metric='SuccessProb'):
+    mean_key = metric + 'Mean'
+    epsilon_key = 'MaxEpsilon' + metric
+    std_key = 'e2e' + metric + 'Std'
+
+    if maxError <= 0 or maxError >= 1:
+        print(f"Warning: maxError must be a relative error in (0, 1) for {metric}.")
+        return None
+
+    if samples_paths_aggregated_statistics[epsilon_key] >= 1:
+        print(f"Warning: MaxEpsilon{metric} is invalid for probability sampling.")
+        return None
+
+    mean_value = float(np.exp(samples_paths_aggregated_statistics[mean_key]))
+    if mean_value <= 0:
+        print(f"Warning: Mean {metric} is zero. Cannot calculate the required sample size.")
+        return None
+
+    epsp_from_upper = 1 - (((1 + samples_paths_aggregated_statistics[epsilon_key]) ** number_of_segments) / (1 + maxError))
+    epsp_from_lower = (((1 - samples_paths_aggregated_statistics[epsilon_key]) ** number_of_segments) / (1 - maxError)) - 1
+    print(f"Calculated epsp_from_upper: {epsp_from_upper}, epsp_from_lower: {epsp_from_lower} for metric: {metric}")
+    epsp = min(epsp_from_upper, epsp_from_lower)
+    if epsp <= 0:
+        print(f"Warning: Total error budget leaves no room for {metric} sampling error.")
+        return None
+
+    return int(np.ceil(((confidenceValue * samples_paths_aggregated_statistics[std_key]) / (mean_value * epsp)) ** 2))
 
 def sample_data(data, sample_column):
     exit = False
