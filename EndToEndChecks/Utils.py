@@ -1993,26 +1993,58 @@ def calculate_offline_mixing(__ns3_path, rate, segment, experiment, results_fold
     return dfs
 
 def sort_queues_by_path(queue_names, linkDelays, linkRates):
-    sorted_queues = [None] * len(queue_names)
-    sorted_linkRates = [None] * len(queue_names)
-    sorted_linkDelays = [None] * len(queue_names)
+    """Order whichever datacenter path stages are present.
+
+    The physical link arrays use indices 1, 2, and 3 for T->A, A->T, and
+    T->H respectively. A same-rack path contains only the final T->H stage.
+    """
+    stage_patterns = (
+        (re.compile(r'^T\d+A\d+$'), 1),
+        (re.compile(r'^A\d+T\d+$'), 2),
+        (re.compile(r'^T\d+H\d+$'), 3),
+    )
+    ordered = []
     for queue_name in queue_names:
-        if queue_name[0] == 'T' and queue_name[2] == "A":
-            sorted_queues[0] = queue_name
-            sorted_linkRates[0] = linkRates[1]
-            sorted_linkDelays[0] = linkDelays[1]
+        for stage, (pattern, physical_index) in enumerate(stage_patterns):
+            if pattern.fullmatch(queue_name):
+                ordered.append(
+                    (stage, queue_name, linkDelays[physical_index], linkRates[physical_index])
+                )
+                break
+        else:
+            raise ValueError('Unrecognized datacenter queue name: {}'.format(queue_name))
 
-        if queue_name[0] == 'A' and queue_name[2] == "T":
-            sorted_queues[1] = queue_name
-            sorted_linkRates[1] = linkRates[2]
-            sorted_linkDelays[1] = linkDelays[2]
+    ordered.sort(key=lambda item: item[0])
+    if len({stage for stage, _, _, _ in ordered}) != len(ordered):
+        raise ValueError('A datacenter path contains duplicate queue stages: {}'.format(queue_names))
+    return (
+        [item[1] for item in ordered],
+        [item[2] for item in ordered],
+        [item[3] for item in ordered],
+    )
 
-        if queue_name[0] == 'T' and queue_name[2] == "H":
-            sorted_queues[2] = queue_name
-            sorted_linkRates[2] = linkRates[3]
-            sorted_linkDelays[2] = linkDelays[3]
 
-    return sorted_queues, sorted_linkDelays, sorted_linkRates
+def _product_covariance_corrections(samples):
+    """Return pair and higher-order corrections for a path product."""
+    number_of_queues = samples.shape[0]
+    if number_of_queues == 1:
+        # A one-variable product has no cross-variable covariance terms.
+        return 0.0, 0.0
+    if number_of_queues == 2:
+        return float(np.cov(samples)[0, 1]), 0.0
+    if number_of_queues != 3:
+        raise ValueError('Covariance correction supports paths with 1, 2, or 3 queues')
+
+    means = np.nanmean(samples, axis=1)
+    covariances = np.cov(samples)
+    pair_correction = np.sum([
+        means[i] * covariances[(i + 1) % 3][(i + 2) % 3]
+        for i in range(3)
+    ], axis=0)
+    centered_product = np.prod(
+        np.array([samples[i] - means[i] for i in range(3)]), axis=0
+    )
+    return pair_correction, np.mean(centered_product)
 
 def find_queue_size_at_time(times, queue_sizes, target_time, link_rate):
     if times.size == 0:
@@ -2427,26 +2459,22 @@ def sample_total_queue_size_non_combined(res, times, queue_names, dir_prefix, li
             queue_delay_samples[idx][invalid_indices] = np.nan
     nonmarking_samples = 1 - queue_ECN_samples
     nonmarking_samples = nonmarking_samples[:, ~np.isnan(nonmarking_samples).any(axis=0)]
-    covariances = np.cov(nonmarking_samples)
-    means = np.nanmean(nonmarking_samples, axis=1)
-    tempECN_prod = np.prod(means, axis=0)
-    diff = np.sum([means[i] * covariances[(i + 1) % 3][(i + 2) % 3] for i in range(len(means))], axis=0)
-    diff_extra = np.mean(np.prod(np.array([nonmarking_samples[i] - means[i] for i in range(len(means))]), axis=0))
+    diff, diff_extra = _product_covariance_corrections(nonmarking_samples)
     res['sum_poisson_samples_queue_nonmarking_prob_pair_covariance'] = diff
     res['sum_poisson_samples_queue_nonmarking_prob_triple_covariance'] = diff_extra
 
     queue_success_prob_samples_ = queue_success_prob_samples[:, ~np.isnan(queue_success_prob_samples).any(axis=0)]
-    covariances_success_prob = np.cov(queue_success_prob_samples_)
-    means_success_prob = np.nanmean(queue_success_prob_samples_, axis=1)
-    temp_success_prob_prod = np.prod(means_success_prob, axis=0)
-    diff_success_prob = np.sum([means_success_prob[i] * covariances_success_prob[(i + 1) % 3][(i + 2) % 3] for i in range(len(means_success_prob))], axis=0)
-    diff_success_prob_extra = np.mean(np.prod(np.array([queue_success_prob_samples_[i] - means_success_prob[i] for i in range(len(means_success_prob))]), axis=0))
+    diff_success_prob, diff_success_prob_extra = _product_covariance_corrections(
+        queue_success_prob_samples_
+    )
     res['sum_poisson_samples_queue_success_prob_pair_covariance'] = diff_success_prob
     res['sum_poisson_samples_queue_success_prob_triple_covariance'] = diff_success_prob_extra
     return remove_nan_samples(sample_times_itr, np.sum(queue_size_samples, axis=0), np.any(queue_ECN_samples, axis=0).astype(int), np.sum(queue_delay_samples, axis=0), np.prod(queue_success_prob_samples, axis=0)), res
 
 def combine_sampling_results(res, queue_names):
-    queue_names, _, _ = sort_queues_by_path(queue_names, [None] * (len(queue_names) + 1), [None] * (len(queue_names) + 1))
+    queue_names, _, _ = sort_queues_by_path(
+        queue_names, [None, None, None, None], [None, None, None, None]
+    )
     for queue_name in queue_names:
         idx = queue_names.index(queue_name)
         res[queue_name+'error_bound'] = res[queue_name+'e2e_samples_queue_delay_std'] * 1.96 / np.sqrt(res[queue_name+'e2e_samples_queue_delay_count']) + res[queue_name+'poisson_samples_queue_delay_std'] * 1.96 / np.sqrt(res[queue_name+'poisson_samples_queue_delay_count'])

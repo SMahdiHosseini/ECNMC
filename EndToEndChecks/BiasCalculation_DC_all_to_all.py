@@ -19,7 +19,6 @@ from __future__ import annotations
 import argparse
 import configparser
 import json
-import math
 import random
 import re
 import tempfile
@@ -30,11 +29,9 @@ import numpy as np
 import pandas as pd
 
 from Utils import (
-    PacketCDF,
     calculate_offline_delay_bias_DC,
     compute_average_packet_size,
     convert_to_float,
-    find_queue_size_at_time,
 )
 
 
@@ -221,31 +218,35 @@ def discover_flow_paths(
     experiment_dir: Path,
     max_flows: int | None = None,
     randomize: bool = False,
+    start_flow: int = 0,
 ) -> dict[tuple[str, str, int], int]:
     """Return cached flow/path pairs, optionally selecting distinct flows."""
     _, discovered = load_flow_inventory(experiment_dir)
 
-    return select_flow_paths(discovered, max_flows, randomize)
+    return select_flow_paths(discovered, max_flows, randomize, start_flow)
 
 
 def select_flow_paths(
     discovered: dict[tuple[str, str, int], int],
     max_flows: int | None,
     randomize: bool,
+    start_flow: int = 0,
 ) -> dict[tuple[str, str, int], int]:
-    """Select flows from a complete inventory while retaining all their paths."""
+    """Select complete flows after a zero-based offset, retaining all paths."""
+    if start_flow < 0:
+        raise ValueError("start_flow must be non-negative")
 
+    flow_pairs = sorted({(src, dst) for src, dst, _ in discovered})
+    eligible_flows = flow_pairs[start_flow:]
     if max_flows is not None:
-        flow_pairs = sorted({(src, dst) for src, dst, _ in discovered})
-        selected = set(
-            random.sample(flow_pairs, min(max_flows, len(flow_pairs)))
-            if randomize else flow_pairs[:max_flows]
-        )
-        return {
-            key: count for key, count in discovered.items() if key[:2] in selected
-        }
-
-    return discovered
+        if randomize:
+            eligible_flows = random.sample(
+                eligible_flows, min(max_flows, len(eligible_flows))
+            )
+        else:
+            eligible_flows = eligible_flows[:max_flows]
+    selected = set(eligible_flows)
+    return {key: count for key, count in discovered.items() if key[:2] in selected}
 
 
 def _mean_value(values: Iterable[Any]) -> Any:
@@ -278,117 +279,6 @@ def average_repetitions(results: list[dict[str, Any]]) -> dict[str, Any]:
     return {key: _mean_value(result[key] for result in results) for key in sorted(keys)}
 
 
-class DirectQueueCalculator:
-    """One-queue equivalent of the legacy three-queue calculation.
-
-    The legacy utility assumes exactly three queues while computing pair/triple
-    covariance.  Same-rack traffic has one direct ToR-to-host queue, so this
-    small adapter produces the same metric family with zero cross-queue terms.
-    """
-
-    def __init__(self, experiment_dir: Path, traffic: str):
-        self.experiment_dir = experiment_dir
-        self.packet_cdf = PacketCDF()
-        cdf_path = NS3_PATH / "scratch" / "ECNMC" / "DCWorkloads" / f"packet_size_cdf_{traffic}.csv"
-        self.packet_cdf.load_cdf_data(str(cdf_path))
-        self._queue_cache: dict[str, tuple[np.ndarray, np.ndarray]] = {}
-
-    def _sample_sizes(self, queue_name: str, times: np.ndarray, link_rate: float) -> np.ndarray:
-        if queue_name not in self._queue_cache:
-            file_path = self.experiment_dir / f"{queue_name}_PoissonSampler_queueSize.csv"
-            frame = pd.read_csv(file_path, usecols=["Time", "TotalQueueSize"])
-            frame = frame.sort_values(["Time", "TotalQueueSize"], ascending=[True, False])
-            self._queue_cache[queue_name] = (
-                frame["Time"].to_numpy(dtype=float),
-                frame["TotalQueueSize"].to_numpy(dtype=float),
-            )
-        trace_times, trace_sizes = self._queue_cache[queue_name]
-        return find_queue_size_at_time(trace_times, trace_sizes, times, link_rate)
-
-    def calculate(
-        self,
-        queue_name: str,
-        steady_start: float,
-        steady_end: float,
-        link_rate: float,
-        link_delay: float,
-        queue_capacity: float,
-        threshold_fraction: float,
-        interval: float,
-    ) -> dict[str, Any]:
-        count = int((steady_end - steady_start) // interval)
-        times = np.asarray(
-            np.cumsum(np.random.exponential(interval, size=count)) + steady_start,
-            dtype=np.int64,
-        )
-        if not len(times):
-            raise ValueError("The steady interval is too short to produce samples")
-
-        sizes = self._sample_sizes(queue_name, times.astype(float), link_rate)
-        valid = np.isfinite(sizes)
-        sizes = sizes[valid]
-        if not len(sizes):
-            raise ValueError(f"No valid queue samples for {queue_name}")
-
-        delays = sizes * 8 / link_rate
-        nonmarking = (sizes < queue_capacity * threshold_fraction).astype(float)
-        success = np.asarray(
-            [1.0 - self.packet_cdf.calculate_probability_greater_than(queue_capacity - size) for size in sizes]
-        )
-        prefix = queue_name
-        result: dict[str, Any] = {}
-
-        # With a single queue, path-observer and independent Poisson samples are
-        # the same samples (the legacy distinction starts at the next queue).
-        for tag in ("e2e", "poisson"):
-            result[prefix + tag + "_samples_queue_delay_mean"] = np.mean(delays)
-            result[prefix + tag + "_samples_queue_delay_std"] = np.std(delays)
-            result[prefix + tag + "_samples_queue_delay_count"] = len(delays)
-            result[prefix + tag + "_samples_queue_success_prob_mean"] = np.mean(success)
-            result[prefix + tag + "_samples_queue_success_prob_std"] = np.std(success)
-            result[prefix + tag + "_samples_queue_nonmarking_prob_mean"] = np.mean(nonmarking)
-            result[prefix + tag + "_samples_queue_nonmarking_prob_std"] = np.std(nonmarking)
-
-        delay_error = 2 * 1.96 * np.std(delays) / math.sqrt(len(delays))
-        success_error = 2 * 1.96 * np.std(success) / math.sqrt(len(success))
-        nonmarking_error = 2 * 1.96 * np.std(nonmarking) / math.sqrt(len(nonmarking))
-        result[prefix + "poisson_prob_non_empty"] = np.mean(sizes > 0)
-        result[prefix + "error_bound"] = delay_error
-        result[prefix + "success_prob_error_bound"] = success_error
-        result[prefix + "nonmarking_prob_error_bound"] = nonmarking_error
-        result[prefix + "e2e_vs_poisson_consistent"] = 1
-        result[prefix + "e2e_vs_poisson_consistent_with_bias"] = 1
-        result[prefix + "e2e_vs_poisson_consistent_success_prob"] = 1
-        result[prefix + "e2e_vs_poisson_consistent_nonmarking_prob"] = 1
-        result[prefix + "split_ratio"] = 1.0
-        result[prefix + "bias"] = 0.0
-        average_packet_size = self.packet_cdf.compute_average_packet_size_from_cdf()
-        result[prefix + "NPkts"] = np.mean(delays) * link_rate / (average_packet_size * 8)
-        result[prefix + "NBytes"] = result[prefix + "NPkts"] * average_packet_size
-
-        result["sum_poisson_samples_queue_delay_mean"] = np.mean(delays)
-        result["sum_poisson_samples_queue_success_prob_mean"] = np.mean(success)
-        result["sum_poisson_samples_queue_success_prob_pair_covariance"] = 0.0
-        result["sum_poisson_samples_queue_success_prob_triple_covariance"] = 0.0
-        result["sum_poisson_samples_queue_nonmarking_prob_mean"] = np.mean(nonmarking)
-        result["sum_poisson_samples_queue_nonmarking_prob_pair_covariance"] = 0.0
-        result["sum_poisson_samples_queue_nonmarking_prob_triple_covariance"] = 0.0
-        result["e2e_poisson_samples_queue_delay_mean"] = np.mean(delays)
-        result["e2e_poisson_samples_queue_delay_std"] = np.std(delays)
-        result["e2e_poisson_samples_queue_success_prob_mean"] = np.mean(success)
-        result["e2e_poisson_samples_queue_success_prob_std"] = np.std(success)
-        result["e2e_poisson_samples_queue_nonmarking_prob_mean"] = np.mean(nonmarking)
-        result["e2e_poisson_samples_queue_nonmarking_prob_std"] = np.std(nonmarking)
-        result["e2e_vs_sum_error_bound"] = delay_error
-        result["e2e_vs_sum_error_success_prob_bound"] = [success_error, -success_error]
-        result["e2e_vs_sum_error_nonmarking_prob_bound"] = [nonmarking_error, -nonmarking_error]
-        result["e2e_vs_sum_consistent"] = 1
-        result["e2e_vs_sum_consistent_with_bias"] = 1
-        result["e2e_vs_sum_consistent_success_prob"] = 1
-        result["e2e_vs_sum_consistent_nonmarking_prob"] = 1
-        return result
-
-
 def store_metrics(
     merged: dict[str, dict[str, dict[str, list[Any]]]],
     flow_name: str,
@@ -416,15 +306,15 @@ def analyze_experiment(
     sampling_factor: float | None,
     max_flows: int | None = None,
     randomize: bool = False,
+    start_flow: int = 0,
 ) -> dict[tuple[str, int], dict[str, Any]]:
     ip_to_host, all_discovered = load_flow_inventory(experiment_dir)
-    discovered = select_flow_paths(all_discovered, max_flows, randomize)
+    discovered = select_flow_paths(all_discovered, max_flows, randomize, start_flow)
     if not discovered:
         raise FileNotFoundError(f"No aggregate end-to-end records found in {experiment_dir}")
 
     number_of_racks, hosts_per_rack = infer_topology(ip_to_host)
     alternative_routes = [number_of_racks - 1, hosts_per_rack]
-    direct = DirectQueueCalculator(experiment_dir, traffic)
     average_packet_size = compute_average_packet_size(str(experiment_dir) + "/")
     route_cache: dict[tuple[str, ...], dict[str, Any]] = {}
     flow_results: dict[tuple[str, int], dict[str, Any]] = {}
@@ -438,33 +328,28 @@ def analyze_experiment(
         if cache_key not in route_cache:
             runs: list[dict[str, Any]] = []
             for _ in range(repetitions):
-                if len(queue_names) == 1:
-                    runs.append(
-                        direct.calculate(
-                            queue_names[0], steady_start, steady_end,
-                            link_rates[3], link_delays[3], queue_capacities[3],
-                            0.15, 10000,
-                        )
+                route_capacities = (
+                    [0, queue_capacities[3]]
+                    if len(queue_names) == 1 else queue_capacities
+                )
+                runs.append(
+                    calculate_offline_delay_bias_DC(
+                        str(NS3_PATH), rate, experiment, results_folder,
+                        steady_start, steady_end,
+                        linkRates=link_rates,
+                        linkDelays=link_delays,
+                        swtichDstREDQueueDiscMaxSize=route_capacities,
+                        tsh=0.15,
+                        load=load,
+                        queue_names=queue_names,
+                        flow_names=[flow_name],
+                        e2e_intervals=10000,
+                        sampling_factor=sampling_factor,
+                        average_packet_size=average_packet_size,
+                        alternative_routes=alternative_routes,
+                        source_rack=host_coordinates(source)[0],
                     )
-                else:
-                    runs.append(
-                        calculate_offline_delay_bias_DC(
-                            str(NS3_PATH), rate, experiment, results_folder,
-                            steady_start, steady_end,
-                            linkRates=link_rates,
-                            linkDelays=link_delays,
-                            swtichDstREDQueueDiscMaxSize=queue_capacities,
-                            tsh=0.15,
-                            load=load,
-                            queue_names=queue_names,
-                            flow_names=[flow_name],
-                            e2e_intervals=10000,
-                            sampling_factor=sampling_factor,
-                            average_packet_size=average_packet_size,
-                            alternative_routes=alternative_routes,
-                            source_rack=host_coordinates(source)[0],
-                        )
-                    )
+                )
             route_cache[cache_key] = average_repetitions(runs)
         flow_results[(flow_name, path_id)] = route_cache[cache_key]
 
@@ -490,6 +375,10 @@ def main() -> None:
         "--max-flows", type=int,
         help="Process at most this many source/destination flows, keeping all paths",
     )
+    parser.add_argument(
+        "--start-flow", type=int, default=0,
+        help="Skip this many flows in sorted discovery order before selecting flows",
+    )
     parser.add_argument("--randomize", action="store_true", help="Randomly select flows if --max-flows is set")
     parser.add_argument("--sampling-factor", type=float)
     parser.add_argument("--output-name", default="delay_minimum_bias_e2e_vs_switch_poisson_all_to_all.json")
@@ -499,6 +388,8 @@ def main() -> None:
         parser.error("--repetitions must be at least 1")
     if args.max_flows is not None and args.max_flows < 1:
         parser.error("--max-flows must be at least 1")
+    if args.start_flow < 0:
+        parser.error("--start-flow must be non-negative")
 
     result_config_dir = NS3_PATH / "scratch" / "ECNMC" / "Results" / f"results_{args.dir}"
     config_path = args.config or (result_config_dir / "Parameters.config")
@@ -548,7 +439,10 @@ def main() -> None:
                         experiment_dir, results_folder + "/" + traffic,
                         rate, load, experiment, traffic, steady_start, steady_end,
                         link_rates, link_delays, queue_capacities,
-                        args.repetitions, args.sampling_factor, args.max_flows, args.randomize
+                        args.repetitions, args.sampling_factor,
+                        max_flows=args.max_flows,
+                        start_flow=args.start_flow,
+                        randomize=args.randomize,
                     )
                     for (flow_name, path_id), metrics in flow_results.items():
                         store_metrics(merged, flow_name, path_id, metrics)
