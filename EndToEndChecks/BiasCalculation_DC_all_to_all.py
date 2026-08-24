@@ -41,6 +41,7 @@ HOST_RE = re.compile(r"^R(?P<rack>\d+)H(?P<host>\d+)$")
 REQUIRED_E2E_COLUMNS = {"SourceIp", "DestinationIp", "Path", "PayloadSize"}
 FLOW_INVENTORY_FILE = "all_to_all_flow_inventory.json"
 FLOW_INVENTORY_VERSION = 1
+QUEUE_METRIC_RE = re.compile(r"^(?:T\d+A\d+|A\d+T\d+|T\d+H\d+)")
 
 
 def host_coordinates(host_name: str) -> tuple[int, int]:
@@ -284,9 +285,12 @@ def store_metrics(
     flow_name: str,
     path_id: int,
     metrics: dict[str, Any],
+    save_per_switch: bool = True,
 ) -> None:
     path_key = str(path_id)
     for metric, value in metrics.items():
+        if not save_per_switch and QUEUE_METRIC_RE.match(metric):
+            continue
         merged.setdefault(metric, {}).setdefault(flow_name, {}).setdefault(path_key, []).append(value)
 
 
@@ -380,6 +384,12 @@ def main() -> None:
         help="Skip this many flows in sorted discovery order before selecting flows",
     )
     parser.add_argument("--randomize", action="store_true", help="Randomly select flows if --max-flows is set")
+    parser.add_argument(
+        "--save-per-switch",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Save queue-specific metrics (disable with --no-save-per-switch)",
+    )
     parser.add_argument("--sampling-factor", type=float)
     parser.add_argument("--output-name", default="delay_minimum_bias_e2e_vs_switch_poisson_all_to_all.json")
     args = parser.parse_args()
@@ -445,7 +455,10 @@ def main() -> None:
                         randomize=args.randomize,
                     )
                     for (flow_name, path_id), metrics in flow_results.items():
-                        store_metrics(merged, flow_name, path_id, metrics)
+                        store_metrics(
+                            merged, flow_name, path_id, metrics,
+                            save_per_switch=args.save_per_switch,
+                        )
                     completed_experiments.append(experiment)
 
                 merged["experiment"] = completed_experiments  # type: ignore[assignment]

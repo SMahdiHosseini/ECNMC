@@ -4983,6 +4983,7 @@ def calculate_offline_delay_bias_DC(__ns3_path, rate, experiment, results_folder
     # res['e2e_vs_sum_error_bound'] += 1.96 * sum_poisson_samples_queue_delay_std / np.sqrt(len(queue_delay_samples_poisson_e2e))
     res['e2e_vs_sum_consistent'] = int(abs(res['e2e_poisson_samples_queue_delay_mean'] - res['sum_poisson_samples_queue_delay_mean']) <= res['e2e_vs_sum_error_bound'])
     bias = sum([res[queue_name+'bias'] for queue_name in queue_names])
+    res['total_estimated_bias'] = bias
     res['e2e_vs_sum_consistent_with_bias'] = int(abs(res['e2e_poisson_samples_queue_delay_mean'] - (res['sum_poisson_samples_queue_delay_mean'] + bias)) <= res['e2e_vs_sum_error_bound'])
 
     X = 1.96 * np.max([res[queue_name+'poisson_samples_queue_success_prob_std'] / (np.sqrt(res[queue_name+'poisson_samples_queue_delay_count']) * res[queue_name+'poisson_samples_queue_success_prob_mean']) for queue_name in queue_names])
