@@ -1,10 +1,15 @@
-"""Actual end-to-end versus reconstructed-switch consistency checks.
+"""Subsampled end-to-end versus reconstructed-switch consistency checks.
 
-For every selected flow and path, this script reads the actual packet outcomes
+For every selected flow and path, this script reads the packet outcomes
 from ``RiHj_ALL_EndToEnd_packets.csv`` and compares them with switch metrics
 estimated at random Poisson times. Switch queue states are reconstructed from
 the full ``*_PoissonSampler_queueSize.csv`` event traces; the pre-sampled
 ``*_PoissonSampler_events.csv`` files are never used.
+
+Each switch estimate first determines the minimum required E2E sample count
+for delay, success probability, and non-marking probability. The corresponding
+packet-arrival process is then independently subsampled for each metric before
+the PostProcessing consistency inequality is evaluated.
 
 The output layout is compatible with ``BiasCalculation_DC_all_to_all.py``::
 
@@ -35,14 +40,20 @@ from BiasCalculation_DC_all_to_all import (
     store_metrics,
 )
 from Utils import (
+    calc_min_e2e_samples,
+    calc_min_e2e_samples_prob,
     calculate_offline_delay_bias_DC,
     compute_average_packet_size,
     convert_to_float,
+    find_delta_for_empty_prob,
+    find_samples_path,
 )
 
 
 DEFAULT_OUTPUT_NAME = "consistency_e2e_vs_switch_poisson_all_to_all.json"
 CONFIDENCE_Z = 1.96
+MAX_CONSISTENCY_ERROR = 0.40
+MINIMUM_CONSISTENCY_SAMPLES = 30
 E2E_COLUMNS = [
     "Id",
     "DestinationIp",
@@ -106,148 +117,357 @@ def _sample_statistics(values: np.ndarray) -> tuple[float, float, int]:
     return float(np.mean(values)), float(np.std(values)), int(values.size)
 
 
-def actual_flow_path_statistics(
+def _subsampled_delay_values(
     frame: pd.DataFrame,
-    direct_path: bool = False,
-    link_rates: list[float] | None = None,
-    link_delays: list[float] | None = None,
-) -> dict[str, Any]:
-    """Compute actual delay, delivery, and ECN outcomes for one flow/path."""
+    direct_path: bool,
+    link_rates: list[float],
+    link_delays: list[float],
+) -> tuple[pd.DataFrame, np.ndarray]:
     received = frame["IsReceived"].to_numpy(dtype=float) == 1
+    received_frame = frame.loc[received].copy()
     elapsed = (
-        frame.loc[received, "ReceiveTime"].to_numpy(dtype=float)
-        - frame.loc[received, "SentTime"].to_numpy(dtype=float)
+        received_frame["ReceiveTime"].to_numpy(dtype=float)
+        - received_frame["SentTime"].to_numpy(dtype=float)
     )
     if direct_path:
-        if link_rates is None or link_delays is None:
-            raise ValueError("link rates and delays are required for a direct path")
-        payload = frame.loc[received, "PayloadSize"].to_numpy(dtype=float)
+        payload = received_frame["PayloadSize"].to_numpy(dtype=float)
         transmission_delay = (
             link_delays[0] + link_delays[3]
             + payload * 8 / link_rates[0]
             + payload * 8 / link_rates[3]
         )
     else:
-        transmission_delay = frame.loc[
-            received, "transmissionDelay"
-        ].to_numpy(dtype=float)
+        transmission_delay = received_frame["transmissionDelay"].to_numpy(dtype=float)
     # Match the legacy PostProcessing calculation while using the correct
     # two-link baseline for same-rack traffic.
-    delay = np.abs(elapsed - transmission_delay)
-    success = frame["IsReceived"].to_numpy(dtype=float)
-    nonmarking = 1.0 - frame["ECN"].to_numpy(dtype=float)
+    return received_frame, np.abs(elapsed - transmission_delay)
 
-    delay_mean, delay_std, delay_count = _sample_statistics(delay)
-    success_mean, success_std, success_count = _sample_statistics(success)
-    nonmarking_mean, nonmarking_std, nonmarking_count = _sample_statistics(nonmarking)
+
+def _subsample_metric(
+    times: np.ndarray,
+    values: np.ndarray,
+    calculated_minimum: int | None,
+) -> dict[str, Any]:
+    """Return a Poisson-like subsample and whether it meets the requirement."""
+    required_minimum = (
+        max(MINIMUM_CONSISTENCY_SAMPLES, int(np.ceil(calculated_minimum)))
+        if calculated_minimum is not None else None
+    )
+    order = np.argsort(times, kind="stable")
+    sorted_times = np.asarray(times)[order]
+    sorted_values = np.asarray(values, dtype=float)[order]
+    available_count = int(len(sorted_times))
+    if required_minimum is None or required_minimum > available_count:
+        return {
+            "mean": float("nan"),
+            "std": float("nan"),
+            "count": 0,
+            "selected_value_count": 0,
+            "available_count": available_count,
+            "calculated_minimum": (
+                int(calculated_minimum)
+                if calculated_minimum is not None else float("nan")
+            ),
+            "required_minimum": (
+                required_minimum if required_minimum is not None else float("nan")
+            ),
+            "subsampling_succeeded": 0,
+            "minimum_requirement_met": 0,
+        }
+    try:
+        sampling_window, _ = find_delta_for_empty_prob(
+            sorted_times, p0_max=0.05
+        )
+    except ValueError:
+        return {
+            "mean": float("nan"),
+            "std": float("nan"),
+            "count": 0,
+            "selected_value_count": 0,
+            "available_count": available_count,
+            "calculated_minimum": (
+                int(calculated_minimum)
+                if calculated_minimum is not None else float("nan")
+            ),
+            "required_minimum": (
+                required_minimum if required_minimum is not None else float("nan")
+            ),
+            "subsampling_succeeded": 0,
+            "minimum_requirement_met": 0,
+        }
+    sampled_times, _ = find_samples_path(
+        sorted_times,
+        MinimumNumberOfSamples=(required_minimum or 0),
+        window=sampling_window,
+    )
+    sampled_times = np.asarray(sampled_times)
+    selected_values = sorted_values[np.isin(sorted_times, sampled_times)]
+    mean, std, value_count = _sample_statistics(selected_values)
+    sample_count = int(len(sampled_times))
+    minimum_requirement_met = int(
+        required_minimum is not None
+        and sample_count >= required_minimum
+        and value_count > 0
+    )
     return {
-        "actual_e2e_delay_mean": delay_mean,
-        "actual_e2e_delay_std": delay_std,
-        "actual_e2e_delay_count": delay_count,
-        "actual_e2e_success_probability_mean": success_mean,
-        "actual_e2e_success_probability_std": success_std,
-        "actual_e2e_success_probability_count": success_count,
-        "actual_e2e_nonmarking_probability_mean": nonmarking_mean,
-        "actual_e2e_nonmarking_probability_std": nonmarking_std,
-        "actual_e2e_nonmarking_probability_count": nonmarking_count,
-        "actual_e2e_packet_count": int(len(frame)),
+        "mean": mean,
+        "std": std,
+        "count": sample_count,
+        "selected_value_count": value_count,
+        "available_count": available_count,
+        "calculated_minimum": (
+            int(calculated_minimum)
+            if calculated_minimum is not None else float("nan")
+        ),
+        "required_minimum": (
+            required_minimum if required_minimum is not None else float("nan")
+        ),
+        "subsampling_succeeded": int(sample_count > 0 and value_count > 0),
+        "minimum_requirement_met": minimum_requirement_met,
     }
 
 
-def _standard_error(std: float, count: float) -> float:
-    if count <= 0 or not np.isfinite(std):
-        return float("nan")
-    return float(std / np.sqrt(count))
-
-
-def _product_standard_error(
-    metrics: dict[str, Any], queue_names: list[str], metric_suffix: str
-) -> float:
-    """Delta-method standard error for a product of queue probabilities."""
-    means = np.asarray(
-        [metrics[name + metric_suffix + "_mean"] for name in queue_names],
-        dtype=float,
+def subsampled_flow_path_statistics(
+    frame: pd.DataFrame,
+    sampling_requirements: dict[str, int | None],
+    direct_path: bool,
+    link_rates: list[float],
+    link_delays: list[float],
+) -> dict[str, Any]:
+    """Subsample packet arrivals separately for each E2E metric."""
+    received_frame, delay = _subsampled_delay_values(
+        frame, direct_path, link_rates, link_delays
     )
-    standard_errors = np.asarray(
-        [
-            _standard_error(
-                metrics[name + metric_suffix + "_std"],
-                metrics[name + "poisson_samples_queue_delay_count"],
-            )
-            for name in queue_names
-        ],
-        dtype=float,
+    success = frame["IsReceived"].to_numpy(dtype=float)
+    # As in PostProcessing.py, a dropped packet cannot be a successful
+    # non-marked end-to-end observation.
+    nonmarking = np.where(
+        success == 1,
+        1.0 - frame["ECN"].to_numpy(dtype=float),
+        0.0,
     )
-    derivatives = np.asarray(
-        [np.prod(np.delete(means, index)) for index in range(len(means))],
-        dtype=float,
-    )
-    return float(np.sqrt(np.sum(np.square(derivatives * standard_errors))))
+
+    sampled = {
+        "delay": _subsample_metric(
+            received_frame["SentTime"].to_numpy(dtype=float),
+            delay,
+            sampling_requirements["delay"],
+        ),
+        "success_probability": _subsample_metric(
+            frame["SentTime"].to_numpy(dtype=float),
+            success,
+            sampling_requirements["success_probability"],
+        ),
+        "nonmarking_probability": _subsample_metric(
+            frame["SentTime"].to_numpy(dtype=float),
+            nonmarking,
+            sampling_requirements["nonmarking_probability"],
+        ),
+    }
+
+    result: dict[str, Any] = {
+        "total_e2e_packet_count": int(len(frame)),
+        "total_e2e_received_packet_count": int(len(received_frame)),
+    }
+    for metric, statistics in sampled.items():
+        prefix = "subsampled_e2e_" + metric
+        for name, value in statistics.items():
+            result[prefix + "_" + name] = value
+    return result
 
 
-def add_actual_consistency_metrics(
+def _relative_epsilon(mean: float, std: float, count: float) -> float:
+    if count <= 0 or mean <= 0 or not np.isfinite([mean, std, count]).all():
+        return float("inf")
+    return float(CONFIDENCE_Z * std / (np.sqrt(count) * mean))
+
+
+def switch_sampling_requirements(
+    metrics: dict[str, Any], queue_names: list[str]
+) -> tuple[dict[str, Any], dict[str, int | None]]:
+    """Derive the legacy path uncertainty and minimum E2E sample counts."""
+    delay_means = np.asarray([
+        metrics[name + "poisson_samples_queue_delay_mean"] for name in queue_names
+    ], dtype=float)
+    delay_stds = np.asarray([
+        metrics[name + "poisson_samples_queue_delay_std"] for name in queue_names
+    ], dtype=float)
+    counts = np.asarray([
+        metrics[name + "poisson_samples_queue_delay_count"] for name in queue_names
+    ], dtype=float)
+    success_means = np.asarray([
+        metrics[name + "poisson_samples_queue_success_prob_mean"]
+        for name in queue_names
+    ], dtype=float)
+    success_stds = np.asarray([
+        metrics[name + "poisson_samples_queue_success_prob_std"]
+        for name in queue_names
+    ], dtype=float)
+    nonmarking_means = np.asarray([
+        metrics[name + "poisson_samples_queue_nonmarking_prob_mean"]
+        for name in queue_names
+    ], dtype=float)
+    nonmarking_stds = np.asarray([
+        metrics[name + "poisson_samples_queue_nonmarking_prob_std"]
+        for name in queue_names
+    ], dtype=float)
+
+    delay_mean = float(np.sum(delay_means))
+    if delay_mean == 0 and np.all(delay_stds == 0):
+        max_delay_epsilon = 0.0
+    else:
+        max_delay_epsilon = max(
+            _relative_epsilon(mean, std, count)
+            for mean, std, count in zip(delay_means, delay_stds, counts)
+        )
+
+    def probability_aggregate(means: np.ndarray) -> float:
+        if np.any(means <= 0):
+            return float("-inf")
+        return float(np.sum(np.log(means)))
+
+    aggregate = {
+        "DelayMean": delay_mean,
+        "MaxEpsilonDelay": max_delay_epsilon,
+        "e2eDelayStd": float(np.sum(delay_stds)),
+        "SuccessProbMean": probability_aggregate(success_means),
+        "MaxEpsilonSuccessProb": max(
+            _relative_epsilon(mean, std, count)
+            for mean, std, count in zip(success_means, success_stds, counts)
+        ),
+        "e2eSuccessProbStd": float(np.sum(success_stds)),
+        "NonMarkingProbMean": probability_aggregate(nonmarking_means),
+        "MaxEpsilonNonMarkingProb": max(
+            _relative_epsilon(mean, std, count)
+            for mean, std, count in zip(nonmarking_means, nonmarking_stds, counts)
+        ),
+        "e2eNonMarkingProbStd": float(np.sum(nonmarking_stds)),
+    }
+    number_of_segments = len(queue_names)
+    requirements = {
+        "delay": calc_min_e2e_samples(
+            CONFIDENCE_Z, MAX_CONSISTENCY_ERROR, aggregate, metric="Delay"
+        ),
+        "success_probability": calc_min_e2e_samples_prob(
+            CONFIDENCE_Z,
+            MAX_CONSISTENCY_ERROR,
+            aggregate,
+            number_of_segments,
+            metric="SuccessProb",
+        ),
+        "nonmarking_probability": calc_min_e2e_samples_prob(
+            CONFIDENCE_Z,
+            MAX_CONSISTENCY_ERROR,
+            aggregate,
+            number_of_segments,
+            metric="NonMarkingProb",
+        ),
+    }
+    return aggregate, requirements
+
+
+def add_subsampled_consistency_metrics(
     switch_metrics: dict[str, Any],
-    actual_metrics: dict[str, Any],
+    subsampled_metrics: dict[str, Any],
     queue_names: list[str],
+    switch_aggregate: dict[str, Any],
     confidence_z: float = CONFIDENCE_Z,
 ) -> dict[str, Any]:
-    """Add actual-E2E versus independently sampled switch consistency metrics."""
+    """Apply PostProcessing.py inequalities to the E2E subsample estimates."""
     result = dict(switch_metrics)
-    result.update(actual_metrics)
+    result.update(subsampled_metrics)
 
-    switch_delay_mean = float(result["sum_poisson_samples_queue_delay_mean"])
-    switch_delay_se = float(np.sqrt(np.sum([
-        np.square(_standard_error(
-            result[name + "poisson_samples_queue_delay_std"],
-            result[name + "poisson_samples_queue_delay_count"],
-        ))
-        for name in queue_names
-    ])))
-    actual_delay_se = _standard_error(
-        result["actual_e2e_delay_std"], result["actual_e2e_delay_count"]
-    )
-    delay_bound = confidence_z * (switch_delay_se + actual_delay_se)
-    delay_difference = result["actual_e2e_delay_mean"] - switch_delay_mean
+    switch_delay_mean = float(switch_aggregate["DelayMean"])
+    delay_count = result["subsampled_e2e_delay_count"]
+    delay_bound = float("nan")
+    if result["subsampled_e2e_delay_minimum_requirement_met"] and delay_count > 0:
+        delay_bound = (
+            switch_delay_mean * switch_aggregate["MaxEpsilonDelay"]
+            + confidence_z * switch_aggregate["e2eDelayStd"] / np.sqrt(delay_count)
+        )
+    delay_difference = result["subsampled_e2e_delay_mean"] - switch_delay_mean
     biased_delay_difference = delay_difference - result["total_estimated_bias"]
 
     result["switch_path_delay_mean"] = switch_delay_mean
-    result["actual_e2e_minus_switch_delay"] = delay_difference
-    result["actual_e2e_minus_biased_switch_delay"] = biased_delay_difference
-    result["actual_e2e_vs_switch_delay_error_bound"] = delay_bound
-    result["actual_e2e_vs_switch_delay_consistent"] = int(
-        np.isfinite(delay_bound) and abs(delay_difference) <= delay_bound
+    result["switch_path_max_epsilon_delay"] = switch_aggregate["MaxEpsilonDelay"]
+    result["subsampled_e2e_minus_switch_delay"] = delay_difference
+    result["subsampled_e2e_minus_biased_switch_delay"] = biased_delay_difference
+    result["subsampled_e2e_vs_switch_delay_error_bound"] = delay_bound
+    delay_check_performed = int(np.isfinite(delay_bound))
+    result["subsampled_e2e_vs_switch_delay_check_performed"] = delay_check_performed
+    result["subsampled_e2e_vs_switch_delay_consistent"] = (
+        int(abs(delay_difference) <= delay_bound)
+        if delay_check_performed else float("nan")
     )
-    result["actual_e2e_vs_switch_delay_consistent_with_bias"] = int(
-        np.isfinite(delay_bound) and abs(biased_delay_difference) <= delay_bound
+    result["subsampled_e2e_vs_switch_delay_consistent_with_bias"] = (
+        int(abs(biased_delay_difference) <= delay_bound)
+        if delay_check_performed else float("nan")
     )
 
     probability_specs = (
         (
             "success",
-            "sum_poisson_samples_queue_success_prob_mean",
-            "poisson_samples_queue_success_prob",
-            "actual_e2e_success_probability",
+            "subsampled_e2e_success_probability",
+            "SuccessProb",
         ),
         (
             "nonmarking",
-            "sum_poisson_samples_queue_nonmarking_prob_mean",
-            "poisson_samples_queue_nonmarking_prob",
-            "actual_e2e_nonmarking_probability",
+            "subsampled_e2e_nonmarking_probability",
+            "NonMarkingProb",
         ),
     )
-    for label, switch_key, queue_suffix, actual_prefix in probability_specs:
-        switch_mean = float(result[switch_key])
-        switch_se = _product_standard_error(result, queue_names, queue_suffix)
-        actual_se = _standard_error(
-            result[actual_prefix + "_std"], result[actual_prefix + "_count"]
-        )
-        error_bound = confidence_z * (switch_se + actual_se)
-        difference = result[actual_prefix + "_mean"] - switch_mean
+    number_of_segments = len(queue_names)
+    for label, subsampled_prefix, legacy_prefix in probability_specs:
+        switch_log_mean = switch_aggregate[legacy_prefix + "Mean"]
+        switch_mean = float(np.exp(switch_log_mean))
+        max_epsilon = switch_aggregate["MaxEpsilon" + legacy_prefix]
+        e2e_std = switch_aggregate["e2e" + legacy_prefix + "Std"]
+        subsampled_mean = result[subsampled_prefix + "_mean"]
+        subsampled_count = result[subsampled_prefix + "_count"]
+        epsp = float("nan")
+        lower_bound = float("nan")
+        upper_bound = float("nan")
+        consistent = 0
+        if (
+            result[subsampled_prefix + "_minimum_requirement_met"]
+            and subsampled_mean > 0
+            and subsampled_count > 0
+            and 0 <= max_epsilon < 1
+        ):
+            epsp = confidence_z * e2e_std / (
+                subsampled_mean * np.sqrt(subsampled_count)
+            )
+            if 0 <= epsp < 1:
+                upper_bound = (
+                    number_of_segments * np.log1p(max_epsilon)
+                    - np.log1p(-epsp)
+                )
+                lower_bound = (
+                    number_of_segments * np.log1p(-max_epsilon)
+                    - np.log1p(epsp)
+                )
+                log_difference = np.log(subsampled_mean) - switch_log_mean
+                consistent = int(lower_bound <= log_difference <= upper_bound)
+            else:
+                log_difference = float("nan")
+        else:
+            log_difference = float("nan")
+        difference = result[subsampled_prefix + "_mean"] - switch_mean
         result[f"switch_path_{label}_probability_mean"] = switch_mean
-        result[f"actual_e2e_minus_switch_{label}_probability"] = difference
-        result[f"actual_e2e_vs_switch_{label}_probability_error_bound"] = error_bound
-        result[f"actual_e2e_vs_switch_{label}_probability_consistent"] = int(
-            np.isfinite(error_bound) and abs(difference) <= error_bound
+        result[f"switch_path_max_epsilon_{label}_probability"] = max_epsilon
+        result[f"subsampled_e2e_minus_switch_{label}_probability"] = difference
+        result[f"subsampled_e2e_minus_switch_{label}_log_probability"] = log_difference
+        result[f"subsampled_e2e_{label}_probability_relative_error"] = epsp
+        result[f"subsampled_e2e_vs_switch_{label}_log_probability_bounds"] = [
+            upper_bound,
+            lower_bound,
+        ]
+        check_performed = int(np.isfinite([lower_bound, upper_bound]).all())
+        result[f"subsampled_e2e_vs_switch_{label}_probability_check_performed"] = (
+            check_performed
+        )
+        result[f"subsampled_e2e_vs_switch_{label}_probability_consistent"] = (
+            consistent if check_performed else float("nan")
         )
 
     return result
@@ -287,7 +507,7 @@ def analyze_experiment(
     results: dict[tuple[str, int], dict[str, Any]] = {}
 
     for source, destination, path_id in sorted(discovered):
-        print(f"Checking actual consistency for {source} -> {destination}, path {path_id}")
+        print(f"Checking subsampled consistency for {source}({host_to_ip.get(source, 'unknown')}) -> {destination}({host_to_ip.get(destination, 'unknown')}), path {path_id}")
         flow_name = source + destination
         queue_names = queues_for_flow(source, destination, path_id)
         route_key = tuple(queue_names)
@@ -320,16 +540,23 @@ def analyze_experiment(
         frame = trace_reader.flow_path(
             source, host_to_ip[destination], path_id, steady_start, steady_end
         )
-        actual_metrics = actual_flow_path_statistics(
-            frame,
-            direct_path=len(queue_names) == 1,
-            link_rates=link_rates,
-            link_delays=link_delays,
-        )
-        repetition_results = [
-            add_actual_consistency_metrics(run, actual_metrics, queue_names)
-            for run in switch_runs_by_route[route_key]
-        ]
+        repetition_results = []
+        for run in switch_runs_by_route[route_key]:
+            switch_aggregate, requirements = switch_sampling_requirements(
+                run, queue_names
+            )
+            subsampled_metrics = subsampled_flow_path_statistics(
+                frame,
+                sampling_requirements=requirements,
+                direct_path=len(queue_names) == 1,
+                link_rates=link_rates,
+                link_delays=link_delays,
+            )
+            repetition_results.append(
+                add_subsampled_consistency_metrics(
+                    run, subsampled_metrics, queue_names, switch_aggregate
+                )
+            )
         results[(flow_name, path_id)] = average_repetitions(repetition_results)
 
     return results
