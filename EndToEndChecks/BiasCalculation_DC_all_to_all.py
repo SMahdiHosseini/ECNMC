@@ -38,6 +38,9 @@ from Utils import (
 NS3_PATH = Path(__file__).resolve().parents[3]
 SOURCE_FILE_RE = re.compile(r"^(R(?P<rack>\d+)H(?P<host>\d+))_ALL_EndToEnd_packets\.csv$")
 HOST_RE = re.compile(r"^R(?P<rack>\d+)H(?P<host>\d+)$")
+FLOW_RE = re.compile(
+    r"^(?P<source>R\d+H\d+)(?P<destination>R\d+H\d+)$"
+)
 REQUIRED_E2E_COLUMNS = {"SourceIp", "DestinationIp", "Path", "PayloadSize"}
 FLOW_INVENTORY_FILE = "all_to_all_flow_inventory.json"
 FLOW_INVENTORY_VERSION = 1
@@ -220,11 +223,14 @@ def discover_flow_paths(
     max_flows: int | None = None,
     randomize: bool = False,
     start_flow: int = 0,
+    specific_flow: str | None = None,
 ) -> dict[tuple[str, str, int], int]:
     """Return cached flow/path pairs, optionally selecting distinct flows."""
     _, discovered = load_flow_inventory(experiment_dir)
 
-    return select_flow_paths(discovered, max_flows, randomize, start_flow)
+    return select_flow_paths(
+        discovered, max_flows, randomize, start_flow, specific_flow
+    )
 
 
 def select_flow_paths(
@@ -232,10 +238,27 @@ def select_flow_paths(
     max_flows: int | None,
     randomize: bool,
     start_flow: int = 0,
+    specific_flow: str | None = None,
 ) -> dict[tuple[str, str, int], int]:
     """Select complete flows after a zero-based offset, retaining all paths."""
     if start_flow < 0:
         raise ValueError("start_flow must be non-negative")
+
+    if specific_flow is not None:
+        match = FLOW_RE.fullmatch(specific_flow)
+        if match is None:
+            raise ValueError(
+                f"Invalid flow {specific_flow!r}; expected a name such as R0H0R2H4"
+            )
+        selected_flow = (match.group("source"), match.group("destination"))
+        selected_paths = {
+            key: count
+            for key, count in discovered.items()
+            if key[:2] == selected_flow
+        }
+        if not selected_paths:
+            raise ValueError(f"Requested flow {specific_flow} does not exist")
+        return selected_paths
 
     flow_pairs = sorted({(src, dst) for src, dst, _ in discovered})
     eligible_flows = flow_pairs[start_flow:]
@@ -311,9 +334,12 @@ def analyze_experiment(
     max_flows: int | None = None,
     randomize: bool = False,
     start_flow: int = 0,
+    specific_flow: str | None = None,
 ) -> dict[tuple[str, int], dict[str, Any]]:
     ip_to_host, all_discovered = load_flow_inventory(experiment_dir)
-    discovered = select_flow_paths(all_discovered, max_flows, randomize, start_flow)
+    discovered = select_flow_paths(
+        all_discovered, max_flows, randomize, start_flow, specific_flow
+    )
     if not discovered:
         raise FileNotFoundError(f"No aggregate end-to-end records found in {experiment_dir}")
 
@@ -366,6 +392,11 @@ def _parse_csv_filter(value: str | None, cast: Any) -> list[Any] | None:
     return [cast(item.strip()) for item in value.split(",") if item.strip()]
 
 
+def output_filename(base_name: str, specific_flow: str | None) -> str:
+    """Prefix the output filename when processing one explicitly selected flow."""
+    return f"{specific_flow}_{base_name}" if specific_flow is not None else base_name
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dir", required=True, help="Result suffix, e.g. forward")
@@ -385,6 +416,10 @@ def main() -> None:
     )
     parser.add_argument("--randomize", action="store_true", help="Randomly select flows if --max-flows is set")
     parser.add_argument(
+        "--flow",
+        help="Process one exact source/destination flow, e.g. R0H0R2H4",
+    )
+    parser.add_argument(
         "--save-per-switch",
         action=argparse.BooleanOptionalAction,
         default=True,
@@ -400,6 +435,14 @@ def main() -> None:
         parser.error("--max-flows must be at least 1")
     if args.start_flow < 0:
         parser.error("--start-flow must be non-negative")
+    if args.flow is not None and (
+        args.max_flows is not None or args.start_flow != 0 or args.randomize
+    ):
+        parser.error(
+            "--flow cannot be combined with --max-flows, --start-flow, or --randomize"
+        )
+    if args.flow is not None and FLOW_RE.fullmatch(args.flow) is None:
+        parser.error("--flow must have the form RaHbRcHd, for example R0H0R2H4")
 
     result_config_dir = NS3_PATH / "scratch" / "ECNMC" / "Results" / f"results_{args.dir}"
     config_path = args.config or (result_config_dir / "Parameters.config")
@@ -453,6 +496,7 @@ def main() -> None:
                         max_flows=args.max_flows,
                         start_flow=args.start_flow,
                         randomize=args.randomize,
+                        specific_flow=args.flow,
                     )
                     for (flow_name, path_id), metrics in flow_results.items():
                         store_metrics(
@@ -464,7 +508,7 @@ def main() -> None:
                 merged["experiment"] = completed_experiments  # type: ignore[assignment]
                 output_dir = result_config_dir / traffic / str(rate) / str(load)
                 output_dir.mkdir(parents=True, exist_ok=True)
-                output_path = output_dir / args.output_name
+                output_path = output_dir / output_filename(args.output_name, args.flow)
                 with output_path.open("w") as output_file:
                     json.dump(merged, output_file, indent=4, allow_nan=True)
                 print(f"Saved {output_path}")
