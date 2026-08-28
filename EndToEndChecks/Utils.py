@@ -12,6 +12,7 @@ import numpy as np
 from scipy.stats import anderson
 from scipy.stats import f_oneway, kruskal
 from scipy.stats import bernoulli, ks_2samp
+from scipy.stats import wasserstein_distance
 from math import factorial, exp
 import csv
 from collections import defaultdict
@@ -2741,6 +2742,168 @@ def plot_delay_distribution_cdfs(
     axis.set_ylim(0, 1.02)
     axis.grid(True, alpha=0.35)
     axis.legend(fontsize=30, loc="lower right")
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=150)
+    plt.close(fig)
+    return output_path
+
+
+def compute_emd_vs_num_tcp_flows(
+    ns3_path,
+    results_folder,
+    rate,
+    load,
+    experiment,
+    flow_name,
+    queue_names,
+    linkDelays,
+    linkRates,
+    steadyStart,
+    steadyEnd,
+    agg_stats,
+    confidenceValue,
+    min_sample_size=30,
+    delay_cdf_sample_count=1000000,
+    path=0,
+    max_num_flows=None,
+):
+    """Grow the set of considered TCP flows of `flow_name` one at a time and,
+    for each size, compare the reconstructed network queuing delay CDF
+    (ground truth) against the CDF of all packets of the considered flows and
+    against a Poisson-subsampled CDF of the same packets.
+
+    TCP flows are identified by the (SourceIp, SourcePort, DestinationIp,
+    DestinationPort) 4-tuple and are ordered by the SentTime of their first
+    packet, so k=1 is the earliest-starting flow and k=N is all flows.
+
+    Returns a dict with, for each k=1..N considered flows:
+      - 'emd_all_packets': Earth Mover's Distance between the ground-truth
+        CDF and the all-packet CDF of the first k flows.
+      - 'emd_sampled_packets': EMD between the ground-truth CDF and the
+        subsampled CDF of the first k flows, or NaN when no valid subsample
+        could be found for that k (e.g. too few packets/windows).
+      - 'consistency_pass': whether the per-segment delay consistency check
+        (same Maximum-Epsilon inequality used for the full flow) holds for
+        the subsampled mean at that k; None when no subsample was found.
+    """
+    dir_prefix = '{}/scratch/{}/{}/{}/{}/'.format(ns3_path, results_folder, rate, load, experiment)
+    file_path = dir_prefix + '{}_EndToEnd_packets.csv'.format(flow_name)
+
+    full_df = pd.read_csv(file_path)
+    full_df = addRemoveTransmission_data(full_df, linkDelays, linkRates)
+    full_df = prune_data(full_df, 'SentTime', steadyStart, steadyEnd)
+    full_df = full_df[full_df['IsReceived'] == 1]
+    full_df = full_df[full_df['Path'] == path].copy()
+    full_df = full_df.sort_values(by='SentTime').reset_index(drop=True)
+
+    full_df['FlowKey'] = list(zip(full_df['SourceIp'], full_df['SourcePort'], full_df['DestinationIp'], full_df['DestinationPort']))
+    flow_first_seen = full_df.groupby('FlowKey')['SentTime'].min().sort_values()
+    flow_order = flow_first_seen.index.tolist()
+    if max_num_flows is not None:
+        flow_order = flow_order[:max_num_flows]
+    flow_rank = {key: rank for rank, key in enumerate(flow_order, start=1)}
+    full_df['FlowRank'] = full_df['FlowKey'].map(flow_rank)
+    full_df = full_df[full_df['FlowRank'].notna()]
+
+    groundtruth_values = construct_path_delay_distribution(
+        queue_names, dir_prefix, steadyStart, steadyEnd, linkDelays, linkRates,
+        sample_count=delay_cdf_sample_count,
+    )
+
+    num_flows_list, emd_all_list, emd_sampled_list = [], [], []
+    consistency_list, sample_sizes_list, all_packet_sizes_list = [], [], []
+    min_samples = agg_stats.get('MinimumE2ESampleSizeDelay', 0)
+    for k in range(1, len(flow_order) + 1):
+        subset = full_df[full_df['FlowRank'] <= k]
+        all_values = subset['Delay'].values
+        num_flows_list.append(k)
+        all_packet_sizes_list.append(len(all_values))
+        if len(all_values) and len(groundtruth_values):
+            emd_all_list.append(wasserstein_distance(groundtruth_values, all_values))
+        else:
+            emd_all_list.append(np.nan)
+
+        times = subset['SentTime'].values
+        samples_times, sub_err = find_samples_path(times, MinimumNumberOfSamples=min_samples)
+        if sub_err != SubSamplingError.NoError or len(samples_times) == 0:
+            emd_sampled_list.append(np.nan)
+            consistency_list.append(None)
+            sample_sizes_list.append(0)
+            continue
+
+        sample_values = subset[subset['SentTime'].isin(samples_times)]['Delay'].values
+        sample_sizes_list.append(len(sample_values))
+        if len(sample_values) and len(groundtruth_values):
+            emd_sampled_list.append(wasserstein_distance(groundtruth_values, sample_values))
+        else:
+            emd_sampled_list.append(np.nan)
+
+        if len(sample_values) < min_sample_size:
+            consistency_list.append(False)
+            continue
+        sample_mean = np.mean(sample_values)
+        epsilon_bound = agg_stats['DelayMean'] * agg_stats['MaxEpsilonDelay']
+        epsilon_bound += confidenceValue * agg_stats['e2eDelayStd'] / np.sqrt(len(sample_values))
+        consistency_list.append(bool(abs(sample_mean - agg_stats['DelayMean']) <= epsilon_bound))
+
+    return {
+        'flow_name': flow_name,
+        'path': path,
+        'total_flows': len(flow_order),
+        'num_flows': num_flows_list,
+        'groundtruth_values': groundtruth_values,
+        'emd_all_packets': emd_all_list,
+        'emd_sampled_packets': emd_sampled_list,
+        'consistency_pass': consistency_list,
+        'sample_sizes': sample_sizes_list,
+        'all_packet_sizes': all_packet_sizes_list,
+    }
+
+
+def plot_emd_vs_num_flows(results, output_path, title="EMD vs number of TCP flows"):
+    """Plot the EMD-to-ground-truth of the all-packet and subsampled CDFs as
+    the number of considered TCP flows grows (see compute_emd_vs_num_tcp_flows).
+    Subsampled points are colored by whether the per-segment delay
+    consistency check passes; a flow count for which no valid subsample was
+    found is left without a point on the subsampled line."""
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    x = np.asarray(results['num_flows'], dtype=float)
+    emd_all = np.asarray(results['emd_all_packets'], dtype=float)
+    emd_sampled = np.asarray(results['emd_sampled_packets'], dtype=float)
+    consistency = results['consistency_pass']
+
+    fig, axis = plt.subplots(figsize=(30, 15))
+
+    valid_all = np.isfinite(emd_all)
+    axis.plot(x[valid_all], emd_all[valid_all], color='C1', marker='o', markersize=10,
+              linewidth=4, label='All packets of considered flows')
+
+    valid_sampled = np.isfinite(emd_sampled)
+    axis.plot(x[valid_sampled], emd_sampled[valid_sampled], color='0.6', linewidth=3,
+              linestyle='--', zorder=1)
+
+    pass_mask = np.array([c is True for c in consistency]) & valid_sampled
+    fail_mask = np.array([c is False for c in consistency]) & valid_sampled
+    if pass_mask.any():
+        axis.scatter(x[pass_mask], emd_sampled[pass_mask], color='tab:green', edgecolor='black',
+                     s=250, zorder=2, label='Subsampled (consistency check passed)')
+    if fail_mask.any():
+        axis.scatter(x[fail_mask], emd_sampled[fail_mask], color='tab:red', edgecolor='black',
+                     s=250, zorder=2, label='Subsampled (consistency check failed)')
+
+    missing = ~valid_sampled
+    if missing.any():
+        print("No subsample available for {} flow-count(s), skipped: {}".format(
+            int(missing.sum()), x[missing].astype(int).tolist()))
+
+    axis.set_title(title, fontsize=34)
+    axis.set_xlabel('Number of TCP flows considered')
+    axis.set_ylabel("EMD to reconstructed network delay CDF (ns)")
+    axis.xaxis.set_major_locator(MaxNLocator(integer=True))
+    axis.grid(True, alpha=0.35)
+    axis.legend(fontsize=24, loc='best')
     fig.tight_layout()
     fig.savefig(output_path, dpi=150)
     plt.close(fig)
