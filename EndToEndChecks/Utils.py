@@ -2748,6 +2748,20 @@ def plot_delay_distribution_cdfs(
     return output_path
 
 
+def _delay_consistency_check(values, agg_stats, confidenceValue, min_sample_size):
+    """Maximum-Epsilon inequality delay consistency check (same formula used
+    for the full flow's 'event_poisson_eventAvg' check), applied to any set
+    of per-packet delay values: does the mean of `values` fall within the
+    per-segment aggregated delay bound `agg_stats`?"""
+    if len(values) < min_sample_size:
+        return False
+    sample_mean = np.mean(values)
+    epsilon_bound = agg_stats['DelayMean'] * agg_stats['MaxEpsilonDelay']
+    epsilon_bound += confidenceValue * agg_stats['e2eDelayStd'] / np.sqrt(len(values))
+    print(f"Delay consistency check: sample mean = {sample_mean}, agg mean = {agg_stats['DelayMean']}, epsilon bound = {epsilon_bound}")
+    return bool(abs(sample_mean - agg_stats['DelayMean']) <= epsilon_bound)
+
+
 def compute_emd_vs_num_tcp_flows(
     ns3_path,
     results_folder,
@@ -2785,6 +2799,9 @@ def compute_emd_vs_num_tcp_flows(
       - 'consistency_pass': whether the per-segment delay consistency check
         (same Maximum-Epsilon inequality used for the full flow) holds for
         the subsampled mean at that k; None when no subsample was found.
+      - 'consistency_pass_all_packets': the same consistency check applied to
+        the mean of all packets of the first k flows (rather than the
+        subsampled mean); None when there are no packets for that k.
     """
     dir_prefix = '{}/scratch/{}/{}/{}/{}/'.format(ns3_path, results_folder, rate, load, experiment)
     file_path = dir_prefix + '{}_EndToEnd_packets.csv'.format(flow_name)
@@ -2811,7 +2828,8 @@ def compute_emd_vs_num_tcp_flows(
     )
 
     num_flows_list, emd_all_list, emd_sampled_list = [], [], []
-    consistency_list, sample_sizes_list, all_packet_sizes_list = [], [], []
+    consistency_list, consistency_all_list = [], []
+    sample_sizes_list, all_packet_sizes_list = [], []
     min_samples = agg_stats.get('MinimumE2ESampleSizeDelay', 0)
     for k in range(1, len(flow_order) + 1):
         subset = full_df[full_df['FlowRank'] <= k]
@@ -2822,6 +2840,11 @@ def compute_emd_vs_num_tcp_flows(
             emd_all_list.append(wasserstein_distance(groundtruth_values, all_values))
         else:
             emd_all_list.append(np.nan)
+        if len(all_values):
+            print(f"Checking delay consistency for all packets of first {k} flows: sample size = {len(all_values)}")
+            consistency_all_list.append(_delay_consistency_check(all_values, agg_stats, confidenceValue, min_sample_size))
+        else:
+            consistency_all_list.append(None)
 
         times = subset['SentTime'].values
         samples_times, sub_err = find_samples_path(times, MinimumNumberOfSamples=min_samples)
@@ -2837,14 +2860,8 @@ def compute_emd_vs_num_tcp_flows(
             emd_sampled_list.append(wasserstein_distance(groundtruth_values, sample_values))
         else:
             emd_sampled_list.append(np.nan)
-
-        if len(sample_values) < min_sample_size:
-            consistency_list.append(False)
-            continue
-        sample_mean = np.mean(sample_values)
-        epsilon_bound = agg_stats['DelayMean'] * agg_stats['MaxEpsilonDelay']
-        epsilon_bound += confidenceValue * agg_stats['e2eDelayStd'] / np.sqrt(len(sample_values))
-        consistency_list.append(bool(abs(sample_mean - agg_stats['DelayMean']) <= epsilon_bound))
+        print(f"Checking delay consistency for subsampled packets of first {k} flows: sample size = {len(sample_values)}")
+        consistency_list.append(_delay_consistency_check(sample_values, agg_stats, confidenceValue, min_sample_size))
 
     return {
         'flow_name': flow_name,
@@ -2855,6 +2872,7 @@ def compute_emd_vs_num_tcp_flows(
         'emd_all_packets': emd_all_list,
         'emd_sampled_packets': emd_sampled_list,
         'consistency_pass': consistency_list,
+        'consistency_pass_all_packets': consistency_all_list,
         'sample_sizes': sample_sizes_list,
         'all_packet_sizes': all_packet_sizes_list,
     }
@@ -2863,35 +2881,49 @@ def compute_emd_vs_num_tcp_flows(
 def plot_emd_vs_num_flows(results, output_path, title="EMD vs number of TCP flows"):
     """Plot the EMD-to-ground-truth of the all-packet and subsampled CDFs as
     the number of considered TCP flows grows (see compute_emd_vs_num_tcp_flows).
-    Subsampled points are colored by whether the per-segment delay
-    consistency check passes; a flow count for which no valid subsample was
-    found is left without a point on the subsampled line."""
+    Points on both lines are colored by whether the per-segment delay
+    consistency check passes for that line's mean (circles for all packets of
+    the considered flows, squares for the subsampled packets); a flow count
+    for which no valid subsample was found is left without a point on the
+    subsampled line."""
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     x = np.asarray(results['num_flows'], dtype=float)
     emd_all = np.asarray(results['emd_all_packets'], dtype=float)
     emd_sampled = np.asarray(results['emd_sampled_packets'], dtype=float)
-    consistency = results['consistency_pass']
+    consistency_all = results['consistency_pass_all_packets']
+    consistency_sampled = results['consistency_pass']
 
     fig, axis = plt.subplots(figsize=(30, 15))
 
     valid_all = np.isfinite(emd_all)
-    axis.plot(x[valid_all], emd_all[valid_all], color='C1', marker='o', markersize=10,
-              linewidth=4, label='All packets of considered flows')
+    axis.plot(x[valid_all], emd_all[valid_all], color='C1', linewidth=4, zorder=1,
+              label='All packets of considered flows')
 
     valid_sampled = np.isfinite(emd_sampled)
     axis.plot(x[valid_sampled], emd_sampled[valid_sampled], color='0.6', linewidth=3,
-              linestyle='--', zorder=1)
+              linestyle='--', zorder=1, label='Subsampled packets of considered flows')
 
-    pass_mask = np.array([c is True for c in consistency]) & valid_sampled
-    fail_mask = np.array([c is False for c in consistency]) & valid_sampled
-    if pass_mask.any():
-        axis.scatter(x[pass_mask], emd_sampled[pass_mask], color='tab:green', edgecolor='black',
-                     s=250, zorder=2, label='Subsampled (consistency check passed)')
-    if fail_mask.any():
-        axis.scatter(x[fail_mask], emd_sampled[fail_mask], color='tab:red', edgecolor='black',
-                     s=250, zorder=2, label='Subsampled (consistency check failed)')
+    pass_color, fail_color = 'tab:green', 'tab:red'
+
+    pass_all_mask = np.array([c is True for c in consistency_all]) & valid_all
+    fail_all_mask = np.array([c is False for c in consistency_all]) & valid_all
+    if pass_all_mask.any():
+        axis.scatter(x[pass_all_mask], emd_all[pass_all_mask], marker='o', color=pass_color,
+                     edgecolor='black', s=250, zorder=2, label='All packets (consistency check passed)')
+    if fail_all_mask.any():
+        axis.scatter(x[fail_all_mask], emd_all[fail_all_mask], marker='o', color=fail_color,
+                     edgecolor='black', s=250, zorder=2, label='All packets (consistency check failed)')
+
+    pass_sampled_mask = np.array([c is True for c in consistency_sampled]) & valid_sampled
+    fail_sampled_mask = np.array([c is False for c in consistency_sampled]) & valid_sampled
+    if pass_sampled_mask.any():
+        axis.scatter(x[pass_sampled_mask], emd_sampled[pass_sampled_mask], marker='s', color=pass_color,
+                     edgecolor='black', s=250, zorder=2, label='Subsampled (consistency check passed)')
+    if fail_sampled_mask.any():
+        axis.scatter(x[fail_sampled_mask], emd_sampled[fail_sampled_mask], marker='s', color=fail_color,
+                     edgecolor='black', s=250, zorder=2, label='Subsampled (consistency check failed)')
 
     missing = ~valid_sampled
     if missing.any():
@@ -2903,7 +2935,7 @@ def plot_emd_vs_num_flows(results, output_path, title="EMD vs number of TCP flow
     axis.set_ylabel("EMD to reconstructed network delay CDF (ns)")
     axis.xaxis.set_major_locator(MaxNLocator(integer=True))
     axis.grid(True, alpha=0.35)
-    axis.legend(fontsize=24, loc='best')
+    axis.legend(fontsize=22, loc='best')
     fig.tight_layout()
     fig.savefig(output_path, dpi=150)
     plt.close(fig)
