@@ -12,6 +12,7 @@ import json as js
 import pickle
 import multiprocessing
 import argparse
+import time
 
 # __ns3_path = os.popen('locate "ns-3.41" | grep /ns-3.41$').read().splitlines()[0]
 __ns3_path = "/media/experiments/ns-allinone-3.41/ns-3.41"
@@ -648,6 +649,22 @@ def __main__():
                     dest="dir",
                     help="The directory of the results",
                     default="")
+    parser.add_argument("--emd-vs-flows",
+                    action="store_true",
+                    dest="emd_vs_flows",
+                    help="Run the EMD-vs-number-of-flows analysis (run_emd_vs_flows_experiment) "
+                         "for each traffic/rate/load/experiment instead of the standard "
+                         "analyze_all_experiments sweep. Only used in the 'forward' branch.")
+    parser.add_argument("--flow-name", dest="flow_name", default="R0H0R2H3",
+                    help="TCP flow to analyze when --emd-vs-flows is set")
+    parser.add_argument("--path", dest="path", type=int, default=0,
+                    help="Path index to analyze when --emd-vs-flows is set")
+    parser.add_argument("--num-runs", dest="num_runs", type=int, default=10,
+                    help="Number of repeated Poisson-sampling runs when --emd-vs-flows is set")
+    parser.add_argument("--num-poisson-observations", dest="num_poisson_observations", type=int, default=9000,
+                    help="Poisson observations per run when --emd-vs-flows is set")
+    parser.add_argument("--num-workers", dest="num_workers", type=int, default=10,
+                    help="Parallel workers across runs when --emd-vs-flows is set")
 
     args = parser.parse_args()
     config = configparser.ConfigParser()
@@ -679,9 +696,20 @@ def __main__():
             for traffic in traffics:
                 for rate in serviceRateScales:
                     for load in loads:
-                        print("\nAnalyzing experiments for traffic {} rate: {} load: {}".format(traffic, rate, load))
-                        analyze_all_experiments(rate, start, start + int((steadyEnd - steadyStart) / numOfSteadyParts), confidenceValue, args.dir + "/" + traffic, config, experiments_end=experiments, ns3_path=__ns3_path, load=load)
-                        print("Traffic {} Rate {} {} {} done".format(traffic, rate, load, experiments))
+                        if args.emd_vs_flows:
+                            print("\nRunning EMD-vs-flows analysis for traffic {} rate: {} load: {}".format(traffic, rate, load))
+                            for experiment in range(experiments):
+                                run_emd_vs_flows_experiment(
+                                    rate, start, start + int((steadyEnd - steadyStart) / numOfSteadyParts), confidenceValue,
+                                    'Results_' + args.dir + "/" + traffic, config, experiment=experiment, ns3_path=__ns3_path, load=load,
+                                    flow_name=args.flow_name, path=args.path, num_runs=args.num_runs,
+                                    num_poisson_observations=args.num_poisson_observations, num_workers=args.num_workers,
+                                )
+                            print("Traffic {} Rate {} {} {} EMD-vs-flows done".format(traffic, rate, load, experiments))
+                        else:
+                            print("\nAnalyzing experiments for traffic {} rate: {} load: {}".format(traffic, rate, load))
+                            analyze_all_experiments(rate, start, start + int((steadyEnd - steadyStart) / numOfSteadyParts), confidenceValue, args.dir + "/" + traffic, config, experiments_end=experiments, ns3_path=__ns3_path, load=load)
+                            print("Traffic {} Rate {} {} {} done".format(traffic, rate, load, experiments))
                     print("Traffic {} Rate {} done".format(traffic, rate))
                 print("Traffic {} done".format(traffic))
         else:
@@ -698,15 +726,17 @@ def __main__():
                     print("Rate {} done".format(rate))
                 print("Traffic {} done".format(traffic))
 
-def run_emd_vs_flows_experiment(rate, steadyStart, steadyEnd, confidenceValue, results_folder, config, experiment=0, ns3_path=__ns3_path, load=None, flow_name='R0H0R2H3', queue_names=None, path=0, delay_cdf_sample_interval_ns=10, num_runs=100, num_poisson_observations=9000, pass_threshold=0.9, num_workers=1):
+def run_emd_vs_flows_experiment(rate, steadyStart, steadyEnd, confidenceValue, results_folder, config, experiment=0, ns3_path=__ns3_path, load=None, flow_name='R0H0R2H3', queue_names=None, path=0, delay_cdf_sample_interval_ns=10, num_runs=100, num_poisson_observations=9000, pass_threshold=0.9, num_workers=1, uniform_sample_strides=(10, 100), emd_y_max=None, mean_diff_y_limit=None):
     """Reconstruct the network queuing delay CDF once (ground truth), then repeat `num_runs` times: draw
     `num_poisson_observations` fresh Poisson-process observation instants at the path's switches, derive the
     per-segment aggregated delay statistics from them, and grow the set of considered TCP flows of `flow_name`
-    one at a time, comparing the EMD of the all-packet CDF and of a subsampled CDF of the considered flows
-    against that ground truth. Saves, under the experiment's results directory:
-      - `<flow_name>_path_<path>_emd_vs_num_flows_boxplot.png`: EMD distribution across runs.
+    one at a time, comparing the EMD of the all-packet CDF against a Poisson-adaptive subsample and, for every
+    stride in `uniform_sample_strides`, a systematic "1-in-stride" uniform subsample of the considered flows'
+    packets. Saves, under the experiment's results directory:
+      - `<flow_name>_path_<path>_emd_vs_num_flows_boxplot.png`: EMD distribution across runs, one boxplot
+        family per subsampling method.
       - `<flow_name>_path_<path>_delay_mean_diff_boxplot.png`: the signed switch-vs-packet mean delay
-        difference underlying the consistency check.
+        difference underlying the consistency check, same per-method breakdown.
       - `<flow_name>_path_<path>_emd_vs_num_flows_results.pkl`: the full underlying results dict.
       - `<flow_name>_path_<path>_emd_vs_num_flows_results.txt`: a human-readable per-flow-count summary.
     Both plots color each flow-count's box/point by whether at least `pass_threshold` of the runs'
@@ -725,7 +755,7 @@ def run_emd_vs_flows_experiment(rate, steadyStart, steadyEnd, confidenceValue, r
         steadyStart, steadyEnd, confidenceValue, DelayConsistencyGaurantee,
         num_runs=num_runs, num_poisson_observations=num_poisson_observations,
         min_sample_size=min_sample_size, delay_cdf_sample_interval_ns=delay_cdf_sample_interval_ns, path=path,
-        num_workers=num_workers,
+        num_workers=num_workers, uniform_sample_strides=uniform_sample_strides,
     )
 
     output_dir = '{}/scratch/{}/{}/{}/{}/'.format(ns3_path, results_folder, rate, load, experiment)
@@ -735,16 +765,19 @@ def run_emd_vs_flows_experiment(rate, steadyStart, steadyEnd, confidenceValue, r
     plot_emd_vs_num_flows_boxplot(
         results, file_prefix + '_emd_vs_num_flows_boxplot.png', pass_threshold=pass_threshold,
         title='EMD vs number of TCP flows ({}): {}, path {}'.format(run_desc, flow_name, path),
+        y_max=emd_y_max,
     )
     plot_mean_diff_vs_num_flows(
         results, file_prefix + '_delay_mean_diff_boxplot.png', pass_threshold=pass_threshold,
         title='Switch vs. packet mean delay difference ({}): {}, path {}'.format(run_desc, flow_name, path),
+        y_limit=mean_diff_y_limit,
     )
     with open(file_prefix + '_emd_vs_num_flows_results.pkl', 'wb') as f:
         pickle.dump(results, f)
     save_emd_vs_flows_results_text(results, file_prefix + '_emd_vs_num_flows_results.txt')
 
     return results
+
 
 if __name__ == "__main__":
     __main__()
