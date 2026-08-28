@@ -1,4 +1,5 @@
 import psutil, os
+import multiprocessing
 os.environ["OPENBLAS_NUM_THREADS"] = "4"
 os.environ["OMP_NUM_THREADS"] = "4"
 os.environ["MKL_NUM_THREADS"] = "4"
@@ -6,6 +7,8 @@ import pandas as pd
 import glob
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
+from matplotlib.patches import Patch
+from matplotlib.lines import Line2D
 from enum import Enum
 import seaborn as sns
 import numpy as np
@@ -1140,7 +1143,7 @@ def calculate_offline_E2E_markingProb(full_df, df_res, checkColumn, txDelay, swt
 
 def calculate_offline_E2E_delays(full_df, removeDrops, checkColumn, txDelay, df_res, df_name, passiveProbe, samplingMethod, steadyStart, steadyEnd, 
                                  samples_paths_aggregated_statistics=None, queue_names=None, linkDelays=None, linkRates=None, queue_size_trshs=None,
-                                 flow_name=None, delay_cdf_sample_count=1000000):
+                                 flow_name=None, delay_cdf_sample_interval_ns=10):
     df_res['delay'] = {}
     for var in ['event']:
         for method in ['rightCont_timeAvg', 'leftCont_timeAvg', 'linearInterp_timeAvg', 'poisson_eventAvg', 'eventAvg']:
@@ -1236,7 +1239,7 @@ def calculate_offline_E2E_delays(full_df, removeDrops, checkColumn, txDelay, df_
                 steadyEnd,
                 linkDelays,
                 linkRates,
-                sample_count=delay_cdf_sample_count,
+                sample_interval_ns=delay_cdf_sample_interval_ns,
             )
             plot_name = flow_name or "flow"
             # print(f"Plotting delay distribution CDF for path {path} with {len(groundtruth_values)} ground truth samples, total {len(values)} samples, and {len(samples_values)} Poisson-sampled values.")
@@ -2662,29 +2665,27 @@ def construct_path_delay_distribution(
     steady_end,
     link_delays,
     link_rates,
-    sample_count=1000000,
+    sample_interval_ns=10,
 ):
     """Construct simultaneous network observations of all path queues.
 
-    Every queue is observed at exactly the same dense, uniformly spaced network
-    times. The queueing delays at each time are summed to form the path-delay
-    ground truth. Unlike an end-to-end observer, sample times are never shifted
-    by propagation or by the delay encountered at an earlier queue.
+    Every queue is observed at exactly the same network times, drawn from one
+    Poisson-process realization with mean inter-arrival interval
+    `sample_interval_ns` (see generate_poisson_observation_times) -- not a
+    uniform grid. The queueing delays at each time are summed to form the
+    path-delay ground truth. Unlike an end-to-end observer, sample times are
+    never shifted by propagation or by the delay encountered at an earlier
+    queue.
     """
     if steady_end <= steady_start:
         raise ValueError("steady_end must be greater than steady_start")
-    if sample_count < 2:
-        raise ValueError("sample_count must be at least 2")
+    if sample_interval_ns <= 0:
+        raise ValueError("sample_interval_ns must be positive")
     if not queue_names:
         return np.array([], dtype=float)
 
-    sample_times = np.linspace(
-        steady_start,
-        steady_end,
-        num=int(sample_count),
-        endpoint=False,
-        dtype=float,
-    )
+    num_observations = max(2, int((steady_end - steady_start) / sample_interval_ns))
+    sample_times = generate_poisson_observation_times(steady_start, steady_end, num_observations)
     prefix = str(dir_prefix)
     if not prefix.endswith("/"):
         prefix += "/"
@@ -2758,11 +2759,60 @@ def _delay_consistency_check(values, agg_stats, confidenceValue, min_sample_size
     sample_mean = np.mean(values)
     epsilon_bound = agg_stats['DelayMean'] * agg_stats['MaxEpsilonDelay']
     epsilon_bound += confidenceValue * agg_stats['e2eDelayStd'] / np.sqrt(len(values))
-    print(f"Delay consistency check: sample mean = {sample_mean}, agg mean = {agg_stats['DelayMean']}, epsilon bound = {epsilon_bound}")
     return bool(abs(sample_mean - agg_stats['DelayMean']) <= epsilon_bound)
 
 
-def compute_emd_vs_num_tcp_flows(
+def generate_poisson_observation_times(steadyStart, steadyEnd, num_observations):
+    """Draw the observation instants of one homogeneous Poisson-process
+    realization over [steadyStart, steadyEnd] targeting `num_observations`
+    points, generated the same way as elsewhere in this file (see
+    e2e_poisson_sampling, calculate_offline_delay_bias_DC): i.i.d. exponential
+    inter-arrival times -- mean interval = duration / num_observations --
+    cumulatively summed from steadyStart. The realized point count fluctuates
+    around num_observations rather than being fixed exactly, which is the
+    correct behavior of an actual Poisson probe.
+    """
+    duration = steadyEnd - steadyStart
+    mean_interval = duration / num_observations
+    times = steadyStart + np.cumsum(np.random.exponential(mean_interval, size=int(num_observations)))
+    return times[times <= steadyEnd]
+
+
+def compute_poisson_agg_stats(dir_prefix, queue_names, linkDelays, linkRates, steadyStart, steadyEnd,
+                               num_observations, confidenceValue, DelayConsistencyGaurantee):
+    """Draw one Poisson-process realization of `num_observations` observation
+    instants over [steadyStart, steadyEnd] and use it to sample every queue
+    on the path *at those same simultaneous instants* (same convention as
+    construct_path_delay_distribution), producing a fresh, finite-sample
+    estimate of the per-segment aggregated delay statistics that feed the
+    consistency check -- in place of reading the whole recorded
+    PoissonSampler_events log, which used a much larger, effectively fixed
+    sample. This mimics what a real deployment's Poisson probe would see
+    with only `num_observations` samples per run.
+    """
+    times = generate_poisson_observation_times(steadyStart, steadyEnd, num_observations)
+    ordered_queues, _, ordered_rates = sort_queues_by_path(queue_names, linkDelays, linkRates)
+
+    queue_stats = {}
+    for queue_name, link_rate in zip(ordered_queues, ordered_rates):
+        queue_size_samples = sample_queue_size(times, dir_prefix + queue_name + '_PoissonSampler_queueSize.csv', link_rate)
+        valid = np.isfinite(queue_size_samples)
+        delay_samples = sample_queueing_delay(queue_size_samples[valid], link_rate)
+        queue_stats[queue_name] = {
+            'DelayMean': float(np.mean(delay_samples)) if delay_samples.size else 0.0,
+            'DelayStd': float(np.std(delay_samples)) if delay_samples.size else 0.0,
+            'sampleSize': int(delay_samples.size),
+        }
+
+    agg_stats = {}
+    agg_stats['DelayMean'] = sum(queue_stats[q]['DelayMean'] for q in ordered_queues)
+    agg_stats['MaxEpsilonDelay'] = max(calc_epsilon(confidenceValue, queue_stats[q]) for q in ordered_queues)
+    agg_stats['e2eDelayStd'] = sum(queue_stats[q]['DelayStd'] for q in ordered_queues)
+    agg_stats['MinimumE2ESampleSizeDelay'] = calc_min_e2e_samples(confidenceValue, DelayConsistencyGaurantee, agg_stats, metric='Delay')
+    return agg_stats
+
+
+def prepare_emd_vs_flows_data(
     ns3_path,
     results_folder,
     rate,
@@ -2774,35 +2824,21 @@ def compute_emd_vs_num_tcp_flows(
     linkRates,
     steadyStart,
     steadyEnd,
-    agg_stats,
-    confidenceValue,
-    min_sample_size=30,
-    delay_cdf_sample_count=1000000,
     path=0,
+    delay_cdf_sample_interval_ns=10,
     max_num_flows=None,
 ):
-    """Grow the set of considered TCP flows of `flow_name` one at a time and,
-    for each size, compare the reconstructed network queuing delay CDF
-    (ground truth) against the CDF of all packets of the considered flows and
-    against a Poisson-subsampled CDF of the same packets.
-
-    TCP flows are identified by the (SourceIp, SourcePort, DestinationIp,
-    DestinationPort) 4-tuple and are ordered by the SentTime of their first
-    packet, so k=1 is the earliest-starting flow and k=N is all flows.
-
-    Returns a dict with, for each k=1..N considered flows:
-      - 'emd_all_packets': Earth Mover's Distance between the ground-truth
-        CDF and the all-packet CDF of the first k flows.
-      - 'emd_sampled_packets': EMD between the ground-truth CDF and the
-        subsampled CDF of the first k flows, or NaN when no valid subsample
-        could be found for that k (e.g. too few packets/windows).
-      - 'consistency_pass': whether the per-segment delay consistency check
-        (same Maximum-Epsilon inequality used for the full flow) holds for
-        the subsampled mean at that k; None when no subsample was found.
-      - 'consistency_pass_all_packets': the same consistency check applied to
-        the mean of all packets of the first k flows (rather than the
-        subsampled mean); None when there are no packets for that k.
-    """
+    """Load and preprocess everything that stays fixed across repeated runs
+    of the flow-count EMD sweep: the flow's received packets on `path`,
+    grouped into TCP flows (SourceIp, SourcePort, DestinationIp,
+    DestinationPort) ordered by first-seen SentTime; the ground-truth
+    reconstructed network queuing delay CDF (see construct_path_delay_distribution);
+    and the EMD between that ground truth and the all-packet CDF of the first
+    k flows, for every k. None of these depend on the per-run Poisson
+    probing, so all are computed once here and reused by every run of
+    compute_emd_vs_num_tcp_flows_multi_run -- unlike the subsampled CDF,
+    "all packets of the first k flows" is the same fixed set of packets on
+    every run, so its EMD is a single number per k, not a distribution."""
     dir_prefix = '{}/scratch/{}/{}/{}/{}/'.format(ns3_path, results_folder, rate, load, experiment)
     file_path = dir_prefix + '{}_EndToEnd_packets.csv'.format(flow_name)
 
@@ -2824,24 +2860,64 @@ def compute_emd_vs_num_tcp_flows(
 
     groundtruth_values = construct_path_delay_distribution(
         queue_names, dir_prefix, steadyStart, steadyEnd, linkDelays, linkRates,
-        sample_count=delay_cdf_sample_count,
+        sample_interval_ns=delay_cdf_sample_interval_ns,
     )
 
-    num_flows_list, emd_all_list, emd_sampled_list = [], [], []
-    consistency_list, consistency_all_list = [], []
-    sample_sizes_list, all_packet_sizes_list = [], []
+    emd_all_packets, all_packet_sizes = [], []
+    for k in range(1, len(flow_order) + 1):
+        all_values = full_df[full_df['FlowRank'] <= k]['Delay'].values
+        all_packet_sizes.append(len(all_values))
+        if len(all_values) and len(groundtruth_values):
+            emd_all_packets.append(wasserstein_distance(groundtruth_values, all_values))
+        else:
+            emd_all_packets.append(np.nan)
+
+    return {
+        'dir_prefix': dir_prefix,
+        'full_df': full_df,
+        'flow_order': flow_order,
+        'groundtruth_values': groundtruth_values,
+        'emd_all_packets': emd_all_packets,
+        'all_packet_sizes': all_packet_sizes,
+        'flow_name': flow_name,
+        'path': path,
+    }
+
+
+def compute_emd_vs_num_tcp_flows_run(prepared, agg_stats, confidenceValue, min_sample_size=30):
+    """Run one realization of the flow-count EMD sweep against a given
+    per-run `agg_stats` (see compute_poisson_agg_stats): grow the set of
+    considered TCP flows one at a time and, for each size, compare the
+    ground-truth CDF in `prepared` against a fresh Poisson-subsampled CDF of
+    the considered flows' packets.
+
+    "All packets of the first k flows" is the same fixed set on every run --
+    its EMD (prepared['emd_all_packets']) is computed once in
+    prepare_emd_vs_flows_data rather than here. Only its delay-consistency
+    check is redone per run, since that depends on the per-run agg_stats.
+
+    Returns a dict with, for each k=1..N considered flows:
+      - 'emd_sampled_packets': EMD between the ground-truth CDF and the
+        subsampled CDF of the first k flows, or NaN when no valid subsample
+        could be found for that k (e.g. too few packets/windows).
+      - 'consistency_pass': whether the delay consistency check holds for the
+        subsampled mean at that k; None when no subsample was found.
+      - 'consistency_pass_all_packets': the same check applied to the mean of
+        all packets of the first k flows; None when there are no packets.
+    """
+    full_df = prepared['full_df']
+    flow_order = prepared['flow_order']
+    groundtruth_values = prepared['groundtruth_values']
     min_samples = agg_stats.get('MinimumE2ESampleSizeDelay', 0)
+
+    num_flows_list, emd_sampled_list = [], []
+    consistency_list, consistency_all_list = [], []
+    sample_sizes_list = []
     for k in range(1, len(flow_order) + 1):
         subset = full_df[full_df['FlowRank'] <= k]
         all_values = subset['Delay'].values
         num_flows_list.append(k)
-        all_packet_sizes_list.append(len(all_values))
-        if len(all_values) and len(groundtruth_values):
-            emd_all_list.append(wasserstein_distance(groundtruth_values, all_values))
-        else:
-            emd_all_list.append(np.nan)
         if len(all_values):
-            print(f"Checking delay consistency for all packets of first {k} flows: sample size = {len(all_values)}")
             consistency_all_list.append(_delay_consistency_check(all_values, agg_stats, confidenceValue, min_sample_size))
         else:
             consistency_all_list.append(None)
@@ -2860,86 +2936,247 @@ def compute_emd_vs_num_tcp_flows(
             emd_sampled_list.append(wasserstein_distance(groundtruth_values, sample_values))
         else:
             emd_sampled_list.append(np.nan)
-        print(f"Checking delay consistency for subsampled packets of first {k} flows: sample size = {len(sample_values)}")
         consistency_list.append(_delay_consistency_check(sample_values, agg_stats, confidenceValue, min_sample_size))
 
     return {
-        'flow_name': flow_name,
-        'path': path,
-        'total_flows': len(flow_order),
         'num_flows': num_flows_list,
-        'groundtruth_values': groundtruth_values,
-        'emd_all_packets': emd_all_list,
         'emd_sampled_packets': emd_sampled_list,
         'consistency_pass': consistency_list,
         'consistency_pass_all_packets': consistency_all_list,
         'sample_sizes': sample_sizes_list,
-        'all_packet_sizes': all_packet_sizes_list,
     }
 
 
-def plot_emd_vs_num_flows(results, output_path, title="EMD vs number of TCP flows"):
-    """Plot the EMD-to-ground-truth of the all-packet and subsampled CDFs as
-    the number of considered TCP flows grows (see compute_emd_vs_num_tcp_flows).
-    Points on both lines are colored by whether the per-segment delay
-    consistency check passes for that line's mean (circles for all packets of
-    the considered flows, squares for the subsampled packets); a flow count
-    for which no valid subsample was found is left without a point on the
-    subsampled line."""
+def _run_one_poisson_run(prepared, dir_prefix, queue_names, linkDelays, linkRates, steadyStart, steadyEnd,
+                          num_poisson_observations, confidenceValue, DelayConsistencyGaurantee, min_sample_size):
+    agg_stats = compute_poisson_agg_stats(
+        dir_prefix, queue_names, linkDelays, linkRates, steadyStart, steadyEnd,
+        num_poisson_observations, confidenceValue, DelayConsistencyGaurantee,
+    )
+    return compute_emd_vs_num_tcp_flows_run(prepared, agg_stats, confidenceValue, min_sample_size)
+
+
+def _poisson_run_worker(return_dict, run_indices, prepared, dir_prefix, queue_names, linkDelays, linkRates,
+                         steadyStart, steadyEnd, num_poisson_observations, confidenceValue,
+                         DelayConsistencyGaurantee, min_sample_size):
+    # A forked worker inherits the parent's numpy random state verbatim, so without
+    # reseeding here every worker would draw the exact same "independent" runs.
+    np.random.seed()
+    for idx in run_indices:
+        return_dict[idx] = _run_one_poisson_run(
+            prepared, dir_prefix, queue_names, linkDelays, linkRates, steadyStart, steadyEnd,
+            num_poisson_observations, confidenceValue, DelayConsistencyGaurantee, min_sample_size,
+        )
+
+
+def _run_poisson_runs(prepared, dir_prefix, queue_names, linkDelays, linkRates, steadyStart, steadyEnd,
+                       num_poisson_observations, confidenceValue, DelayConsistencyGaurantee, min_sample_size,
+                       num_runs, num_workers):
+    if num_workers is None or num_workers <= 1:
+        return [
+            _run_one_poisson_run(prepared, dir_prefix, queue_names, linkDelays, linkRates, steadyStart, steadyEnd,
+                                  num_poisson_observations, confidenceValue, DelayConsistencyGaurantee, min_sample_size)
+            for _ in range(num_runs)
+        ]
+
+    num_workers = max(1, min(num_workers, num_runs))
+    return_dict = multiprocessing.Manager().dict()
+    processes = []
+    for worker in range(num_workers):
+        run_indices = list(range(worker, num_runs, num_workers))
+        if not run_indices:
+            continue
+        p = multiprocessing.Process(
+            target=_poisson_run_worker,
+            args=(return_dict, run_indices, prepared, dir_prefix, queue_names, linkDelays, linkRates,
+                  steadyStart, steadyEnd, num_poisson_observations, confidenceValue,
+                  DelayConsistencyGaurantee, min_sample_size),
+        )
+        processes.append(p)
+        p.start()
+    for p in processes:
+        p.join()
+    return [return_dict[i] for i in range(num_runs)]
+
+
+def compute_emd_vs_num_tcp_flows_multi_run(
+    ns3_path,
+    results_folder,
+    rate,
+    load,
+    experiment,
+    flow_name,
+    queue_names,
+    linkDelays,
+    linkRates,
+    steadyStart,
+    steadyEnd,
+    confidenceValue,
+    DelayConsistencyGaurantee,
+    num_runs=100,
+    num_poisson_observations=9000,
+    min_sample_size=30,
+    delay_cdf_sample_interval_ns=10,
+    path=0,
+    max_num_flows=None,
+    num_workers=1,
+):
+    """Repeat the flow-count EMD sweep `num_runs` times. Each run draws its
+    own Poisson-process realization of `num_poisson_observations` switch
+    observation instants (generate_poisson_observation_times) to derive a
+    fresh per-segment aggregated delay statistic for the consistency check
+    (compute_poisson_agg_stats), then re-derives the subsampled packet set
+    for every flow count independently. The ground-truth reconstructed delay
+    CDF, the underlying packet/flow data, and the all-packet EMD curve
+    (prepare_emd_vs_flows_data) do not depend on the switch-side Poisson
+    probing, so they are computed once and shared across all runs -- only
+    their delay-consistency check varies per run.
+
+    Set `num_workers` > 1 to fan the `num_runs` runs out across worker
+    processes (each handling a subset of runs) -- the dominant per-run cost
+    is the repeated Poisson-subsampling search, which is CPU-bound and
+    embarrassingly parallel across runs.
+
+    Returns a dict with, for each k=1..N considered flows: the single
+    all-packet EMD value; the list of subsampled-CDF EMD values observed
+    across the `num_runs` runs (a run that found no valid subsample at a
+    given k simply contributes no value there); and the fraction of runs for
+    which the delay consistency check passed at that k, for both the
+    all-packet and the subsampled mean.
+    """
+    prepared = prepare_emd_vs_flows_data(
+        ns3_path, results_folder, rate, load, experiment, flow_name, queue_names,
+        linkDelays, linkRates, steadyStart, steadyEnd, path=path,
+        delay_cdf_sample_interval_ns=delay_cdf_sample_interval_ns, max_num_flows=max_num_flows,
+    )
+    dir_prefix = prepared['dir_prefix']
+    num_flows = list(range(1, len(prepared['flow_order']) + 1))
+
+    run_results = _run_poisson_runs(
+        prepared, dir_prefix, queue_names, linkDelays, linkRates, steadyStart, steadyEnd,
+        num_poisson_observations, confidenceValue, DelayConsistencyGaurantee, min_sample_size,
+        num_runs, num_workers,
+    )
+
+    per_k_emd_sampled = [[] for _ in num_flows]
+    per_k_pass_all = [0] * len(num_flows)
+    per_k_pass_sampled = [0] * len(num_flows)
+
+    for run_result in run_results:
+        for i in range(len(num_flows)):
+            if run_result['consistency_pass_all_packets'][i] is True:
+                per_k_pass_all[i] += 1
+
+            if np.isfinite(run_result['emd_sampled_packets'][i]):
+                per_k_emd_sampled[i].append(run_result['emd_sampled_packets'][i])
+            if run_result['consistency_pass'][i] is True:
+                per_k_pass_sampled[i] += 1
+
+    return {
+        'flow_name': flow_name,
+        'path': path,
+        'num_runs': num_runs,
+        'num_poisson_observations': num_poisson_observations,
+        'total_flows': len(prepared['flow_order']),
+        'num_flows': num_flows,
+        'groundtruth_values': prepared['groundtruth_values'],
+        'emd_all_packets': prepared['emd_all_packets'],
+        'emd_sampled_packets_by_run': per_k_emd_sampled,
+        'pass_rate_all_packets': [c / num_runs for c in per_k_pass_all],
+        'pass_rate_sampled': [c / num_runs for c in per_k_pass_sampled],
+    }
+
+
+def plot_emd_vs_num_flows_boxplot(results, output_path, title="EMD vs number of TCP flows", pass_threshold=0.9):
+    """Plot results from compute_emd_vs_num_tcp_flows_multi_run: at each
+    number of considered TCP flows, the all-packet CDF is the same fixed set
+    of packets on every run, so its EMD-to-ground-truth is a single value --
+    plotted as a connected line of dots (left of each flow-count tick). The
+    subsampled CDF differs every run, so its EMD is plotted as a boxplot of
+    the distribution across runs (right of each tick, hatched). Both are
+    colored green when at least `pass_threshold` (e.g. 90%) of the runs'
+    delay consistency check passed at that flow count, and red otherwise; a
+    flow count for which no run produced a valid subsample is left without a
+    subsampled box."""
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    x = np.asarray(results['num_flows'], dtype=float)
+    num_flows = results['num_flows']
     emd_all = np.asarray(results['emd_all_packets'], dtype=float)
-    emd_sampled = np.asarray(results['emd_sampled_packets'], dtype=float)
-    consistency_all = results['consistency_pass_all_packets']
-    consistency_sampled = results['consistency_pass']
+    emd_sampled_by_run = results['emd_sampled_packets_by_run']
+    pass_rate_all = np.asarray(results['pass_rate_all_packets'], dtype=float)
+    pass_rate_sampled = results['pass_rate_sampled']
+
+    pass_color, fail_color = 'tab:green', 'tab:red'
+    offset = 0.18
+    box_width = 0.3
 
     fig, axis = plt.subplots(figsize=(30, 15))
 
+    # All packets of considered flows: the same fixed packet set every run, so a single EMD
+    # value per k -- plotted as dots on a connecting line rather than a (degenerate) boxplot.
+    x_all = np.asarray(num_flows, dtype=float) - offset
     valid_all = np.isfinite(emd_all)
-    axis.plot(x[valid_all], emd_all[valid_all], color='C1', linewidth=4, zorder=1,
-              label='All packets of considered flows')
-
-    valid_sampled = np.isfinite(emd_sampled)
-    axis.plot(x[valid_sampled], emd_sampled[valid_sampled], color='0.6', linewidth=3,
-              linestyle='--', zorder=1, label='Subsampled packets of considered flows')
-
-    pass_color, fail_color = 'tab:green', 'tab:red'
-
-    pass_all_mask = np.array([c is True for c in consistency_all]) & valid_all
-    fail_all_mask = np.array([c is False for c in consistency_all]) & valid_all
+    axis.plot(x_all[valid_all], emd_all[valid_all], color='0.4', linewidth=2, zorder=1)
+    pass_all_mask = valid_all & (pass_rate_all >= pass_threshold)
+    fail_all_mask = valid_all & ~(pass_rate_all >= pass_threshold)
     if pass_all_mask.any():
-        axis.scatter(x[pass_all_mask], emd_all[pass_all_mask], marker='o', color=pass_color,
-                     edgecolor='black', s=250, zorder=2, label='All packets (consistency check passed)')
+        axis.scatter(x_all[pass_all_mask], emd_all[pass_all_mask], marker='o', color=pass_color,
+                     edgecolor='black', s=220, zorder=3)
     if fail_all_mask.any():
-        axis.scatter(x[fail_all_mask], emd_all[fail_all_mask], marker='o', color=fail_color,
-                     edgecolor='black', s=250, zorder=2, label='All packets (consistency check failed)')
+        axis.scatter(x_all[fail_all_mask], emd_all[fail_all_mask], marker='o', color=fail_color,
+                     edgecolor='black', s=220, zorder=3)
+    missing_all_k = [k for k, v in zip(num_flows, emd_all) if not np.isfinite(v)]
+    if missing_all_k:
+        print("No all-packet EMD value for {} flow-count(s), skipped: {}".format(len(missing_all_k), missing_all_k))
 
-    pass_sampled_mask = np.array([c is True for c in consistency_sampled]) & valid_sampled
-    fail_sampled_mask = np.array([c is False for c in consistency_sampled]) & valid_sampled
-    if pass_sampled_mask.any():
-        axis.scatter(x[pass_sampled_mask], emd_sampled[pass_sampled_mask], marker='s', color=pass_color,
-                     edgecolor='black', s=250, zorder=2, label='Subsampled (consistency check passed)')
-    if fail_sampled_mask.any():
-        axis.scatter(x[fail_sampled_mask], emd_sampled[fail_sampled_mask], marker='s', color=fail_color,
-                     edgecolor='black', s=250, zorder=2, label='Subsampled (consistency check failed)')
+    # Subsampled packets of considered flows: differs every run -- plotted as a boxplot of the
+    # EMD distribution across runs.
+    positions, data, colors = [], [], []
+    for k, values, pass_rate in zip(num_flows, emd_sampled_by_run, pass_rate_sampled):
+        if len(values) == 0:
+            continue
+        positions.append(k + offset)
+        data.append(values)
+        colors.append(pass_color if pass_rate >= pass_threshold else fail_color)
+    if data:
+        bp = axis.boxplot(data, positions=positions, widths=box_width, patch_artist=True,
+                           showfliers=False, manage_ticks=False, zorder=2)
+        for patch, color in zip(bp['boxes'], colors):
+            patch.set_facecolor(color)
+            patch.set_alpha(0.8)
+            patch.set_hatch('///')
+        for median in bp['medians']:
+            median.set_color('black')
+            median.set_linewidth(2.5)
+    missing_sampled_k = [k for k, values in zip(num_flows, emd_sampled_by_run) if len(values) == 0]
+    if missing_sampled_k:
+        print("No subsampled EMD values for {} flow-count(s), skipped: {}".format(len(missing_sampled_k), missing_sampled_k))
 
-    missing = ~valid_sampled
-    if missing.any():
-        print("No subsample available for {} flow-count(s), skipped: {}".format(
-            int(missing.sum()), x[missing].astype(int).tolist()))
+    legend_handles = [
+        Line2D([0], [0], marker='o', color='0.4', markerfacecolor=pass_color, markeredgecolor='black',
+               markersize=16, linewidth=2,
+               label='Consistency check passed (≥{:.0f}% of {} runs)'.format(pass_threshold * 100, results['num_runs'])),
+        Line2D([0], [0], marker='o', color='0.4', markerfacecolor=fail_color, markeredgecolor='black',
+               markersize=16, linewidth=2,
+               label='Consistency check failed (<{:.0f}% of {} runs)'.format(pass_threshold * 100, results['num_runs'])),
+        Line2D([0], [0], marker='o', color='0.4', markerfacecolor='white', markeredgecolor='black',
+               markersize=16, linewidth=2, label='All packets of considered flows'),
+        Patch(facecolor='white', edgecolor='black', hatch='///', label='Subsampled packets of considered flows'),
+    ]
 
     axis.set_title(title, fontsize=34)
     axis.set_xlabel('Number of TCP flows considered')
     axis.set_ylabel("EMD to reconstructed network delay CDF (ns)")
-    axis.xaxis.set_major_locator(MaxNLocator(integer=True))
-    axis.grid(True, alpha=0.35)
-    axis.legend(fontsize=22, loc='best')
+    axis.set_xticks(num_flows)
+    axis.set_xlim(min(num_flows) - 0.6, max(num_flows) + 0.6)
+    axis.grid(True, alpha=0.35, axis='y')
+    axis.legend(handles=legend_handles, fontsize=20, loc='best')
     fig.tight_layout()
     fig.savefig(output_path, dpi=150)
     plt.close(fig)
     return output_path
+
 
 def sample_total_queue_size_single_queue(times, queue_name, dir_prefix, linkDelay, linkRate, queue_size_trsh):
     queue_size_samples = np.zeros((1, len(times)))

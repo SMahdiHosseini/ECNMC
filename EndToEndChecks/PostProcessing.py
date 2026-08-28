@@ -697,60 +697,38 @@ def __main__():
                     print("Rate {} done".format(rate))
                 print("Traffic {} done".format(traffic))
 
-def run_emd_vs_flows_experiment(rate, steadyStart, steadyEnd, confidenceValue, results_folder, config, experiment=0, ns3_path=__ns3_path, load=None, flow_name='R0H0R2H3', queue_names=None, path=0, delay_cdf_sample_count=1000000):
-    """Reconstruct the network queuing delay CDF once (ground truth), then grow the set of considered TCP
-    flows of `flow_name` one at a time, comparing the EMD of the all-packet CDF and of a subsampled CDF of
-    the considered flows against that ground truth. Saves `<flow_name>_path_<path>_emd_vs_num_flows.png`
-    under the experiment's results directory and returns the underlying per-flow-count results.
+def run_emd_vs_flows_experiment(rate, steadyStart, steadyEnd, confidenceValue, results_folder, config, experiment=0, ns3_path=__ns3_path, load=None, flow_name='R0H0R2H3', queue_names=None, path=0, delay_cdf_sample_interval_ns=10, num_runs=100, num_poisson_observations=9000, pass_threshold=0.9, num_workers=1):
+    """Reconstruct the network queuing delay CDF once (ground truth), then repeat `num_runs` times: draw
+    `num_poisson_observations` fresh Poisson-process observation instants at the path's switches, derive the
+    per-segment aggregated delay statistics from them, and grow the set of considered TCP flows of `flow_name`
+    one at a time, comparing the EMD of the all-packet CDF and of a subsampled CDF of the considered flows
+    against that ground truth. Saves a boxplot of the EMD distribution across runs,
+    `<flow_name>_path_<path>_emd_vs_num_flows_boxplot.png`, under the experiment's results directory, coloring
+    each flow-count's box by whether at least `pass_threshold` of the runs' consistency check passed there.
+    Returns the underlying per-flow-count, per-run results.
     """
     if queue_names is None:
         queue_names = ["T0A0", "A0T2", "T2H3"]
     hostToTorLinkRate = convert_to_float(config.get('Settings', 'hostToTorLinkRate')) * 1e-3
     torToAggLinkRate = convert_to_float(config.get('Settings', 'torToAggLinkRate')) * rate * 1e-3
-    switchSrcREDQueueDiscMaxSize = convert_to_float(config.get('Settings', 'switchSrcREDQueueDiscMaxSize'))
-    switchREDQueueDiscMaxSize = convert_to_float(config.get('DCSim', 'switchREDQueueDiscMaxSize')) * rate
     linkDelay = convert_to_float(config.get('Settings', 'hostToTorLinkDelay')) * 1e6
     linkRates = [hostToTorLinkRate, torToAggLinkRate, torToAggLinkRate, hostToTorLinkRate]
     linkDelays = [linkDelay, linkDelay, linkDelay, linkDelay]
-    nHosts = 24
 
-    samples_dfs = calculate_offline_computations_DC(
-        ns3_path, rate, 'PoissonSampler_events', str(experiment), results_folder, steadyStart, steadyEnd, "Time", nHosts,
-        linkRates=linkRates, linkDelays=linkDelays,
-        swtichDstREDQueueDiscMaxSize=[switchSrcREDQueueDiscMaxSize, switchREDQueueDiscMaxSize],
-        load=load, queue_names=queue_names,
-    )
-
-    # per-segment aggregated delay statistics for this flow's path, exactly as used for the
-    # full-flow consistency check in analyze_single_experiment; these depend only on the queues
-    # on the path (not on which TCP flows are considered), so they are computed once.
-    agg_stats = {}
-    agg_stats['DelayMean'] = sum([
-        samples_dfs['T' + flow_name[1] + 'A' + str(path)]['DelayMean'],
-        samples_dfs['A' + str(path) + 'T' + flow_name[5]]['DelayMean'],
-        samples_dfs['T' + flow_name[5] + 'H' + flow_name[7]]['DelayMean'],
-    ])
-    agg_stats['MaxEpsilonDelay'] = max([
-        calc_epsilon(confidenceValue, samples_dfs['T' + flow_name[1] + 'A' + str(path)]),
-        calc_epsilon(confidenceValue, samples_dfs['A' + str(path) + 'T' + flow_name[5]]),
-        calc_epsilon(confidenceValue, samples_dfs['T' + flow_name[5] + 'H' + flow_name[7]]),
-    ])
-    agg_stats['e2eDelayStd'] = sum([
-        samples_dfs['T' + flow_name[1] + 'A' + str(path)]['DelayStd'],
-        samples_dfs['A' + str(path) + 'T' + flow_name[5]]['DelayStd'],
-        samples_dfs['T' + flow_name[5] + 'H' + flow_name[7]]['DelayStd'],
-    ])
-    agg_stats['MinimumE2ESampleSizeDelay'] = calc_min_e2e_samples(confidenceValue, DelayConsistencyGaurantee, agg_stats, metric='Delay')
-
-    results = compute_emd_vs_num_tcp_flows(
+    results = compute_emd_vs_num_tcp_flows_multi_run(
         ns3_path, results_folder, rate, load, experiment, flow_name, queue_names, linkDelays, linkRates,
-        steadyStart, steadyEnd, agg_stats, confidenceValue, min_sample_size=min_sample_size,
-        delay_cdf_sample_count=delay_cdf_sample_count, path=path,
+        steadyStart, steadyEnd, confidenceValue, DelayConsistencyGaurantee,
+        num_runs=num_runs, num_poisson_observations=num_poisson_observations,
+        min_sample_size=min_sample_size, delay_cdf_sample_interval_ns=delay_cdf_sample_interval_ns, path=path,
+        num_workers=num_workers,
     )
 
-    output_path = '{}/scratch/{}/{}/{}/{}/{}_path_{}_emd_vs_num_flows.png'.format(
+    output_path = '{}/scratch/{}/{}/{}/{}/{}_path_{}_emd_vs_num_flows_boxplot.png'.format(
         ns3_path, results_folder, rate, load, experiment, flow_name, path)
-    plot_emd_vs_num_flows(results, output_path, title='EMD vs number of TCP flows: {}, path {}'.format(flow_name, path))
+    plot_emd_vs_num_flows_boxplot(
+        results, output_path, pass_threshold=pass_threshold,
+        title='EMD vs number of TCP flows ({} runs x {} Poisson obs): {}, path {}'.format(num_runs, num_poisson_observations, flow_name, path),
+    )
     return results
 
 if __name__ == "__main__":
