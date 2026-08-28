@@ -18,6 +18,7 @@ from collections import defaultdict
 from colorama import Fore, Back, Style
 import pprint
 from functools import lru_cache
+from pathlib import Path
 import re
 
 estimation_gain = 0.0625
@@ -648,7 +649,11 @@ def find_samples_path_new(time, txDelay, avg_interarrival_=None, df_name=None, s
     subSamplingError = SubSamplingError.NoError
     # state 0: find the minimum Δ that has more than 95% non-empty intervals and the maximum Δ that gives the minumum number of samples
     minD, _ = find_delta_for_empty_prob(time, p0_max=0.05)
-    maxD = (steadyEnd - steadyStart) / MinimumNumberOfSamples
+    maxD = (
+        (steadyEnd - steadyStart) / MinimumNumberOfSamples
+        if MinimumNumberOfSamples > 0
+        else steadyEnd - steadyStart
+    )
     
     # stage 1: if minD is larger than maxD, we cannot do subsampling
     if minD >= maxD:
@@ -673,7 +678,7 @@ def find_samples_path_new(time, txDelay, avg_interarrival_=None, df_name=None, s
     # print("Estimated derivative of exp:", df_name, "is", deriv)
 
     # stage 3: see if we have enough packets to sample form
-    if minimum_number_of_samples > 0 and len(time) < minimum_number_of_samples:
+    if MinimumNumberOfSamples > 0 and len(time) < MinimumNumberOfSamples:
         print ("Warning: Not enough e2e packets!")
         subSamplingError = SubSamplingError.NotEnoughPackets + "+" + subSamplingError.value
         return [], subSamplingError
@@ -689,7 +694,7 @@ def find_samples_path_new(time, txDelay, avg_interarrival_=None, df_name=None, s
     samples = distanceAwareSampling(time, 1.0 / minD)
 
     # stage 5: see if we have enough samples after distance-aware sampling
-    if minimum_number_of_samples > 0 and len(samples) < (minimum_number_of_samples * 0.95):
+    if MinimumNumberOfSamples > 0 and len(samples) < (MinimumNumberOfSamples * 0.95):
         print ("Warning: Not enough samples after distance-aware sampling!", "Got {}, expected {}".format(len(samples), MinimumNumberOfSamples))
         subSamplingError = SubSamplingError.NotEnoughSamples + "+" + subSamplingError.value
         return [], subSamplingError
@@ -1133,7 +1138,8 @@ def calculate_offline_E2E_markingProb(full_df, df_res, checkColumn, txDelay, swt
     return df_res
 
 def calculate_offline_E2E_delays(full_df, removeDrops, checkColumn, txDelay, df_res, df_name, passiveProbe, samplingMethod, steadyStart, steadyEnd, 
-                                 samples_paths_aggregated_statistics=None, queue_names=None, linkDelays=None, linkRates=None, queue_size_trshs=None):
+                                 samples_paths_aggregated_statistics=None, queue_names=None, linkDelays=None, linkRates=None, queue_size_trshs=None,
+                                 flow_name=None, delay_cdf_sample_count=1000000):
     df_res['delay'] = {}
     for var in ['event']:
         for method in ['rightCont_timeAvg', 'leftCont_timeAvg', 'linearInterp_timeAvg', 'poisson_eventAvg', 'eventAvg']:
@@ -1173,17 +1179,21 @@ def calculate_offline_E2E_delays(full_df, removeDrops, checkColumn, txDelay, df_
                 samples_times = []
         else:
             minimum_samples = 0 if samples_paths_aggregated_statistics is None else samples_paths_aggregated_statistics.get(path, {}).get('MinimumE2ESampleSizeDelay', 0)
-            samples_times, subSamplingError = find_samples_path_new(
+            samples_times, subSamplingError = find_samples_path(
                 time,
-                txDelay,
-                df_res['RTT'][path],
-                df_name,
-                samplingMethod,
-                steadyStart,
-                steadyEnd,
-                steps=1,
                 MinimumNumberOfSamples=minimum_samples,
             )
+            # samples_times, subSamplingError = find_samples_path_new(
+            #     time,
+            #     txDelay,
+            #     df_res['RTT'][path],
+            #     df_name,
+            #     samplingMethod,
+            #     steadyStart,
+            #     steadyEnd,
+            #     steps=1,
+            #     MinimumNumberOfSamples=minimum_samples,
+            # )
         df_res['Corr'][path] = result
         samples = df[df['SentTime'].isin(samples_times)]
         df_res['bias']['delay'][path] = (samples['PayloadSize'] - (samples['BitsTag'] / 8)).mean()
@@ -1211,6 +1221,31 @@ def calculate_offline_E2E_delays(full_df, removeDrops, checkColumn, txDelay, df_
         df_res['delay']['event_poisson_eventAvg'][path] = (avg, std)
         # print("Path:", path, "E2E Delay Average from Poisson-sampled SentTimes:", avg, "std/Rn:", std)
         df_res['delay']['event_eventAvg'][path] = (np.mean(values), np.std(values) / np.sqrt(len(values)))
+        if (
+            queue_names is not None and len(queue_names) > 0
+            and linkDelays is not None and len(linkDelays) > 0
+            and linkRates is not None and len(linkRates) > 0
+            and path == 0 
+        ):
+            print("Constructing path delay distribution for path:", path)
+            groundtruth_values = construct_path_delay_distribution(
+                queue_names,
+                df_name,
+                steadyStart,
+                steadyEnd,
+                linkDelays,
+                linkRates,
+                sample_count=delay_cdf_sample_count,
+            )
+            plot_name = flow_name or "flow"
+            # print(f"Plotting delay distribution CDF for path {path} with {len(groundtruth_values)} ground truth samples, total {len(values)} samples, and {len(samples_values)} Poisson-sampled values.")
+            plot_delay_distribution_cdfs(
+                groundtruth_values,
+                values,
+                samples_values,
+                Path(df_name) / f"{plot_name}_path_{path}_delay_cdf.png",
+                title=f"Delay CDF: {plot_name}, path {path}",
+            )
         df = None
     full_df_ = None
     return df_res
@@ -2607,7 +2642,109 @@ def sample_total_queue_size(times, queue_names, dir_prefix, linkDelays, linkRate
         # sample_times = sample_times[~new_invalid_indices]
         queue_delay_samples[idx][invalid_indices] = np.nan
 
-    return remove_nan_samples(times, np.sum(queue_size_samples, axis=0), np.any(queue_ECN_samples, axis=0).astype(int), np.sum(queue_delay_samples, axis=0)), res
+    total_queue_sizes = np.sum(queue_size_samples, axis=0)
+    total_queue_delays = np.sum(queue_delay_samples, axis=0)
+    valid = np.isfinite(total_queue_sizes) & np.isfinite(total_queue_delays)
+    sampled = (
+        np.asarray(times)[valid],
+        total_queue_sizes[valid],
+        np.any(queue_ECN_samples, axis=0).astype(int)[valid],
+        total_queue_delays[valid],
+    )
+    return sampled, res
+
+
+def construct_path_delay_distribution(
+    queue_names,
+    dir_prefix,
+    steady_start,
+    steady_end,
+    link_delays,
+    link_rates,
+    sample_count=1000000,
+):
+    """Construct simultaneous network observations of all path queues.
+
+    Every queue is observed at exactly the same dense, uniformly spaced network
+    times. The queueing delays at each time are summed to form the path-delay
+    ground truth. Unlike an end-to-end observer, sample times are never shifted
+    by propagation or by the delay encountered at an earlier queue.
+    """
+    if steady_end <= steady_start:
+        raise ValueError("steady_end must be greater than steady_start")
+    if sample_count < 2:
+        raise ValueError("sample_count must be at least 2")
+    if not queue_names:
+        return np.array([], dtype=float)
+
+    sample_times = np.linspace(
+        steady_start,
+        steady_end,
+        num=int(sample_count),
+        endpoint=False,
+        dtype=float,
+    )
+    prefix = str(dir_prefix)
+    if not prefix.endswith("/"):
+        prefix += "/"
+    ordered_queues, _, ordered_rates = sort_queues_by_path(
+        queue_names, link_delays, link_rates
+    )
+    total_delay = np.zeros(len(sample_times), dtype=float)
+    valid = np.ones(len(sample_times), dtype=bool)
+    for queue_name, link_rate in zip(ordered_queues, ordered_rates):
+        queue_sizes = sample_queue_size(
+            sample_times,
+            prefix + queue_name + '_PoissonSampler_queueSize.csv',
+            link_rate,
+        )
+        queue_valid = np.isfinite(queue_sizes)
+        valid &= queue_valid
+        total_delay[queue_valid] += sample_queueing_delay(
+            queue_sizes[queue_valid], link_rate
+        )
+    return total_delay[valid]
+
+
+def plot_delay_distribution_cdfs(
+    groundtruth_delays,
+    all_packet_delays,
+    subsampled_packet_delays,
+    output_path,
+    title="Delay distribution comparison",
+):
+    """Plot reconstructed, all-packet, and subsampled delay CDFs together."""
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    series = (
+        (groundtruth_delays, "Simultaneous network queues (ground truth)", "C0"),
+        (all_packet_delays, "All received packets on path", "C1"),
+        (subsampled_packet_delays, "Subsampled received packets", "C2"),
+    )
+
+    fig, axis = plt.subplots(figsize=(30, 15))
+    for raw_values, label, color in series:
+        values = np.asarray(raw_values, dtype=float).reshape(-1)
+        values = np.sort(values[np.isfinite(values)])
+        curve_label = f"{label} (n={len(values)})"
+        if values.size:
+            probabilities = np.arange(1, len(values) + 1) / len(values)
+            axis.step(values, probabilities, where="post", label=curve_label, color=color, linewidth=5)
+        else:
+            # Keep unavailable samples visible in the legend without inventing
+            # a fallback distribution.
+            axis.plot([], [], label=curve_label, color=color)
+
+    axis.set_title(title)
+    axis.set_xlabel("Queuing delay (ns)")
+    axis.set_ylabel("Cumulative probability")
+    axis.set_ylim(0, 1.02)
+    axis.grid(True, alpha=0.35)
+    axis.legend(fontsize=30, loc="lower right")
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=150)
+    plt.close(fig)
+    return output_path
 
 def sample_total_queue_size_single_queue(times, queue_name, dir_prefix, linkDelay, linkRate, queue_size_trsh):
     queue_size_samples = np.zeros((1, len(times)))
@@ -5103,7 +5240,8 @@ def calculate_offline_computations_DC(__ns3_path, rate, segment, experiment, res
             df_res = calculate_offline_E2E_delays(full_df, removeDrops, checkColumn, txDelay_to_firstQ, df_res, 
                                                   '{}/scratch/{}/{}/{}/{}/'.format(__ns3_path, results_folder, rate, load, experiment), 
                                                   passiveProbe, samplingMethod, steadyStart, steadyEnd, samples_paths_aggregated_statistics[df_name], queue_names, linkDelays, linkRates, 
-                                                  np.array(swtichDstREDQueueDiscMaxSize, dtype=float) * tsh)
+                                                  np.array(swtichDstREDQueueDiscMaxSize, dtype=float) * tsh,
+                                                  flow_name=df_name)
             # df_res = calculate_offline_E2E_workload(full_df, df_res, steadyStart, steadyEnd)
             # df_res = calculate_offline_E2E_markingProb(full_df, df_res, checkColumn, txDelay_to_firstQ, swtichDstREDQueueDiscMaxSize, linkRates[0], __ns3_path, tsh, df_name, passiveProbe, samplingMethod, steadyStart, steadyEnd)
             # # for all values in df_res['bias'], multiply them by 1000 to convert to ms

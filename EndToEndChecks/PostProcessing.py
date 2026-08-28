@@ -415,10 +415,11 @@ def analyze_single_experiment(return_dict, rate, queues_names, confidenceValue, 
                 ])
         for queue_name in queue_names:
             rounds_results[queue_name+'MinimumDelayBias'].append(delay_bias_results[queue_name + 'bias'])
-    # endToEndStats = calculate_offline_computations_DC(__ns3_path, rate, 'EndToEnd_packets', str(experiment), results_folder, steadyStart, steadyEnd, "SentTime", nHosts, True, "IsReceived", 
-    #                                                   [hostToTorLinkRate, torToAggLinkRate, torToAggLinkRate, hostToTorLinkRate], [linkDelay, linkDelay, linkDelay, linkDelay], 
-    #                                                   [switchREDQueueDiscMaxSize, switchREDQueueDiscMaxSize, switchSrcREDQueueDiscMaxSize], differentiationDelay=differentiationDelay, 
-    #                                                   errorRate=errorRate, load=load, passiveProbe=passiveProbe, flow_names=flow_names, samples_paths_aggregated_statistics=samples_paths_aggregated_statistics, queue_names=queue_names)
+    # This pass also writes the three-way delay CDF comparison for each flow/path.
+    endToEndStats = calculate_offline_computations_DC(__ns3_path, rate, 'EndToEnd_packets', str(experiment), results_folder, steadyStart, steadyEnd, "SentTime", nHosts, True, "IsReceived",
+                                                      [hostToTorLinkRate, torToAggLinkRate, torToAggLinkRate, hostToTorLinkRate], [linkDelay, linkDelay, linkDelay, linkDelay],
+                                                      [switchREDQueueDiscMaxSize, switchREDQueueDiscMaxSize, switchSrcREDQueueDiscMaxSize], differentiationDelay=differentiationDelay,
+                                                      errorRate=errorRate, load=load, passiveProbe=passiveProbe, flow_names=flow_names, samples_paths_aggregated_statistics=samples_paths_aggregated_statistics, queue_names=queue_names)
 
     AverageWorkLoad = 0
     for flow in flow_names:
