@@ -9,6 +9,7 @@ import numpy as np
 from scipy.stats import anderson
 from scipy.stats import f_oneway, kruskal
 import json as js
+import pickle
 import multiprocessing
 import argparse
 
@@ -702,10 +703,14 @@ def run_emd_vs_flows_experiment(rate, steadyStart, steadyEnd, confidenceValue, r
     `num_poisson_observations` fresh Poisson-process observation instants at the path's switches, derive the
     per-segment aggregated delay statistics from them, and grow the set of considered TCP flows of `flow_name`
     one at a time, comparing the EMD of the all-packet CDF and of a subsampled CDF of the considered flows
-    against that ground truth. Saves a boxplot of the EMD distribution across runs,
-    `<flow_name>_path_<path>_emd_vs_num_flows_boxplot.png`, under the experiment's results directory, coloring
-    each flow-count's box by whether at least `pass_threshold` of the runs' consistency check passed there.
-    Returns the underlying per-flow-count, per-run results.
+    against that ground truth. Saves, under the experiment's results directory:
+      - `<flow_name>_path_<path>_emd_vs_num_flows_boxplot.png`: EMD distribution across runs.
+      - `<flow_name>_path_<path>_delay_mean_diff_boxplot.png`: the signed switch-vs-packet mean delay
+        difference underlying the consistency check.
+      - `<flow_name>_path_<path>_emd_vs_num_flows_results.pkl`: the full underlying results dict.
+      - `<flow_name>_path_<path>_emd_vs_num_flows_results.txt`: a human-readable per-flow-count summary.
+    Both plots color each flow-count's box/point by whether at least `pass_threshold` of the runs'
+    consistency check passed there. Returns the underlying per-flow-count, per-run results.
     """
     if queue_names is None:
         queue_names = ["T0A0", "A0T2", "T2H3"]
@@ -723,12 +728,22 @@ def run_emd_vs_flows_experiment(rate, steadyStart, steadyEnd, confidenceValue, r
         num_workers=num_workers,
     )
 
-    output_path = '{}/scratch/{}/{}/{}/{}/{}_path_{}_emd_vs_num_flows_boxplot.png'.format(
-        ns3_path, results_folder, rate, load, experiment, flow_name, path)
+    output_dir = '{}/scratch/{}/{}/{}/{}/'.format(ns3_path, results_folder, rate, load, experiment)
+    file_prefix = '{}{}_path_{}'.format(output_dir, flow_name, path)
+    run_desc = '{} runs x {} Poisson obs'.format(num_runs, num_poisson_observations)
+
     plot_emd_vs_num_flows_boxplot(
-        results, output_path, pass_threshold=pass_threshold,
-        title='EMD vs number of TCP flows ({} runs x {} Poisson obs): {}, path {}'.format(num_runs, num_poisson_observations, flow_name, path),
+        results, file_prefix + '_emd_vs_num_flows_boxplot.png', pass_threshold=pass_threshold,
+        title='EMD vs number of TCP flows ({}): {}, path {}'.format(run_desc, flow_name, path),
     )
+    plot_mean_diff_vs_num_flows(
+        results, file_prefix + '_delay_mean_diff_boxplot.png', pass_threshold=pass_threshold,
+        title='Switch vs. packet mean delay difference ({}): {}, path {}'.format(run_desc, flow_name, path),
+    )
+    with open(file_prefix + '_emd_vs_num_flows_results.pkl', 'wb') as f:
+        pickle.dump(results, f)
+    save_emd_vs_flows_results_text(results, file_prefix + '_emd_vs_num_flows_results.txt')
+
     return results
 
 if __name__ == "__main__":

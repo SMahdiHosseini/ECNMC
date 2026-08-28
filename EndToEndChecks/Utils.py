@@ -2778,6 +2778,21 @@ def generate_poisson_observation_times(steadyStart, steadyEnd, num_observations)
     return times[times <= steadyEnd]
 
 
+def preload_queue_traces(dir_prefix, queue_names):
+    """Eagerly parse and cache each queue's recorded size trace (see
+    _load_queue_trace, which memoizes by file path) so that every later call
+    to sample_queue_size for these queues -- once per run in
+    compute_poisson_agg_stats, plus construct_path_delay_distribution's
+    ground-truth reconstruction -- reuses the already-parsed trace instead of
+    re-reading its CSV file. Call once before looping over runs; on Linux,
+    fork()'d worker processes inherit the warmed cache too."""
+    prefix = str(dir_prefix)
+    if not prefix.endswith("/"):
+        prefix += "/"
+    for queue_name in queue_names:
+        _load_queue_trace(prefix + queue_name + '_PoissonSampler_queueSize.csv')
+
+
 def compute_poisson_agg_stats(dir_prefix, queue_names, linkDelays, linkRates, steadyStart, steadyEnd,
                                num_observations, confidenceValue, DelayConsistencyGaurantee):
     """Draw one Poisson-process realization of `num_observations` observation
@@ -2842,6 +2857,8 @@ def prepare_emd_vs_flows_data(
     dir_prefix = '{}/scratch/{}/{}/{}/{}/'.format(ns3_path, results_folder, rate, load, experiment)
     file_path = dir_prefix + '{}_EndToEnd_packets.csv'.format(flow_name)
 
+    preload_queue_traces(dir_prefix, queue_names)
+
     full_df = pd.read_csv(file_path)
     full_df = addRemoveTransmission_data(full_df, linkDelays, linkRates)
     full_df = prune_data(full_df, 'SentTime', steadyStart, steadyEnd)
@@ -2896,6 +2913,11 @@ def compute_emd_vs_num_tcp_flows_run(prepared, agg_stats, confidenceValue, min_s
     prepare_emd_vs_flows_data rather than here. Only its delay-consistency
     check is redone per run, since that depends on the per-run agg_stats.
 
+    Also computes the signed difference between the switch samples' mean
+    delay (agg_stats['DelayMean']) and the packet-side mean delay -- the
+    quantity the consistency check itself thresholds (up to the epsilon
+    bound) -- for both the all-packet and the subsampled mean.
+
     Returns a dict with, for each k=1..N considered flows:
       - 'emd_sampled_packets': EMD between the ground-truth CDF and the
         subsampled CDF of the first k flows, or NaN when no valid subsample
@@ -2904,23 +2926,32 @@ def compute_emd_vs_num_tcp_flows_run(prepared, agg_stats, confidenceValue, min_s
         subsampled mean at that k; None when no subsample was found.
       - 'consistency_pass_all_packets': the same check applied to the mean of
         all packets of the first k flows; None when there are no packets.
+      - 'mean_diff_all_packets': switch samples mean delay minus the mean
+        delay of all packets of the first k flows; NaN when there are no
+        packets.
+      - 'mean_diff_sampled': switch samples mean delay minus the mean delay
+        of the subsampled packets at that k; NaN when no subsample was found.
     """
     full_df = prepared['full_df']
     flow_order = prepared['flow_order']
     groundtruth_values = prepared['groundtruth_values']
     min_samples = agg_stats.get('MinimumE2ESampleSizeDelay', 0)
+    switch_mean = agg_stats['DelayMean']
 
     num_flows_list, emd_sampled_list = [], []
     consistency_list, consistency_all_list = [], []
     sample_sizes_list = []
+    mean_diff_all_list, mean_diff_sampled_list = [], []
     for k in range(1, len(flow_order) + 1):
         subset = full_df[full_df['FlowRank'] <= k]
         all_values = subset['Delay'].values
         num_flows_list.append(k)
         if len(all_values):
             consistency_all_list.append(_delay_consistency_check(all_values, agg_stats, confidenceValue, min_sample_size))
+            mean_diff_all_list.append(switch_mean - np.mean(all_values))
         else:
             consistency_all_list.append(None)
+            mean_diff_all_list.append(np.nan)
 
         times = subset['SentTime'].values
         samples_times, sub_err = find_samples_path(times, MinimumNumberOfSamples=min_samples)
@@ -2928,6 +2959,7 @@ def compute_emd_vs_num_tcp_flows_run(prepared, agg_stats, confidenceValue, min_s
             emd_sampled_list.append(np.nan)
             consistency_list.append(None)
             sample_sizes_list.append(0)
+            mean_diff_sampled_list.append(np.nan)
             continue
 
         sample_values = subset[subset['SentTime'].isin(samples_times)]['Delay'].values
@@ -2937,6 +2969,7 @@ def compute_emd_vs_num_tcp_flows_run(prepared, agg_stats, confidenceValue, min_s
         else:
             emd_sampled_list.append(np.nan)
         consistency_list.append(_delay_consistency_check(sample_values, agg_stats, confidenceValue, min_sample_size))
+        mean_diff_sampled_list.append(switch_mean - np.mean(sample_values))
 
     return {
         'num_flows': num_flows_list,
@@ -2944,6 +2977,8 @@ def compute_emd_vs_num_tcp_flows_run(prepared, agg_stats, confidenceValue, min_s
         'consistency_pass': consistency_list,
         'consistency_pass_all_packets': consistency_all_list,
         'sample_sizes': sample_sizes_list,
+        'mean_diff_all_packets': mean_diff_all_list,
+        'mean_diff_sampled': mean_diff_sampled_list,
     }
 
 
@@ -3040,9 +3075,12 @@ def compute_emd_vs_num_tcp_flows_multi_run(
     Returns a dict with, for each k=1..N considered flows: the single
     all-packet EMD value; the list of subsampled-CDF EMD values observed
     across the `num_runs` runs (a run that found no valid subsample at a
-    given k simply contributes no value there); and the fraction of runs for
+    given k simply contributes no value there); the fraction of runs for
     which the delay consistency check passed at that k, for both the
-    all-packet and the subsampled mean.
+    all-packet and the subsampled mean; and the list, across runs, of the
+    signed difference between the switch samples' mean delay and the
+    packet-side mean delay -- the quantity the consistency check itself
+    thresholds -- again for both the all-packet and the subsampled mean.
     """
     prepared = prepare_emd_vs_flows_data(
         ns3_path, results_folder, rate, load, experiment, flow_name, queue_names,
@@ -3061,16 +3099,22 @@ def compute_emd_vs_num_tcp_flows_multi_run(
     per_k_emd_sampled = [[] for _ in num_flows]
     per_k_pass_all = [0] * len(num_flows)
     per_k_pass_sampled = [0] * len(num_flows)
+    per_k_mean_diff_all = [[] for _ in num_flows]
+    per_k_mean_diff_sampled = [[] for _ in num_flows]
 
     for run_result in run_results:
         for i in range(len(num_flows)):
             if run_result['consistency_pass_all_packets'][i] is True:
                 per_k_pass_all[i] += 1
+            if np.isfinite(run_result['mean_diff_all_packets'][i]):
+                per_k_mean_diff_all[i].append(run_result['mean_diff_all_packets'][i])
 
             if np.isfinite(run_result['emd_sampled_packets'][i]):
                 per_k_emd_sampled[i].append(run_result['emd_sampled_packets'][i])
             if run_result['consistency_pass'][i] is True:
                 per_k_pass_sampled[i] += 1
+            if np.isfinite(run_result['mean_diff_sampled'][i]):
+                per_k_mean_diff_sampled[i].append(run_result['mean_diff_sampled'][i])
 
     return {
         'flow_name': flow_name,
@@ -3084,6 +3128,8 @@ def compute_emd_vs_num_tcp_flows_multi_run(
         'emd_sampled_packets_by_run': per_k_emd_sampled,
         'pass_rate_all_packets': [c / num_runs for c in per_k_pass_all],
         'pass_rate_sampled': [c / num_runs for c in per_k_pass_sampled],
+        'mean_diff_all_packets_by_run': per_k_mean_diff_all,
+        'mean_diff_sampled_by_run': per_k_mean_diff_sampled,
     }
 
 
@@ -3131,7 +3177,9 @@ def plot_emd_vs_num_flows_boxplot(results, output_path, title="EMD vs number of 
         print("No all-packet EMD value for {} flow-count(s), skipped: {}".format(len(missing_all_k), missing_all_k))
 
     # Subsampled packets of considered flows: differs every run -- plotted as a boxplot of the
-    # EMD distribution across runs.
+    # EMD distribution across runs. Styled with a distinct (navy, dashed, hatched) outline so it
+    # reads as a different series from the all-packets dots even where box colors coincide.
+    sampled_edge, sampled_edge_width = 'navy', 3
     positions, data, colors = [], [], []
     for k, values, pass_rate in zip(num_flows, emd_sampled_by_run, pass_rate_sampled):
         if len(values) == 0:
@@ -3140,12 +3188,21 @@ def plot_emd_vs_num_flows_boxplot(results, output_path, title="EMD vs number of 
         data.append(values)
         colors.append(pass_color if pass_rate >= pass_threshold else fail_color)
     if data:
-        bp = axis.boxplot(data, positions=positions, widths=box_width, patch_artist=True,
-                           showfliers=False, manage_ticks=False, zorder=2)
+        with plt.rc_context({'hatch.linewidth': 3.5}):
+            bp = axis.boxplot(data, positions=positions, widths=box_width, patch_artist=True,
+                               showfliers=False, manage_ticks=False, zorder=2)
         for patch, color in zip(bp['boxes'], colors):
             patch.set_facecolor(color)
             patch.set_alpha(0.8)
             patch.set_hatch('///')
+            patch.set_edgecolor(sampled_edge)
+            patch.set_linewidth(sampled_edge_width)
+            patch.set_linestyle('dashed')
+        for part in ('whiskers', 'caps'):
+            for line in bp[part]:
+                line.set_color(sampled_edge)
+                line.set_linewidth(sampled_edge_width)
+                line.set_linestyle('dashed')
         for median in bp['medians']:
             median.set_color('black')
             median.set_linewidth(2.5)
@@ -3161,8 +3218,9 @@ def plot_emd_vs_num_flows_boxplot(results, output_path, title="EMD vs number of 
                markersize=16, linewidth=2,
                label='Consistency check failed (<{:.0f}% of {} runs)'.format(pass_threshold * 100, results['num_runs'])),
         Line2D([0], [0], marker='o', color='0.4', markerfacecolor='white', markeredgecolor='black',
-               markersize=16, linewidth=2, label='All packets of considered flows'),
-        Patch(facecolor='white', edgecolor='black', hatch='///', label='Subsampled packets of considered flows'),
+               markersize=16, linewidth=2, label='All packets of considered flows (dots + line)'),
+        Patch(facecolor='white', edgecolor=sampled_edge, linewidth=sampled_edge_width, linestyle='dashed',
+              hatch='///', label='Subsampled packets of considered flows (boxplot)'),
     ]
 
     axis.set_title(title, fontsize=34)
@@ -3175,6 +3233,175 @@ def plot_emd_vs_num_flows_boxplot(results, output_path, title="EMD vs number of 
     fig.tight_layout()
     fig.savefig(output_path, dpi=150)
     plt.close(fig)
+    return output_path
+
+
+def plot_mean_diff_vs_num_flows(results, output_path, title="Switch vs. packet mean delay difference", pass_threshold=0.9):
+    """Plot results from compute_emd_vs_num_tcp_flows_multi_run: at each
+    number of considered TCP flows, boxplots (across runs) of the signed
+    difference between the switch samples' mean delay and the packet-side
+    mean delay -- the quantity abs()-thresholded by the delay consistency
+    check -- for the all-packet CDF (left of each tick, solid black outline)
+    and the subsampled CDF (right of each tick, dashed navy outline +
+    hatched). Unlike the EMD plot, both quantities vary run to run here (the
+    switch-side mean is re-drawn every run), so both are boxplots; since fill
+    color alone (green/red) is shared between the two families, the box
+    outline style (color, dash pattern, hatch) is what tells them apart.
+    Colored green when at least `pass_threshold` of the runs' consistency
+    check passed at that flow count, red otherwise; a horizontal line at
+    zero marks perfect agreement. A flow count for which no run produced a
+    valid subsample is left without a subsampled box."""
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    num_flows = results['num_flows']
+    diff_all_by_run = results['mean_diff_all_packets_by_run']
+    diff_sampled_by_run = results['mean_diff_sampled_by_run']
+    pass_rate_all = results['pass_rate_all_packets']
+    pass_rate_sampled = results['pass_rate_sampled']
+
+    pass_color, fail_color = 'tab:green', 'tab:red'
+    all_edge, sampled_edge = 'black', 'navy'
+    offset = 0.22
+    box_width = 0.32
+
+    fig, axis = plt.subplots(figsize=(30, 15))
+    axis.axhline(0, color='black', linewidth=2, linestyle=':', zorder=1)
+
+    def _draw_family(values_by_k, pass_rate_by_k, position_offset, hatch, edge_color, edge_style, edge_width):
+        positions, data, colors = [], [], []
+        for k, values, pass_rate in zip(num_flows, values_by_k, pass_rate_by_k):
+            if len(values) == 0:
+                continue
+            positions.append(k + position_offset)
+            data.append(values)
+            colors.append(pass_color if pass_rate >= pass_threshold else fail_color)
+        if not data:
+            return
+        with plt.rc_context({'hatch.linewidth': 3.5}):
+            bp = axis.boxplot(data, positions=positions, widths=box_width, patch_artist=True,
+                               showfliers=False, manage_ticks=False, zorder=2)
+        for patch, color in zip(bp['boxes'], colors):
+            patch.set_facecolor(color)
+            patch.set_alpha(0.8)
+            patch.set_hatch(hatch)
+            patch.set_edgecolor(edge_color)
+            patch.set_linewidth(edge_width)
+            patch.set_linestyle(edge_style)
+        for part in ('whiskers', 'caps'):
+            for line in bp[part]:
+                line.set_color(edge_color)
+                line.set_linewidth(edge_width)
+                line.set_linestyle(edge_style)
+        for median in bp['medians']:
+            median.set_color('black')
+            median.set_linewidth(2.5)
+
+    missing_all_k = [k for k, values in zip(num_flows, diff_all_by_run) if len(values) == 0]
+    if missing_all_k:
+        print("No all-packet mean-diff values for {} flow-count(s), skipped: {}".format(len(missing_all_k), missing_all_k))
+    _draw_family(diff_all_by_run, pass_rate_all, -offset, hatch=None,
+                 edge_color=all_edge, edge_style='solid', edge_width=2.5)
+
+    missing_sampled_k = [k for k, values in zip(num_flows, diff_sampled_by_run) if len(values) == 0]
+    if missing_sampled_k:
+        print("No subsampled mean-diff values for {} flow-count(s), skipped: {}".format(len(missing_sampled_k), missing_sampled_k))
+    _draw_family(diff_sampled_by_run, pass_rate_sampled, offset, hatch='///',
+                 edge_color=sampled_edge, edge_style='dashed', edge_width=3)
+
+    legend_handles = [
+        Patch(facecolor=pass_color, edgecolor='black', alpha=0.8,
+              label='Consistency check passed (≥{:.0f}% of {} runs)'.format(pass_threshold * 100, results['num_runs'])),
+        Patch(facecolor=fail_color, edgecolor='black', alpha=0.8,
+              label='Consistency check failed (<{:.0f}% of {} runs)'.format(pass_threshold * 100, results['num_runs'])),
+        Patch(facecolor='white', edgecolor=all_edge, linewidth=2.5,
+              label='All packets of considered flows (solid black edge)'),
+        Patch(facecolor='white', edgecolor=sampled_edge, linewidth=3, linestyle='dashed', hatch='///',
+              label='Subsampled packets of considered flows (dashed navy edge)'),
+    ]
+
+    axis.set_title(title, fontsize=34)
+    axis.set_xlabel('Number of TCP flows considered')
+    axis.set_ylabel("Switch samples mean delay − packet mean delay (ns)")
+    axis.set_xticks(num_flows)
+    axis.set_xlim(min(num_flows) - 0.6, max(num_flows) + 0.6)
+    axis.grid(True, alpha=0.35, axis='y')
+    axis.legend(handles=legend_handles, fontsize=20, loc='best')
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=150)
+    plt.close(fig)
+    return output_path
+
+
+def save_emd_vs_flows_results_text(results, output_path):
+    """Write a plain-text, human-readable summary of the per-flow-count
+    results from compute_emd_vs_num_tcp_flows_multi_run: run parameters, a
+    summary of the (very large) ground-truth sample array, and a table with
+    one row per number of considered TCP flows. All-packet EMD is a single
+    value (the same fixed packet set every run); everything else that varies
+    run to run (all-packet mean-diff, subsampled EMD, subsampled mean-diff)
+    is reported as mean +/- std across the runs that had a valid value at
+    that flow count, alongside both consistency-check pass rates."""
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    def _stat(values):
+        values = np.asarray(values, dtype=float)
+        if values.size == 0:
+            return "n/a"
+        if values.size == 1:
+            return "{:.2f} (n=1)".format(values[0])
+        return "{:.2f} +/- {:.2f} (n={})".format(np.mean(values), np.std(values), values.size)
+
+    gt = np.asarray(results.get('groundtruth_values', []), dtype=float)
+    lines = []
+    lines.append("EMD vs number of TCP flows -- results summary")
+    lines.append("=" * 70)
+    lines.append("Flow: {}".format(results['flow_name']))
+    lines.append("Path: {}".format(results['path']))
+    lines.append("Number of runs (N): {}".format(results['num_runs']))
+    lines.append("Poisson observations per run (M): {}".format(results['num_poisson_observations']))
+    lines.append("Total TCP flows considered (max k): {}".format(results['total_flows']))
+    lines.append("")
+    lines.append("Ground-truth reconstructed delay samples: {}".format(gt.size))
+    if gt.size:
+        lines.append("  mean={:.2f} ns, std={:.2f} ns, min={:.2f} ns, max={:.2f} ns".format(
+            np.mean(gt), np.std(gt), np.min(gt), np.max(gt)))
+        p5, p25, p50, p75, p95 = np.percentile(gt, [5, 25, 50, 75, 95])
+        lines.append("  percentiles (5/25/50/75/95) ns: {:.2f}, {:.2f}, {:.2f}, {:.2f}, {:.2f}".format(
+            p5, p25, p50, p75, p95))
+    lines.append("")
+    lines.append("Per-flow-count results:")
+    lines.append("  * EMD(all) and mean_diff(all): all packets of the first k flows (same fixed set every run;")
+    lines.append("    mean_diff still varies run to run because the switch-side mean is redrawn each run).")
+    lines.append("  * EMD(sampled) and mean_diff(sampled): a fresh Poisson subsample drawn each run; 'n_samp'")
+    lines.append("    is how many of the N runs found a valid subsample at that flow count.")
+    lines.append("  * pass(all)/pass(samp): fraction of the N runs where the delay consistency check passed.")
+    lines.append("  * mean_diff = switch samples mean delay - packet-side mean delay (ns); this is the signed")
+    lines.append("    quantity the consistency check thresholds (abs(mean_diff) <= epsilon bound).")
+    lines.append("")
+
+    header = "{:>3} | {:>10} | {:>9} | {:>24} | {:>6} | {:>20} | {:>9} | {:>24}".format(
+        "k", "EMD(all)", "pass(all)", "mean_diff(all) [ns]", "n_samp", "EMD(sampled)", "pass(samp)", "mean_diff(sampled) [ns]")
+    lines.append(header)
+    lines.append("-" * len(header))
+
+    for i, k in enumerate(results['num_flows']):
+        emd_all = results['emd_all_packets'][i]
+        emd_all_str = "{:.2f}".format(emd_all) if emd_all == emd_all else "n/a"
+        pass_all = results['pass_rate_all_packets'][i]
+        diff_all_str = _stat(results['mean_diff_all_packets_by_run'][i])
+        n_sampled_runs = len(results['emd_sampled_packets_by_run'][i])
+        emd_sampled_str = _stat(results['emd_sampled_packets_by_run'][i])
+        pass_sampled = results['pass_rate_sampled'][i]
+        diff_sampled_str = _stat(results['mean_diff_sampled_by_run'][i])
+
+        lines.append("{:>3} | {:>10} | {:>8.0%} | {:>24} | {:>6} | {:>20} | {:>8.0%} | {:>24}".format(
+            k, emd_all_str, pass_all, diff_all_str, n_sampled_runs, emd_sampled_str, pass_sampled, diff_sampled_str,
+        ))
+
+    with open(output_path, 'w') as f:
+        f.write("\n".join(lines) + "\n")
     return output_path
 
 
