@@ -674,6 +674,15 @@ def __main__():
                          "--emd-vs-flows is set (e.g. 3 evaluates k=1,4,7,... instead of every k) -- "
                          "cuts the dominant per-run cost (find_samples_path, called once per k per "
                          "run) roughly by this factor, at the cost of a coarser sweep")
+    parser.add_argument("--aggregate-emd-vs-flows",
+                    action="store_true",
+                    dest="aggregate_emd_vs_flows",
+                    help="For each traffic/rate/load, aggregate every experiment's already-computed "
+                         "run_emd_vs_flows_experiment results (found under "
+                         "scratch/Results_<dir>/<traffic>/<rate>/<load>/<experiment>/) instead of "
+                         "computing anything new, and save the combined plots/pickle/text under "
+                         "scratch/ECNMC/Results/results_<dir>/<traffic>/<rate>/<load>/. Takes "
+                         "precedence over --emd-vs-flows. Only used in the 'forward' branch.")
 
     args = parser.parse_args()
     config = configparser.ConfigParser()
@@ -704,7 +713,12 @@ def __main__():
             for traffic in traffics:
                 for rate in serviceRateScales:
                     for load in loads:
-                        if args.emd_vs_flows:
+                        if args.aggregate_emd_vs_flows:
+                            aggregate_emd_vs_flows_across_experiments(
+                                __ns3_path, args.dir, traffic, rate, load,
+                                flow_name=args.flow_name, path=args.path,
+                            )
+                        elif args.emd_vs_flows:
                             print("\nRunning EMD-vs-flows analysis for traffic {} rate: {} load: {}".format(traffic, rate, load))
                             for experiment in range(experiments):
                                 run_emd_vs_flows_experiment(
@@ -793,6 +807,67 @@ def run_emd_vs_flows_experiment(rate, steadyStart, steadyEnd, confidenceValue, r
     save_emd_vs_flows_results_text(results, file_prefix + '_emd_vs_num_flows_results.txt')
 
     return results
+
+
+def aggregate_emd_vs_flows_across_experiments(ns3_path, dir_name, traffic, rate, load, flow_name='R0H0R2H3',
+                                               path=0, pass_threshold=0.9, emd_y_max=None, mean_diff_y_limit=None):
+    """Load every experiment's run_emd_vs_flows_experiment output for the same
+    traffic/rate/load (each under scratch/Results_<dir_name>/<traffic>/<rate>/<load>/<experiment>/,
+    discovered by scanning that directory for experiment subfolders), combine them via
+    aggregate_emd_vs_flows_results, and save the aggregated plots/pickle/text under
+    scratch/ECNMC/Results/results_<dir_name>/<traffic>/<rate>/<load>/ -- the same directory
+    tree analyze_all_experiments already uses for its own cross-experiment JSON summaries, so
+    all cross-experiment outputs for a given traffic/rate/load live together there.
+
+    Returns the aggregated results dict, or None if no experiment's results pickle was found
+    (e.g. run_emd_vs_flows_experiment hasn't been run yet for this traffic/rate/load).
+    """
+    per_experiment_base = '{}/scratch/Results_{}/{}/{}/{}'.format(ns3_path, dir_name, traffic, rate, load)
+    file_suffix = '{}_path_{}_emd_vs_num_flows_results.pkl'.format(flow_name, path)
+
+    results_list = []
+    if os.path.isdir(per_experiment_base):
+        for entry in sorted(os.listdir(per_experiment_base)):
+            pkl_path = '{}/{}/{}'.format(per_experiment_base, entry, file_suffix)
+            if os.path.isfile(pkl_path):
+                with open(pkl_path, 'rb') as f:
+                    r = pickle.load(f)
+                r['experiment'] = int(entry) if entry.isdigit() else entry
+                results_list.append(r)
+
+    if not results_list:
+        print("No experiment results found for {} rate={} load={} under {}".format(
+            traffic, rate, load, per_experiment_base))
+        return None
+
+    aggregated = aggregate_emd_vs_flows_results(results_list)
+    print("Aggregating {} rate={} load={}: {} experiment(s) {}".format(
+        traffic, rate, load, aggregated['num_experiments'], aggregated['experiments']))
+
+    output_dir = '{}/scratch/ECNMC/Results/results_{}/{}/{}/{}/'.format(ns3_path, dir_name, traffic, rate, load)
+    file_prefix = '{}{}_path_{}'.format(output_dir, flow_name, path)
+    run_desc = '{} experiment(s) x {} Poisson obs'.format(aggregated['num_experiments'], aggregated['num_poisson_observations'])
+
+    plot_emd_vs_num_flows_boxplot(
+        aggregated, file_prefix + '_emd_vs_num_flows_boxplot.png', pass_threshold=pass_threshold,
+        title='EMD vs number of TCP flows, aggregated ({}): {}, path {}'.format(run_desc, flow_name, path),
+        y_max=emd_y_max,
+    )
+    plot_mean_diff_vs_num_flows(
+        aggregated, file_prefix + '_delay_mean_diff_boxplot.png', pass_threshold=pass_threshold,
+        title='Switch vs. packet mean delay difference, aggregated ({}): {}, path {}'.format(run_desc, flow_name, path),
+        y_limit=mean_diff_y_limit,
+    )
+    plot_one_run_delay_cdfs(
+        aggregated, file_prefix + '_delay_cdf_one_run.png',
+        title='Delay CDF comparison, one Poisson realization (experiment {}): {}, path {}'.format(
+            aggregated['experiments'][0], flow_name, path),
+    )
+    with open(file_prefix + '_emd_vs_num_flows_results.pkl', 'wb') as f:
+        pickle.dump(aggregated, f)
+    save_emd_vs_flows_results_text(aggregated, file_prefix + '_emd_vs_num_flows_results.txt')
+
+    return aggregated
 
 
 if __name__ == "__main__":

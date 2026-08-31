@@ -3174,6 +3174,144 @@ def plot_one_run_delay_cdfs(results, output_path, title="Delay CDF comparison (o
     )
 
 
+def aggregate_emd_vs_flows_results(results_list):
+    """Combine per-experiment results (each a dict returned by
+    compute_emd_vs_num_tcp_flows_multi_run / loaded from a
+    '..._emd_vs_num_flows_results.pkl' file, for the same traffic/rate/load but a
+    different `experiment` index) into one aggregated results dict with the same
+    keys/shape as a single-experiment result, so it can be fed directly into
+    plot_emd_vs_num_flows_boxplot, plot_mean_diff_vs_num_flows, plot_one_run_delay_cdfs,
+    and save_emd_vs_flows_results_text unchanged.
+
+    Per-run lists (EMD/mean-diff by run, for every subsampling method) are concatenated
+    across experiments, so a box now shows variability across both runs *and* experiments.
+    Pass rates are re-derived from pooled pass/found counts (not averaged rates) so
+    experiments with different `n_samp` are weighted correctly -- the same denominator
+    convention used for pass_rate_sampled within a single experiment (see
+    compute_emd_vs_num_tcp_flows_multi_run).
+
+    `num_flows` is the *intersection* of every experiment's flow-count list, since
+    different experiment realizations (different random seeds) can end up with slightly
+    different numbers of received TCP flows on the path.
+
+    The all-packets EMD is no longer a single fixed value once aggregated (each
+    experiment reconstructs its own ground truth), so it becomes 'emd_all_packets_by_experiment'
+    (one list per k, one entry per experiment) alongside the usual 'emd_all_packets' (now the
+    per-k mean across experiments, kept for any caller that still expects a scalar).
+
+    The one-run CDF (plot_one_run_delay_cdfs) and the ground-truth summary stats use the
+    first experiment's data -- pooling raw per-packet delay samples across differently-seeded
+    experiments would mix reconstructions that aren't really the same underlying distribution.
+    Each input dict may carry an 'experiment' key (its experiment index/label); if absent,
+    its position in `results_list` is used instead.
+    """
+    if not results_list:
+        raise ValueError("aggregate_emd_vs_flows_results requires at least one results dict")
+
+    experiments = [r.get('experiment', i) for i, r in enumerate(results_list)]
+
+    if len(results_list) == 1:
+        result = dict(results_list[0])
+        result['num_experiments'] = 1
+        result['experiments'] = experiments
+        result['emd_all_packets_by_experiment'] = [[v] for v in result['emd_all_packets']]
+        return result
+
+    common_k = sorted(set.intersection(*(set(r['num_flows']) for r in results_list)))
+    if not common_k:
+        raise ValueError("No flow-count (k) value is shared across all experiments to aggregate")
+
+    uniform_strides = results_list[0]['uniform_sample_strides']
+
+    emd_all_by_experiment, mean_diff_all = [], []
+    pass_all_count, pass_all_total = [], []
+    emd_sampled_by_run, mean_diff_sampled = [], []
+    pass_sampled_count, pass_sampled_total = [], []
+    emd_uniform_by_run = {s: [] for s in uniform_strides}
+    mean_diff_uniform = {s: [] for s in uniform_strides}
+    pass_uniform_count = {s: [] for s in uniform_strides}
+    pass_uniform_total = {s: [] for s in uniform_strides}
+
+    for k in common_k:
+        emd_all_vals, mean_diff_all_vals = [], []
+        pass_all_c = pass_all_t = 0
+        emd_samp_vals, mean_diff_samp_vals = [], []
+        pass_samp_c = pass_samp_t = 0
+        uniform_emd_vals = {s: [] for s in uniform_strides}
+        uniform_diff_vals = {s: [] for s in uniform_strides}
+        uniform_pass_c = {s: 0 for s in uniform_strides}
+        uniform_pass_t = {s: 0 for s in uniform_strides}
+
+        for r in results_list:
+            i = r['num_flows'].index(k)
+            num_runs = r['num_runs']
+
+            emd_all_vals.append(r['emd_all_packets'][i])
+            mean_diff_all_vals.extend(r['mean_diff_all_packets_by_run'][i])
+            pass_all_c += round(r['pass_rate_all_packets'][i] * num_runs)
+            pass_all_t += num_runs
+
+            sampled_vals = r['emd_sampled_packets_by_run'][i]
+            emd_samp_vals.extend(sampled_vals)
+            mean_diff_samp_vals.extend(r['mean_diff_sampled_by_run'][i])
+            n_samp = len(sampled_vals)
+            pass_samp_c += round(r['pass_rate_sampled'][i] * n_samp)
+            pass_samp_t += n_samp
+
+            for s in uniform_strides:
+                uniform_emd_vals[s].extend(r['emd_uniform_packets_by_run'][s][i])
+                uniform_diff_vals[s].extend(r['mean_diff_uniform_packets_by_run'][s][i])
+                uniform_pass_c[s] += round(r['pass_rate_uniform'][s][i] * num_runs)
+                uniform_pass_t[s] += num_runs
+
+        emd_all_by_experiment.append(emd_all_vals)
+        mean_diff_all.append(mean_diff_all_vals)
+        pass_all_count.append(pass_all_c)
+        pass_all_total.append(pass_all_t)
+
+        emd_sampled_by_run.append(emd_samp_vals)
+        mean_diff_sampled.append(mean_diff_samp_vals)
+        pass_sampled_count.append(pass_samp_c)
+        pass_sampled_total.append(pass_samp_t)
+
+        for s in uniform_strides:
+            emd_uniform_by_run[s].append(uniform_emd_vals[s])
+            mean_diff_uniform[s].append(uniform_diff_vals[s])
+            pass_uniform_count[s].append(uniform_pass_c[s])
+            pass_uniform_total[s].append(uniform_pass_t[s])
+
+    groundtruth_values = np.concatenate(
+        [np.asarray(r['groundtruth_values'], dtype=float) for r in results_list])
+
+    def _rate(c, t):
+        return c / t if t else 0.0
+
+    return {
+        'flow_name': results_list[0]['flow_name'],
+        'path': results_list[0]['path'],
+        'num_runs': sum(r['num_runs'] for r in results_list),
+        'num_experiments': len(results_list),
+        'experiments': experiments,
+        'num_poisson_observations': results_list[0]['num_poisson_observations'],
+        'uniform_sample_strides': list(uniform_strides),
+        'total_flows': max(common_k),
+        'num_flows': common_k,
+        'groundtruth_values': groundtruth_values,
+        'emd_all_packets': [float(np.mean(v)) for v in emd_all_by_experiment],
+        'emd_all_packets_by_experiment': emd_all_by_experiment,
+        'emd_sampled_packets_by_run': emd_sampled_by_run,
+        'pass_rate_all_packets': [_rate(c, t) for c, t in zip(pass_all_count, pass_all_total)],
+        'pass_rate_sampled': [_rate(c, t) for c, t in zip(pass_sampled_count, pass_sampled_total)],
+        'mean_diff_all_packets_by_run': mean_diff_all,
+        'mean_diff_sampled_by_run': mean_diff_sampled,
+        'emd_uniform_packets_by_run': emd_uniform_by_run,
+        'pass_rate_uniform': {s: [_rate(c, t) for c, t in zip(pass_uniform_count[s], pass_uniform_total[s])]
+                               for s in uniform_strides},
+        'mean_diff_uniform_packets_by_run': mean_diff_uniform,
+        'one_run_delay_cdfs': results_list[0]['one_run_delay_cdfs'],
+    }
+
+
 def compute_emd_vs_num_tcp_flows_multi_run(
     ns3_path,
     results_folder,
@@ -3384,7 +3522,11 @@ def plot_emd_vs_num_flows_boxplot(results, output_path, title="EMD vs number of 
     are colored green when at least `pass_threshold` (e.g. 90%) of the runs'
     delay consistency check passed at that flow count, and red otherwise; a
     flow count for which no run produced a valid subsample of a given method
-    is left without a box for that method."""
+    is left without a box for that method. When `results` was produced by
+    aggregate_emd_vs_flows_results over more than one experiment (i.e.
+    results['num_experiments'] > 1 and results['emd_all_packets_by_experiment']
+    is present), the all-packets series also varies now (one value per
+    experiment) and is drawn as a boxplot family too instead of dots + line."""
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -3392,39 +3534,60 @@ def plot_emd_vs_num_flows_boxplot(results, output_path, title="EMD vs number of 
     emd_all = np.asarray(results['emd_all_packets'], dtype=float)
     pass_rate_all = np.asarray(results['pass_rate_all_packets'], dtype=float)
     uniform_strides = results.get('uniform_sample_strides', [])
+    emd_all_by_experiment = results.get('emd_all_packets_by_experiment')
+    all_packets_is_boxplot = bool(emd_all_by_experiment) and results.get('num_experiments', 1) > 1
 
     pass_color, fail_color = 'tab:green', 'tab:red'
     offset_all, offset_poisson, offsets_uniform, box_width = _subsample_family_layout(uniform_strides)
 
     fig, axis = plt.subplots(figsize=(30, 15))
 
-    # All packets of considered flows: the same fixed packet set every run, so a single EMD
-    # value per k -- plotted as dots on a connecting line rather than a (degenerate) boxplot.
-    x_all = np.asarray(num_flows, dtype=float) + offset_all
-    valid_all = np.isfinite(emd_all)
-    axis.plot(x_all[valid_all], emd_all[valid_all], color='0.4', linewidth=2, zorder=1)
-    pass_all_mask = valid_all & (pass_rate_all >= pass_threshold)
-    fail_all_mask = valid_all & ~(pass_rate_all >= pass_threshold)
-    if pass_all_mask.any():
-        axis.scatter(x_all[pass_all_mask], emd_all[pass_all_mask], marker='o', color=pass_color,
-                     edgecolor='black', s=220, zorder=3)
-    if fail_all_mask.any():
-        axis.scatter(x_all[fail_all_mask], emd_all[fail_all_mask], marker='o', color=fail_color,
-                     edgecolor='black', s=220, zorder=3)
-    missing_all_k = [k for k, v in zip(num_flows, emd_all) if not np.isfinite(v)]
-    if missing_all_k:
-        print("No all-packet EMD value for {} flow-count(s), skipped: {}".format(len(missing_all_k), missing_all_k))
+    if all_packets_is_boxplot:
+        # Aggregated over multiple experiments: all-packets EMD now varies (one value per
+        # experiment, since each experiment reconstructs its own ground truth), so it gets
+        # its own boxplot family instead of the single-value dots + line rendering below.
+        _draw_boxplot_family(axis, num_flows, emd_all_by_experiment, results['pass_rate_all_packets'],
+                             offset_all, box_width, pass_threshold, pass_color, fail_color, _ALL_PACKETS_STYLE)
+        missing_all_k = [k for k, values in zip(num_flows, emd_all_by_experiment) if len(values) == 0]
+        if missing_all_k:
+            print("No all-packet EMD value for {} flow-count(s), skipped: {}".format(len(missing_all_k), missing_all_k))
+        legend_handles = [
+            Patch(facecolor=pass_color, edgecolor='black', alpha=0.85,
+                  label='Consistency check passed (≥{:.0f}% of {} runs)'.format(pass_threshold * 100, results['num_runs'])),
+            Patch(facecolor=fail_color, edgecolor='black', alpha=0.85,
+                  label='Consistency check failed (<{:.0f}% of {} runs)'.format(pass_threshold * 100, results['num_runs'])),
+            Patch(facecolor='white', edgecolor=_ALL_PACKETS_STYLE['edge_color'], linewidth=4.5,
+                  label='All packets of considered flows (boxplot across experiments)'),
+        ]
+    else:
+        # Single experiment: all packets of the first k flows is the same fixed set every
+        # run, so a single EMD value per k -- plotted as dots on a connecting line rather
+        # than a (degenerate) boxplot.
+        x_all = np.asarray(num_flows, dtype=float) + offset_all
+        valid_all = np.isfinite(emd_all)
+        axis.plot(x_all[valid_all], emd_all[valid_all], color='0.4', linewidth=2, zorder=1)
+        pass_all_mask = valid_all & (pass_rate_all >= pass_threshold)
+        fail_all_mask = valid_all & ~(pass_rate_all >= pass_threshold)
+        if pass_all_mask.any():
+            axis.scatter(x_all[pass_all_mask], emd_all[pass_all_mask], marker='o', color=pass_color,
+                         edgecolor='black', s=220, zorder=3)
+        if fail_all_mask.any():
+            axis.scatter(x_all[fail_all_mask], emd_all[fail_all_mask], marker='o', color=fail_color,
+                         edgecolor='black', s=220, zorder=3)
+        missing_all_k = [k for k, v in zip(num_flows, emd_all) if not np.isfinite(v)]
+        if missing_all_k:
+            print("No all-packet EMD value for {} flow-count(s), skipped: {}".format(len(missing_all_k), missing_all_k))
 
-    legend_handles = [
-        Line2D([0], [0], marker='o', color='0.4', markerfacecolor=pass_color, markeredgecolor='black',
-               markersize=16, linewidth=2,
-               label='Consistency check passed (≥{:.0f}% of {} runs)'.format(pass_threshold * 100, results['num_runs'])),
-        Line2D([0], [0], marker='o', color='0.4', markerfacecolor=fail_color, markeredgecolor='black',
-               markersize=16, linewidth=2,
-               label='Consistency check failed (<{:.0f}% of {} runs)'.format(pass_threshold * 100, results['num_runs'])),
-        Line2D([0], [0], marker='o', color='0.4', markerfacecolor='white', markeredgecolor='black',
-               markersize=16, linewidth=2, label='All packets of considered flows (dots + line)'),
-    ]
+        legend_handles = [
+            Line2D([0], [0], marker='o', color='0.4', markerfacecolor=pass_color, markeredgecolor='black',
+                   markersize=16, linewidth=2,
+                   label='Consistency check passed (≥{:.0f}% of {} runs)'.format(pass_threshold * 100, results['num_runs'])),
+            Line2D([0], [0], marker='o', color='0.4', markerfacecolor=fail_color, markeredgecolor='black',
+                   markersize=16, linewidth=2,
+                   label='Consistency check failed (<{:.0f}% of {} runs)'.format(pass_threshold * 100, results['num_runs'])),
+            Line2D([0], [0], marker='o', color='0.4', markerfacecolor='white', markeredgecolor='black',
+                   markersize=16, linewidth=2, label='All packets of considered flows (dots + line)'),
+        ]
 
     # Poisson-adaptive subsample: differs every run -- plotted as a boxplot of the EMD
     # distribution across runs.
@@ -3461,7 +3624,9 @@ def plot_emd_vs_num_flows_boxplot(results, output_path, title="EMD vs number of 
     axis.set_xlim(min(num_flows) - 0.6, max(num_flows) + 0.6)
     axis.grid(True, alpha=0.35, axis='y')
     if y_max is not None:
-        all_values = np.concatenate([emd_all[np.isfinite(emd_all)]]
+        all_packets_values = ([np.asarray(v, dtype=float) for v in emd_all_by_experiment] if all_packets_is_boxplot
+                               else [emd_all[np.isfinite(emd_all)]])
+        all_values = np.concatenate(all_packets_values
                                      + [np.asarray(v, dtype=float) for v in emd_sampled_by_run]
                                      + [np.asarray(v, dtype=float) for s in uniform_strides for v in emd_uniform_by_run[s]])
         if all_values.size and np.nanmax(all_values) > y_max:
@@ -3596,12 +3761,17 @@ def save_emd_vs_flows_results_text(results, output_path):
         return "{:.2f} +/- {:.2f} (n={})".format(np.mean(values), np.std(values), values.size)
 
     uniform_strides = results.get('uniform_sample_strides', [])
+    num_experiments = results.get('num_experiments', 1)
+    emd_all_by_experiment = results.get('emd_all_packets_by_experiment')
+    all_packets_is_aggregated = bool(emd_all_by_experiment) and num_experiments > 1
     gt = np.asarray(results.get('groundtruth_values', []), dtype=float)
     lines = []
     lines.append("EMD vs number of TCP flows -- results summary")
     lines.append("=" * 70)
     lines.append("Flow: {}".format(results['flow_name']))
     lines.append("Path: {}".format(results['path']))
+    if num_experiments > 1:
+        lines.append("Aggregated over {} experiments: {}".format(num_experiments, results.get('experiments')))
     lines.append("Number of runs (N): {}".format(results['num_runs']))
     lines.append("Poisson observations per run (M): {}".format(results['num_poisson_observations']))
     lines.append("Uniform sampling strides tested: {}".format(uniform_strides))
@@ -3616,8 +3786,13 @@ def save_emd_vs_flows_results_text(results, output_path):
             p5, p25, p50, p75, p95))
     lines.append("")
     lines.append("Notes:")
-    lines.append("  * EMD(all) and mean_diff(all): all packets of the first k flows (same fixed set every run;")
-    lines.append("    mean_diff still varies run to run because the switch-side mean is redrawn each run).")
+    if all_packets_is_aggregated:
+        lines.append("  * EMD(all): all packets of the first k flows, one value per experiment (each experiment")
+        lines.append("    reconstructs its own ground truth), reported as mean +/- std across experiments.")
+        lines.append("    mean_diff(all) still varies run *and* experiment to experiment.")
+    else:
+        lines.append("  * EMD(all) and mean_diff(all): all packets of the first k flows (same fixed set every run;")
+        lines.append("    mean_diff still varies run to run because the switch-side mean is redrawn each run).")
     lines.append("  * EMD(sampled) and mean_diff(sampled): a fresh Poisson-adaptive subsample drawn each run;")
     lines.append("    'n_samp' is how many of the N runs found a valid subsample at that flow count.")
     lines.append("  * Uniform 1-in-N tables further below: a fresh systematic 1-in-N subsample drawn each run")
@@ -3631,14 +3806,17 @@ def save_emd_vs_flows_results_text(results, output_path):
     lines.append("")
 
     lines.append("Main table (all packets vs. Poisson-adaptive subsample):")
-    header = "{:>3} | {:>10} | {:>9} | {:>24} | {:>6} | {:>20} | {:>9} | {:>24}".format(
+    header = "{:>3} | {:>20} | {:>9} | {:>24} | {:>6} | {:>20} | {:>9} | {:>24}".format(
         "k", "EMD(all)", "pass(all)", "mean_diff(all) [ns]", "n_samp", "EMD(sampled)", "pass(samp)", "mean_diff(sampled) [ns]")
     lines.append(header)
     lines.append("-" * len(header))
 
     for i, k in enumerate(results['num_flows']):
-        emd_all = results['emd_all_packets'][i]
-        emd_all_str = "{:.2f}".format(emd_all) if emd_all == emd_all else "n/a"
+        if all_packets_is_aggregated:
+            emd_all_str = _stat(emd_all_by_experiment[i])
+        else:
+            emd_all = results['emd_all_packets'][i]
+            emd_all_str = "{:.2f}".format(emd_all) if emd_all == emd_all else "n/a"
         pass_all = results['pass_rate_all_packets'][i]
         diff_all_str = _stat(results['mean_diff_all_packets_by_run'][i])
         n_sampled_runs = len(results['emd_sampled_packets_by_run'][i])
@@ -3646,7 +3824,7 @@ def save_emd_vs_flows_results_text(results, output_path):
         pass_sampled = results['pass_rate_sampled'][i]
         diff_sampled_str = _stat(results['mean_diff_sampled_by_run'][i])
 
-        lines.append("{:>3} | {:>10} | {:>8.0%} | {:>24} | {:>6} | {:>20} | {:>8.0%} | {:>24}".format(
+        lines.append("{:>3} | {:>20} | {:>8.0%} | {:>24} | {:>6} | {:>20} | {:>8.0%} | {:>24}".format(
             k, emd_all_str, pass_all, diff_all_str, n_sampled_runs, emd_sampled_str, pass_sampled, diff_sampled_str,
         ))
 
