@@ -973,18 +973,20 @@ def find_samples_path(time, MinimumNumberOfSamples=0, window=None):
     
     sorted_indices = np.argsort(bin_ids, kind='stable')
     split_points = np.flatnonzero(np.diff(bin_ids[sorted_indices])) + 1
-    indices_per_window = np.split(sorted_indices, split_points)
+    window_starts = np.concatenate(([0], split_points))
+    window_sizes = np.diff(np.concatenate((window_starts, [len(sorted_indices)])))
 
     max_sample_size = 0
     max_sample_size_times = np.array([], dtype=time.dtype)
     for brnval in brnvals:
         tries = 20
         while tries > 0:
-            selected_indices = np.array([
-                np.random.choice(indices)
-                for indices in indices_per_window
-                if len(indices) > 0
-            ], dtype=int)
+            # Vectorized equivalent of "pick one uniformly random packet per non-empty
+            # window": one np.random.randint call over all windows at once, instead of
+            # looping np.random.choice per window (the dominant cost of this function,
+            # called up to 20x per (k, run) pair).
+            offsets = np.random.randint(0, window_sizes)
+            selected_indices = sorted_indices[window_starts + offsets]
             selected_indices.sort()
             selected_times = time[selected_indices]
 
@@ -2714,15 +2716,21 @@ def plot_delay_distribution_cdfs(
     subsampled_packet_delays,
     output_path,
     title="Delay distribution comparison",
+    extra_series=None,
 ):
-    """Plot reconstructed, all-packet, and subsampled delay CDFs together."""
+    """Plot reconstructed, all-packet, and subsampled delay CDFs together.
+    `extra_series`, if given, is an iterable of (values, label, color) tuples
+    appended after the three fixed series -- e.g. one per uniform "1-in-stride"
+    subsampling method, see plot_one_run_delay_cdfs."""
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    series = (
+    series = [
         (groundtruth_delays, "Simultaneous network queues (ground truth)", "C0"),
         (all_packet_delays, "All received packets on path", "C1"),
         (subsampled_packet_delays, "Subsampled received packets", "C2"),
-    )
+    ]
+    if extra_series:
+        series.extend(extra_series)
 
     fig, axis = plt.subplots(figsize=(30, 15))
     for raw_values, label, color in series:
@@ -2857,6 +2865,24 @@ def compute_poisson_agg_stats(dir_prefix, queue_names, linkDelays, linkRates, st
     return agg_stats
 
 
+def _flow_count_values(total_flows, step):
+    """The list of flow counts (k) at which the EMD-vs-flows sweep is
+    evaluated: 1, 1+step, 1+2*step, ..., always ending at `total_flows` (even
+    if it doesn't fall on the step) so the full-flow-count point is never
+    skipped. step<=1 evaluates every k, matching the original behavior.
+    Coarsening this is the main lever on the per-run cost, since
+    find_samples_path (the dominant cost) is called once per k per run."""
+    if total_flows <= 0:
+        return []
+    step = max(1, int(step))
+    if step <= 1:
+        return list(range(1, total_flows + 1))
+    values = list(range(1, total_flows + 1, step))
+    if values[-1] != total_flows:
+        values.append(total_flows)
+    return values
+
+
 def prepare_emd_vs_flows_data(
     ns3_path,
     results_folder,
@@ -2872,6 +2898,7 @@ def prepare_emd_vs_flows_data(
     path=0,
     delay_cdf_sample_interval_ns=10,
     max_num_flows=None,
+    flow_count_step=1,
 ):
     """Load and preprocess everything that stays fixed across repeated runs
     of the flow-count EMD sweep: the flow's received packets on `path`,
@@ -2910,8 +2937,9 @@ def prepare_emd_vs_flows_data(
         sample_interval_ns=delay_cdf_sample_interval_ns,
     )
 
+    num_flows = _flow_count_values(len(flow_order), flow_count_step)
     emd_all_packets, all_packet_sizes = [], []
-    for k in range(1, len(flow_order) + 1):
+    for k in num_flows:
         all_values = full_df[full_df['FlowRank'] <= k]['Delay'].values
         all_packet_sizes.append(len(all_values))
         if len(all_values) and len(groundtruth_values):
@@ -2923,6 +2951,7 @@ def prepare_emd_vs_flows_data(
         'dir_prefix': dir_prefix,
         'full_df': full_df,
         'flow_order': flow_order,
+        'num_flows': num_flows,
         'groundtruth_values': groundtruth_values,
         'emd_all_packets': emd_all_packets,
         'all_packet_sizes': all_packet_sizes,
@@ -2966,7 +2995,6 @@ def compute_emd_vs_num_tcp_flows_run(prepared, agg_stats, confidenceValue, min_s
         packets at that k).
     """
     full_df = prepared['full_df']
-    flow_order = prepared['flow_order']
     groundtruth_values = prepared['groundtruth_values']
     min_samples = agg_stats.get('MinimumE2ESampleSizeDelay', 0)
     switch_mean = agg_stats['DelayMean']
@@ -2980,7 +3008,7 @@ def compute_emd_vs_num_tcp_flows_run(prepared, agg_stats, confidenceValue, min_s
     uniform_mean_diff = {stride: [] for stride in uniform_sample_strides}
     uniform_sample_sizes = {stride: [] for stride in uniform_sample_strides}
 
-    for k in range(1, len(flow_order) + 1):
+    for k in prepared['num_flows']:
         subset = full_df[full_df['FlowRank'] <= k]
         all_values = subset['Delay'].values
         num_flows_list.append(k)
@@ -3086,6 +3114,66 @@ def _run_poisson_runs(prepared, dir_prefix, queue_names, linkDelays, linkRates, 
     return [return_dict[i] for i in range(num_runs)]
 
 
+def _collect_one_run_delay_cdfs(prepared, agg_stats, min_sample_size, uniform_sample_strides):
+    """For a single concrete Poisson-process realization (`agg_stats`, as
+    produced by one call to compute_poisson_agg_stats), collect the raw
+    per-packet delay values -- not just their EMD summary -- for every
+    subsampling method being compared against the ground-truth CDF: all
+    packets of every currently-considered flow, the Poisson-adaptive
+    subsample (find_samples_path), and one uniform "1-in-stride" subsample
+    per entry in `uniform_sample_strides` (sample_uniform_stride). Uses the
+    full flow_order (all considered flows) since this is meant to illustrate
+    what each method's delay distribution actually looks like, not to sweep
+    over flow count. See plot_one_run_delay_cdfs for the corresponding plot.
+    """
+    full_df = prepared['full_df']
+    subset = full_df[full_df['FlowRank'] <= len(prepared['flow_order'])]
+    all_values = subset['Delay'].values
+
+    times = subset['SentTime'].values
+    min_samples = agg_stats.get('MinimumE2ESampleSizeDelay', 0)
+    samples_times, sub_err = find_samples_path(times, MinimumNumberOfSamples=min_samples)
+    if sub_err != SubSamplingError.NoError or len(samples_times) == 0:
+        poisson_values = np.array([])
+    else:
+        poisson_values = subset[subset['SentTime'].isin(samples_times)]['Delay'].values
+
+    uniform_values = {stride: sample_uniform_stride(subset, stride)['Delay'].values
+                       for stride in uniform_sample_strides}
+
+    return {
+        'all_packets': all_values,
+        'poisson_subsample': poisson_values,
+        'uniform': uniform_values,
+    }
+
+
+def plot_one_run_delay_cdfs(results, output_path, title="Delay CDF comparison (one run)"):
+    """Plot the ground-truth reconstructed delay CDF against every
+    subsampling method's delay CDF from a single concrete Poisson-process
+    realization (see _collect_one_run_delay_cdfs / results['one_run_delay_cdfs']):
+    all packets of the considered flows, the Poisson-adaptive subsample
+    (find_samples_path), and one uniform "1-in-stride" subsample per entry in
+    results['uniform_sample_strides']. Unlike the EMD/mean-diff boxplots
+    (which summarize across all `num_runs` runs), this shows one concrete
+    instance so it's visually obvious what each method's delay distribution
+    actually looks like next to the ground truth."""
+    one_run = results['one_run_delay_cdfs']
+    palette = ['C3', 'C4', 'C5', 'C6']
+    extra_series = [
+        (one_run['uniform'].get(stride, []), 'Uniform 1-in-{} subsample'.format(stride), palette[i % len(palette)])
+        for i, stride in enumerate(results.get('uniform_sample_strides', []))
+    ]
+    return plot_delay_distribution_cdfs(
+        results['groundtruth_values'],
+        one_run['all_packets'],
+        one_run['poisson_subsample'],
+        output_path,
+        title=title,
+        extra_series=extra_series,
+    )
+
+
 def compute_emd_vs_num_tcp_flows_multi_run(
     ns3_path,
     results_folder,
@@ -3108,6 +3196,7 @@ def compute_emd_vs_num_tcp_flows_multi_run(
     max_num_flows=None,
     num_workers=1,
     uniform_sample_strides=(10, 100),
+    flow_count_step=1,
 ):
     """Repeat the flow-count EMD sweep `num_runs` times. Each run draws its
     own Poisson-process realization of `num_poisson_observations` switch
@@ -3143,9 +3232,20 @@ def compute_emd_vs_num_tcp_flows_multi_run(
         ns3_path, results_folder, rate, load, experiment, flow_name, queue_names,
         linkDelays, linkRates, steadyStart, steadyEnd, path=path,
         delay_cdf_sample_interval_ns=delay_cdf_sample_interval_ns, max_num_flows=max_num_flows,
+        flow_count_step=flow_count_step,
     )
     dir_prefix = prepared['dir_prefix']
-    num_flows = list(range(1, len(prepared['flow_order']) + 1))
+    num_flows = prepared['num_flows']
+
+    # One extra, cheap concrete Poisson realization (compute_poisson_agg_stats itself is
+    # not the expensive part -- reconstructing the ground truth is, and that's already
+    # done above) purely to have real per-packet delay values for plot_one_run_delay_cdfs,
+    # since the num_runs loop below only keeps EMD/pass/mean-diff summaries, not raw values.
+    one_run_agg_stats = compute_poisson_agg_stats(
+        dir_prefix, queue_names, linkDelays, linkRates, steadyStart, steadyEnd,
+        num_poisson_observations, confidenceValue, DelayConsistencyGaurantee,
+    )
+    one_run_delay_cdfs = _collect_one_run_delay_cdfs(prepared, one_run_agg_stats, min_sample_size, uniform_sample_strides)
 
     run_results = _run_poisson_runs(
         prepared, dir_prefix, queue_names, linkDelays, linkRates, steadyStart, steadyEnd,
@@ -3202,6 +3302,7 @@ def compute_emd_vs_num_tcp_flows_multi_run(
         'emd_uniform_packets_by_run': per_k_emd_uniform,
         'pass_rate_uniform': {stride: [c / num_runs for c in counts] for stride, counts in per_k_pass_uniform.items()},
         'mean_diff_uniform_packets_by_run': per_k_mean_diff_uniform,
+        'one_run_delay_cdfs': one_run_delay_cdfs,
     }
 
 
@@ -5797,12 +5898,20 @@ def find_delta_for_empty_prob(t, p0_max=0.10):
         nbins = int(np.floor(T / Delta)) + 1
         if nbins < min_bins:
             continue
-        # bins over [0, nbins*Delta]
-        edges = np.linspace(0, nbins * Delta, nbins + 1)
-        counts, _ = np.histogram(tt, bins=edges)
+        # Equivalent to histogramming tt into nbins bins of width Delta and computing
+        # mean(counts==0) / mean(counts), but without ever materializing an nbins-sized
+        # array: for small Delta, nbins can reach into the millions (this loop tries up
+        # to ~3000 candidate Deltas), so np.linspace/np.histogram over nbins dominated the
+        # cost. Both quantities are exactly recoverable from just the number of *distinct*
+        # occupied bins, which is at most len(tt) regardless of nbins: mean(counts) is
+        # always len(tt)/nbins (every point falls in exactly one bin), and mean(counts==0)
+        # is 1 - (occupied bins)/nbins.
+        bin_ids = np.floor(tt / Delta).astype(np.int64)
+        bin_ids = np.clip(bin_ids, 0, nbins - 1)
+        occupied_bins = np.unique(bin_ids).size
 
-        p0_hat = float(np.mean(counts == 0))
-        mu_hat = float(np.mean(counts))
+        p0_hat = 1.0 - occupied_bins / nbins
+        mu_hat = tt.size / nbins
 
         used_d.append(float(Delta))
         p0_list.append(p0_hat)

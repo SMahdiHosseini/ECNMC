@@ -607,7 +607,7 @@ def analyze_all_experiments(rate, steadyStart, steadyEnd, confidenceValue, dir, 
 
     rounds_results = prepare_results(flows_name, queues_names, num_of_paths)
     merged_results = prepare_results(flows_name, queues_names, num_of_paths)
-    batch_size = 30
+    batch_size = 1
     for i in range(int(experiments_end / batch_size) + 1):
         ths = []
         exps = []
@@ -665,6 +665,15 @@ def __main__():
                     help="Poisson observations per run when --emd-vs-flows is set")
     parser.add_argument("--num-workers", dest="num_workers", type=int, default=10,
                     help="Parallel workers across runs when --emd-vs-flows is set")
+    parser.add_argument("--delay-cdf-sample-interval-ns", dest="delay_cdf_sample_interval_ns", type=float, default=90,
+                    help="Ground-truth CDF Poisson sampling interval in ns when --emd-vs-flows is set "
+                         "(smaller = more ground-truth samples = more accurate but slower; "
+                         "90ns gives ~1M samples over a 90ms steady period)")
+    parser.add_argument("--flow-count-step", dest="flow_count_step", type=int, default=1,
+                    help="Evaluate the flow-count sweep every N flows instead of every flow when "
+                         "--emd-vs-flows is set (e.g. 3 evaluates k=1,4,7,... instead of every k) -- "
+                         "cuts the dominant per-run cost (find_samples_path, called once per k per "
+                         "run) roughly by this factor, at the cost of a coarser sweep")
 
     args = parser.parse_args()
     config = configparser.ConfigParser()
@@ -678,11 +687,10 @@ def __main__():
     serviceRateScales = [float(x) for x in config.get('Settings', 'serviceRateScales').split(',')]
     # serviceRateScales = [0.5]
     loads = [float(x) for x in config.get('Settings', 'load').split(',')]
-    loads = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.95]
-    loads = [0.8]
+    loads = [0.5, 0.6, 0.7, 0.8, 0.95]
     traffics = config.get('Settings', 'traffic').split(',')
     traffics = ["Google_AllRPC", "Fabricated_Heavy_Head", "Fabricated_Heavy_Middle", "Google_SearchRPC", "Facebook_HadoopDist_All"]
-    traffics = ["Google_AllRPC"]
+    # traffics = ["Google_AllRPC"]
     errorRates = [float(x) for x in config.get('Settings', 'errorRate').split(',')]
     # errorRates = [0.1, 0.3, 0.5, 0.7, 0.9]
     # errorRates = [0.1]
@@ -704,6 +712,8 @@ def __main__():
                                     'Results_' + args.dir + "/" + traffic, config, experiment=experiment, ns3_path=__ns3_path, load=load,
                                     flow_name=args.flow_name, path=args.path, num_runs=args.num_runs,
                                     num_poisson_observations=args.num_poisson_observations, num_workers=args.num_workers,
+                                    delay_cdf_sample_interval_ns=args.delay_cdf_sample_interval_ns,
+                                    flow_count_step=args.flow_count_step,
                                 )
                             print("Traffic {} Rate {} {} {} EMD-vs-flows done".format(traffic, rate, load, experiments))
                         else:
@@ -726,7 +736,7 @@ def __main__():
                     print("Rate {} done".format(rate))
                 print("Traffic {} done".format(traffic))
 
-def run_emd_vs_flows_experiment(rate, steadyStart, steadyEnd, confidenceValue, results_folder, config, experiment=0, ns3_path=__ns3_path, load=None, flow_name='R0H0R2H3', queue_names=None, path=0, delay_cdf_sample_interval_ns=10, num_runs=100, num_poisson_observations=9000, pass_threshold=0.9, num_workers=1, uniform_sample_strides=(10, 100), emd_y_max=None, mean_diff_y_limit=None):
+def run_emd_vs_flows_experiment(rate, steadyStart, steadyEnd, confidenceValue, results_folder, config, experiment=0, ns3_path=__ns3_path, load=None, flow_name='R0H0R2H3', queue_names=None, path=0, delay_cdf_sample_interval_ns=90, num_runs=100, num_poisson_observations=9000, pass_threshold=0.9, num_workers=1, uniform_sample_strides=(10, 100), emd_y_max=None, mean_diff_y_limit=None, flow_count_step=1):
     """Reconstruct the network queuing delay CDF once (ground truth), then repeat `num_runs` times: draw
     `num_poisson_observations` fresh Poisson-process observation instants at the path's switches, derive the
     per-segment aggregated delay statistics from them, and grow the set of considered TCP flows of `flow_name`
@@ -737,6 +747,8 @@ def run_emd_vs_flows_experiment(rate, steadyStart, steadyEnd, confidenceValue, r
         family per subsampling method.
       - `<flow_name>_path_<path>_delay_mean_diff_boxplot.png`: the signed switch-vs-packet mean delay
         difference underlying the consistency check, same per-method breakdown.
+      - `<flow_name>_path_<path>_delay_cdf_one_run.png`: the ground-truth delay CDF against every method's
+        actual delay CDF from one concrete Poisson realization (not an EMD summary across runs).
       - `<flow_name>_path_<path>_emd_vs_num_flows_results.pkl`: the full underlying results dict.
       - `<flow_name>_path_<path>_emd_vs_num_flows_results.txt`: a human-readable per-flow-count summary.
     Both plots color each flow-count's box/point by whether at least `pass_threshold` of the runs'
@@ -755,7 +767,7 @@ def run_emd_vs_flows_experiment(rate, steadyStart, steadyEnd, confidenceValue, r
         steadyStart, steadyEnd, confidenceValue, DelayConsistencyGaurantee,
         num_runs=num_runs, num_poisson_observations=num_poisson_observations,
         min_sample_size=min_sample_size, delay_cdf_sample_interval_ns=delay_cdf_sample_interval_ns, path=path,
-        num_workers=num_workers, uniform_sample_strides=uniform_sample_strides,
+        num_workers=num_workers, uniform_sample_strides=uniform_sample_strides, flow_count_step=flow_count_step,
     )
 
     output_dir = '{}/scratch/{}/{}/{}/{}/'.format(ns3_path, results_folder, rate, load, experiment)
@@ -771,6 +783,10 @@ def run_emd_vs_flows_experiment(rate, steadyStart, steadyEnd, confidenceValue, r
         results, file_prefix + '_delay_mean_diff_boxplot.png', pass_threshold=pass_threshold,
         title='Switch vs. packet mean delay difference ({}): {}, path {}'.format(run_desc, flow_name, path),
         y_limit=mean_diff_y_limit,
+    )
+    plot_one_run_delay_cdfs(
+        results, file_prefix + '_delay_cdf_one_run.png',
+        title='Delay CDF comparison, one Poisson realization: {}, path {}'.format(flow_name, path),
     )
     with open(file_prefix + '_emd_vs_num_flows_results.pkl', 'wb') as f:
         pickle.dump(results, f)
