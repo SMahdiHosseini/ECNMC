@@ -3223,7 +3223,10 @@ def compute_emd_vs_num_tcp_flows_multi_run(
     at a given k simply contributes no value there), and the same for every
     uniform-stride method (keyed by stride); the fraction of runs for which
     the delay consistency check passed at that k, for the all-packet mean and
-    for every subsampling method; and the list, across runs, of the signed
+    for every subsampling method -- for the Poisson-adaptive subsample this
+    is a fraction of the runs that actually found a valid subsample at that
+    k, not of all `num_runs` runs, since a run that found none neither
+    passed nor failed the check; and the list, across runs, of the signed
     difference between the switch samples' mean delay and the packet-side
     mean delay -- the quantity the consistency check itself thresholds --
     again for the all-packet mean and for every subsampling method.
@@ -3296,7 +3299,11 @@ def compute_emd_vs_num_tcp_flows_multi_run(
         'emd_all_packets': prepared['emd_all_packets'],
         'emd_sampled_packets_by_run': per_k_emd_sampled,
         'pass_rate_all_packets': [c / num_runs for c in per_k_pass_all],
-        'pass_rate_sampled': [c / num_runs for c in per_k_pass_sampled],
+        # Denominator is the number of runs that actually found a valid Poisson-adaptive
+        # subsample at this k (len(per_k_emd_sampled[i])), not num_runs -- a run that found
+        # no subsample at all didn't pass or fail the check, so it shouldn't count against
+        # the pass rate. 0.0 when no run ever found a subsample (nothing to divide by).
+        'pass_rate_sampled': [(c / n) if n else 0.0 for c, n in zip(per_k_pass_sampled, (len(v) for v in per_k_emd_sampled))],
         'mean_diff_all_packets_by_run': per_k_mean_diff_all,
         'mean_diff_sampled_by_run': per_k_mean_diff_sampled,
         'emd_uniform_packets_by_run': per_k_emd_uniform,
@@ -3307,18 +3314,20 @@ def compute_emd_vs_num_tcp_flows_multi_run(
 
 
 _SUBSAMPLE_FAMILY_STYLES = [
-    dict(edge_color='navy', edge_style='dashed', hatch='///'),
-    dict(edge_color='darkorange', edge_style='solid', hatch='xxx'),
-    dict(edge_color='purple', edge_style='dashdot', hatch='...'),
-    dict(edge_color='teal', edge_style='dotted', hatch='+++'),
+    dict(edge_color='navy', edge_style='dashed'),
+    dict(edge_color='darkorange', edge_style='solid'),
+    dict(edge_color='purple', edge_style='dashdot'),
+    dict(edge_color='teal', edge_style='dotted'),
 ]
 
 
 def _draw_boxplot_family(axis, num_flows, values_by_k, pass_rate_by_k, position_offset, box_width,
-                          pass_threshold, pass_color, fail_color, style, edge_width=3):
-    """Draw one boxplot family (one box per k with data) at x = k + position_offset,
-    styled per `style` (edge_color/edge_style/hatch, see _SUBSAMPLE_FAMILY_STYLES) so it
-    stays visually distinct from other families even where fill colors coincide."""
+                          pass_threshold, pass_color, fail_color, style, edge_width=4.5):
+    """Draw one boxplot family (one box per k with data) at x = k + position_offset.
+    The fill is *only* the pass/fail color (green/red) -- no hatch -- so it stays a clean,
+    unambiguous read of the consistency check; families are told apart purely by the box
+    border (edge_color/edge_style from `style`, see _SUBSAMPLE_FAMILY_STYLES) drawn thick
+    enough to read at a glance."""
     positions, data, colors = [], [], []
     for k, values, pass_rate in zip(num_flows, values_by_k, pass_rate_by_k):
         if len(values) == 0:
@@ -3328,13 +3337,11 @@ def _draw_boxplot_family(axis, num_flows, values_by_k, pass_rate_by_k, position_
         colors.append(pass_color if pass_rate >= pass_threshold else fail_color)
     if not data:
         return
-    with plt.rc_context({'hatch.linewidth': 3.5}):
-        bp = axis.boxplot(data, positions=positions, widths=box_width, patch_artist=True,
-                           showfliers=False, manage_ticks=False, zorder=2)
+    bp = axis.boxplot(data, positions=positions, widths=box_width, patch_artist=True,
+                       showfliers=False, manage_ticks=False, zorder=2)
     for patch, color in zip(bp['boxes'], colors):
         patch.set_facecolor(color)
-        patch.set_alpha(0.8)
-        patch.set_hatch(style['hatch'])
+        patch.set_alpha(0.85)
         patch.set_edgecolor(style['edge_color'])
         patch.set_linewidth(edge_width)
         patch.set_linestyle(style['edge_style'])
@@ -3371,8 +3378,9 @@ def plot_emd_vs_num_flows_boxplot(results, output_path, title="EMD vs number of 
     Poisson-adaptive subsample, plus one uniform "1-in-stride" method per
     entry in results['uniform_sample_strides']) differs every run, so its EMD
     is plotted as a boxplot of the distribution across runs, each with a
-    distinct outline style (color/dash/hatch, see _SUBSAMPLE_FAMILY_STYLES) so
-    the methods stay visually distinguishable regardless of fill color. All
+    distinct, thick outline style (color/dash, see _SUBSAMPLE_FAMILY_STYLES) so
+    the methods stay visually distinguishable -- the fill itself is only ever
+    the plain pass/fail color, never a pattern. All
     are colored green when at least `pass_threshold` (e.g. 90%) of the runs'
     delay consistency check passed at that flow count, and red otherwise; a
     flow count for which no run produced a valid subsample of a given method
@@ -3427,8 +3435,8 @@ def plot_emd_vs_num_flows_boxplot(results, output_path, title="EMD vs number of 
     missing_sampled_k = [k for k, values in zip(num_flows, emd_sampled_by_run) if len(values) == 0]
     if missing_sampled_k:
         print("No Poisson-subsampled EMD values for {} flow-count(s), skipped: {}".format(len(missing_sampled_k), missing_sampled_k))
-    legend_handles.append(Patch(facecolor='white', edgecolor=style['edge_color'], linewidth=3,
-                                 linestyle=style['edge_style'], hatch=style['hatch'],
+    legend_handles.append(Patch(facecolor='white', edgecolor=style['edge_color'], linewidth=4.5,
+                                 linestyle=style['edge_style'],
                                  label='Poisson-adaptive subsample (boxplot)'))
 
     # Uniform "1-in-stride" subsamples: same idea, one boxplot family per stride.
@@ -3442,8 +3450,8 @@ def plot_emd_vs_num_flows_boxplot(results, output_path, title="EMD vs number of 
         missing_k = [k for k, values in zip(num_flows, values_by_k) if len(values) == 0]
         if missing_k:
             print("No uniform 1-in-{} EMD values for {} flow-count(s), skipped: {}".format(stride, len(missing_k), missing_k))
-        legend_handles.append(Patch(facecolor='white', edgecolor=style['edge_color'], linewidth=3,
-                                     linestyle=style['edge_style'], hatch=style['hatch'],
+        legend_handles.append(Patch(facecolor='white', edgecolor=style['edge_color'], linewidth=4.5,
+                                     linestyle=style['edge_style'],
                                      label='Uniform 1-in-{} subsample (boxplot)'.format(stride)))
 
     axis.set_title(title, fontsize=34)
@@ -3469,7 +3477,7 @@ def plot_emd_vs_num_flows_boxplot(results, output_path, title="EMD vs number of 
     return output_path
 
 
-_ALL_PACKETS_STYLE = dict(edge_color='black', edge_style='solid', hatch=None)
+_ALL_PACKETS_STYLE = dict(edge_color='black', edge_style='solid')
 
 
 def plot_mean_diff_vs_num_flows(results, output_path, title="Switch vs. packet mean delay difference", pass_threshold=0.9, y_limit=None):
@@ -3477,15 +3485,15 @@ def plot_mean_diff_vs_num_flows(results, output_path, title="Switch vs. packet m
     number of considered TCP flows, boxplots (across runs) of the signed
     difference between the switch samples' mean delay and the packet-side
     mean delay -- the quantity abs()-thresholded by the delay consistency
-    check -- for the all-packet CDF (solid black outline), the
-    Poisson-adaptive subsample (dashed navy outline + hatched), and one
+    check -- for the all-packet CDF (thick solid black outline), the
+    Poisson-adaptive subsample (thick dashed navy outline), and one
     uniform "1-in-stride" subsample per entry in
-    results['uniform_sample_strides'] (its own outline style, see
+    results['uniform_sample_strides'] (its own thick outline style, see
     _SUBSAMPLE_FAMILY_STYLES). All quantities vary run to run here (the
     switch-side mean is re-drawn every run, and every subsampling method is
-    redrawn every run too), so all are boxplots; since fill color alone
-    (green/red) is shared across families, the box outline style (color,
-    dash pattern, hatch) is what tells them apart. Colored green when at
+    redrawn every run too), so all are boxplots; the fill is only ever the
+    plain pass/fail color (green/red), never a pattern, so the box outline
+    style (color, dash pattern) is what tells families apart. Colored green when at
     least `pass_threshold` of the runs' consistency check passed at that
     flow count, red otherwise; a horizontal line at zero marks perfect
     agreement. A flow count for which no run produced a valid subsample of a
@@ -3507,14 +3515,14 @@ def plot_mean_diff_vs_num_flows(results, output_path, title="Switch vs. packet m
         print("No all-packet mean-diff values for {} flow-count(s), skipped: {}".format(len(missing_all_k), missing_all_k))
     _draw_boxplot_family(axis, num_flows, diff_all_by_run, results['pass_rate_all_packets'],
                          offset_all, box_width, pass_threshold, pass_color, fail_color,
-                         _ALL_PACKETS_STYLE, edge_width=2.5)
+                         _ALL_PACKETS_STYLE)
 
     legend_handles = [
-        Patch(facecolor=pass_color, edgecolor='black', alpha=0.8,
+        Patch(facecolor=pass_color, edgecolor='black', alpha=0.85,
               label='Consistency check passed (≥{:.0f}% of {} runs)'.format(pass_threshold * 100, results['num_runs'])),
-        Patch(facecolor=fail_color, edgecolor='black', alpha=0.8,
+        Patch(facecolor=fail_color, edgecolor='black', alpha=0.85,
               label='Consistency check failed (<{:.0f}% of {} runs)'.format(pass_threshold * 100, results['num_runs'])),
-        Patch(facecolor='white', edgecolor=_ALL_PACKETS_STYLE['edge_color'], linewidth=2.5,
+        Patch(facecolor='white', edgecolor=_ALL_PACKETS_STYLE['edge_color'], linewidth=4.5,
               label='All packets of considered flows (solid black edge)'),
     ]
 
@@ -3525,8 +3533,8 @@ def plot_mean_diff_vs_num_flows(results, output_path, title="Switch vs. packet m
     poisson_style = _SUBSAMPLE_FAMILY_STYLES[0]
     _draw_boxplot_family(axis, num_flows, diff_sampled_by_run, results['pass_rate_sampled'],
                          offset_poisson, box_width, pass_threshold, pass_color, fail_color, poisson_style)
-    legend_handles.append(Patch(facecolor='white', edgecolor=poisson_style['edge_color'], linewidth=3,
-                                 linestyle=poisson_style['edge_style'], hatch=poisson_style['hatch'],
+    legend_handles.append(Patch(facecolor='white', edgecolor=poisson_style['edge_color'], linewidth=4.5,
+                                 linestyle=poisson_style['edge_style'],
                                  label='Poisson-adaptive subsample'))
 
     diff_uniform_by_run = results.get('mean_diff_uniform_packets_by_run', {})
@@ -3539,8 +3547,8 @@ def plot_mean_diff_vs_num_flows(results, output_path, title="Switch vs. packet m
             print("No uniform 1-in-{} mean-diff values for {} flow-count(s), skipped: {}".format(stride, len(missing_k), missing_k))
         _draw_boxplot_family(axis, num_flows, values_by_k, pass_rate_uniform[stride],
                              offsets_uniform[stride], box_width, pass_threshold, pass_color, fail_color, style)
-        legend_handles.append(Patch(facecolor='white', edgecolor=style['edge_color'], linewidth=3,
-                                     linestyle=style['edge_style'], hatch=style['hatch'],
+        legend_handles.append(Patch(facecolor='white', edgecolor=style['edge_color'], linewidth=4.5,
+                                     linestyle=style['edge_style'],
                                      label='Uniform 1-in-{} subsample'.format(stride)))
 
     axis.set_title(title, fontsize=34)
@@ -3614,7 +3622,10 @@ def save_emd_vs_flows_results_text(results, output_path):
     lines.append("    'n_samp' is how many of the N runs found a valid subsample at that flow count.")
     lines.append("  * Uniform 1-in-N tables further below: a fresh systematic 1-in-N subsample drawn each run")
     lines.append("    (simpler, non-adaptive baseline -- always has a value since it needs no minimum sample size).")
-    lines.append("  * pass(...): fraction of the N runs where the delay consistency check passed.")
+    lines.append("  * pass(...): fraction of runs where the delay consistency check passed. For pass(all)")
+    lines.append("    and pass(uniform), this is out of all N runs. For pass(samp), this is out of only the")
+    lines.append("    'n_samp' runs that actually found a valid Poisson-adaptive subsample at that flow count")
+    lines.append("    (a run that found none neither passed nor failed).")
     lines.append("  * mean_diff = switch samples mean delay - packet-side mean delay (ns); this is the signed")
     lines.append("    quantity the consistency check thresholds (abs(mean_diff) <= epsilon bound).")
     lines.append("")
