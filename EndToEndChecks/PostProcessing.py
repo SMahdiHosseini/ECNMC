@@ -677,11 +677,13 @@ def __main__():
     parser.add_argument("--aggregate-emd-vs-flows",
                     action="store_true",
                     dest="aggregate_emd_vs_flows",
-                    help="For each traffic/rate/load, aggregate every experiment's already-computed "
-                         "run_emd_vs_flows_experiment results (found under "
-                         "scratch/Results_<dir>/<traffic>/<rate>/<load>/<experiment>/) instead of "
-                         "computing anything new, and save the combined plots/pickle/text under "
-                         "scratch/ECNMC/Results/results_<dir>/<traffic>/<rate>/<load>/. Takes "
+                    help="Aggregate every experiment's already-computed run_emd_vs_flows_experiment "
+                         "results (found under scratch/Results_<dir>/<traffic>/<rate>/<load>/<experiment>/) "
+                         "instead of computing anything new. For each traffic/rate/load this saves the "
+                         "combined plots/pickle/text under scratch/ECNMC/Results/results_<dir>/<traffic>/"
+                         "<rate>/<load>/, and for each rate it additionally saves cross-traffic comparison "
+                         "plots (EMD vs load, one boxplot family per traffic, one plot per flow-count k) "
+                         "under scratch/ECNMC/Results/results_<dir>/emd_vs_load_by_traffic/<rate>/. Takes "
                          "precedence over --emd-vs-flows. Only used in the 'forward' branch.")
 
     args = parser.parse_args()
@@ -710,15 +712,17 @@ def __main__():
     for start in range(int(steadyStart), int(steadyEnd), int((steadyEnd - steadyStart) / numOfSteadyParts)):
         print("Steady period: {} to {}".format(start, start + int((steadyEnd - steadyStart) / numOfSteadyParts)))
         if "forward" in args.dir:
+            if args.aggregate_emd_vs_flows:
+                for rate in serviceRateScales:
+                    aggregate_emd_vs_flows_across_traffics_and_loads(
+                        __ns3_path, args.dir, traffics, rate, loads,
+                        flow_name=args.flow_name, path=args.path,
+                    )
+                continue
             for traffic in traffics:
                 for rate in serviceRateScales:
                     for load in loads:
-                        if args.aggregate_emd_vs_flows:
-                            aggregate_emd_vs_flows_across_experiments(
-                                __ns3_path, args.dir, traffic, rate, load,
-                                flow_name=args.flow_name, path=args.path,
-                            )
-                        elif args.emd_vs_flows:
+                        if args.emd_vs_flows:
                             print("\nRunning EMD-vs-flows analysis for traffic {} rate: {} load: {}".format(traffic, rate, load))
                             for experiment in range(experiments):
                                 run_emd_vs_flows_experiment(
@@ -868,6 +872,70 @@ def aggregate_emd_vs_flows_across_experiments(ns3_path, dir_name, traffic, rate,
     save_emd_vs_flows_results_text(aggregated, file_prefix + '_emd_vs_num_flows_results.txt')
 
     return aggregated
+
+
+def aggregate_emd_vs_flows_across_traffics_and_loads(ns3_path, dir_name, traffics, rate, loads,
+                                                       flow_name='R0H0R2H3', path=0, pass_threshold=0.9):
+    """For a fixed `rate`, aggregate every traffic x load combination (each first
+    aggregated across its own experiments via aggregate_emd_vs_flows_across_experiments,
+    which also writes that combination's own per-traffic/load plots as a side effect) into
+    cross-traffic comparison plots: for every flow-count k seen in any combination, one plot
+    of EMD vs. load with both comparison series together -- all-packets and Poisson-adaptive
+    subsample -- as one boxplot pair per traffic per load (see plot_emd_vs_load_by_traffic).
+    For every uniform-stride method, a second set of plots (same k values) compares the
+    Poisson-adaptive subsample against that uniform "1-in-stride" subsample instead, the
+    same way (poisson_vs_uniform_load_plot_series). Also saves, for each of these plot
+    kinds, one additional plot using each combination's own maximum flow count instead of a
+    fixed k (k='max' in plot_emd_vs_load_by_traffic), to compare "all the flows we have" per
+    traffic/load even though the exact max count can differ across combinations.
+    Saved under scratch/ECNMC/Results/results_<dir_name>/emd_vs_load_by_traffic/<rate>/.
+
+    Returns the {(traffic, load): aggregated_results} dict used to build the plots, or None
+    if no traffic/load combination had any experiment results to aggregate.
+    """
+    results_by_traffic_load = {}
+    for traffic in traffics:
+        for load in loads:
+            aggregated = aggregate_emd_vs_flows_across_experiments(
+                ns3_path, dir_name, traffic, rate, load, flow_name=flow_name, path=path,
+                pass_threshold=pass_threshold,
+            )
+            if aggregated is not None:
+                results_by_traffic_load[(traffic, load)] = aggregated
+
+    if not results_by_traffic_load:
+        print("No aggregated results available for rate={} to build cross-traffic/load plots".format(rate))
+        return None
+
+    all_k = sorted(set().union(*(set(r['num_flows']) for r in results_by_traffic_load.values())))
+    uniform_sample_strides = next(iter(results_by_traffic_load.values())).get('uniform_sample_strides', [])
+
+    output_dir = '{}/scratch/ECNMC/Results/results_{}/emd_vs_load_by_traffic/{}/'.format(ns3_path, dir_name, rate)
+    os.makedirs(output_dir, exist_ok=True)
+
+    plot_kinds = [(None, '', 'all packets vs. Poisson-adaptive subsample')]
+    for stride in uniform_sample_strides:
+        plot_kinds.append((stride, '_poisson_vs_uniform{}'.format(stride),
+                            'Poisson-adaptive subsample vs. uniform 1-in-{} subsample'.format(stride)))
+
+    for stride, suffix, kind_desc in plot_kinds:
+        series_specs = poisson_vs_uniform_load_plot_series(stride) if stride is not None else None
+        for k in all_k:
+            plot_emd_vs_load_by_traffic(
+                results_by_traffic_load, k, '{}{}_path_{}_k{}{}.png'.format(output_dir, flow_name, path, k, suffix),
+                pass_threshold=pass_threshold, series_specs=series_specs,
+                title='EMD vs load by traffic ({}), {} considered flows: {}, path {}, rate {}'.format(
+                    kind_desc, k, flow_name, path, rate),
+            )
+        plot_emd_vs_load_by_traffic(
+            results_by_traffic_load, 'max', '{}{}_path_{}_kmax{}.png'.format(output_dir, flow_name, path, suffix),
+            pass_threshold=pass_threshold, series_specs=series_specs,
+            title='EMD vs load by traffic ({}), all considered flows: {}, path {}, rate {}'.format(
+                kind_desc, flow_name, path, rate),
+        )
+    print("Saved {} cross-traffic/load plot kinds x {} k values (plus one all-flows plot each) to {}".format(
+        len(plot_kinds), len(all_k), output_dir))
+    return results_by_traffic_load
 
 
 if __name__ == "__main__":

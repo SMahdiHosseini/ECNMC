@@ -3430,9 +3430,13 @@ def aggregate_emd_vs_flows_results(results_list):
     convention used for pass_rate_sampled within a single experiment (see
     compute_emd_vs_num_tcp_flows_multi_run).
 
-    `num_flows` is the *intersection* of every experiment's flow-count list, since
-    different experiment realizations (different random seeds) can end up with slightly
-    different numbers of received TCP flows on the path.
+    `num_flows` is the *union* of every experiment's flow-count list, since different
+    experiment realizations (different random seeds) can end up with slightly different
+    numbers of received TCP flows on the path -- using the intersection would silently
+    drop the true maximum k whenever even one experiment fell short of it. An experiment
+    missing a particular k simply doesn't contribute to that k (neither its values nor its
+    run count), so 'num_flows' entries near the union's upper end are typically backed by
+    fewer experiments than ones every experiment reached.
 
     The all-packets EMD is no longer a single fixed value once aggregated (each
     experiment reconstructs its own ground truth), so it becomes 'emd_all_packets_by_experiment'
@@ -3457,9 +3461,9 @@ def aggregate_emd_vs_flows_results(results_list):
         result['emd_all_packets_by_experiment'] = [[v] for v in result['emd_all_packets']]
         return result
 
-    common_k = sorted(set.intersection(*(set(r['num_flows']) for r in results_list)))
-    if not common_k:
-        raise ValueError("No flow-count (k) value is shared across all experiments to aggregate")
+    all_k = sorted(set().union(*(set(r['num_flows']) for r in results_list)))
+    if not all_k:
+        raise ValueError("No flow-count (k) value found in any experiment to aggregate")
 
     uniform_strides = results_list[0]['uniform_sample_strides']
 
@@ -3472,7 +3476,7 @@ def aggregate_emd_vs_flows_results(results_list):
     pass_uniform_count = {s: [] for s in uniform_strides}
     pass_uniform_total = {s: [] for s in uniform_strides}
 
-    for k in common_k:
+    for k in all_k:
         emd_all_vals, mean_diff_all_vals = [], []
         pass_all_c = pass_all_t = 0
         emd_samp_vals, mean_diff_samp_vals = [], []
@@ -3483,6 +3487,8 @@ def aggregate_emd_vs_flows_results(results_list):
         uniform_pass_t = {s: 0 for s in uniform_strides}
 
         for r in results_list:
+            if k not in r['num_flows']:
+                continue
             i = r['num_flows'].index(k)
             num_runs = r['num_runs']
 
@@ -3534,8 +3540,8 @@ def aggregate_emd_vs_flows_results(results_list):
         'experiments': experiments,
         'num_poisson_observations': results_list[0]['num_poisson_observations'],
         'uniform_sample_strides': list(uniform_strides),
-        'total_flows': max(common_k),
-        'num_flows': common_k,
+        'total_flows': max(all_k),
+        'num_flows': all_k,
         'groundtruth_values': groundtruth_values,
         'emd_all_packets': [float(np.mean(v)) for v in emd_all_by_experiment],
         'emd_all_packets_by_experiment': emd_all_by_experiment,
@@ -3746,6 +3752,150 @@ def _subsample_family_layout(uniform_sample_strides):
     offset_poisson = offsets[1]
     offsets_uniform = {stride: offsets[2 + i] for i, stride in enumerate(uniform_sample_strides)}
     return offset_all_packets, offset_poisson, offsets_uniform, box_width
+
+
+_TRAFFIC_COLORS = ['navy', 'darkorange', 'purple', 'teal', 'crimson', 'olive']
+
+_LOAD_PLOT_SERIES = [
+    dict(key='all_packets', edge_style='solid', label='all packets of considered flows'),
+    dict(key='sampled', edge_style='dashed', label='Poisson-adaptive subsample'),
+]
+
+
+def poisson_vs_uniform_load_plot_series(stride):
+    """Series spec pair for plot_emd_vs_load_by_traffic comparing the Poisson-adaptive
+    subsample against one uniform "1-in-stride" subsample, the same way _LOAD_PLOT_SERIES
+    compares all-packets against the Poisson-adaptive subsample."""
+    return [
+        dict(key='sampled', edge_style='dashed', label='Poisson-adaptive subsample'),
+        dict(key=('uniform', stride), edge_style='dotted', label='Uniform 1-in-{} subsample'.format(stride)),
+    ]
+
+
+def _load_plot_series_values(r, i, series_key):
+    """Return (values, pass_rate) for one series spec's `key` at flow-count index `i` of an
+    aggregated/single results dict `r` (see plot_emd_vs_load_by_traffic). `series_key` is
+    'all_packets', 'sampled', or ('uniform', stride)."""
+    if series_key == 'all_packets':
+        by_experiment = r.get('emd_all_packets_by_experiment')
+        values = by_experiment[i] if by_experiment else [r['emd_all_packets'][i]]
+        values = [v for v in values if v == v]  # drop NaN
+        return values, r['pass_rate_all_packets'][i]
+    if series_key == 'sampled':
+        return r['emd_sampled_packets_by_run'][i], r['pass_rate_sampled'][i]
+    if isinstance(series_key, tuple) and series_key[0] == 'uniform':
+        stride = series_key[1]
+        return r['emd_uniform_packets_by_run'][stride][i], r['pass_rate_uniform'][stride][i]
+    raise ValueError("Unknown series_key: {!r}".format(series_key))
+
+
+def _load_plot_layout(n_traffics, loads, n_series=2):
+    """Offsets/box-width for plot_emd_vs_load_by_traffic: `n_series` boxes per traffic,
+    grouped as an adjacent cluster, evenly spread around each load tick. Unlike the
+    flow-count plots (whose x-ticks are integers spaced >=1 apart), loads are typically
+    spaced ~0.1 apart, so the spread must scale with the *actual* gap between loads rather
+    than a fixed constant -- otherwise neighboring load groups collide."""
+    n_slots = max(n_series * n_traffics, 1)
+    min_gap = float(np.min(np.diff(sorted(loads)))) if len(loads) > 1 else 1.0
+    span = min_gap * 0.85
+    box_width = (span / n_slots) * 0.85
+    offsets = np.linspace(-span / 2, span / 2, n_slots) if n_slots > 1 else np.array([0.0])
+    return offsets, box_width, span
+
+
+def plot_emd_vs_load_by_traffic(results_by_traffic_load, k, output_path, pass_threshold=0.9, title=None,
+                                 series_specs=None):
+    """Cross-traffic, cross-load comparison at one fixed flow count `k`: x-axis is load,
+    y-axis is EMD to the reconstructed ground-truth delay CDF. Both comparison series are
+    drawn together -- by default all packets of the k considered flows, and the
+    Poisson-adaptive subsample -- as one boxplot cluster per traffic per load
+    (len(series_specs) x len(traffics) boxes at each load tick). Color identifies the
+    traffic (_TRAFFIC_COLORS); border style (solid/dashed/dotted/...) identifies the series;
+    fill is only ever the pass/fail color.
+
+    `series_specs` is a list of {'key', 'edge_style', 'label'} dicts (see
+    _load_plot_series_values for valid `key`s); defaults to _LOAD_PLOT_SERIES (all-packets
+    vs. Poisson-adaptive). Pass poisson_vs_uniform_load_plot_series(stride) instead to
+    compare the Poisson-adaptive subsample against a uniform "1-in-stride" subsample the
+    same way. Any number of series is supported, not just 2.
+
+    `k` is normally an int looked up exactly in each combination's num_flows. Pass the
+    string 'max' instead to use each (traffic, load) combination's own maximum flow count
+    (its last num_flows entry) regardless of what that count actually is -- e.g. one
+    combination's max might be 19 considered flows and another's 21; this compares "all the
+    flows we have" for each, since the exact count isn't the point of that comparison.
+
+    `results_by_traffic_load` is a dict {(traffic, load): results} where each `results` is
+    what aggregate_emd_vs_flows_results (or a single run_emd_vs_flows_experiment call)
+    produces. A (traffic, load) combination missing entirely, or with no data at this k for
+    a given series, is simply left without a box there."""
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    use_max_k = (k == 'max')
+    series_specs = series_specs or _LOAD_PLOT_SERIES
+
+    traffics = sorted({t for (t, _l) in results_by_traffic_load})
+    loads = sorted({l for (_t, l) in results_by_traffic_load})
+    pass_color, fail_color = 'tab:green', 'tab:red'
+
+    n_traffics = max(len(traffics), 1)
+    n_series = max(len(series_specs), 1)
+    offsets, box_width, span = _load_plot_layout(n_traffics, loads, n_series)
+
+    fig, axis = plt.subplots(figsize=(30, 15))
+    legend_handles = [
+        Patch(facecolor=pass_color, edgecolor='black', alpha=0.85,
+              label='Consistency check passed (≥{:.0f}%)'.format(pass_threshold * 100)),
+        Patch(facecolor=fail_color, edgecolor='black', alpha=0.85,
+              label='Consistency check failed (<{:.0f}%)'.format(pass_threshold * 100)),
+    ]
+
+    any_data = False
+    for ti, traffic in enumerate(traffics):
+        color = _TRAFFIC_COLORS[ti % len(_TRAFFIC_COLORS)]
+        legend_handles.append(Patch(facecolor='white', edgecolor=color, linewidth=4.5, label=traffic))
+        for si, series_spec in enumerate(series_specs):
+            style = dict(edge_color=color, edge_style=series_spec['edge_style'])
+            values_by_load, pass_rate_by_load = [], []
+            for load in loads:
+                r = results_by_traffic_load.get((traffic, load))
+                if r is None or not r['num_flows'] or (not use_max_k and k not in r['num_flows']):
+                    values_by_load.append([])
+                    pass_rate_by_load.append(0.0)
+                    continue
+                i = -1 if use_max_k else r['num_flows'].index(k)
+                values, pass_rate = _load_plot_series_values(r, i, series_spec['key'])
+                values_by_load.append(values)
+                pass_rate_by_load.append(pass_rate)
+
+            if any(len(v) for v in values_by_load):
+                any_data = True
+            _draw_boxplot_family(axis, loads, values_by_load, pass_rate_by_load,
+                                 offsets[n_series * ti + si], box_width, pass_threshold, pass_color, fail_color, style)
+
+    for series_spec in series_specs:
+        legend_handles.append(Line2D([0], [0], color='black', linewidth=3, linestyle=series_spec['edge_style'],
+                                      label='{} (border style)'.format(series_spec['label'])))
+
+    if not any_data:
+        print("plot_emd_vs_load_by_traffic: no data at k={}, writing empty plot".format(k))
+
+    series_names = ' vs. '.join(s['label'] for s in series_specs)
+    default_title = 'EMD vs load by traffic ({}), all considered flows (each combination\'s own max)'.format(series_names) if use_max_k \
+        else 'EMD vs load by traffic ({}), k={}'.format(series_names, k)
+    axis.set_title(title or default_title, fontsize=34)
+    axis.set_xlabel('Load')
+    axis.set_ylabel("EMD to reconstructed network delay CDF (ns)")
+    axis.set_xticks(loads)
+    if loads:
+        pad = max(np.min(np.diff(loads)) * 0.6, span / 2 + box_width) if len(loads) > 1 else max(span / 2, 0.05)
+        axis.set_xlim(min(loads) - pad, max(loads) + pad)
+    axis.grid(True, alpha=0.35, axis='y')
+    axis.legend(handles=legend_handles, fontsize=16, loc='best', ncol=2)
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=150)
+    plt.close(fig)
+    return output_path
 
 
 def plot_emd_vs_num_flows_boxplot(results, output_path, title="EMD vs number of TCP flows", pass_threshold=0.9, y_max=None):
