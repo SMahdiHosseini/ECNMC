@@ -1021,6 +1021,246 @@ def find_samples_path(time, MinimumNumberOfSamples=0, window=None):
     subSamplingError = SubSamplingError.NotPoisson + "+" + subSamplingError.value
     return np.array([], dtype=time.dtype), subSamplingError
 
+
+def _winsorized_mean_1d(values, upper_trim_frac):
+    """Mean of `values` after capping (not discarding) its largest
+    `upper_trim_frac` fraction at the value just below the cut, so a single
+    extreme point pulls the mean toward, rather than past, the bulk of the
+    data. Only the upper tail is capped (not a symmetric trim): the only
+    contamination this guards against is an occasional very long gap, never
+    an implausibly short one, and one-sided Winsorizing keeps every ordinary
+    (non-outlier) observation's full value in the average."""
+    values = np.sort(values)
+    m = len(values)
+    k = max(0, int(round(m * upper_trim_frac)))
+    if k > 0 and m > k:
+        values = values.copy()
+        values[m - k:] = values[m - k - 1]
+    return values.mean()
+
+
+def _causal_winsorized_mean(gaps, window, upper_trim_frac):
+    """Winsorized mean of the trailing up-to-`window` values of `gaps` ending
+    at (and including) each position -- position i uses
+    gaps[max(0, i-window+1):i+1], the same "gap ending at this candidate"
+    convention distanceAwareSampling uses for its single-gap estimate, just
+    averaged (Winsorized) over the last `window` such gaps instead of only
+    the last one. Vectorized via sliding_window_view once i >= window - 1;
+    the O(window) ramp-up positions before that, where fewer than `window`
+    gaps are available, are handled one at a time since there are at most
+    `window` of them."""
+    n = len(gaps)
+    out = np.empty(n, dtype=float)
+    if n == 0:
+        return out
+    ramp = min(window - 1, n)
+    for i in range(ramp):
+        out[i] = _winsorized_mean_1d(gaps[max(0, i - window + 1):i + 1], upper_trim_frac)
+    if n >= window:
+        windows = np.lib.stride_tricks.sliding_window_view(gaps, window)
+        sorted_windows = np.sort(windows, axis=1)
+        k = max(0, int(round(window * upper_trim_frac)))
+        if k > 0:
+            sorted_windows[:, window - k:] = sorted_windows[:, window - k - 1:window - k]
+        out[window - 1:n] = sorted_windows.mean(axis=1)
+    return out
+
+
+def intensity_thinning(time, rate, window=16, upper_trim_frac=0.2):
+    """Thin a captured packet-timestamp stream toward a target Poisson rate
+    `rate`, using a causal, outlier-robust estimate of the local arrival
+    intensity rather than the single immediately-preceding gap.
+
+    For each candidate packet, this estimates the local mean gap as the
+    one-sided Winsorized mean of the `window` most recent raw gaps ending at
+    that packet's own gap (see _causal_winsorized_mean), and retains the
+    packet independently with probability
+    1 - exp(-rate * local_gap_estimate). This is the classical
+    construction for thinning a point process with a (here, data-estimated)
+    predictable/conditional intensity down to a homogeneous Poisson process
+    of rate `rate` -- the same idea underlying the Lewis-Shedler thinning
+    algorithm and the time-rescaling theorem used for point-process
+    goodness-of-fit; distanceAwareSampling above is the special case
+    `window=1` (no smoothing) with this same functional form.
+
+    Two things this deliberately does NOT do, both changed after review:
+
+    - It does not use the sample median rescaled by a constant to estimate
+      the local mean gap. median/mean equals ln(2) only asymptotically for
+      exponential gaps, is measurably off already at small window (the exact
+      ratio for k iid Exp(1) is 1.202 at k=4, 1.047 at k=16, 1.011 at k=64 --
+      not 1 as a fixed ln(2) correction assumes), and is a different, unknown
+      ratio entirely once the local gaps are not exponential -- which is
+      precisely the regime this function exists to handle: if the raw gaps
+      already were exponential, no thinning would be needed. The Winsorized
+      mean above needs no such correction: an (un-Winsorized) sample mean is
+      unbiased for the population mean under any distribution, and
+      Winsorizing only the upper tail bounds the damage a single long idle
+      gap does to that estimate without asserting anything about the shape
+      of the local gaps.
+    - It does not clip retention_prob with min(1, ...). A ratio-form
+      probability (rate * local_gap_estimate) exceeds 1 whenever the local
+      gap estimate exceeds 1/rate -- i.e. in every locally-sparse stretch --
+      and clipping then forces a deterministic keep there; at high overall
+      retention that is most positions, and the method degenerates to
+      "keep nearly everything, then test whether the raw stream already
+      looks Poisson" rather than actually thinning. 1 - exp(-rate * g) is
+      already in [0, 1) for every g >= 0 with no clip, and is never larger
+      than the ratio form (1 - exp(-x) <= x for x >= 0), so it thins at
+      least as aggressively everywhere while remaining a valid probability
+      by construction.
+
+    The very first raw packet is only used to anchor the first gap and is
+    never itself a retention candidate (same convention as
+    distanceAwareSampling/poissonLikeSampling).
+    """
+    time = np.asarray(time, dtype=float)
+    if len(time) < 2 or rate <= 0:
+        return np.array([], dtype=float)
+
+    gaps = np.diff(time)
+    local_gap_est = _causal_winsorized_mean(gaps, window, upper_trim_frac)
+
+    retention_prob = -np.expm1(-rate * local_gap_est)
+    selected_mask = bernoulli.rvs(retention_prob).astype(bool)
+    return time[1:][selected_mask]
+
+
+def find_samples_path_intensity(
+    time,
+    MinimumNumberOfSamples=0,
+    windows=(4, 16, 64),
+    num_candidates=10,
+    tries_per_candidate=3,
+    steadyStart=None,
+    steadyEnd=None,
+    confirm_lags=None,
+):
+    # TODO: Needs a modification and verification and be added to the list of sampling methods
+    """Poisson-adaptive subsampling of a captured e2e packet stream: retain as
+    many packets as possible while still passing a genuine Poisson-process
+    validation, so that the resulting sample mean can be trusted as a PASTA
+    (Poisson-Arrivals-See-Time-Averages) estimate of the path's time-average
+    delay.
+
+    This performs a grid search over (smoothing window, target rate) and
+    keeps the single best-validated candidate seen anywhere in the grid --
+    "best" meaning largest retained sample count among those that pass both
+    of the following on intensity_thinning's output (see intensity_thinning
+    for the thinning rule itself):
+
+      1. Marginal exponentiality of the retained inter-arrival times
+         (Anderson-Darling), the same test find_samples_path already uses.
+      2. The multi-lag independence test in chi_squared_test. This is the
+         part find_samples_path/distanceAwareSampling/poissonLikeSampling
+         above do not check: Anderson-Darling alone can pass a stream whose
+         gaps are individually exponential-looking but serially dependent
+         (e.g. RTT-periodic ACK clocking, or a burst boundary re-appearing
+         at a fixed lag). Undetected serial dependence silently shrinks the
+         effective sample size below N, which is exactly the count the
+         downstream confidence bound (eta * sigma / sqrt(N)) assumes is
+         independent. Passing this test is what lets N be trusted, not just
+         the marginal shape of the gaps.
+
+    Both the target rate and the smoothing window are searched, not just the
+    rate for a fixed window: empirically (see the accompanying discussion),
+    the right smoothing window depends on the traffic's burst scale relative
+    to the window -- e.g. a window close to the size of a typical burst can
+    let a stale pre-burst gap contaminate the local-intensity estimate for
+    much of the following burst -- and no single fixed window dominates
+    across traffic patterns. This mirrors the paper's own windowed method,
+    which searches jointly over its window and Bernoulli-keep probability
+    rather than fixing one of them; distanceAwareSampling's single fixed-gap
+    estimate is the special case `windows=(1,)`.
+
+    The full scan is used (highest-rate-first within each window, tracking a
+    running best) rather than an adaptive bisection on the rate: because
+    validation is a noisy Bernoulli-driven outcome, a single unlucky draw at
+    an otherwise-good rate can look like a failure, and a bisection that
+    permanently narrows its bracket on one such draw gets trapped far below
+    the true achievable rate and never revisits it. The expensive multi-lag
+    independence test only runs on a candidate that already passed the cheap
+    Anderson-Darling test and could improve on the current best count, so
+    its cost scales with the number of genuine improvements the search
+    makes, not with num_candidates * tries_per_candidate * len(windows).
+
+    Returns (samples, subSamplingError) with the same contract as
+    find_samples_path: samples is an empty array and subSamplingError names
+    the failure reason when no (window, rate) candidate could be validated,
+    or when the best validated candidate has fewer than
+    MinimumNumberOfSamples packets.
+    """
+    subSamplingError = SubSamplingError.NoError
+    time = np.asarray(time, dtype=float)
+    time = np.sort(time)
+
+    try:
+        minimum_number_of_samples = max(0, int(np.ceil(float(MinimumNumberOfSamples))))
+    except (TypeError, ValueError):
+        minimum_number_of_samples = 0
+
+    if len(time) <= 1:
+        if minimum_number_of_samples > len(time):
+            subSamplingError = SubSamplingError.NotEnoughPackets + "+" + subSamplingError.value
+        return np.array([], dtype=float), subSamplingError
+
+    if minimum_number_of_samples > 0 and minimum_number_of_samples > len(time):
+        subSamplingError = SubSamplingError.NotEnoughPackets + "+" + subSamplingError.value
+        return np.array([], dtype=float), subSamplingError
+
+    duration = time[-1] - time[0]
+    if duration <= 0:
+        return np.array([], dtype=float), subSamplingError
+
+    if steadyStart is None:
+        steadyStart = time[0]
+    if steadyEnd is None:
+        steadyEnd = time[-1]
+
+    raw_rate = (len(time) - 1) / duration
+    floor_rate = (
+        minimum_number_of_samples / duration if minimum_number_of_samples > 0 else raw_rate * 1e-3
+    )
+    low = max(floor_rate, raw_rate * 1e-4)
+    high = raw_rate
+    if low >= high:
+        low = high * 1e-3
+
+    rates = np.geomspace(high, low, num=num_candidates)
+    if isinstance(windows, (int, np.integer)):
+        windows = (windows,)
+
+    best_count = 0
+    best_samples = np.array([], dtype=float)
+
+    for window in windows:
+        for rate in rates:
+            for _ in range(tries_per_candidate):
+                trial = intensity_thinning(time, rate, window=window)
+                if len(trial) <= max(1, best_count):
+                    continue
+                ad_res = anderson(np.diff(trial), 'expon', method='interpolate')
+                if ad_res.pvalue <= 0.05:
+                    continue
+                lags, res, _ = chi_squared_test(trial, steadyStart, steadyEnd, lags=confirm_lags)
+                if len(lags) == 0:
+                    continue
+                upper_band = 0.05 + 1.96 * np.sqrt(0.95 * 0.05) / np.sqrt(len(lags))
+                if (sum(res) / len(lags)) < upper_band:
+                    best_count, best_samples = len(trial), trial
+                    break  # this (window, rate) already improved on the best; no need for another draw
+
+    if best_count == 0:
+        subSamplingError = SubSamplingError.NotPoisson + "+" + subSamplingError.value
+        return np.array([], dtype=float), subSamplingError
+
+    if minimum_number_of_samples > 0 and best_count < minimum_number_of_samples:
+        subSamplingError = SubSamplingError.NotEnoughSamples + "+" + subSamplingError.value
+        return np.array([], dtype=float), subSamplingError
+
+    return np.sort(best_samples), subSamplingError
+
+
 def e2e_poisson_sampling(time, values, delay=False, sizes=None):
     duration = time[-1] - time[0]
     rate = len(values) / duration

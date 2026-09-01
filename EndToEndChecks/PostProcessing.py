@@ -692,7 +692,7 @@ def __main__():
     steadyEnd = convert_to_float(config.get('Settings', 'steadyEnd')) * 1e9
     # steadyEnd = 0.015 * 1e9
     experiments = int(config.get('Settings', 'experiments'))
-    experiments = 1
+    experiments = 30
     serviceRateScales = [float(x) for x in config.get('Settings', 'serviceRateScales').split(',')]
     # serviceRateScales = [0.5]
     loads = [float(x) for x in config.get('Settings', 'load').split(',')]
