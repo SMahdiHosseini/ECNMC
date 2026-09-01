@@ -888,6 +888,12 @@ def aggregate_emd_vs_flows_across_traffics_and_loads(ns3_path, dir_name, traffic
     kinds, one additional plot using each combination's own maximum flow count instead of a
     fixed k (k='max' in plot_emd_vs_load_by_traffic), to compare "all the flows we have" per
     traffic/load even though the exact max count can differ across combinations.
+
+    Also saves, per k (plus one all-flows 'max' variant), a plot of the Poisson-adaptive
+    subsample's consistency-check pass rate itself vs. load, one line per traffic (see
+    plot_pass_rate_vs_load_by_traffic) -- unlike the EMD plots above, this is the success
+    rate, not the EMD distribution.
+
     Saved under scratch/ECNMC/Results/results_<dir_name>/emd_vs_load_by_traffic/<rate>/.
 
     Returns the {(traffic, load): aggregated_results} dict used to build the plots, or None
@@ -933,8 +939,23 @@ def aggregate_emd_vs_flows_across_traffics_and_loads(ns3_path, dir_name, traffic
             title='EMD vs load by traffic ({}), all considered flows: {}, path {}, rate {}'.format(
                 kind_desc, flow_name, path, rate),
         )
-    print("Saved {} cross-traffic/load plot kinds x {} k values (plus one all-flows plot each) to {}".format(
-        len(plot_kinds), len(all_k), output_dir))
+    for k in all_k:
+        plot_pass_rate_vs_load_by_traffic(
+            results_by_traffic_load, k, '{}{}_path_{}_k{}_poisson_pass_rate.png'.format(output_dir, flow_name, path, k),
+            pass_threshold=pass_threshold,
+            title='Poisson-adaptive subsample consistency pass rate vs load by traffic, {} considered flows: {}, path {}, rate {}'.format(
+                k, flow_name, path, rate),
+        )
+    plot_pass_rate_vs_load_by_traffic(
+        results_by_traffic_load, 'max', '{}{}_path_{}_kmax_poisson_pass_rate.png'.format(output_dir, flow_name, path),
+        pass_threshold=pass_threshold,
+        title='Poisson-adaptive subsample consistency pass rate vs load by traffic, all considered flows: {}, path {}, rate {}'.format(
+            flow_name, path, rate),
+    )
+
+    print("Saved {} cross-traffic/load plot kinds x {} k values (plus one all-flows plot each), "
+          "plus {} Poisson pass-rate-vs-load plots (plus one all-flows plot), to {}".format(
+        len(plot_kinds), len(all_k), len(all_k), output_dir))
     return results_by_traffic_load
 
 

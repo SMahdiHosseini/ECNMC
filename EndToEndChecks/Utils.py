@@ -6,7 +6,7 @@ os.environ["MKL_NUM_THREADS"] = "4"
 import pandas as pd
 import glob
 import matplotlib.pyplot as plt
-from matplotlib.ticker import MaxNLocator
+from matplotlib.ticker import MaxNLocator, PercentFormatter
 from matplotlib.patches import Patch
 from matplotlib.lines import Line2D
 from enum import Enum
@@ -3892,6 +3892,94 @@ def plot_emd_vs_load_by_traffic(results_by_traffic_load, k, output_path, pass_th
         axis.set_xlim(min(loads) - pad, max(loads) + pad)
     axis.grid(True, alpha=0.35, axis='y')
     axis.legend(handles=legend_handles, fontsize=16, loc='best', ncol=2)
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=150)
+    plt.close(fig)
+    return output_path
+
+
+def plot_pass_rate_vs_load_by_traffic(results_by_traffic_load, k, output_path, series_key='sampled',
+                                       pass_threshold=0.9, title=None):
+    """Cross-traffic comparison at one fixed flow count `k` of the delay consistency check's
+    success rate itself (not the EMD distribution): x-axis is load, y-axis is the pass rate
+    (0-100%), one line + markers per traffic, colored per _TRAFFIC_COLORS. Markers are
+    colored green/red by whether they clear `pass_threshold` (dashed reference line), the
+    same convention used elsewhere; the connecting line carries the traffic's color so
+    multiple traffics stay distinguishable on one axis.
+
+    `series_key` defaults to 'sampled' (the Poisson-adaptive subsample's pass rate,
+    results['pass_rate_sampled'][i]) since that's what this was built for, but accepts any
+    key plot_emd_vs_load_by_traffic's series specs do ('all_packets' or ('uniform', stride))
+    if a similar success-rate view is ever wanted for those.
+
+    `k` is normally an int looked up exactly in each combination's num_flows; pass 'max' to
+    use each combination's own maximum flow count instead (see plot_emd_vs_load_by_traffic).
+    A (traffic, load) combination missing entirely, or with no data at this k, is simply
+    left without a point there (the line breaks across the gap)."""
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    use_max_k = (k == 'max')
+
+    traffics = sorted({t for (t, _l) in results_by_traffic_load})
+    loads = sorted({l for (_t, l) in results_by_traffic_load})
+    pass_color, fail_color = 'tab:green', 'tab:red'
+
+    fig, axis = plt.subplots(figsize=(30, 15))
+    axis.axhline(pass_threshold, color='black', linewidth=2, linestyle=':', zorder=1)
+
+    legend_handles = [
+        Line2D([0], [0], marker='o', color='0.4', markerfacecolor=pass_color, markeredgecolor='black',
+               markersize=16, linewidth=0, label='≥{:.0f}% pass threshold'.format(pass_threshold * 100)),
+        Line2D([0], [0], marker='o', color='0.4', markerfacecolor=fail_color, markeredgecolor='black',
+               markersize=16, linewidth=0, label='<{:.0f}% pass threshold'.format(pass_threshold * 100)),
+    ]
+
+    any_data = False
+    for ti, traffic in enumerate(traffics):
+        color = _TRAFFIC_COLORS[ti % len(_TRAFFIC_COLORS)]
+        x_vals, y_vals = [], []
+        for load in loads:
+            r = results_by_traffic_load.get((traffic, load))
+            if r is None or not r['num_flows'] or (not use_max_k and k not in r['num_flows']):
+                continue
+            i = -1 if use_max_k else r['num_flows'].index(k)
+            _, pass_rate = _load_plot_series_values(r, i, series_key)
+            x_vals.append(load)
+            y_vals.append(pass_rate)
+
+        if not x_vals:
+            continue
+        any_data = True
+        axis.plot(x_vals, y_vals, color=color, linewidth=2.5, zorder=2)
+        y_arr = np.asarray(y_vals)
+        pass_mask = y_arr >= pass_threshold
+        if pass_mask.any():
+            axis.scatter(np.asarray(x_vals)[pass_mask], y_arr[pass_mask], marker='o', color=pass_color,
+                         edgecolor=color, linewidth=2, s=260, zorder=3)
+        if (~pass_mask).any():
+            axis.scatter(np.asarray(x_vals)[~pass_mask], y_arr[~pass_mask], marker='o', color=fail_color,
+                         edgecolor=color, linewidth=2, s=260, zorder=3)
+        legend_handles.append(Line2D([0], [0], color=color, linewidth=4, marker='o', markersize=0, label=traffic))
+
+    if not any_data:
+        print("plot_pass_rate_vs_load_by_traffic: no data at k={}, writing empty plot".format(k))
+
+    series_label = {'all_packets': 'all packets', 'sampled': 'Poisson-adaptive subsample'}.get(
+        series_key, 'uniform 1-in-{} subsample'.format(series_key[1]) if isinstance(series_key, tuple) else str(series_key))
+    default_title = 'Consistency check pass rate vs load by traffic ({}), all considered flows (each combination\'s own max)'.format(series_label) if use_max_k \
+        else 'Consistency check pass rate vs load by traffic ({}), k={}'.format(series_label, k)
+    axis.set_title(title or default_title, fontsize=34)
+    axis.set_xlabel('Load')
+    axis.set_ylabel('Consistency check pass rate')
+    axis.set_xticks(loads)
+    axis.set_ylim(-0.02, 1.02)
+    axis.yaxis.set_major_formatter(PercentFormatter(xmax=1.0))
+    if loads:
+        span_x = (max(loads) - min(loads)) if len(loads) > 1 else 1.0
+        pad = max(span_x * 0.05, 0.03)
+        axis.set_xlim(min(loads) - pad, max(loads) + pad)
+    axis.grid(True, alpha=0.35)
+    axis.legend(handles=legend_handles, fontsize=18, loc='best')
     fig.tight_layout()
     fig.savefig(output_path, dpi=150)
     plt.close(fig)
