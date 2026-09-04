@@ -3246,7 +3246,14 @@ TcpSocketBase::SendDataPacket(SequenceNumber32 seq, uint32_t maxSize, bool withA
     NS_ASSERT(isRetransmission ||
               ((m_highRxAckMark + SequenceNumber32(m_rWnd)) >= (seq + SequenceNumber32(maxSize))));
 
-    if (IsPacingEnabled())
+    // ****** Mahdi Change (crash fix) ***** (START) ***** //
+    // m_pacingRate can still be DataRate(0) (TcpSocketState::m_maxPacingRate's default/"uncapped"
+    // sentinel) if UpdatePacingRate() has never computed a real rate yet -- e.g. a retransmission
+    // timeout firing before this connection's first valid RTT sample. Calling
+    // CalculateBytesTxTime() on a zero rate divides by zero (SIGFPE), so skip pacing in that case
+    // (equivalent to "no pacing constraint established yet") instead of crashing.
+    if (IsPacingEnabled() && m_tcb->m_pacingRate.Get() > DataRate(0))
+    // ****** Mahdi Change (crash fix) ***** (END) ***** //
     {
         NS_LOG_INFO("Pacing is enabled");
         if (m_pacingTimer.IsExpired())
@@ -3512,7 +3519,11 @@ TcpSocketBase::SendPendingData(bool withAck)
                                   << " sent seq " << m_tcb->m_nextTxSequence << " size " << sz);
             m_tcb->m_nextTxSequence += sz;
             ++nPacketsSent;
-            if (IsPacingEnabled())
+            // ****** Mahdi Change (crash fix) ***** (START) ***** //
+            // See the matching guard/comment in SendDataPacket(): a still-zero m_pacingRate
+            // (unset "uncapped" sentinel) must not be used in CalculateBytesTxTime() (SIGFPE).
+            if (IsPacingEnabled() && m_tcb->m_pacingRate.Get() > DataRate(0))
+            // ****** Mahdi Change (crash fix) ***** (END) ***** //
             {
                 NS_LOG_INFO("Pacing is enabled");
                 if (m_pacingTimer.IsExpired())
