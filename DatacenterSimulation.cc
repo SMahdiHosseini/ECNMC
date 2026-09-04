@@ -736,7 +736,7 @@ void run_DC_simulation(int argc, char* argv[]){
     bool Nagle = false;                                // If the Nagle algorithm should be used
     bool activeProbe = false;                          // If the active probe should be used
     bool passiveProbe = true;                          // If the passive probe should be used
-    bool monitorAllFlows = true;                      // Capture all source-destination host pairs using aggregated monitors
+    bool monitorAllFlows = false;                      // Capture all source-destination host pairs using aggregated monitors
     double load = 0.9;                                 // The load on the buttleneck link
     uint16_t poolSize = 20;                            // The size of the connection pool
     double avgMsgSize = 1448.0;                        // The average message size
@@ -744,9 +744,9 @@ void run_DC_simulation(int argc, char* argv[]){
     uint32_t incastMessageSize = 10000;                // The size of the incast messages
     uint16_t incastFactor = 10;                        // The incast factor
     int seed = 1;                                      // The seed for the random number generator
-    int nHosts = 16;                                   // Hosts per rack
-    int nRacks = 9;                                    // Number of ToR racks
-    int nAggSwitches = 4;                              // Number of aggregation switches
+    int nHosts = 6;                                   // Hosts per rack
+    int nRacks = 4;                                    // Number of ToR racks
+    int nAggSwitches = 2;                              // Number of aggregation switches
     int nCoreSwitches = 1;                             // Number of core switches
 
     /*command line input*/
@@ -1200,47 +1200,47 @@ void run_DC_simulation(int argc, char* argv[]){
     // }
     // PoissonSampler on the tor to agg links
     // Only T0 to A0
-    // Ptr<PointToPointNetDevice> torToAggNetDeviceT0A0 = DynamicCast<PointToPointNetDevice>(torToAggNetDevices[0][0].Get(0));
-    // auto *torToAggSampler = new PoissonSampler(Seconds(stof(steadyStartTime)), Seconds(stof(steadyStopTime)), DynamicCast<RedQueueDisc>(torToAggQueueDiscs[0][0].Get(0)), torToAggNetDeviceT0A0->GetQueue(), torToAggNetDeviceT0A0, "T0A0", sampleRate, nullptr, nullptr, traffic);
-    // PoissonSamplers.push_back(torToAggSampler);
+    Ptr<PointToPointNetDevice> torToAggNetDeviceT0A0 = DynamicCast<PointToPointNetDevice>(torToAggNetDevices[0][0].Get(0));
+    auto *torToAggSampler = new PoissonSampler(Seconds(stof(steadyStartTime)), Seconds(stof(steadyStopTime)), DynamicCast<RedQueueDisc>(torToAggQueueDiscs[0][0].Get(0)), torToAggNetDeviceT0A0->GetQueue(), torToAggNetDeviceT0A0, "T0A0", sampleRate, nullptr, nullptr, traffic);
+    PoissonSamplers.push_back(torToAggSampler);
     // all tor to agg links
-    for (int i = 0; i < nRacks; i++) {
-        for (int j = 0; j < nAggSwitches; j++) {
-            Ptr<PointToPointNetDevice> torToAggNetDevice = DynamicCast<PointToPointNetDevice>(torToAggNetDevices[i][j].Get(0));            
-            auto *torToAggSampler = new PoissonSampler(Seconds(stof(steadyStartTime)), Seconds(stof(steadyStopTime)), DynamicCast<RedQueueDisc>(torToAggQueueDiscs[i][j].Get(0)), torToAggNetDevice->GetQueue(), torToAggNetDevice, "T" + to_string(i) + "A" + to_string(j), sampleRate, nullptr, nullptr, traffic);
-            PoissonSamplers.push_back(torToAggSampler);
-        }
-    }
+    // for (int i = 0; i < nRacks; i++) {
+    //     for (int j = 0; j < nAggSwitches; j++) {
+    //         Ptr<PointToPointNetDevice> torToAggNetDevice = DynamicCast<PointToPointNetDevice>(torToAggNetDevices[i][j].Get(0));            
+    //         auto *torToAggSampler = new PoissonSampler(Seconds(stof(steadyStartTime)), Seconds(stof(steadyStopTime)), DynamicCast<RedQueueDisc>(torToAggQueueDiscs[i][j].Get(0)), torToAggNetDevice->GetQueue(), torToAggNetDevice, "T" + to_string(i) + "A" + to_string(j), sampleRate, nullptr, nullptr, traffic);
+    //         PoissonSamplers.push_back(torToAggSampler);
+    //     }
+    // }
     // // PoissonSampler on the Tor to Host links
     // Only T2 to H3
-    // Ptr<PointToPointNetDevice> hostToTorNetDeviceT2H3 = DynamicCast<PointToPointNetDevice>(hostsToTorsNetDevices[2][3].Get(1));
-    // auto *hostToTorSamplerT2H3 = new PoissonSampler(Seconds(stof(steadyStartTime)), Seconds(stof(steadyStopTime)), DynamicCast<RedQueueDisc>(torToHostQueueDiscs[2][3].Get(0)), hostToTorNetDeviceT2H3->GetQueue(), hostToTorNetDeviceT2H3, "T2H3", sampleRate, nullptr, nullptr, traffic);
-    // PoissonSamplers.push_back(hostToTorSamplerT2H3);
+    Ptr<PointToPointNetDevice> hostToTorNetDeviceT2H3 = DynamicCast<PointToPointNetDevice>(hostsToTorsNetDevices[2][3].Get(1));
+    auto *hostToTorSamplerT2H3 = new PoissonSampler(Seconds(stof(steadyStartTime)), Seconds(stof(steadyStopTime)), DynamicCast<RedQueueDisc>(torToHostQueueDiscs[2][3].Get(0)), hostToTorNetDeviceT2H3->GetQueue(), hostToTorNetDeviceT2H3, "T2H3", sampleRate, nullptr, nullptr, traffic);
+    PoissonSamplers.push_back(hostToTorSamplerT2H3);
     // all Tor to Host links
-    for (int i = 0; i < nRacks; i++) {
-        for (int j = 0; j < nHosts; j++) {
-            Ptr<PointToPointNetDevice> hostToTorNetDevice = DynamicCast<PointToPointNetDevice>(hostsToTorsNetDevices[i][j].Get(1));
-            auto *hostToTorSampler = new PoissonSampler(Seconds(stof(steadyStartTime)), Seconds(stof(steadyStopTime)), DynamicCast<RedQueueDisc>(torToHostQueueDiscs[i][j].Get(0)), hostToTorNetDevice->GetQueue(), hostToTorNetDevice, "T" + to_string(i) + "H" + to_string(j), sampleRate, nullptr, nullptr, traffic);
-            PoissonSamplers.push_back(hostToTorSampler);
-        }
-    }
+    // for (int i = 0; i < nRacks; i++) {
+    //     for (int j = 0; j < nHosts; j++) {
+    //         Ptr<PointToPointNetDevice> hostToTorNetDevice = DynamicCast<PointToPointNetDevice>(hostsToTorsNetDevices[i][j].Get(1));
+    //         auto *hostToTorSampler = new PoissonSampler(Seconds(stof(steadyStartTime)), Seconds(stof(steadyStopTime)), DynamicCast<RedQueueDisc>(torToHostQueueDiscs[i][j].Get(0)), hostToTorNetDevice->GetQueue(), hostToTorNetDevice, "T" + to_string(i) + "H" + to_string(j), sampleRate, nullptr, nullptr, traffic);
+    //         PoissonSamplers.push_back(hostToTorSampler);
+    //     }
+    // }
     // Only T0 to H5
     // Ptr<PointToPointNetDevice> hostToTorNetDeviceT0H5 = DynamicCast<PointToPointNetDevice>(hostsToTorsNetDevices[0][5].Get(1));
     // auto *hostToTorSamplerT0H5 = new PoissonSampler(Seconds(stof(steadyStartTime)), Seconds(stof(steadyStopTime)), DynamicCast<RedQueueDisc>(torToHostQueueDiscs[0][5].Get(0)), hostToTorNetDeviceT0H5->GetQueue(), hostToTorNetDeviceT0H5, "T0H5", sampleRate, nullptr, nullptr, traffic);
     // PoissonSamplers.push_back(hostToTorSamplerT0H5);
     // // PoissonSampler on the Agg to Tor links
     // Only A0 to T2
-    // Ptr<PointToPointNetDevice> aggToTorNetDeviceA0T2 = DynamicCast<PointToPointNetDevice>(torToAggNetDevices[2][0].Get(1));
-    // auto *aggToTorSamplerA0T2 = new PoissonSampler(Seconds(stof(steadyStartTime)), Seconds(stof(steadyStopTime)), DynamicCast<RedQueueDisc>(torToAggQueueDiscs[2][0].Get(1)), aggToTorNetDeviceA0T2->GetQueue(), aggToTorNetDeviceA0T2, "A0T2", sampleRate, nullptr, nullptr, traffic);
-    // PoissonSamplers.push_back(aggToTorSamplerA0T2);
+    Ptr<PointToPointNetDevice> aggToTorNetDeviceA0T2 = DynamicCast<PointToPointNetDevice>(torToAggNetDevices[2][0].Get(1));
+    auto *aggToTorSamplerA0T2 = new PoissonSampler(Seconds(stof(steadyStartTime)), Seconds(stof(steadyStopTime)), DynamicCast<RedQueueDisc>(torToAggQueueDiscs[2][0].Get(1)), aggToTorNetDeviceA0T2->GetQueue(), aggToTorNetDeviceA0T2, "A0T2", sampleRate, nullptr, nullptr, traffic);
+    PoissonSamplers.push_back(aggToTorSamplerA0T2);
     // all Agg to Tor links
-    for (int i = 0; i < nRacks; i++) {
-        for (int j = 0; j < nAggSwitches; j++) {
-            Ptr<PointToPointNetDevice> aggToTorNetDevice = DynamicCast<PointToPointNetDevice>(torToAggNetDevices[i][j].Get(1));
-            auto *aggToTorSampler = new PoissonSampler(Seconds(stof(steadyStartTime)), Seconds(stof(steadyStopTime)), DynamicCast<RedQueueDisc>(torToAggQueueDiscs[i][j].Get(1)), aggToTorNetDevice->GetQueue(), aggToTorNetDevice, "A" + to_string(j) + "T" + to_string(i), sampleRate, nullptr, nullptr, traffic);
-            PoissonSamplers.push_back(aggToTorSampler);
-        }
-    }
+    // for (int i = 0; i < nRacks; i++) {
+    //     for (int j = 0; j < nAggSwitches; j++) {
+    //         Ptr<PointToPointNetDevice> aggToTorNetDevice = DynamicCast<PointToPointNetDevice>(torToAggNetDevices[i][j].Get(1));
+    //         auto *aggToTorSampler = new PoissonSampler(Seconds(stof(steadyStartTime)), Seconds(stof(steadyStopTime)), DynamicCast<RedQueueDisc>(torToAggQueueDiscs[i][j].Get(1)), aggToTorNetDevice->GetQueue(), aggToTorNetDevice, "A" + to_string(j) + "T" + to_string(i), sampleRate, nullptr, nullptr, traffic);
+    //         PoissonSamplers.push_back(aggToTorSampler);
+    //     }
+    // }
 
     // vector<SwitchMonitor *> switchMonitors;
     // //  Switch Monitor on A0
