@@ -22,9 +22,11 @@
 #include "traffic_generator_module/DC_traffic_generator/DCWorkloadGenerator.h"
 #include "traffic_generator_module/DC_traffic_generator/ProbeGenerator.h"
 #include "traffic_generator_module/DC_traffic_generator/IncastGenerator.h"
+#include "queue_discs/ShapingTrafficControlLayer.h"
 #include <iomanip>
 #include <iostream>
 #include <string>
+#include <cstdlib>
 
 using namespace ns3;
 using namespace std;
@@ -305,7 +307,7 @@ void run_single_queue_simulation(int argc, char* argv[]) {
     Config::SetDefault("ns3::CoDelQueueDisc::UseEcn", BooleanValue(false));
     Config::SetDefault("ns3::FqCoDelQueueDisc::UseEcn", BooleanValue(false));
     Config::SetDefault("ns3::TcpSocket::SegmentSize", UintegerValue(1448));
-    Config::SetDefault("ns3::TcpSocket::DelAckCount", UintegerValue(2));
+    Config::SetDefault("ns3::TcpSocket::DelAckCount", UintegerValue(1));
     Config::SetDefault("ns3::TcpSocket::SndBufSize", UintegerValue(25000000));
     Config::SetDefault("ns3::TcpSocket::RcvBufSize", UintegerValue(25000000));
     Config::SetDefault("ns3::TcpSocket::TcpNoDelay", BooleanValue(!Nagle));
@@ -748,6 +750,13 @@ void run_DC_simulation(int argc, char* argv[]){
     int nRacks = 4;                                    // Number of ToR racks
     int nAggSwitches = 2;                              // Number of aggregation switches
     int nCoreSwitches = 1;                             // Number of core switches
+    int tbfSrcRack = 0;                                // Rack of the source host whose flows are eligible for shaping at T0's ingress
+    int tbfSrcHost = 0;                                // Host (within tbfSrcRack) whose flows are eligible for shaping at T0's ingress
+    int tbfDstRack = 2;                                // Rack of the destination host whose flows are eligible for shaping at T0's ingress
+    int tbfDstHost = 3;                                // Host (within tbfDstRack) whose flows are eligible for shaping at T0's ingress
+    double tbfFlowRedirectFraction = 0.0;              // Fraction of the tbfSrcHost->tbfDstHost TCP flows delayed by the token bucket at T0's ingress before reaching RED
+    string tbfRate = "5Mbps";                          // Token bucket fill rate for shaped flows at T0's ingress
+    string tbfBurst = "1504B";                         // Token bucket burst size for shaped flows at T0's ingress
 
     /*command line input*/
     CommandLine cmd;
@@ -794,6 +803,13 @@ void run_DC_simulation(int argc, char* argv[]){
     cmd.AddValue("nRacks", "Number of racks", nRacks);
     cmd.AddValue("nAggSwitches", "Number of aggregation switches", nAggSwitches);
     cmd.AddValue("nCoreSwitches", "Number of core switches", nCoreSwitches);
+    cmd.AddValue("tbfSrcRack", "Rack of the source host whose flows are eligible for shaping at T0's ingress", tbfSrcRack);
+    cmd.AddValue("tbfSrcHost", "Host (within tbfSrcRack) whose flows are eligible for shaping at T0's ingress", tbfSrcHost);
+    cmd.AddValue("tbfDstRack", "Rack of the destination host whose flows are eligible for shaping at T0's ingress", tbfDstRack);
+    cmd.AddValue("tbfDstHost", "Host (within tbfDstRack) whose flows are eligible for shaping at T0's ingress", tbfDstHost);
+    cmd.AddValue("tbfFlowRedirectFraction", "Fraction of the tbfSrcHost->tbfDstHost TCP flows delayed by the token bucket at T0's ingress before reaching RED", tbfFlowRedirectFraction);
+    cmd.AddValue("tbfRate", "Token bucket fill rate for shaped flows at T0's ingress", tbfRate);
+    cmd.AddValue("tbfBurst", "Token bucket burst size for shaped flows at T0's ingress", tbfBurst);
     cmd.Parse(argc, argv);
 
     /*set default values*/
@@ -808,7 +824,7 @@ void run_DC_simulation(int argc, char* argv[]){
     Config::SetDefault("ns3::CoDelQueueDisc::UseEcn", BooleanValue(false));
     Config::SetDefault("ns3::FqCoDelQueueDisc::UseEcn", BooleanValue(false));
     Config::SetDefault("ns3::TcpSocket::SegmentSize", UintegerValue(1448));
-    Config::SetDefault("ns3::TcpSocket::DelAckCount", UintegerValue(2));
+    Config::SetDefault("ns3::TcpSocket::DelAckCount", UintegerValue(1));
     Config::SetDefault("ns3::TcpSocket::SndBufSize", UintegerValue(25000000));
     Config::SetDefault("ns3::TcpSocket::RcvBufSize", UintegerValue(25000000));
     Config::SetDefault("ns3::TcpSocket::TcpNoDelay", BooleanValue(!Nagle));
@@ -907,7 +923,18 @@ void run_DC_simulation(int argc, char* argv[]){
         }
         aggToCoreNetDevices.push_back(aggToCore);
     }
-    
+
+    // Pre-aggregate a ShapingTrafficControlLayer onto T0 (in place of the plain
+    // TrafficControlLayer InternetStackHelper would otherwise create for it) so that a
+    // configurable fraction of one specific source-destination pair's TCP flows are delayed by a
+    // token-bucket shaper at T0's ingress -- before routing/TrafficControl ever sees them --
+    // while every other flow (and node) is unaffected. See queue_discs/ShapingTrafficControlLayer.h.
+    Ptr<ShapingTrafficControlLayer> t0ShapingLayer = CreateObject<ShapingTrafficControlLayer>();
+    t0ShapingLayer->SetAttribute("ShapingRate", DataRateValue(DataRate(tbfRate)));
+    t0ShapingLayer->SetAttribute("ShapingBurst", UintegerValue(QueueSize(tbfBurst).GetValue()));
+    t0ShapingLayer->SetAttribute("ShapedPacketsLogFile", StringValue((string) (getenv("PWD")) + "/Results/results_" + dirName + "/" + to_string(experiment) + "/T0_TBF_shaped_packets.csv"));
+    torSwitches.Get(0)->AggregateObject(t0ShapingLayer);
+
     // Install the network stack on the nodes
     InternetStackHelper stack;
     stack.InstallAll();
@@ -949,6 +976,10 @@ void run_DC_simulation(int argc, char* argv[]){
                                   "MaxSize", QueueSizeValue(QueueSize(switchREDQueueDiscMaxSize)),
                                   "MinTh", DoubleValue(minTh * QueueSize(switchREDQueueDiscMaxSize).GetValue()),
                                   "MaxTh", DoubleValue(maxTh * QueueSize(switchREDQueueDiscMaxSize).GetValue()));
+    // Every ToR<->Agg link (including T0<->A0) uses the plain RED queue disc, unmodified. Traffic
+    // differentiation for the T0->A0 path is applied earlier, at T0's ingress from the source
+    // host (see ShapingTrafficControlLayer below), not here -- so that shaped and unshaped
+    // packets genuinely share this same RED instance's state.
     vector<vector<QueueDiscContainer>> torToAggQueueDiscs;
     for (int i = 0; i < nRacks; i++) {
         vector<QueueDiscContainer> qdiscs;
@@ -1020,6 +1051,13 @@ void run_DC_simulation(int argc, char* argv[]){
 
     Ipv4GlobalRoutingHelper::PopulateRoutingTables();
 
+    // Configure the T0->A0 flow-redirect queue disc now that host addresses are assigned.
+    t0ShapingLayer->SetAttribute("FlowRedirectSrcAddress", Ipv4AddressValue(ipsRacks[tbfSrcRack][tbfSrcHost].GetAddress(0)));
+    t0ShapingLayer->SetAttribute("FlowRedirectDstAddress", Ipv4AddressValue(ipsRacks[tbfDstRack][tbfDstHost].GetAddress(0)));
+    // isDifferentating is the master switch for traffic differentiation; tbfFlowRedirectFraction
+    // only takes effect when it is enabled (mirrors the old isDifferentating-gated mechanism above).
+    t0ShapingLayer->SetAttribute("FlowRedirectFraction", DoubleValue(isDifferentating ? tbfFlowRedirectFraction : 0.0));
+
     // /* Erro Model Setup for Silent packet drops*/
     if (silentPacketDrop) {
         Ptr<RateErrorModel> em_R0H0T0 = CreateObject<RateErrorModel>();
@@ -1034,11 +1072,16 @@ void run_DC_simulation(int argc, char* argv[]){
 
         cout << "Silent Packet Drop Error Models are set up." << endl;
     }
-    if (isDifferentating) {
-        // Set the interframe gap mean for point-to-point net device of R2H3
-        cout << "Differentation is enabled. Setting extra delay of " << Time(differentiationDelay).GetNanoSeconds() << "ns on R2H3" << endl;
-        DynamicCast<PointToPointNetDevice>(hostsToTorsNetDevices[2][3].Get(1))->SetInterframeGapMean(Time(differentiationDelay));
-    }
+    // ****** Mahdi Change (flow redirect) ***** (START) ***** //
+    // isDifferentating now gates the TBF-based traffic differentiation at T0's ingress
+    // (ShapingTrafficControlLayer, configured below) instead of this old per-device interframe-gap
+    // mechanism. Kept here, commented out, only as a record of the previous implementation.
+    // if (isDifferentating) {
+    //     // Set the interframe gap mean for point-to-point net device of R2H3
+    //     cout << "Differentation is enabled. Setting extra delay of " << Time(differentiationDelay).GetNanoSeconds() << "ns on R2H3" << endl;
+    //     DynamicCast<PointToPointNetDevice>(hostsToTorsNetDevices[2][3].Get(1))->SetInterframeGapMean(Time(differentiationDelay));
+    // }
+    // ****** Mahdi Change (flow redirect) ***** (END) ***** //
     /* ########## END: Ceating the topology ########## */
 
 
@@ -1291,6 +1334,9 @@ void run_DC_simulation(int argc, char* argv[]){
     cout << "differentiationDelay: " << differentiationDelay << endl;
     cout << "silentPacketDrop: " << silentPacketDrop << endl;
     cout << "load: " << load << endl;
+    cout << "tbfSrcRack: " << tbfSrcRack << " tbfSrcHost: " << tbfSrcHost << " tbfDstRack: " << tbfDstRack << " tbfDstHost: " << tbfDstHost << endl;
+    cout << "tbfFlowRedirectFraction: " << tbfFlowRedirectFraction << endl;
+    cout << "tbfRate: " << tbfRate << " tbfBurst: " << tbfBurst << endl;
     cout << "Average Message Size: " << avgMsgSize << endl;
     cout << "hostTrafficRate: " << hostTrafficRate << endl;
     cout << "duration: " << duration << endl;
@@ -1346,7 +1392,6 @@ void run_DC_simulation(int argc, char* argv[]){
     //     monitor->SavePacketRecords((string) (getenv("PWD")) + "/Results/results_" + dirName + "/" + to_string(experiment)  + "/" + monitor->GetMonitorTag() + "_" + to_string(Seconds(stof(steadyStopTime)).GetNanoSeconds()) + "_SwitchMonitor.csv");
     // }
     /* ########## END: Scheduling and  Running ########## */
-
 
 
     cout << "Done " << endl;

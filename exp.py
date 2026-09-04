@@ -11,7 +11,7 @@ import subprocess
 import random
 import psutil
 # __ns3_path = os.popen('locate "ns-3.41" | grep /ns-3.41$').read().splitlines()[0]
-MAX_SIMULATION_THREADS = 4
+MAX_SIMULATION_THREADS = 9
 _PLOT_LOCK = threading.Lock()
 __ns3_path = "/media/experiments/ns-allinone-3.41/ns-3.41"
 # __ns3_path = '/Users/shossein/Documents/NAL/Flwo-Path_Consistency/ns-allinone-3.41/ns-3.41'
@@ -42,6 +42,13 @@ class ExperimentConfig:
         self.load=[]
         self.errorRate=[]
         self.differentiationDelay=[]
+        self.tbfFlowRedirectFraction=[]
+        self.tbfSrcRack=0
+        self.tbfSrcHost=0
+        self.tbfDstRack=2
+        self.tbfDstHost=3
+        self.tbfRate="1Gbps"
+        self.tbfBurst="4500B"
         self.swtichDstREDQueueDiscMaxSize = "10KB"
         self.switchSrcREDQueueDiscMaxSize = "6KB"
         self.switchSrcREDQueueDiscMaxSize = "15KB"
@@ -85,6 +92,13 @@ class ExperimentConfig:
         self.load = [float(x) for x in config.get('Settings', 'load').split(',')]
         self.errorRate = [float(x) for x in config.get('Settings', 'errorRate').split(',')]
         self.differentiationDelay = [float(x) for x in config.get('Settings', 'differentiationDelay').split(',')]
+        self.tbfFlowRedirectFraction = [float(x) for x in config.get('Settings', 'tbfFlowRedirectFraction').split(',')]
+        self.tbfSrcRack = config.getint('Settings', 'tbfSrcRack')
+        self.tbfSrcHost = config.getint('Settings', 'tbfSrcHost')
+        self.tbfDstRack = config.getint('Settings', 'tbfDstRack')
+        self.tbfDstHost = config.getint('Settings', 'tbfDstHost')
+        self.tbfRate = config.get('Settings', 'tbfRate')
+        self.tbfBurst = config.get('Settings', 'tbfBurst')
         self.steadyStart = config.get('Settings', 'steadyStart')
         self.steadyEnd = config.get('Settings', 'steadyEnd')
         self.srcHostToSwitchLinkRate = config.get('SingleQueue', 'srcHostToSwitchLinkRate')
@@ -358,6 +372,13 @@ def run_forward_experiment(exp, singleQueue=False, loads=None):
                             '--differentiationDelay={} '.format(expConfig.differentiationDelay[0]) +
                             '--isDifferentating={} '.format(expConfig.isDifferentating) +
                             '--silentPacketDrop={} '.format(expConfig.silentPacketDrop) +
+                            '--tbfFlowRedirectFraction={} '.format(expConfig.tbfFlowRedirectFraction[0]) +
+                            '--tbfSrcRack={} '.format(expConfig.tbfSrcRack) +
+                            '--tbfSrcHost={} '.format(expConfig.tbfSrcHost) +
+                            '--tbfDstRack={} '.format(expConfig.tbfDstRack) +
+                            '--tbfDstHost={} '.format(expConfig.tbfDstHost) +
+                            '--tbfRate={} '.format(expConfig.tbfRate) +
+                            '--tbfBurst={} '.format(expConfig.tbfBurst) +
                             '--probeInterval={} '.format(expConfig.probeInterval) +
                             '--incastMessageSize={} '.format(expConfig.incastMessageSize) +
                             '--incastFactor={} '.format(expConfig.incastFactor) +
@@ -369,7 +390,7 @@ def run_forward_experiment(exp, singleQueue=False, loads=None):
                         .format(get_ns3_path(), staging_name, i + 1)
                     )
                     run_ns3_with_timeout(
-                        cmd, output_file, timeout_seconds=120,
+                        cmd, output_file, timeout_seconds=600000,
                         initial_seed=i + 1, memory_output_file=memory_output_file)
                     os.system('mkdir -p {}/scratch/Results_forward/{}/{}/{}/{}'.format(get_ns3_path(), traffic, rate, load, i))
                     os.system('mv {}/scratch/ECNMC/Results/results_{}/{}/*.csv {}/scratch/Results_forward/{}/{}/{}/{}'.format(get_ns3_path(), staging_name, i + 1, get_ns3_path(), traffic, rate, load, i))
@@ -395,11 +416,16 @@ def run_reverse_experiment(exp, singleQueue=False, type=ReverseType.Delay,
         expConfig.silentPacketDrop = True
     os.system('mkdir -p {}/scratch/ECNMC/Results/results_reverse_{}/'.format(get_ns3_path(), type_name))
     os.system('cp Parameters.config {}/scratch/ECNMC/Results/results_reverse_{}/'.format(get_ns3_path(), type_name))
+    # The singleQueue topology still differentiates via the old per-device interframe-gap
+    # mechanism (differentiationDelay, a time value), while the full DC topology differentiates
+    # via the TBF ingress shaper at T0 (tbfFlowRedirectFraction, a 0-1 fraction of flows). Both are
+    # swept the same way from Parameters.config, just via different lists/units depending on mode.
+    diff_sweep = expConfig.differentiationDelay if singleQueue else expConfig.tbfFlowRedirectFraction
     for traffic in expConfig.traffic:
         for CRate in expConfig.serviceRateScales:
             for load in selected_loads:
                 staging_name = 'reverse_{}_load_{}'.format(type_name, load)
-                for DiffRate in expConfig.differentiationDelay: 
+                for DiffRate in diff_sweep:
                     for errorRate in expConfig.errorRate:
                         exp_tor_to_agg_link_rate = "{}Mbps".format(round(float(expConfig.tor_to_agg_link_rate.split('M')[0]) * CRate, 1))
                         exp_bottleNeckLinkRate = "{}Mbps".format(round(float(expConfig.bottleneckLinkRate.split('M')[0]) * CRate, 1))
@@ -471,9 +497,15 @@ def run_reverse_experiment(exp, singleQueue=False, type=ReverseType.Delay,
                                     '--Nagle={} '.format(expConfig.NagleIsEnabled) +
                                     '--ActiveProbe={} '.format(expConfig.ActiveProbeIsEnabled) +
                                     '--PassiveProbe={} '.format(expConfig.PassiveProbeIsEnabled) +
-                                    '--differentiationDelay={}ns '.format(DiffRate) +
                                     '--isDifferentating={} '.format(expConfig.isDifferentating) +
                                     '--silentPacketDrop={} '.format(expConfig.silentPacketDrop) +
+                                    '--tbfFlowRedirectFraction={} '.format(DiffRate) +
+                                    '--tbfSrcRack={} '.format(expConfig.tbfSrcRack) +
+                                    '--tbfSrcHost={} '.format(expConfig.tbfSrcHost) +
+                                    '--tbfDstRack={} '.format(expConfig.tbfDstRack) +
+                                    '--tbfDstHost={} '.format(expConfig.tbfDstHost) +
+                                    '--tbfRate={} '.format(expConfig.tbfRate) +
+                                    '--tbfBurst={} '.format(expConfig.tbfBurst) +
                                     '--probeInterval={} '.format(expConfig.probeInterval) +
                                     '--incastMessageSize={} '.format(expConfig.incastMessageSize) +
                                     '--incastFactor={} '.format(expConfig.incastFactor) +
