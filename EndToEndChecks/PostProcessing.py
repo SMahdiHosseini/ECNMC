@@ -803,9 +803,12 @@ def run_emd_vs_flows_experiment(rate, steadyStart, steadyEnd, confidenceValue, r
     `num_poisson_observations` fresh Poisson-process observation instants at the path's switches, derive the
     per-segment aggregated delay statistics from them, and grow the set of considered TCP flows of `flow_name`
     one at a time, comparing the EMD of the all-packet CDF against one Poisson-adaptive subsample per entry in
-    `subsampling_methods` and, for each of those methods, a systematic uniform subsample drawing exactly as
+    `subsampling_methods`; for each of those methods, a systematic uniform subsample drawing exactly as
     many of the considered flows' packets as that method retained (the rate-matched baseline, see
-    Utils.matched_uniform_target_count). Saves, under the experiment's results directory (`<tag>` below
+    Utils.matched_uniform_target_count); and an ideal Poisson probe at the minimum required sample size
+    and at each method's own sample size (Utils.construct_oracle_poisson_delays) -- the ceiling any
+    Poissonization scheme is trying to reach, since its instants are Poisson by construction and carry
+    no selection bias. Saves, under the experiment's results directory (`<tag>` below
     being emd_vs_flows_file_tag(subsampling_methods, groundtruth_method)):
       - `<flow_name>_path_<path>_<tag>_emd_vs_num_flows_boxplot.png`: EMD distribution
         across runs, one boxplot family per subsampling method, plus a `..._normalized.png`
@@ -1057,6 +1060,11 @@ def aggregate_emd_vs_flows_across_traffics_and_loads(ns3_path, dir_name, traffic
         plot_kinds.append((poisson_vs_uniform_load_plot_series(method),
                             '_poisson_vs_uniform_{}'.format(method),
                             '{} vs. its rate-matched uniform baseline (equal sample size)'.format(method)))
+    # And each method against the ideal Poisson probe at its own sample count: the gap is
+    # the part of the error that having few samples does not explain.
+    plot_kinds.append((sampled_vs_oracle_load_plot_series(subsampling_methods),
+                        '_poisson_vs_ideal',
+                        'Poisson-adaptive subsample(s) vs. the ideal Poisson probe (same sample budget)'))
 
     # Raw nanoseconds and the load-comparable normalized twin of every plot below.
     emd_variants = [(False, '', 'EMD'), (True, '_normalized', 'Normalized EMD')]

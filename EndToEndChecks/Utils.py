@@ -3350,6 +3350,80 @@ def relative_percentile_diffs(absolute_diffs, groundtruth_percentiles):
              for q, diffs in absolute_diffs.items()}
 
 
+ORACLE_MIN_REQUIRED_KEY = 'min_required'
+
+
+def _oracle_series_label(series_key):
+    """Legend/table name of an ideal-Poisson-probe family. Keyed either by
+    ORACLE_MIN_REQUIRED_KEY (the probe run at the minimum sample rate the
+    consistency check demands) or by the Poisson-adaptive method whose retained
+    sample count it matches."""
+    if series_key == ORACLE_MIN_REQUIRED_KEY:
+        return 'Ideal Poisson probe (minimum required samples)'
+    return 'Ideal Poisson probe ({} sample count)'.format(series_key)
+
+
+def construct_oracle_poisson_delays(groundtruth_method, queue_names, dir_prefix, steady_start,
+                                     steady_end, link_delays, link_rates, target_count):
+    """Path delays seen by an **imaginary, perfectly Poisson** probe: exactly the
+    ground-truth construction (GROUNDTRUTH_METHODS -- so with
+    'path_observation' the probe arrives at the first queue at Poisson instants
+    and waits out each queue's delay before observing the next), but run at a
+    realistic measurement rate of about `target_count` observations instead of
+    the ground truth's ~million.
+
+    This is the *ceiling* for any Poissonization scheme, and the reason it is
+    worth plotting next to the real subsampling families. Its sampling instants
+    are a genuine Poisson process generated independently of queue state, so
+    PASTA holds exactly and there is no selection bias by construction -- the
+    only thing separating it from the ground truth is finite-sample noise at
+    that sample size. So the gap between a real Poissonized subsample and this
+    family is the part of the error that is *not* explained by having few
+    samples: it is what selecting from the flow's own packets costs (see the
+    selection-bias discussion in find_samples_path_intensity).
+
+    The rate is set so the count is about `target_count`
+    (interval = duration / target_count) rather than exactly it: a Poisson
+    process observed over a fixed window has a random number of points, and
+    pinning the count would make the instants uniform order statistics rather
+    than a Poisson process -- the very property being demonstrated. In practice
+    the realized count runs ~1-3% *under* the budget, because
+    generate_poisson_observation_times draws exactly `target_count`
+    inter-arrivals and discards any whose cumulative time overshoots the
+    window; this is the same generator the ground truth itself uses, so the
+    probe and the ground truth stay directly comparable. Realized counts are
+    recorded per run ('sample_sizes_oracle_by_run') and reported in the text
+    summary, so the achieved budget is never left implicit.
+    """
+    target_count = int(target_count)
+    if target_count <= 0 or steady_end <= steady_start:
+        return np.array([], dtype=float)
+    construct = _resolve_groundtruth_method(groundtruth_method)
+    return construct(
+        queue_names, dir_prefix, steady_start, steady_end, link_delays, link_rates,
+        sample_interval_ns=(steady_end - steady_start) / target_count,
+    )
+
+
+def oracle_target_counts(sampled_sizes_by_method, min_samples):
+    """The sample budget for each ideal-Poisson-probe family, as an ordered
+    {key: target_count} dict:
+
+      - ORACLE_MIN_REQUIRED_KEY -> the minimum sample size the consistency check
+        demands (agg_stats['MinimumE2ESampleSizeDelay']): "what could a perfect
+        Poisson probe do with the bare minimum budget?"
+      - one entry per Poisson-adaptive method -> that method's own retained count
+        at this flow count, so probe and method are compared at equal sample
+        size, falling back to the required minimum where the method found no
+        valid subsample (the same rule the rate-matched uniform baseline uses,
+        matched_uniform_target_count).
+    """
+    targets = {ORACLE_MIN_REQUIRED_KEY: matched_uniform_target_count(0, min_samples)}
+    for method, size in sampled_sizes_by_method.items():
+        targets[method] = matched_uniform_target_count(size, min_samples)
+    return targets
+
+
 def _empty_percentile_structure(percentiles, keys, num_k):
     """A {q: {key: [[] per k]}} skeleton -- the shape the per-run percentile-diff
     records take, with nothing recorded yet."""
@@ -3468,6 +3542,13 @@ def prepare_emd_vs_flows_data(
         'percentile_diff_all_packets': percentile_diff_all,
         'percentile_reldiff_all_packets': relative_percentile_diffs(
             percentile_diff_all, groundtruth_percentiles),
+        # Kept so a run can rebuild the ground-truth construction at a lower rate for the
+        # ideal-Poisson-probe family (construct_oracle_poisson_delays).
+        'queue_names': list(queue_names),
+        'link_delays': list(linkDelays),
+        'link_rates': list(linkRates),
+        'steady_start': steadyStart,
+        'steady_end': steadyEnd,
         'flow_name': flow_name,
         'path': path,
     }
@@ -3582,6 +3663,14 @@ def compute_emd_vs_num_tcp_flows_run(prepared, agg_stats, confidenceValue, min_s
         packets". Where a method found no valid subsample, its uniform
         counterpart falls back to the minimum sample size that method was
         required to reach.
+      - an **ideal Poisson probe** family per entry of oracle_target_counts:
+        one at the minimum required sample size and one matched to each
+        method's retained count. These do not select from the flow's packets at
+        all -- they re-run the ground-truth construction at that low rate
+        (construct_oracle_poisson_delays), so their sampling instants are a
+        genuine Poisson process independent of queue state and their only error
+        is finite-sample noise. They are the ceiling any real Poissonization
+        scheme is trying to reach.
 
     "All packets of the first k flows" is the same fixed set on every run --
     its EMD (prepared['emd_all_packets']) is computed once in
@@ -3630,6 +3719,12 @@ def compute_emd_vs_num_tcp_flows_run(prepared, agg_stats, confidenceValue, min_s
     uniform_sample_sizes = {name: [] for name in subsampling_methods}
     sampled_percentile_diff = {q: {name: [] for name in subsampling_methods} for q in delay_percentiles}
     uniform_percentile_diff = {q: {name: [] for name in subsampling_methods} for q in delay_percentiles}
+    oracle_series = [ORACLE_MIN_REQUIRED_KEY] + list(subsampling_methods)
+    oracle_emd = {key: [] for key in oracle_series}
+    oracle_consistency = {key: [] for key in oracle_series}
+    oracle_mean_diff = {key: [] for key in oracle_series}
+    oracle_sample_sizes = {key: [] for key in oracle_series}
+    oracle_percentile_diff = {q: {key: [] for key in oracle_series} for q in delay_percentiles}
 
     for k in prepared['num_flows']:
         subset = full_df[full_df['FlowRank'] <= k]
@@ -3678,6 +3773,25 @@ def compute_emd_vs_num_tcp_flows_run(prepared, agg_stats, confidenceValue, min_s
             for q in delay_percentiles:
                 uniform_percentile_diff[q][name].append(uniform_diffs[q])
 
+        # The ideal-Poisson-probe ceiling: same construction as the ground truth, at the
+        # sample budget each real method actually achieved (plus the bare minimum budget).
+        targets = oracle_target_counts(
+            {name: sampled_sample_sizes[name][-1] for name in subsampling_methods}, min_samples)
+        for key in oracle_series:
+            oracle_values = construct_oracle_poisson_delays(
+                prepared['groundtruth_method'], prepared['queue_names'], prepared['dir_prefix'],
+                prepared['steady_start'], prepared['steady_end'], prepared['link_delays'],
+                prepared['link_rates'], targets[key])
+            emd, consistency_pass, mean_diff, oracle_size = _evaluate_delay_family(
+                oracle_values, groundtruth_values, agg_stats, confidenceValue, min_sample_size)
+            oracle_emd[key].append(emd)
+            oracle_consistency[key].append(consistency_pass if oracle_size else None)
+            oracle_mean_diff[key].append(mean_diff)
+            oracle_sample_sizes[key].append(oracle_size)
+            oracle_diffs = percentile_diffs(oracle_values, groundtruth_percentiles)
+            for q in delay_percentiles:
+                oracle_percentile_diff[q][key].append(oracle_diffs[q])
+
     return {
         'num_flows': num_flows_list,
         'subsampling_methods': subsampling_methods,
@@ -3693,6 +3807,12 @@ def compute_emd_vs_num_tcp_flows_run(prepared, agg_stats, confidenceValue, min_s
         'uniform_sample_sizes': uniform_sample_sizes,
         'sampled_percentile_diff': sampled_percentile_diff,
         'uniform_percentile_diff': uniform_percentile_diff,
+        'oracle_series': oracle_series,
+        'oracle_emd': oracle_emd,
+        'oracle_consistency': oracle_consistency,
+        'oracle_mean_diff': oracle_mean_diff,
+        'oracle_sample_sizes': oracle_sample_sizes,
+        'oracle_percentile_diff': oracle_percentile_diff,
     }
 
 
@@ -3762,7 +3882,9 @@ def _collect_one_run_delay_cdfs(prepared, agg_stats, min_sample_size,
     subsample per entry in `subsampling_methods` (keys of
     POISSON_SUBSAMPLING_METHODS), and, for each of those, its rate-matched
     uniform counterpart drawing the same number of packets
-    (sample_uniform_count). Uses the full flow_order (all considered flows)
+    (sample_uniform_count), and the ideal-Poisson-probe families at those same
+    budgets (construct_oracle_poisson_delays -- the ceiling, no selection bias
+    by construction). Uses the full flow_order (all considered flows)
     since this is meant to illustrate what each method's delay distribution
     actually looks like, not to sweep over flow count. See
     plot_one_run_delay_cdfs for the corresponding plot.
@@ -3785,10 +3907,20 @@ def _collect_one_run_delay_cdfs(prepared, agg_stats, min_sample_size,
         target_count = matched_uniform_target_count(len(poisson_values[name]), min_samples)
         uniform_values[name] = sample_uniform_count(subset, target_count)['Delay'].values
 
+    targets = oracle_target_counts({name: len(poisson_values[name]) for name in subsampling_methods},
+                                    min_samples)
+    oracle_values = {
+        key: construct_oracle_poisson_delays(
+            prepared['groundtruth_method'], prepared['queue_names'], prepared['dir_prefix'],
+            prepared['steady_start'], prepared['steady_end'], prepared['link_delays'],
+            prepared['link_rates'], target)
+        for key, target in targets.items()}
+
     return {
         'all_packets': all_values,
         'poisson_subsample_by_method': poisson_values,
         'uniform': uniform_values,
+        'oracle': oracle_values,
     }
 
 
@@ -3823,9 +3955,10 @@ def plot_one_run_delay_cdfs(results, output_path, title="Delay CDF comparison (o
     subsampling method's delay CDF from a single concrete Poisson-process
     realization (see _collect_one_run_delay_cdfs / results['one_run_delay_cdfs']):
     all packets of the considered flows, one Poisson-adaptive subsample per
-    entry in results['subsampling_methods'], and one uniform subsample per
+    entry in results['subsampling_methods'], one uniform subsample per
     entry in results['uniform_series'] (for current results, one per
-    Poisson-adaptive method, drawing that method's own sample count). Unlike
+    Poisson-adaptive method, drawing that method's own sample count), and one
+    ideal Poisson probe per entry in results['oracle_series']. Unlike
     the EMD/mean-diff boxplots (which summarize across all `num_runs` runs),
     this shows one concrete instance so it's visually obvious what each
     method's delay distribution actually looks like next to the ground
@@ -3847,6 +3980,11 @@ def plot_one_run_delay_cdfs(results, output_path, title="Delay CDF comparison (o
     for j, key in enumerate(results.get('uniform_series', []), start=len(methods)):
         extra_series.append((one_run['uniform'].get(key, []),
                               _uniform_series_label(key),
+                              palette[j % len(palette)]))
+    start = len(methods) + len(results.get('uniform_series', []))
+    for j, key in enumerate(results.get('oracle_series', []), start=start):
+        extra_series.append(((one_run.get('oracle') or {}).get(key, []),
+                              _oracle_series_label(key),
                               palette[j % len(palette)]))
 
     first_method = methods[0] if methods else None
@@ -3874,7 +4012,7 @@ def upgrade_emd_vs_flows_results_schema(results):
     expects. Returns the dict unchanged (not a copy) when it is already current,
     and never mutates its input otherwise."""
     if ('subsampling_methods' in results and 'uniform_series' in results
-            and 'delay_percentiles' in results
+            and 'delay_percentiles' in results and 'oracle_series' in results
             and isinstance(results.get('emd_sampled_packets_by_run'), dict)):
         return results
 
@@ -3901,6 +4039,18 @@ def upgrade_emd_vs_flows_results_schema(results):
     # Percentile errors postdate these pickles entirely. Recovering them would need the
     # raw per-run family values, which were never stored, so an old result simply carries
     # no percentiles and every percentile table/plot is skipped for it rather than faked.
+    # The ideal-Poisson-probe family postdates these pickles; like the percentiles it
+    # cannot be recovered without redoing the run, so an old result simply carries none
+    # and every oracle table/plot is skipped for it rather than faked.
+    if 'oracle_series' not in upgraded:
+        upgraded['oracle_series'] = []
+        upgraded['emd_oracle_by_run'] = {}
+        upgraded['emd_oracle_by_run_normalized'] = {}
+        upgraded['pass_rate_oracle'] = {}
+        upgraded['mean_diff_oracle_by_run'] = {}
+        upgraded['sample_sizes_oracle_by_run'] = {}
+        upgraded['percentile_diff_oracle_by_run'] = {}
+        upgraded['percentile_reldiff_oracle_by_run'] = {}
     if 'delay_percentiles' not in upgraded:
         upgraded['delay_percentiles'] = []
         upgraded['groundtruth_percentiles'] = {}
@@ -3910,6 +4060,8 @@ def upgrade_emd_vs_flows_results_schema(results):
         upgraded['percentile_reldiff_sampled_by_run'] = {}
         upgraded['percentile_diff_uniform_by_run'] = {}
         upgraded['percentile_reldiff_uniform_by_run'] = {}
+        upgraded['percentile_diff_oracle_by_run'] = {}
+        upgraded['percentile_reldiff_oracle_by_run'] = {}
     if 'groundtruth_mean' not in upgraded:
         gt = np.asarray(upgraded.get('groundtruth_values', []), dtype=float)
         upgraded['groundtruth_mean'] = float(np.mean(gt)) if gt.size else np.nan
@@ -4023,6 +4175,11 @@ def aggregate_emd_vs_flows_results(results_list):
     # boxes backed by a different set of experiments than their neighbours.
     percentiles = [q for q in results_list[0]['delay_percentiles']
                     if all(q in r['delay_percentiles'] for r in results_list[1:])]
+    oracle_series = []
+    for r in results_list:
+        for key in r['oracle_series']:
+            if key not in oracle_series:
+                oracle_series.append(key)
 
     emd_all_by_experiment, emd_all_by_experiment_norm, mean_diff_all = [], [], []
     pass_all_count, pass_all_total = [], []
@@ -4039,6 +4196,14 @@ def aggregate_emd_vs_flows_results(results_list):
     preldiff_sampled = {q: {m: [] for m in methods} for q in percentiles}
     pdiff_uniform = {q: {s: [] for s in uniform_series} for q in percentiles}
     preldiff_uniform = {q: {s: [] for s in uniform_series} for q in percentiles}
+    emd_oracle_by_run = {key: [] for key in oracle_series}
+    emd_oracle_by_run_norm = {key: [] for key in oracle_series}
+    mean_diff_oracle = {key: [] for key in oracle_series}
+    pass_oracle_count = {key: [] for key in oracle_series}
+    pass_oracle_total = {key: [] for key in oracle_series}
+    sample_sizes_oracle = {key: [] for key in oracle_series}
+    pdiff_oracle = {q: {key: [] for key in oracle_series} for q in percentiles}
+    preldiff_oracle = {q: {key: [] for key in oracle_series} for q in percentiles}
     emd_uniform_by_run = {s: [] for s in uniform_series}
     emd_uniform_by_run_norm = {s: [] for s in uniform_series}
     mean_diff_uniform = {s: [] for s in uniform_series}
@@ -4066,6 +4231,14 @@ def aggregate_emd_vs_flows_results(results_list):
         preldiff_samp_vals = {q: {m: [] for m in methods} for q in percentiles}
         pdiff_uni_vals = {q: {s: [] for s in uniform_series} for q in percentiles}
         preldiff_uni_vals = {q: {s: [] for s in uniform_series} for q in percentiles}
+        oracle_emd_vals = {key: [] for key in oracle_series}
+        oracle_emd_vals_norm = {key: [] for key in oracle_series}
+        oracle_diff_vals = {key: [] for key in oracle_series}
+        oracle_pass_c = {key: 0 for key in oracle_series}
+        oracle_pass_t = {key: 0 for key in oracle_series}
+        oracle_size_vals = {key: [] for key in oracle_series}
+        pdiff_ora_vals = {q: {key: [] for key in oracle_series} for q in percentiles}
+        preldiff_ora_vals = {q: {key: [] for key in oracle_series} for q in percentiles}
 
         for r in results_list:
             if k not in r['num_flows']:
@@ -4107,6 +4280,17 @@ def aggregate_emd_vs_flows_results(results_list):
                     pdiff_uni_vals[q][s].extend(r['percentile_diff_uniform_by_run'][q][s][i])
                     preldiff_uni_vals[q][s].extend(r['percentile_reldiff_uniform_by_run'][q][s][i])
 
+            for key in r['oracle_series']:
+                oracle_emd_vals[key].extend(r['emd_oracle_by_run'][key][i])
+                oracle_emd_vals_norm[key].extend(r['emd_oracle_by_run_normalized'][key][i])
+                oracle_diff_vals[key].extend(r['mean_diff_oracle_by_run'][key][i])
+                oracle_size_vals[key].extend(r['sample_sizes_oracle_by_run'][key][i])
+                oracle_pass_c[key] += round(r['pass_rate_oracle'][key][i] * num_runs)
+                oracle_pass_t[key] += num_runs
+                for q in percentiles:
+                    pdiff_ora_vals[q][key].extend(r['percentile_diff_oracle_by_run'][q][key][i])
+                    preldiff_ora_vals[q][key].extend(r['percentile_reldiff_oracle_by_run'][q][key][i])
+
         emd_all_by_experiment.append(emd_all_vals)
         emd_all_by_experiment_norm.append(emd_all_vals_norm)
         mean_diff_all.append(mean_diff_all_vals)
@@ -4122,6 +4306,9 @@ def aggregate_emd_vs_flows_results(results_list):
             for s in uniform_series:
                 pdiff_uniform[q][s].append(pdiff_uni_vals[q][s])
                 preldiff_uniform[q][s].append(preldiff_uni_vals[q][s])
+            for key in oracle_series:
+                pdiff_oracle[q][key].append(pdiff_ora_vals[q][key])
+                preldiff_oracle[q][key].append(preldiff_ora_vals[q][key])
 
         for m in methods:
             emd_sampled_by_run[m].append(samp_emd_vals[m])
@@ -4138,6 +4325,14 @@ def aggregate_emd_vs_flows_results(results_list):
             pass_uniform_count[s].append(uniform_pass_c[s])
             pass_uniform_total[s].append(uniform_pass_t[s])
             sample_sizes_uniform[s].append(uniform_size_vals[s])
+
+        for key in oracle_series:
+            emd_oracle_by_run[key].append(oracle_emd_vals[key])
+            emd_oracle_by_run_norm[key].append(oracle_emd_vals_norm[key])
+            mean_diff_oracle[key].append(oracle_diff_vals[key])
+            pass_oracle_count[key].append(oracle_pass_c[key])
+            pass_oracle_total[key].append(oracle_pass_t[key])
+            sample_sizes_oracle[key].append(oracle_size_vals[key])
 
     groundtruth_values = np.concatenate(
         [np.asarray(r['groundtruth_values'], dtype=float) for r in results_list])
@@ -4156,6 +4351,7 @@ def aggregate_emd_vs_flows_results(results_list):
         'experiments': experiments,
         'num_poisson_observations': results_list[0]['num_poisson_observations'],
         'uniform_series': list(uniform_series),
+        'oracle_series': list(oracle_series),
         'total_flows': max(all_k),
         'num_flows': all_k,
         'groundtruth_values': groundtruth_values,
@@ -4176,6 +4372,8 @@ def aggregate_emd_vs_flows_results(results_list):
         'percentile_reldiff_sampled_by_run': preldiff_sampled,
         'percentile_diff_uniform_by_run': pdiff_uniform,
         'percentile_reldiff_uniform_by_run': preldiff_uniform,
+        'percentile_diff_oracle_by_run': pdiff_oracle,
+        'percentile_reldiff_oracle_by_run': preldiff_oracle,
         'emd_all_packets': [float(np.mean(v)) for v in emd_all_by_experiment],
         'emd_all_packets_normalized': [float(np.mean(v)) for v in emd_all_by_experiment_norm],
         'emd_all_packets_by_experiment': emd_all_by_experiment,
@@ -4194,6 +4392,12 @@ def aggregate_emd_vs_flows_results(results_list):
         'pass_rate_uniform': {s: [_rate(c, t) for c, t in zip(pass_uniform_count[s], pass_uniform_total[s])]
                                for s in uniform_series},
         'mean_diff_uniform_packets_by_run': mean_diff_uniform,
+        'emd_oracle_by_run': emd_oracle_by_run,
+        'emd_oracle_by_run_normalized': emd_oracle_by_run_norm,
+        'pass_rate_oracle': {key: [_rate(c, t) for c, t in zip(pass_oracle_count[key], pass_oracle_total[key])]
+                              for key in oracle_series},
+        'mean_diff_oracle_by_run': mean_diff_oracle,
+        'sample_sizes_oracle_by_run': sample_sizes_oracle,
         'one_run_delay_cdfs': results_list[0]['one_run_delay_cdfs'],
     }
 
@@ -4238,7 +4442,11 @@ def compute_emd_vs_num_tcp_flows_multi_run(
     exactly as many packets as that method retained -- a blind, non-adaptive
     baseline at the same sample size, so the comparison isolates the selection
     rule rather than the sample count (see compute_emd_vs_num_tcp_flows_run
-    and matched_uniform_target_count). The
+    and matched_uniform_target_count) -- plus an **ideal Poisson probe** at the
+    minimum required sample size and at each method's own sample size
+    (construct_oracle_poisson_delays), which is the best any Poissonization
+    scheme could do at that budget, since its instants are Poisson by
+    construction and so carry no selection bias at all. The
     ground-truth reconstructed delay CDF, the underlying packet/flow data,
     and the all-packet EMD curve (prepare_emd_vs_flows_data) do not depend on
     the switch-side Poisson probing, so they are computed once and shared
@@ -4329,6 +4537,12 @@ def compute_emd_vs_num_tcp_flows_multi_run(
     per_k_sample_sizes_uniform = {m: [[] for _ in num_flows] for m in subsampling_methods}
     per_k_pdiff_sampled = _empty_percentile_structure(delay_percentiles, subsampling_methods, len(num_flows))
     per_k_pdiff_uniform = _empty_percentile_structure(delay_percentiles, subsampling_methods, len(num_flows))
+    oracle_series = [ORACLE_MIN_REQUIRED_KEY] + list(subsampling_methods)
+    per_k_emd_oracle = {key: [[] for _ in num_flows] for key in oracle_series}
+    per_k_pass_oracle = {key: [0] * len(num_flows) for key in oracle_series}
+    per_k_mean_diff_oracle = {key: [[] for _ in num_flows] for key in oracle_series}
+    per_k_sample_sizes_oracle = {key: [[] for _ in num_flows] for key in oracle_series}
+    per_k_pdiff_oracle = _empty_percentile_structure(delay_percentiles, oracle_series, len(num_flows))
 
     for run_result in run_results:
         for i in range(len(num_flows)):
@@ -4364,6 +4578,20 @@ def compute_emd_vs_num_tcp_flows_multi_run(
                     if np.isfinite(uniform_pdiff):
                         per_k_pdiff_uniform[q][m][i].append(uniform_pdiff)
 
+            for key in oracle_series:
+                if np.isfinite(run_result['oracle_emd'][key][i]):
+                    per_k_emd_oracle[key][i].append(run_result['oracle_emd'][key][i])
+                if run_result['oracle_consistency'][key][i] is True:
+                    per_k_pass_oracle[key][i] += 1
+                if np.isfinite(run_result['oracle_mean_diff'][key][i]):
+                    per_k_mean_diff_oracle[key][i].append(run_result['oracle_mean_diff'][key][i])
+                if run_result['oracle_sample_sizes'][key][i]:
+                    per_k_sample_sizes_oracle[key][i].append(run_result['oracle_sample_sizes'][key][i])
+                for q in delay_percentiles:
+                    oracle_pdiff = run_result['oracle_percentile_diff'][q][key][i]
+                    if np.isfinite(oracle_pdiff):
+                        per_k_pdiff_oracle[q][key][i].append(oracle_pdiff)
+
     return {
         'flow_name': flow_name,
         'path': path,
@@ -4375,6 +4603,7 @@ def compute_emd_vs_num_tcp_flows_multi_run(
         'num_runs': num_runs,
         'num_poisson_observations': num_poisson_observations,
         'uniform_series': list(subsampling_methods),
+        'oracle_series': oracle_series,
         'total_flows': len(prepared['flow_order']),
         'num_flows': num_flows,
         'groundtruth_values': prepared['groundtruth_values'],
@@ -4390,6 +4619,9 @@ def compute_emd_vs_num_tcp_flows_multi_run(
         'percentile_diff_uniform_by_run': per_k_pdiff_uniform,
         'percentile_reldiff_uniform_by_run': relative_percentile_diffs(
             per_k_pdiff_uniform, groundtruth_percentiles),
+        'percentile_diff_oracle_by_run': per_k_pdiff_oracle,
+        'percentile_reldiff_oracle_by_run': relative_percentile_diffs(
+            per_k_pdiff_oracle, groundtruth_percentiles),
         'emd_all_packets': prepared['emd_all_packets'],
         'emd_all_packets_normalized': normalize_emd_values(prepared['emd_all_packets'], groundtruth_mean),
         'emd_sampled_packets_by_run': per_k_emd_sampled,
@@ -4410,6 +4642,11 @@ def compute_emd_vs_num_tcp_flows_multi_run(
         'emd_uniform_packets_by_run_normalized': normalize_emd_values(per_k_emd_uniform, groundtruth_mean),
         'pass_rate_uniform': {m: [c / num_runs for c in counts] for m, counts in per_k_pass_uniform.items()},
         'mean_diff_uniform_packets_by_run': per_k_mean_diff_uniform,
+        'emd_oracle_by_run': per_k_emd_oracle,
+        'emd_oracle_by_run_normalized': normalize_emd_values(per_k_emd_oracle, groundtruth_mean),
+        'pass_rate_oracle': {key: [c / num_runs for c in counts] for key, counts in per_k_pass_oracle.items()},
+        'mean_diff_oracle_by_run': per_k_mean_diff_oracle,
+        'sample_sizes_oracle_by_run': per_k_sample_sizes_oracle,
         'one_run_delay_cdfs': one_run_delay_cdfs,
     }
 
@@ -4424,6 +4661,10 @@ _SUBSAMPLE_FAMILY_STYLES = [
     dict(edge_color='teal', edge_style='dotted'),
     dict(edge_color='crimson', edge_style=(0, (5, 1))),
     dict(edge_color='olive', edge_style=(0, (3, 1, 1, 1, 1, 1))),
+    dict(edge_color='saddlebrown', edge_style='solid'),
+    dict(edge_color='magenta', edge_style='dashed'),
+    dict(edge_color='dimgray', edge_style='dashdot'),
+    dict(edge_color='darkgreen', edge_style='dotted'),
 ]
 
 
@@ -4516,24 +4757,29 @@ def _draw_all_packets_series(axis, num_flows, scalar_by_k, by_experiment, pass_r
     return handles
 
 
-def _subsample_family_layout(subsampling_methods, uniform_series):
+def _subsample_family_layout(subsampling_methods, uniform_series, oracle_series=()):
     """Evenly space the all-packets series plus one boxplot family per
-    subsampling method (one per Poisson-adaptive method, then one per uniform
-    family in `uniform_series`) around each flow-count tick. Returns
+    comparison family -- one per Poisson-adaptive method, then one per uniform
+    family in `uniform_series`, then one per ideal-Poisson-probe family in
+    `oracle_series` -- around each flow-count tick. Returns
     (offset_all_packets, offsets_poisson (dict keyed by method name),
-    offsets_uniform (dict keyed by uniform-series key), box_width)."""
+    offsets_uniform (dict keyed by uniform-series key), offsets_oracle (dict
+    keyed by oracle-series key), box_width)."""
     subsampling_methods = list(subsampling_methods)
     uniform_series = list(uniform_series)
-    # all-packets + one per Poisson-adaptive method + one per uniform family
-    n_slots = 1 + len(subsampling_methods) + len(uniform_series)
+    oracle_series = list(oracle_series)
+    # all-packets + one per Poisson-adaptive method + one per uniform + one per ideal probe
+    n_slots = 1 + len(subsampling_methods) + len(uniform_series) + len(oracle_series)
     span = 0.75
     box_width = (span / n_slots) * 0.85
     offsets = np.linspace(-span / 2, span / 2, n_slots)
     offset_all_packets = offsets[0]
     offsets_poisson = {method: offsets[1 + i] for i, method in enumerate(subsampling_methods)}
-    offsets_uniform = {key: offsets[1 + len(subsampling_methods) + i]
-                        for i, key in enumerate(uniform_series)}
-    return offset_all_packets, offsets_poisson, offsets_uniform, box_width
+    base = 1 + len(subsampling_methods)
+    offsets_uniform = {key: offsets[base + i] for i, key in enumerate(uniform_series)}
+    base += len(uniform_series)
+    offsets_oracle = {key: offsets[base + i] for i, key in enumerate(oracle_series)}
+    return offset_all_packets, offsets_poisson, offsets_uniform, offsets_oracle, box_width
 
 
 _TRAFFIC_COLORS = ['navy', 'darkorange', 'purple', 'teal', 'crimson', 'olive']
@@ -4545,6 +4791,10 @@ _SERIES_EDGE_STYLES = ['solid', 'dashed', 'dotted', 'dashdot', (0, (5, 1)), (0, 
 
 
 def _series_edge_style(index):
+    if index >= len(_SERIES_EDGE_STYLES):
+        print("Warning: {} plot series exceed the {} distinct border styles available; "
+              "styles now repeat and some series are visually indistinguishable".format(
+                  index + 1, len(_SERIES_EDGE_STYLES)))
     return _SERIES_EDGE_STYLES[index % len(_SERIES_EDGE_STYLES)]
 
 
@@ -4560,6 +4810,24 @@ def all_packets_vs_sampled_load_plot_series(subsampling_methods):
     for i, method in enumerate(normalize_subsampling_methods(subsampling_methods), start=1):
         specs.append(dict(key=('sampled', method), edge_style=_series_edge_style(i),
                            label='Poisson-adaptive subsample ({})'.format(method)))
+    return specs
+
+
+def sampled_vs_oracle_load_plot_series(subsampling_methods):
+    """Series specs pairing each Poisson-adaptive subsampling method against the ideal
+    Poisson probe at that method's own sample count, plus the probe at the minimum
+    required sample size. The gap between a method and its own ideal probe is the part
+    of its error that is *not* finite-sample noise -- i.e. what selecting from the flow's
+    own packets costs."""
+    specs = []
+    for method in normalize_subsampling_methods(subsampling_methods):
+        specs.append(dict(key=('sampled', method), edge_style=_series_edge_style(len(specs) + 1),
+                           label='Poisson-adaptive subsample ({})'.format(method)))
+        specs.append(dict(key=('oracle', method), edge_style=_series_edge_style(len(specs) + 1),
+                           label=_oracle_series_label(method)))
+    specs.append(dict(key=('oracle', ORACLE_MIN_REQUIRED_KEY),
+                       edge_style=_series_edge_style(len(specs) + 1),
+                       label=_oracle_series_label(ORACLE_MIN_REQUIRED_KEY)))
     return specs
 
 
@@ -4589,6 +4857,8 @@ def _series_key_label(series_key):
         return 'Poisson-adaptive subsample ({})'.format(series_key[1])
     if isinstance(series_key, tuple) and series_key[0] == 'uniform':
         return _uniform_series_label(series_key[1])
+    if isinstance(series_key, tuple) and series_key[0] == 'oracle':
+        return _oracle_series_label(series_key[1])
     return str(series_key)
 
 
@@ -4605,6 +4875,7 @@ def _metric_result_keys(metric, normalized):
                 'emd_all_packets_by_experiment' + suffix,
                 'emd_sampled_packets_by_run' + suffix,
                 'emd_uniform_packets_by_run' + suffix,
+                'emd_oracle_by_run' + suffix,
                 "EMD / mean ground-truth delay" if normalized
                 else "EMD to reconstructed network delay CDF (ns)")
     if isinstance(metric, tuple) and metric[0] in ('percentile_diff', 'percentile_reldiff'):
@@ -4615,6 +4886,7 @@ def _metric_result_keys(metric, normalized):
                 '{}_all_packets_by_experiment'.format(name),
                 '{}_sampled_by_run'.format(name),
                 '{}_uniform_by_run'.format(name),
+                '{}_oracle_by_run'.format(name),
                 label)
     raise ValueError("Unknown metric: {!r}".format(metric))
 
@@ -4636,7 +4908,8 @@ def _load_plot_series_values(r, i, series_key, normalized=False, metric='emd'):
     -- see _metric_result_keys); `normalized` additionally switches the EMD to its
     normalized twin. Pass rates are unaffected by either, since the consistency check
     itself is always the same mean-delay test."""
-    all_key, all_by_exp_key, sampled_key, uniform_key, _ = _metric_result_keys(metric, normalized)
+    all_key, all_by_exp_key, sampled_key, uniform_key, oracle_key, _ = _metric_result_keys(
+        metric, normalized)
     q = _metric_percentile(metric)
     if q is not None and q not in (r.get('delay_percentiles') or []):
         return [], 0.0
@@ -4665,6 +4938,11 @@ def _load_plot_series_values(r, i, series_key, normalized=False, metric='emd'):
         if key not in r['emd_uniform_packets_by_run']:
             return [], 0.0
         return _at(r[uniform_key])[key][i], r['pass_rate_uniform'][key][i]
+    if isinstance(series_key, tuple) and series_key[0] == 'oracle':
+        key = series_key[1]
+        if key not in (r.get('emd_oracle_by_run') or {}):
+            return [], 0.0
+        return _at(r[oracle_key])[key][i], r['pass_rate_oracle'][key][i]
     raise ValueError("Unknown series_key: {!r}".format(series_key))
 
 
@@ -4780,7 +5058,7 @@ def plot_emd_vs_load_by_traffic(results_by_traffic_load, k, output_path, pass_th
         print("plot_emd_vs_load_by_traffic: no data at k={}, writing empty plot".format(k))
 
     series_names = ' vs. '.join(s['label'] for s in series_specs)
-    _, _, _, _, y_label = _metric_result_keys(metric, normalized)
+    y_label = _metric_result_keys(metric, normalized)[-1]
     quantity_percentile = _metric_percentile(metric)
     if quantity_percentile is not None:
         quantity_name = 'p{} error{}'.format(quantity_percentile,
@@ -4934,11 +5212,13 @@ def plot_emd_vs_num_flows_boxplot(results, output_path, title="EMD vs number of 
     emd_all = np.asarray(results['emd_all_packets' + suffix], dtype=float)
     pass_rate_all = np.asarray(results['pass_rate_all_packets'], dtype=float)
     uniform_series = results.get('uniform_series', [])
+    oracle_series = results.get('oracle_series', [])
     emd_all_by_experiment = results.get('emd_all_packets_by_experiment' + suffix)
     all_packets_is_boxplot = bool(emd_all_by_experiment) and results.get('num_experiments', 1) > 1
 
     pass_color, fail_color = 'tab:green', 'tab:red'
-    offset_all, offsets_poisson, offsets_uniform, box_width = _subsample_family_layout(methods, uniform_series)
+    offset_all, offsets_poisson, offsets_uniform, offsets_oracle, box_width = _subsample_family_layout(
+        methods, uniform_series, oracle_series)
 
     fig, axis = plt.subplots(figsize=(30, 15))
 
@@ -4980,6 +5260,24 @@ def plot_emd_vs_num_flows_boxplot(results, output_path, title="EMD vs number of 
                                      linestyle=style['edge_style'],
                                      label='{} (boxplot)'.format(_uniform_series_label(key))))
 
+    # Ideal Poisson probes: the ceiling, drawn last so it reads as the reference the real
+    # families are being judged against.
+    emd_oracle_by_run = results.get('emd_oracle_by_run' + suffix, {})
+    pass_rate_oracle = results.get('pass_rate_oracle', {})
+    for i, key in enumerate(oracle_series):
+        style = _SUBSAMPLE_FAMILY_STYLES[
+            (len(methods) + len(uniform_series) + i) % len(_SUBSAMPLE_FAMILY_STYLES)]
+        values_by_k = emd_oracle_by_run[key]
+        _draw_boxplot_family(axis, num_flows, values_by_k, pass_rate_oracle[key],
+                             offsets_oracle[key], box_width, pass_threshold, pass_color, fail_color, style)
+        missing_k = [k for k, values in zip(num_flows, values_by_k) if len(values) == 0]
+        if missing_k:
+            print("No {} EMD values for {} flow-count(s), skipped: {}".format(
+                _oracle_series_label(key), len(missing_k), missing_k))
+        legend_handles.append(Patch(facecolor='white', edgecolor=style['edge_color'], linewidth=4.5,
+                                     linestyle=style['edge_style'],
+                                     label='{} (boxplot)'.format(_oracle_series_label(key))))
+
     axis.set_title(title, fontsize=34)
     axis.set_xlabel('Number of TCP flows considered')
     axis.set_ylabel("EMD / mean ground-truth delay" if normalized
@@ -4992,7 +5290,8 @@ def plot_emd_vs_num_flows_boxplot(results, output_path, title="EMD vs number of 
                                else [emd_all[np.isfinite(emd_all)]])
         all_values = np.concatenate(all_packets_values
                                      + [np.asarray(v, dtype=float) for m in methods for v in emd_sampled_by_run[m]]
-                                     + [np.asarray(v, dtype=float) for s in uniform_series for v in emd_uniform_by_run[s]])
+                                     + [np.asarray(v, dtype=float) for s in uniform_series for v in emd_uniform_by_run[s]]
+                                     + [np.asarray(v, dtype=float) for s in oracle_series for v in emd_oracle_by_run[s]])
         if all_values.size and np.nanmax(all_values) > y_max:
             axis.text(0.995, 0.01, 'y-axis capped at {:g}; some boxes/whiskers extend beyond\n'
                                     '(see results text file for full range)'.format(y_max),
@@ -5035,8 +5334,10 @@ def plot_mean_diff_vs_num_flows(results, output_path, title="Switch vs. packet m
     num_flows = results['num_flows']
     methods = results['subsampling_methods']
     uniform_series = results.get('uniform_series', [])
+    oracle_series = results.get('oracle_series', [])
     pass_color, fail_color = 'tab:green', 'tab:red'
-    offset_all, offsets_poisson, offsets_uniform, box_width = _subsample_family_layout(methods, uniform_series)
+    offset_all, offsets_poisson, offsets_uniform, offsets_oracle, box_width = _subsample_family_layout(
+        methods, uniform_series, oracle_series)
 
     fig, axis = plt.subplots(figsize=(30, 15))
     axis.axhline(0, color='black', linewidth=2, linestyle=':', zorder=1)
@@ -5087,6 +5388,22 @@ def plot_mean_diff_vs_num_flows(results, output_path, title="Switch vs. packet m
                                      linestyle=style['edge_style'],
                                      label=_uniform_series_label(key)))
 
+    diff_oracle_by_run = results.get('mean_diff_oracle_by_run', {})
+    pass_rate_oracle = results.get('pass_rate_oracle', {})
+    for i, key in enumerate(oracle_series):
+        style = _SUBSAMPLE_FAMILY_STYLES[
+            (len(methods) + len(uniform_series) + i) % len(_SUBSAMPLE_FAMILY_STYLES)]
+        values_by_k = diff_oracle_by_run[key]
+        missing_k = [k for k, values in zip(num_flows, values_by_k) if len(values) == 0]
+        if missing_k:
+            print("No {} mean-diff values for {} flow-count(s), skipped: {}".format(
+                _oracle_series_label(key), len(missing_k), missing_k))
+        _draw_boxplot_family(axis, num_flows, values_by_k, pass_rate_oracle[key],
+                             offsets_oracle[key], box_width, pass_threshold, pass_color, fail_color, style)
+        legend_handles.append(Patch(facecolor='white', edgecolor=style['edge_color'], linewidth=4.5,
+                                     linestyle=style['edge_style'],
+                                     label=_oracle_series_label(key)))
+
     axis.set_title(title, fontsize=34)
     axis.set_xlabel('Number of TCP flows considered')
     axis.set_ylabel("Switch samples mean delay - packet mean delay (ns)")
@@ -5096,7 +5413,8 @@ def plot_mean_diff_vs_num_flows(results, output_path, title="Switch vs. packet m
     if y_limit is not None:
         all_values = np.concatenate([np.asarray(v, dtype=float) for v in diff_all_by_run]
                                      + [np.asarray(v, dtype=float) for m in methods for v in diff_sampled_by_run[m]]
-                                     + [np.asarray(v, dtype=float) for s in uniform_series for v in diff_uniform_by_run[s]])
+                                     + [np.asarray(v, dtype=float) for s in uniform_series for v in diff_uniform_by_run[s]]
+                                     + [np.asarray(v, dtype=float) for s in oracle_series for v in diff_oracle_by_run[s]])
         if all_values.size and np.nanmax(np.abs(all_values)) > y_limit:
             axis.text(0.995, 0.01, 'y-axis capped at +/-{:.0f} ns; some boxes/whiskers extend beyond\n'
                                     '(see results text file for full range)'.format(y_limit),
@@ -5144,14 +5462,15 @@ def plot_percentile_diff_vs_num_flows(results, percentile, output_path, relative
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     kind = 'percentile_reldiff' if relative else 'percentile_diff'
-    all_key, all_by_exp_key, sampled_key, uniform_key, y_label = _metric_result_keys(
+    all_key, all_by_exp_key, sampled_key, uniform_key, oracle_key, y_label = _metric_result_keys(
         (kind, percentile), False)
 
     num_flows = results['num_flows']
     methods = results['subsampling_methods']
     uniform_series = results.get('uniform_series', [])
-    offset_all, offsets_poisson, offsets_uniform, box_width = _subsample_family_layout(
-        methods, uniform_series)
+    oracle_series = results.get('oracle_series', [])
+    offset_all, offsets_poisson, offsets_uniform, offsets_oracle, box_width = _subsample_family_layout(
+        methods, uniform_series, oracle_series)
     gt_percentile = (results.get('groundtruth_percentiles') or {}).get(percentile, np.nan)
 
     fig, axis = plt.subplots(figsize=(30, 15))
@@ -5186,6 +5505,18 @@ def plot_percentile_diff_vs_num_flows(results, percentile, output_path, relative
         legend_handles.append(Patch(facecolor=fill, edgecolor=style['edge_color'], linewidth=4.5,
                                      linestyle=style['edge_style'],
                                      label=_uniform_series_label(key)))
+
+    for i, key in enumerate(oracle_series):
+        style = _SUBSAMPLE_FAMILY_STYLES[
+            (len(methods) + len(uniform_series) + i) % len(_SUBSAMPLE_FAMILY_STYLES)]
+        fill = next(fills, _PERCENTILE_FAMILY_FILLS[-1])
+        values_by_k = results[oracle_key][percentile][key]
+        _draw_boxplot_family(axis, num_flows, values_by_k, results['pass_rate_oracle'][key],
+                             offsets_oracle[key], box_width, pass_threshold, fill, fill, style,
+                             fill_color=fill)
+        legend_handles.append(Patch(facecolor=fill, edgecolor=style['edge_color'], linewidth=4.5,
+                                     linestyle=style['edge_style'],
+                                     label=_oracle_series_label(key)))
 
     legend_handles.append(Line2D([0], [0], color='black', linewidth=2, linestyle=':',
                                   label='zero = family percentile matches ground truth'))
@@ -5251,6 +5582,7 @@ def save_emd_vs_flows_results_text(results, output_path):
 
     methods = results['subsampling_methods']
     uniform_series = results.get('uniform_series', [])
+    oracle_series = results.get('oracle_series', [])
     num_experiments = results.get('num_experiments', 1)
     emd_all_by_experiment = results.get('emd_all_packets_by_experiment')
     emd_all_by_experiment_norm = results.get('emd_all_packets_by_experiment_normalized')
@@ -5272,6 +5604,8 @@ def save_emd_vs_flows_results_text(results, output_path):
     lines.append("Poisson observations per run (M): {}".format(results['num_poisson_observations']))
     lines.append("Uniform baselines: {}".format(
         ", ".join(_uniform_series_label(key) for key in uniform_series) or "none"))
+    lines.append("Ideal Poisson probes: {}".format(
+        ", ".join(_oracle_series_label(key) for key in oracle_series) or "none"))
     lines.append("Total TCP flows considered (max k): {}".format(results['total_flows']))
     lines.append("")
     lines.append("Ground-truth reconstructed delay samples: {}".format(gt.size))
@@ -5307,6 +5641,17 @@ def save_emd_vs_flows_results_text(results, output_path):
         lines.append("    mean_diff still varies run to run because the switch-side mean is redrawn each run).")
     lines.append("  * One table per Poisson-adaptive subsampling method below, each a fresh subsample drawn")
     lines.append("    every run; 'n_samp' is how many of the N runs found a valid subsample at that flow count.")
+    if oracle_series:
+        lines.append("  * Ideal-Poisson-probe tables: NOT a subsample of the flow's packets at all -- the")
+        lines.append("    ground-truth construction re-run at a realistic rate (about the stated sample")
+        lines.append("    budget). Its instants are a genuine Poisson process independent of queue state, so")
+        lines.append("    PASTA holds exactly and there is no selection bias: its only error is finite-sample")
+        lines.append("    noise. It is therefore the CEILING for any Poissonization scheme, and the gap")
+        lines.append("    between a real method and the probe at that method's own sample count is the part")
+        lines.append("    of its error that having few samples does NOT explain.")
+        lines.append("  * The probe's n_pkts fluctuates around its budget rather than matching it exactly:")
+        lines.append("    a Poisson process over a fixed window has a random number of points, and pinning")
+        lines.append("    the count would make the instants uniform order statistics, not a Poisson process.")
     lines.append("  * Uniform tables further below: a fresh systematic uniform subsample drawn each run, drawing")
     lines.append("    exactly as many packets as its paired Poisson-adaptive method retained that run (or, where")
     lines.append("    that method found no valid subsample, the minimum sample size it was required to reach).")
@@ -5377,6 +5722,27 @@ def save_emd_vs_flows_results_text(results, output_path):
     pass_rate_uniform = results.get('pass_rate_uniform', {})
     diff_uniform_by_run = results.get('mean_diff_uniform_packets_by_run', {})
     sizes_uniform = results.get('sample_sizes_uniform_by_run', {})
+    emd_oracle_by_run = results.get('emd_oracle_by_run', {})
+    emd_oracle_by_run_norm = results.get('emd_oracle_by_run_normalized', {})
+    pass_rate_oracle = results.get('pass_rate_oracle', {})
+    diff_oracle_by_run = results.get('mean_diff_oracle_by_run', {})
+    sizes_oracle = results.get('sample_sizes_oracle_by_run', {})
+    for key in oracle_series:
+        lines.append("")
+        lines.append("{}:".format(_oracle_series_label(key)))
+        header = "{:>3} | {:>6} | {:>24} | {:>24} | {:>9} | {:>24} | {:>20}".format(
+            "k", "n_runs", "EMD [ns]", "normEMD", "pass", "mean_diff [ns]", "n_pkts")
+        lines.append(header)
+        lines.append("-" * len(header))
+        for i, k in enumerate(results['num_flows']):
+            lines.append("{:>3} | {:>6} | {:>24} | {:>24} | {:>8.0%} | {:>24} | {:>20}".format(
+                k, len(emd_oracle_by_run[key][i]),
+                _stat(emd_oracle_by_run[key][i]),
+                _stat(emd_oracle_by_run_norm[key][i], fmt="{:.4f}"),
+                pass_rate_oracle[key][i],
+                _stat(diff_oracle_by_run[key][i]),
+                _stat(sizes_oracle.get(key, [[]] * len(results['num_flows']))[i], fmt="{:.0f}"),
+            ))
     for key in uniform_series:
         lines.append("")
         lines.append("{}:".format(_uniform_series_label(key)))
@@ -5403,6 +5769,8 @@ def save_emd_vs_flows_results_text(results, output_path):
                               'Poisson-adaptive subsample, {}'.format(method)))
         for j, key in enumerate(uniform_series, start=1):
             families.append(('U{}'.format(j), ('uniform', key), _uniform_series_label(key)))
+        for j, key in enumerate(oracle_series, start=1):
+            families.append(('I{}'.format(j), ('oracle', key), _oracle_series_label(key)))
 
         lines.append("")
         lines.append("=" * 70)
