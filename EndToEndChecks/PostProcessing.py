@@ -720,6 +720,15 @@ def __main__():
                          "cross-traffic plots then cover only k='max', a fixed-k plot being "
                          "meaningless when each combination contributes a single, possibly different, "
                          "flow total.")
+    parser.add_argument("--no-chi-squared-test",
+                    action="store_false",
+                    dest="run_chi_squared_test",
+                    help="Skip the multi-lag chi-squared independence test when checking whether the "
+                         "non-Poissonized families' (all packets, rate-matched uniform) sampling "
+                         "instants look Poisson. Anderson-Darling is free; chi-squared costs roughly a "
+                         "second per family per flow count per run, so it dominates the runtime of "
+                         "--emd-vs-flows. With it off, only the Anderson-Darling split plots are "
+                         "produced and the 'ad_chi' ones are skipped.")
     parser.add_argument("--delay-percentile", dest="delay_percentiles", nargs='+', type=float,
                     default=list(DEFAULT_DELAY_PERCENTILES), metavar="Q",
                     help="Which delay percentiles to report the tail-shape error at, with "
@@ -790,6 +799,7 @@ def __main__():
                                         groundtruth_method=groundtruth_method,
                                         all_flows_only=args.all_flows_only,
                                         delay_percentiles=args.delay_percentiles,
+                                        run_chi_squared_test=args.run_chi_squared_test,
                                     )
                             print("Traffic {} Rate {} {} {} EMD-vs-flows done".format(traffic, rate, load, experiments))
                         else:
@@ -812,7 +822,7 @@ def __main__():
                     print("Rate {} done".format(rate))
                 print("Traffic {} done".format(traffic))
 
-def run_emd_vs_flows_experiment(rate, steadyStart, steadyEnd, confidenceValue, results_folder, config, experiment=0, ns3_path=__ns3_path, load=None, flow_name='R0H0R2H3', queue_names=None, path=0, delay_cdf_sample_interval_ns=90, num_runs=100, num_poisson_observations=9000, pass_threshold=0.9, num_workers=1, emd_y_max=None, mean_diff_y_limit=None, flow_count_step=1, all_flows_only=False, subsampling_methods='find_samples_path', groundtruth_method='simultaneous', delay_percentiles=DEFAULT_DELAY_PERCENTILES):
+def run_emd_vs_flows_experiment(rate, steadyStart, steadyEnd, confidenceValue, results_folder, config, experiment=0, ns3_path=__ns3_path, load=None, flow_name='R0H0R2H3', queue_names=None, path=0, delay_cdf_sample_interval_ns=90, num_runs=100, num_poisson_observations=9000, pass_threshold=0.9, num_workers=1, emd_y_max=None, mean_diff_y_limit=None, flow_count_step=1, all_flows_only=False, subsampling_methods='find_samples_path', groundtruth_method='simultaneous', delay_percentiles=DEFAULT_DELAY_PERCENTILES, run_chi_squared_test=True):
     """Reconstruct the network queuing delay CDF once (ground truth), then repeat `num_runs` times: draw
     `num_poisson_observations` fresh Poisson-process observation instants at the path's switches, derive the
     per-segment aggregated delay statistics from them, and grow the set of considered TCP flows of `flow_name`
@@ -829,6 +839,12 @@ def run_emd_vs_flows_experiment(rate, steadyStart, steadyEnd, confidenceValue, r
         twin of the same plot in units of the mean ground-truth delay.
       - `<flow_name>_path_<path>_<tag>_delay_mean_diff_boxplot.png`: the signed
         switch-vs-packet mean delay difference underlying the consistency check, same per-method breakdown.
+      - `<flow_name>_path_<path>_<tag>_<quantity>_<test>_split.png`, one per quantity
+        (EMD, normalized EMD, mean difference) x test ('ad', 'ad_chi'): the non-Poissonized
+        families (all packets, each rate-matched uniform) with their runs split by whether
+        that run's own sampling instants passed the Poisson-ness test. `run_chi_squared_test`
+        turns off the chi-squared half, which dominates the cost (~1s per family per flow
+        count per run); the 'ad_chi' plots are then skipped.
       - `<flow_name>_path_<path>_<tag>_p<q>_diff_boxplot.png` and `..._p<q>_reldiff_boxplot.png`,
         one pair per percentile in `delay_percentiles`: the signed tail-shape error
         `ground-truth p<q> - family p<q>`, absolute (ns) and relative to the ground truth's own
@@ -875,7 +891,7 @@ def run_emd_vs_flows_experiment(rate, steadyStart, steadyEnd, confidenceValue, r
         min_sample_size=min_sample_size, delay_cdf_sample_interval_ns=delay_cdf_sample_interval_ns, path=path,
         num_workers=num_workers, flow_count_step=flow_count_step, all_flows_only=all_flows_only,
         subsampling_methods=subsampling_methods, groundtruth_method=groundtruth_method,
-        delay_percentiles=delay_percentiles,
+        delay_percentiles=delay_percentiles, run_chi_squared_test=run_chi_squared_test,
     )
 
     output_dir = '{}/scratch/{}/{}/{}/{}/'.format(ns3_path, results_folder, rate, load, experiment)
@@ -913,6 +929,18 @@ def run_emd_vs_flows_experiment(rate, steadyStart, steadyEnd, confidenceValue, r
             title='Relative p{} error (ground truth - family) vs number of TCP flows ({}): {}, path {}\n{}'.format(
                 q, run_desc, flow_name, path, gt_desc),
         )
+    # The two families that never had to pass a Poisson-ness test -- all packets and each
+    # rate-matched uniform subset -- with their runs split by whether their own sampling
+    # instants passed. One plot per (test, quantity): AD alone, and AD + chi-squared.
+    for test_name in POISSON_TEST_NAMES:
+        for quantity, quantity_desc in (('emd', 'EMD'), ('emd_normalized', 'Normalized EMD'),
+                                         ('mean_diff', 'Switch vs. packet mean delay difference')):
+            plot_poisson_test_split_vs_num_flows(
+                results, '{}_{}_{}_split.png'.format(file_prefix, quantity, test_name),
+                test_name=test_name, quantity=quantity,
+                title='{} split by Poisson-ness of the sampling instants: {}, path {}\n{}\n{} | {}'.format(
+                    quantity_desc, flow_name, path, poisson_test_label(test_name), run_desc, gt_desc),
+            )
     plot_one_run_delay_cdfs(
         results, file_prefix + '_delay_cdf_one_run.png',
         title='Delay CDF comparison, one Poisson realization: {}, path {}\n{}'.format(flow_name, path, gt_desc),
@@ -999,6 +1027,18 @@ def aggregate_emd_vs_flows_across_experiments(ns3_path, dir_name, traffic, rate,
             title='Relative p{} error (ground truth - family), aggregated ({}): {}, path {}\n{}'.format(
                 q, run_desc, flow_name, path, gt_desc),
         )
+    # The two families that never had to pass a Poisson-ness test -- all packets and each
+    # rate-matched uniform subset -- with their runs split by whether their own sampling
+    # instants passed. One plot per (test, quantity): AD alone, and AD + chi-squared.
+    for test_name in POISSON_TEST_NAMES:
+        for quantity, quantity_desc in (('emd', 'EMD'), ('emd_normalized', 'Normalized EMD'),
+                                         ('mean_diff', 'Switch vs. packet mean delay difference')):
+            plot_poisson_test_split_vs_num_flows(
+                aggregated, '{}_{}_{}_split.png'.format(file_prefix, quantity, test_name),
+                test_name=test_name, quantity=quantity,
+                title='{} split by Poisson-ness of the sampling instants: {}, path {}\n{}\n{} | {}'.format(
+                    quantity_desc, flow_name, path, poisson_test_label(test_name), run_desc, gt_desc),
+            )
     plot_one_run_delay_cdfs(
         aggregated, file_prefix + '_delay_cdf_one_run.png',
         title='Delay CDF comparison, one Poisson realization (experiment {}): {}, path {}\n{}'.format(
