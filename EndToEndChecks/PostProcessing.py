@@ -685,6 +685,12 @@ def __main__():
                          "plots (EMD vs load, one boxplot family per traffic, one plot per flow-count k) "
                          "under scratch/ECNMC/Results/results_<dir>/emd_vs_load_by_traffic/<rate>/. Takes "
                          "precedence over --emd-vs-flows. Only used in the 'forward' branch.")
+    parser.add_argument("--subsampling-method", dest="subsampling_method", default="find_samples_path",
+                    choices=list(POISSON_SUBSAMPLING_METHODS.keys()),
+                    help="Which Poisson-adaptive subsampling algorithm to use for the 'sampled' comparison "
+                         "series, with --emd-vs-flows or --aggregate-emd-vs-flows. Always appended as a "
+                         "filename suffix so different algorithms' outputs for the same "
+                         "traffic/rate/load/experiment don't collide.")
 
     args = parser.parse_args()
     config = configparser.ConfigParser()
@@ -695,10 +701,12 @@ def __main__():
     # steadyEnd = 0.015 * 1e9
     experiments = int(config.get('Settings', 'experiments'))
     experiments = 30
+    # experiments = 1
     serviceRateScales = [float(x) for x in config.get('Settings', 'serviceRateScales').split(',')]
     # serviceRateScales = [0.5]
     loads = [float(x) for x in config.get('Settings', 'load').split(',')]
     loads = [0.5, 0.6, 0.7, 0.8, 0.95]
+    # loads = [0.80]
     traffics = config.get('Settings', 'traffic').split(',')
     traffics = ["Google_AllRPC", "Fabricated_Heavy_Head", "Fabricated_Heavy_Middle", "Google_SearchRPC", "Facebook_HadoopDist_All"]
     # traffics = ["Google_AllRPC"]
@@ -717,6 +725,7 @@ def __main__():
                     aggregate_emd_vs_flows_across_traffics_and_loads(
                         __ns3_path, args.dir, traffics, rate, loads,
                         flow_name=args.flow_name, path=args.path,
+                        subsampling_method=args.subsampling_method,
                     )
                 continue
             for traffic in traffics:
@@ -725,6 +734,7 @@ def __main__():
                         if args.emd_vs_flows:
                             print("\nRunning EMD-vs-flows analysis for traffic {} rate: {} load: {}".format(traffic, rate, load))
                             for experiment in range(experiments):
+                                print("Running EMD-vs-flows analysis for traffic {} rate: {} load: {} experiment {}".format(traffic, rate, load, experiment))
                                 run_emd_vs_flows_experiment(
                                     rate, start, start + int((steadyEnd - steadyStart) / numOfSteadyParts), confidenceValue,
                                     'Results_' + args.dir + "/" + traffic, config, experiment=experiment, ns3_path=__ns3_path, load=load,
@@ -732,6 +742,7 @@ def __main__():
                                     num_poisson_observations=args.num_poisson_observations, num_workers=args.num_workers,
                                     delay_cdf_sample_interval_ns=args.delay_cdf_sample_interval_ns,
                                     flow_count_step=args.flow_count_step,
+                                    subsampling_method=args.subsampling_method,
                                 )
                             print("Traffic {} Rate {} {} {} EMD-vs-flows done".format(traffic, rate, load, experiments))
                         else:
@@ -754,21 +765,27 @@ def __main__():
                     print("Rate {} done".format(rate))
                 print("Traffic {} done".format(traffic))
 
-def run_emd_vs_flows_experiment(rate, steadyStart, steadyEnd, confidenceValue, results_folder, config, experiment=0, ns3_path=__ns3_path, load=None, flow_name='R0H0R2H3', queue_names=None, path=0, delay_cdf_sample_interval_ns=90, num_runs=100, num_poisson_observations=9000, pass_threshold=0.9, num_workers=1, uniform_sample_strides=(10, 100), emd_y_max=None, mean_diff_y_limit=None, flow_count_step=1):
+def run_emd_vs_flows_experiment(rate, steadyStart, steadyEnd, confidenceValue, results_folder, config, experiment=0, ns3_path=__ns3_path, load=None, flow_name='R0H0R2H3', queue_names=None, path=0, delay_cdf_sample_interval_ns=90, num_runs=100, num_poisson_observations=9000, pass_threshold=0.9, num_workers=1, uniform_sample_strides=(10, 100), emd_y_max=None, mean_diff_y_limit=None, flow_count_step=1, subsampling_method='find_samples_path'):
     """Reconstruct the network queuing delay CDF once (ground truth), then repeat `num_runs` times: draw
     `num_poisson_observations` fresh Poisson-process observation instants at the path's switches, derive the
     per-segment aggregated delay statistics from them, and grow the set of considered TCP flows of `flow_name`
     one at a time, comparing the EMD of the all-packet CDF against a Poisson-adaptive subsample and, for every
     stride in `uniform_sample_strides`, a systematic "1-in-stride" uniform subsample of the considered flows'
     packets. Saves, under the experiment's results directory:
-      - `<flow_name>_path_<path>_emd_vs_num_flows_boxplot.png`: EMD distribution across runs, one boxplot
-        family per subsampling method.
-      - `<flow_name>_path_<path>_delay_mean_diff_boxplot.png`: the signed switch-vs-packet mean delay
-        difference underlying the consistency check, same per-method breakdown.
-      - `<flow_name>_path_<path>_delay_cdf_one_run.png`: the ground-truth delay CDF against every method's
-        actual delay CDF from one concrete Poisson realization (not an EMD summary across runs).
-      - `<flow_name>_path_<path>_emd_vs_num_flows_results.pkl`: the full underlying results dict.
-      - `<flow_name>_path_<path>_emd_vs_num_flows_results.txt`: a human-readable per-flow-count summary.
+      - `<flow_name>_path_<path>_<subsampling_method>_emd_vs_num_flows_boxplot.png`: EMD distribution
+        across runs, one boxplot family per subsampling method.
+      - `<flow_name>_path_<path>_<subsampling_method>_delay_mean_diff_boxplot.png`: the signed
+        switch-vs-packet mean delay difference underlying the consistency check, same per-method breakdown.
+      - `<flow_name>_path_<path>_<subsampling_method>_delay_cdf_one_run.png`: the ground-truth delay CDF
+        against every method's actual delay CDF from one concrete Poisson realization (not an EMD summary
+        across runs).
+      - `<flow_name>_path_<path>_<subsampling_method>_emd_vs_num_flows_results.pkl`: the full underlying
+        results dict.
+      - `<flow_name>_path_<path>_<subsampling_method>_emd_vs_num_flows_results.txt`: a human-readable
+        per-flow-count summary.
+    `subsampling_method` (one of Utils.POISSON_SUBSAMPLING_METHODS) selects which Poisson-adaptive
+    subsampling algorithm is used for the "sampled" comparison series, and is always appended as a
+    filename suffix so different algorithms' outputs for the same combination don't collide.
     Both plots color each flow-count's box/point by whether at least `pass_threshold` of the runs'
     consistency check passed there. Returns the underlying per-flow-count, per-run results.
     """
@@ -786,10 +803,11 @@ def run_emd_vs_flows_experiment(rate, steadyStart, steadyEnd, confidenceValue, r
         num_runs=num_runs, num_poisson_observations=num_poisson_observations,
         min_sample_size=min_sample_size, delay_cdf_sample_interval_ns=delay_cdf_sample_interval_ns, path=path,
         num_workers=num_workers, uniform_sample_strides=uniform_sample_strides, flow_count_step=flow_count_step,
+        subsampling_method=subsampling_method,
     )
 
     output_dir = '{}/scratch/{}/{}/{}/{}/'.format(ns3_path, results_folder, rate, load, experiment)
-    file_prefix = '{}{}_path_{}'.format(output_dir, flow_name, path)
+    file_prefix = '{}{}_path_{}_{}'.format(output_dir, flow_name, path, subsampling_method)
     run_desc = '{} runs x {} Poisson obs'.format(num_runs, num_poisson_observations)
 
     plot_emd_vs_num_flows_boxplot(
@@ -814,7 +832,8 @@ def run_emd_vs_flows_experiment(rate, steadyStart, steadyEnd, confidenceValue, r
 
 
 def aggregate_emd_vs_flows_across_experiments(ns3_path, dir_name, traffic, rate, load, flow_name='R0H0R2H3',
-                                               path=0, pass_threshold=0.9, emd_y_max=None, mean_diff_y_limit=None):
+                                               path=0, pass_threshold=0.9, emd_y_max=None, mean_diff_y_limit=None,
+                                               subsampling_method='find_samples_path'):
     """Load every experiment's run_emd_vs_flows_experiment output for the same
     traffic/rate/load (each under scratch/Results_<dir_name>/<traffic>/<rate>/<load>/<experiment>/,
     discovered by scanning that directory for experiment subfolders), combine them via
@@ -823,11 +842,14 @@ def aggregate_emd_vs_flows_across_experiments(ns3_path, dir_name, traffic, rate,
     tree analyze_all_experiments already uses for its own cross-experiment JSON summaries, so
     all cross-experiment outputs for a given traffic/rate/load live together there.
 
+    `subsampling_method` selects which run_emd_vs_flows_experiment output to look for (its
+    filename suffix), matching the same experiment run's `subsampling_method`.
+
     Returns the aggregated results dict, or None if no experiment's results pickle was found
-    (e.g. run_emd_vs_flows_experiment hasn't been run yet for this traffic/rate/load).
+    (e.g. run_emd_vs_flows_experiment hasn't been run yet for this traffic/rate/load/method).
     """
     per_experiment_base = '{}/scratch/Results_{}/{}/{}/{}'.format(ns3_path, dir_name, traffic, rate, load)
-    file_suffix = '{}_path_{}_emd_vs_num_flows_results.pkl'.format(flow_name, path)
+    file_suffix = '{}_path_{}_{}_emd_vs_num_flows_results.pkl'.format(flow_name, path, subsampling_method)
 
     results_list = []
     if os.path.isdir(per_experiment_base):
@@ -849,7 +871,7 @@ def aggregate_emd_vs_flows_across_experiments(ns3_path, dir_name, traffic, rate,
         traffic, rate, load, aggregated['num_experiments'], aggregated['experiments']))
 
     output_dir = '{}/scratch/ECNMC/Results/results_{}/{}/{}/{}/'.format(ns3_path, dir_name, traffic, rate, load)
-    file_prefix = '{}{}_path_{}'.format(output_dir, flow_name, path)
+    file_prefix = '{}{}_path_{}_{}'.format(output_dir, flow_name, path, subsampling_method)
     run_desc = '{} experiment(s) x {} Poisson obs'.format(aggregated['num_experiments'], aggregated['num_poisson_observations'])
 
     plot_emd_vs_num_flows_boxplot(
@@ -875,7 +897,8 @@ def aggregate_emd_vs_flows_across_experiments(ns3_path, dir_name, traffic, rate,
 
 
 def aggregate_emd_vs_flows_across_traffics_and_loads(ns3_path, dir_name, traffics, rate, loads,
-                                                       flow_name='R0H0R2H3', path=0, pass_threshold=0.9):
+                                                       flow_name='R0H0R2H3', path=0, pass_threshold=0.9,
+                                                       subsampling_method='find_samples_path'):
     """For a fixed `rate`, aggregate every traffic x load combination (each first
     aggregated across its own experiments via aggregate_emd_vs_flows_across_experiments,
     which also writes that combination's own per-traffic/load plots as a side effect) into
@@ -904,7 +927,7 @@ def aggregate_emd_vs_flows_across_traffics_and_loads(ns3_path, dir_name, traffic
         for load in loads:
             aggregated = aggregate_emd_vs_flows_across_experiments(
                 ns3_path, dir_name, traffic, rate, load, flow_name=flow_name, path=path,
-                pass_threshold=pass_threshold,
+                pass_threshold=pass_threshold, subsampling_method=subsampling_method,
             )
             if aggregated is not None:
                 results_by_traffic_load[(traffic, load)] = aggregated
@@ -918,6 +941,7 @@ def aggregate_emd_vs_flows_across_traffics_and_loads(ns3_path, dir_name, traffic
 
     output_dir = '{}/scratch/ECNMC/Results/results_{}/emd_vs_load_by_traffic/{}/'.format(ns3_path, dir_name, rate)
     os.makedirs(output_dir, exist_ok=True)
+    file_prefix = '{}{}_path_{}_{}'.format(output_dir, flow_name, path, subsampling_method)
 
     plot_kinds = [(None, '', 'all packets vs. Poisson-adaptive subsample')]
     for stride in uniform_sample_strides:
@@ -928,26 +952,26 @@ def aggregate_emd_vs_flows_across_traffics_and_loads(ns3_path, dir_name, traffic
         series_specs = poisson_vs_uniform_load_plot_series(stride) if stride is not None else None
         for k in all_k:
             plot_emd_vs_load_by_traffic(
-                results_by_traffic_load, k, '{}{}_path_{}_k{}{}.png'.format(output_dir, flow_name, path, k, suffix),
+                results_by_traffic_load, k, '{}_k{}{}.png'.format(file_prefix, k, suffix),
                 pass_threshold=pass_threshold, series_specs=series_specs,
                 title='EMD vs load by traffic ({}), {} considered flows: {}, path {}, rate {}'.format(
                     kind_desc, k, flow_name, path, rate),
             )
         plot_emd_vs_load_by_traffic(
-            results_by_traffic_load, 'max', '{}{}_path_{}_kmax{}.png'.format(output_dir, flow_name, path, suffix),
+            results_by_traffic_load, 'max', '{}_kmax{}.png'.format(file_prefix, suffix),
             pass_threshold=pass_threshold, series_specs=series_specs,
             title='EMD vs load by traffic ({}), all considered flows: {}, path {}, rate {}'.format(
                 kind_desc, flow_name, path, rate),
         )
     for k in all_k:
         plot_pass_rate_vs_load_by_traffic(
-            results_by_traffic_load, k, '{}{}_path_{}_k{}_poisson_pass_rate.png'.format(output_dir, flow_name, path, k),
+            results_by_traffic_load, k, '{}_k{}_poisson_pass_rate.png'.format(file_prefix, k),
             pass_threshold=pass_threshold,
             title='Poisson-adaptive subsample consistency pass rate vs load by traffic, {} considered flows: {}, path {}, rate {}'.format(
                 k, flow_name, path, rate),
         )
     plot_pass_rate_vs_load_by_traffic(
-        results_by_traffic_load, 'max', '{}{}_path_{}_kmax_poisson_pass_rate.png'.format(output_dir, flow_name, path),
+        results_by_traffic_load, 'max', '{}_kmax_poisson_pass_rate.png'.format(file_prefix),
         pass_threshold=pass_threshold,
         title='Poisson-adaptive subsample consistency pass rate vs load by traffic, all considered flows: {}, path {}, rate {}'.format(
             flow_name, path, rate),

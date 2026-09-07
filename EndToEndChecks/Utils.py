@@ -1221,7 +1221,8 @@ def find_samples_path_intensity(
     floor_rate = (
         minimum_number_of_samples / duration if minimum_number_of_samples > 0 else raw_rate * 1e-3
     )
-    low = max(floor_rate, raw_rate * 1e-4)
+    # low = max(floor_rate, raw_rate * 1e-4)
+    low = floor_rate
     high = raw_rate
     if low >= high:
         low = high * 1e-3
@@ -3200,7 +3201,26 @@ def prepare_emd_vs_flows_data(
     }
 
 
-def compute_emd_vs_num_tcp_flows_run(prepared, agg_stats, confidenceValue, min_sample_size=30, uniform_sample_strides=(10, 100)):
+POISSON_SUBSAMPLING_METHODS = {
+    'find_samples_path': find_samples_path,
+    'find_samples_path_intensity': find_samples_path_intensity,
+}
+
+
+def _resolve_subsampling_method(subsampling_method):
+    """Look up a Poisson-adaptive subsampling callable by name (a key of
+    POISSON_SUBSAMPLING_METHODS) -- both entries share the (time, MinimumNumberOfSamples=...)
+    call signature, so either can be dropped in wherever find_samples_path was called
+    directly before this was made selectable."""
+    try:
+        return POISSON_SUBSAMPLING_METHODS[subsampling_method]
+    except KeyError:
+        raise ValueError("Unknown subsampling_method {!r}; choose one of {}".format(
+            subsampling_method, list(POISSON_SUBSAMPLING_METHODS)))
+
+
+def compute_emd_vs_num_tcp_flows_run(prepared, agg_stats, confidenceValue, min_sample_size=30, uniform_sample_strides=(10, 100),
+                                      subsampling_method='find_samples_path'):
     """Run one realization of the flow-count EMD sweep against a given
     per-run `agg_stats` (see compute_poisson_agg_stats): grow the set of
     considered TCP flows one at a time and, for each size, compare the
@@ -3238,6 +3258,7 @@ def compute_emd_vs_num_tcp_flows_run(prepared, agg_stats, confidenceValue, min_s
     groundtruth_values = prepared['groundtruth_values']
     min_samples = agg_stats.get('MinimumE2ESampleSizeDelay', 0)
     switch_mean = agg_stats['DelayMean']
+    find_samples = _resolve_subsampling_method(subsampling_method)
 
     num_flows_list, emd_sampled_list = [], []
     consistency_list, consistency_all_list = [], []
@@ -3260,7 +3281,7 @@ def compute_emd_vs_num_tcp_flows_run(prepared, agg_stats, confidenceValue, min_s
             mean_diff_all_list.append(np.nan)
 
         times = subset['SentTime'].values
-        samples_times, sub_err = find_samples_path(times, MinimumNumberOfSamples=min_samples)
+        samples_times, sub_err = find_samples(times, MinimumNumberOfSamples=min_samples)
         if sub_err != SubSamplingError.NoError or len(samples_times) == 0:
             emd_sampled_list.append(np.nan)
             consistency_list.append(None)
@@ -3301,17 +3322,18 @@ def compute_emd_vs_num_tcp_flows_run(prepared, agg_stats, confidenceValue, min_s
 
 def _run_one_poisson_run(prepared, dir_prefix, queue_names, linkDelays, linkRates, steadyStart, steadyEnd,
                           num_poisson_observations, confidenceValue, DelayConsistencyGaurantee, min_sample_size,
-                          uniform_sample_strides):
+                          uniform_sample_strides, subsampling_method):
     agg_stats = compute_poisson_agg_stats(
         dir_prefix, queue_names, linkDelays, linkRates, steadyStart, steadyEnd,
         num_poisson_observations, confidenceValue, DelayConsistencyGaurantee,
     )
-    return compute_emd_vs_num_tcp_flows_run(prepared, agg_stats, confidenceValue, min_sample_size, uniform_sample_strides)
+    return compute_emd_vs_num_tcp_flows_run(prepared, agg_stats, confidenceValue, min_sample_size, uniform_sample_strides,
+                                             subsampling_method)
 
 
 def _poisson_run_worker(return_dict, run_indices, prepared, dir_prefix, queue_names, linkDelays, linkRates,
                          steadyStart, steadyEnd, num_poisson_observations, confidenceValue,
-                         DelayConsistencyGaurantee, min_sample_size, uniform_sample_strides):
+                         DelayConsistencyGaurantee, min_sample_size, uniform_sample_strides, subsampling_method):
     # A forked worker inherits the parent's numpy random state verbatim, so without
     # reseeding here every worker would draw the exact same "independent" runs.
     np.random.seed()
@@ -3319,18 +3341,18 @@ def _poisson_run_worker(return_dict, run_indices, prepared, dir_prefix, queue_na
         return_dict[idx] = _run_one_poisson_run(
             prepared, dir_prefix, queue_names, linkDelays, linkRates, steadyStart, steadyEnd,
             num_poisson_observations, confidenceValue, DelayConsistencyGaurantee, min_sample_size,
-            uniform_sample_strides,
+            uniform_sample_strides, subsampling_method,
         )
 
 
 def _run_poisson_runs(prepared, dir_prefix, queue_names, linkDelays, linkRates, steadyStart, steadyEnd,
                        num_poisson_observations, confidenceValue, DelayConsistencyGaurantee, min_sample_size,
-                       num_runs, num_workers, uniform_sample_strides):
+                       num_runs, num_workers, uniform_sample_strides, subsampling_method):
     if num_workers is None or num_workers <= 1:
         return [
             _run_one_poisson_run(prepared, dir_prefix, queue_names, linkDelays, linkRates, steadyStart, steadyEnd,
                                   num_poisson_observations, confidenceValue, DelayConsistencyGaurantee, min_sample_size,
-                                  uniform_sample_strides)
+                                  uniform_sample_strides, subsampling_method)
             for _ in range(num_runs)
         ]
 
@@ -3345,7 +3367,7 @@ def _run_poisson_runs(prepared, dir_prefix, queue_names, linkDelays, linkRates, 
             target=_poisson_run_worker,
             args=(return_dict, run_indices, prepared, dir_prefix, queue_names, linkDelays, linkRates,
                   steadyStart, steadyEnd, num_poisson_observations, confidenceValue,
-                  DelayConsistencyGaurantee, min_sample_size, uniform_sample_strides),
+                  DelayConsistencyGaurantee, min_sample_size, uniform_sample_strides, subsampling_method),
         )
         processes.append(p)
         p.start()
@@ -3354,17 +3376,19 @@ def _run_poisson_runs(prepared, dir_prefix, queue_names, linkDelays, linkRates, 
     return [return_dict[i] for i in range(num_runs)]
 
 
-def _collect_one_run_delay_cdfs(prepared, agg_stats, min_sample_size, uniform_sample_strides):
+def _collect_one_run_delay_cdfs(prepared, agg_stats, min_sample_size, uniform_sample_strides,
+                                 subsampling_method='find_samples_path'):
     """For a single concrete Poisson-process realization (`agg_stats`, as
     produced by one call to compute_poisson_agg_stats), collect the raw
     per-packet delay values -- not just their EMD summary -- for every
     subsampling method being compared against the ground-truth CDF: all
     packets of every currently-considered flow, the Poisson-adaptive
-    subsample (find_samples_path), and one uniform "1-in-stride" subsample
-    per entry in `uniform_sample_strides` (sample_uniform_stride). Uses the
-    full flow_order (all considered flows) since this is meant to illustrate
-    what each method's delay distribution actually looks like, not to sweep
-    over flow count. See plot_one_run_delay_cdfs for the corresponding plot.
+    subsample (`subsampling_method`, see POISSON_SUBSAMPLING_METHODS), and
+    one uniform "1-in-stride" subsample per entry in `uniform_sample_strides`
+    (sample_uniform_stride). Uses the full flow_order (all considered flows)
+    since this is meant to illustrate what each method's delay distribution
+    actually looks like, not to sweep over flow count. See
+    plot_one_run_delay_cdfs for the corresponding plot.
     """
     full_df = prepared['full_df']
     subset = full_df[full_df['FlowRank'] <= len(prepared['flow_order'])]
@@ -3372,7 +3396,8 @@ def _collect_one_run_delay_cdfs(prepared, agg_stats, min_sample_size, uniform_sa
 
     times = subset['SentTime'].values
     min_samples = agg_stats.get('MinimumE2ESampleSizeDelay', 0)
-    samples_times, sub_err = find_samples_path(times, MinimumNumberOfSamples=min_samples)
+    find_samples = _resolve_subsampling_method(subsampling_method)
+    samples_times, sub_err = find_samples(times, MinimumNumberOfSamples=min_samples)
     if sub_err != SubSamplingError.NoError or len(samples_times) == 0:
         poisson_values = np.array([])
     else:
@@ -3532,9 +3557,15 @@ def aggregate_emd_vs_flows_results(results_list):
     def _rate(c, t):
         return c / t if t else 0.0
 
+    subsampling_methods_seen = {r.get('subsampling_method', 'find_samples_path') for r in results_list}
+    if len(subsampling_methods_seen) > 1:
+        print("Warning: aggregating experiments computed with different subsampling methods: {}".format(
+            subsampling_methods_seen))
+
     return {
         'flow_name': results_list[0]['flow_name'],
         'path': results_list[0]['path'],
+        'subsampling_method': results_list[0].get('subsampling_method', 'find_samples_path'),
         'num_runs': sum(r['num_runs'] for r in results_list),
         'num_experiments': len(results_list),
         'experiments': experiments,
@@ -3581,13 +3612,15 @@ def compute_emd_vs_num_tcp_flows_multi_run(
     num_workers=1,
     uniform_sample_strides=(10, 100),
     flow_count_step=1,
+    subsampling_method='find_samples_path',
 ):
     """Repeat the flow-count EMD sweep `num_runs` times. Each run draws its
     own Poisson-process realization of `num_poisson_observations` switch
     observation instants (generate_poisson_observation_times) to derive a
     fresh per-segment aggregated delay statistic for the consistency check
     (compute_poisson_agg_stats), then re-derives, for every flow count
-    independently: a fresh Poisson-adaptive subsample (find_samples_path) and,
+    independently: a fresh Poisson-adaptive subsample (`subsampling_method`,
+    one of POISSON_SUBSAMPLING_METHODS) and,
     for every stride in `uniform_sample_strides`, a fresh systematic
     "1-in-stride" uniform subsample (sample_uniform_stride) as a simpler
     non-adaptive baseline. The ground-truth reconstructed delay CDF, the
@@ -3632,12 +3665,13 @@ def compute_emd_vs_num_tcp_flows_multi_run(
         dir_prefix, queue_names, linkDelays, linkRates, steadyStart, steadyEnd,
         num_poisson_observations, confidenceValue, DelayConsistencyGaurantee,
     )
-    one_run_delay_cdfs = _collect_one_run_delay_cdfs(prepared, one_run_agg_stats, min_sample_size, uniform_sample_strides)
+    one_run_delay_cdfs = _collect_one_run_delay_cdfs(prepared, one_run_agg_stats, min_sample_size, uniform_sample_strides,
+                                                      subsampling_method)
 
     run_results = _run_poisson_runs(
         prepared, dir_prefix, queue_names, linkDelays, linkRates, steadyStart, steadyEnd,
         num_poisson_observations, confidenceValue, DelayConsistencyGaurantee, min_sample_size,
-        num_runs, num_workers, uniform_sample_strides,
+        num_runs, num_workers, uniform_sample_strides, subsampling_method,
     )
 
     per_k_emd_sampled = [[] for _ in num_flows]
@@ -3674,6 +3708,7 @@ def compute_emd_vs_num_tcp_flows_multi_run(
     return {
         'flow_name': flow_name,
         'path': path,
+        'subsampling_method': subsampling_method,
         'num_runs': num_runs,
         'num_poisson_observations': num_poisson_observations,
         'uniform_sample_strides': list(uniform_sample_strides),
@@ -4248,6 +4283,7 @@ def save_emd_vs_flows_results_text(results, output_path):
     lines.append("=" * 70)
     lines.append("Flow: {}".format(results['flow_name']))
     lines.append("Path: {}".format(results['path']))
+    lines.append("Poisson-adaptive subsampling method: {}".format(results.get('subsampling_method', 'find_samples_path')))
     if num_experiments > 1:
         lines.append("Aggregated over {} experiments: {}".format(num_experiments, results.get('experiments')))
     lines.append("Number of runs (N): {}".format(results['num_runs']))
