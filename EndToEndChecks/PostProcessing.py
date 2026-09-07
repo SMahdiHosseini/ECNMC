@@ -708,6 +708,15 @@ def __main__():
                          "its own tag to the output filenames, so existing 'simultaneous' results keep the "
                          "names they already have.")
 
+    parser.add_argument("--delay-percentile", dest="delay_percentiles", nargs='+', type=float,
+                    default=list(DEFAULT_DELAY_PERCENTILES), metavar="Q",
+                    help="Which delay percentiles to report the tail-shape error at, with "
+                         "--emd-vs-flows: the signed 'ground-truth p_q minus family p_q', absolute (ns) "
+                         "and relative to the ground truth's own p_q, for all packets, every "
+                         "Poisson-adaptive method and every rate-matched uniform baseline. The EMD is a "
+                         "single number for the whole distribution and can hide a misplaced tail, which "
+                         "is the part delay SLOs are written against. Default p90 and p99.")
+
     args = parser.parse_args()
     config = configparser.ConfigParser()
     config.read('../Results/results_{}/Parameters.config'.format(args.dir))
@@ -766,6 +775,7 @@ def __main__():
                                         flow_count_step=args.flow_count_step,
                                         subsampling_methods=args.subsampling_methods,
                                         groundtruth_method=groundtruth_method,
+                                        delay_percentiles=args.delay_percentiles,
                                     )
                             print("Traffic {} Rate {} {} {} EMD-vs-flows done".format(traffic, rate, load, experiments))
                         else:
@@ -788,7 +798,7 @@ def __main__():
                     print("Rate {} done".format(rate))
                 print("Traffic {} done".format(traffic))
 
-def run_emd_vs_flows_experiment(rate, steadyStart, steadyEnd, confidenceValue, results_folder, config, experiment=0, ns3_path=__ns3_path, load=None, flow_name='R0H0R2H3', queue_names=None, path=0, delay_cdf_sample_interval_ns=90, num_runs=100, num_poisson_observations=9000, pass_threshold=0.9, num_workers=1, emd_y_max=None, mean_diff_y_limit=None, flow_count_step=1, subsampling_methods='find_samples_path', groundtruth_method='simultaneous'):
+def run_emd_vs_flows_experiment(rate, steadyStart, steadyEnd, confidenceValue, results_folder, config, experiment=0, ns3_path=__ns3_path, load=None, flow_name='R0H0R2H3', queue_names=None, path=0, delay_cdf_sample_interval_ns=90, num_runs=100, num_poisson_observations=9000, pass_threshold=0.9, num_workers=1, emd_y_max=None, mean_diff_y_limit=None, flow_count_step=1, subsampling_methods='find_samples_path', groundtruth_method='simultaneous', delay_percentiles=DEFAULT_DELAY_PERCENTILES):
     """Reconstruct the network queuing delay CDF once (ground truth), then repeat `num_runs` times: draw
     `num_poisson_observations` fresh Poisson-process observation instants at the path's switches, derive the
     per-segment aggregated delay statistics from them, and grow the set of considered TCP flows of `flow_name`
@@ -802,6 +812,10 @@ def run_emd_vs_flows_experiment(rate, steadyStart, steadyEnd, confidenceValue, r
         twin of the same plot in units of the mean ground-truth delay.
       - `<flow_name>_path_<path>_<tag>_delay_mean_diff_boxplot.png`: the signed
         switch-vs-packet mean delay difference underlying the consistency check, same per-method breakdown.
+      - `<flow_name>_path_<path>_<tag>_p<q>_diff_boxplot.png` and `..._p<q>_reldiff_boxplot.png`,
+        one pair per percentile in `delay_percentiles`: the signed tail-shape error
+        `ground-truth p<q> - family p<q>`, absolute (ns) and relative to the ground truth's own
+        p<q>, for all packets, every Poisson-adaptive method and every rate-matched uniform.
       - `<flow_name>_path_<path>_<tag>_delay_cdf_one_run.png`: the ground-truth delay CDF
         against every method's actual delay CDF from one concrete Poisson realization (not an EMD summary
         across runs).
@@ -839,6 +853,7 @@ def run_emd_vs_flows_experiment(rate, steadyStart, steadyEnd, confidenceValue, r
         min_sample_size=min_sample_size, delay_cdf_sample_interval_ns=delay_cdf_sample_interval_ns, path=path,
         num_workers=num_workers, flow_count_step=flow_count_step,
         subsampling_methods=subsampling_methods, groundtruth_method=groundtruth_method,
+        delay_percentiles=delay_percentiles,
     )
 
     output_dir = '{}/scratch/{}/{}/{}/{}/'.format(ns3_path, results_folder, rate, load, experiment)
@@ -864,6 +879,17 @@ def run_emd_vs_flows_experiment(rate, steadyStart, steadyEnd, confidenceValue, r
         title='Switch vs. packet mean delay difference ({}): {}, path {}'.format(run_desc, flow_name, path),
         y_limit=mean_diff_y_limit,
     )
+    for q in results['delay_percentiles']:
+        plot_percentile_diff_vs_num_flows(
+            results, q, '{}_p{}_diff_boxplot.png'.format(file_prefix, q), relative=False,
+            title='p{} error (ground truth - family) vs number of TCP flows ({}): {}, path {}\n{}'.format(
+                q, run_desc, flow_name, path, gt_desc),
+        )
+        plot_percentile_diff_vs_num_flows(
+            results, q, '{}_p{}_reldiff_boxplot.png'.format(file_prefix, q), relative=True,
+            title='Relative p{} error (ground truth - family) vs number of TCP flows ({}): {}, path {}\n{}'.format(
+                q, run_desc, flow_name, path, gt_desc),
+        )
     plot_one_run_delay_cdfs(
         results, file_prefix + '_delay_cdf_one_run.png',
         title='Delay CDF comparison, one Poisson realization: {}, path {}\n{}'.format(flow_name, path, gt_desc),
@@ -938,6 +964,17 @@ def aggregate_emd_vs_flows_across_experiments(ns3_path, dir_name, traffic, rate,
         title='Switch vs. packet mean delay difference, aggregated ({}): {}, path {}'.format(run_desc, flow_name, path),
         y_limit=mean_diff_y_limit,
     )
+    for q in aggregated['delay_percentiles']:
+        plot_percentile_diff_vs_num_flows(
+            aggregated, q, '{}_p{}_diff_boxplot.png'.format(file_prefix, q), relative=False,
+            title='p{} error (ground truth - family), aggregated ({}): {}, path {}\n{}'.format(
+                q, run_desc, flow_name, path, gt_desc),
+        )
+        plot_percentile_diff_vs_num_flows(
+            aggregated, q, '{}_p{}_reldiff_boxplot.png'.format(file_prefix, q), relative=True,
+            title='Relative p{} error (ground truth - family), aggregated ({}): {}, path {}\n{}'.format(
+                q, run_desc, flow_name, path, gt_desc),
+        )
     plot_one_run_delay_cdfs(
         aggregated, file_prefix + '_delay_cdf_one_run.png',
         title='Delay CDF comparison, one Poisson realization (experiment {}): {}, path {}\n{}'.format(
@@ -970,6 +1007,13 @@ def aggregate_emd_vs_flows_across_traffics_and_loads(ns3_path, dir_name, traffic
     combination's own maximum flow count instead of a fixed k (k='max' in
     plot_emd_vs_load_by_traffic), to compare "all the flows we have" per traffic/load even
     though the exact max count can differ across combinations.
+
+    Also saves, for every percentile the results carry (delay_percentiles, default p90/p99),
+    the signed tail-shape error `ground-truth p_q - family p_q` vs. load -- absolute (ns) and
+    relative to the ground truth's own p_q -- for each of the same comparison groupings. These
+    are written only at k='max' (all available flows), since that is the headline flow count
+    and emitting them per k as well would multiply the plot count several-fold for little
+    extra insight.
 
     Also saves, per Poisson-adaptive method and per k (plus one all-flows 'max' variant), a
     plot of that method's consistency-check pass rate itself vs. load, one line per traffic
@@ -1017,6 +1061,8 @@ def aggregate_emd_vs_flows_across_traffics_and_loads(ns3_path, dir_name, traffic
     # Raw nanoseconds and the load-comparable normalized twin of every plot below.
     emd_variants = [(False, '', 'EMD'), (True, '_normalized', 'Normalized EMD')]
 
+    percentiles = next(iter(results_by_traffic_load.values())).get('delay_percentiles') or []
+
     for series_specs, suffix, kind_desc in plot_kinds:
         for normalized, norm_suffix, emd_desc in emd_variants:
             for k in all_k:
@@ -1032,6 +1078,17 @@ def aggregate_emd_vs_flows_across_traffics_and_loads(ns3_path, dir_name, traffic
                 title='{} vs load by traffic, all considered flows: {}, path {}, rate {}\n{}\n{}'.format(
                     emd_desc, flow_name, path, rate, kind_desc, gt_desc),
             )
+        # Percentile (tail-shape) error vs load, all available flows only.
+        for q in percentiles:
+            for kind, kind_suffix, desc in (
+                    ('percentile_diff', '_p{}_diff'.format(q), 'p{} error (ns)'.format(q)),
+                    ('percentile_reldiff', '_p{}_reldiff'.format(q), 'Relative p{} error'.format(q))):
+                plot_emd_vs_load_by_traffic(
+                    results_by_traffic_load, 'max', '{}_kmax{}{}.png'.format(file_prefix, suffix, kind_suffix),
+                    pass_threshold=pass_threshold, series_specs=series_specs, metric=(kind, q),
+                    title='{} (ground truth - family) vs load by traffic, all considered flows: {}, path {}, rate {}\n{}\n{}'.format(
+                        desc, flow_name, path, rate, kind_desc, gt_desc),
+                )
 
     for method in subsampling_methods:
         for k in all_k:
@@ -1049,8 +1106,10 @@ def aggregate_emd_vs_flows_across_traffics_and_loads(ns3_path, dir_name, traffic
         )
 
     print("Saved {} cross-traffic/load plot kinds x {} EMD variants x {} k values (plus one all-flows plot each), "
+          "plus {} percentile-error plots per kind ({} percentile(s) x absolute/relative, all-flows only), "
           "plus {} pass-rate-vs-load plots per method x {} method(s) (plus one all-flows plot each), to {}".format(
-        len(plot_kinds), len(emd_variants), len(all_k), len(all_k), len(subsampling_methods), output_dir))
+        len(plot_kinds), len(emd_variants), len(all_k), 2 * len(percentiles), len(percentiles),
+        len(all_k), len(subsampling_methods), output_dir))
     return results_by_traffic_load
 
 

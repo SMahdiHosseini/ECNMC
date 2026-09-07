@@ -3302,6 +3302,60 @@ def _flow_count_values(total_flows, step):
     return values
 
 
+DEFAULT_DELAY_PERCENTILES = (90, 99)
+
+
+def compute_delay_percentiles(values, percentiles):
+    """The requested percentiles of a set of delay values, as a {q: value} dict
+    (NaN per entry when there is nothing to take a percentile of). Non-finite
+    entries are dropped first, matching how the EMD path treats them."""
+    values = np.asarray(values, dtype=float).reshape(-1)
+    values = values[np.isfinite(values)]
+    if values.size == 0:
+        return {q: np.nan for q in percentiles}
+    computed = np.percentile(values, list(percentiles))
+    return {q: float(v) for q, v in zip(percentiles, np.atleast_1d(computed))}
+
+
+def percentile_diffs(values, groundtruth_percentiles):
+    """Signed **absolute** tail-shape error of one comparison family, in ns:
+    `groundtruth_percentile - family_percentile` at each requested percentile,
+    as a {q: diff} dict.
+
+    Sign convention matches the mean-delay difference this pipeline already
+    reports (switch/ground-truth minus packet-side, see
+    compute_emd_vs_num_tcp_flows_run), so a **positive** value means the family
+    *under*-states that percentile -- it is missing tail delay the ground truth
+    has -- and negative means it overstates it.
+
+    Why this is worth having next to the EMD: EMD is a single number summarizing
+    the whole distribution, so a family can score well on it while still getting
+    the tail wrong, and the tail (p90/p99) is what actually matters for delay
+    SLOs. NaN wherever either side has no value at that percentile."""
+    family = compute_delay_percentiles(values, groundtruth_percentiles.keys())
+    return {q: (groundtruth_percentiles[q] - family[q]) for q in groundtruth_percentiles}
+
+
+def relative_percentile_diffs(absolute_diffs, groundtruth_percentiles):
+    """The same tail-shape errors as a fraction of the ground truth's own
+    percentile: `(gt_q - family_q) / gt_q`, so 0.1 reads as "this family
+    understates the qth percentile by 10%". Like the normalized EMD, this is
+    what stays comparable across offered loads, since the absolute ns gap grows
+    with the delay level that load itself drives.
+
+    `absolute_diffs` is a {q: <nested structure>} dict as produced by
+    percentile_diffs (or a whole per-k/per-run structure of them); each
+    percentile is divided by *its own* ground-truth percentile."""
+    return {q: scale_nested_values(diffs, groundtruth_percentiles.get(q))
+             for q, diffs in absolute_diffs.items()}
+
+
+def _empty_percentile_structure(percentiles, keys, num_k):
+    """A {q: {key: [[] per k]}} skeleton -- the shape the per-run percentile-diff
+    records take, with nothing recorded yet."""
+    return {q: {key: [[] for _ in range(num_k)] for key in keys} for q in percentiles}
+
+
 def prepare_emd_vs_flows_data(
     ns3_path,
     results_folder,
@@ -3319,6 +3373,7 @@ def prepare_emd_vs_flows_data(
     max_num_flows=None,
     flow_count_step=1,
     groundtruth_method='simultaneous',
+    delay_percentiles=DEFAULT_DELAY_PERCENTILES,
 ):
     """Load and preprocess everything that stays fixed across repeated runs
     of the flow-count EMD sweep: the flow's received packets on `path`,
@@ -3342,7 +3397,14 @@ def prepare_emd_vs_flows_data(
     is what every EMD is normalized by (see normalize_emd_values): EMD is in ns
     and grows with the delay level, so the raw value is hard to compare across
     loads, whereas EMD / E[ground-truth delay] reads as a fraction of the true
-    mean delay and is directly comparable."""
+    mean delay and is directly comparable.
+
+    Also returns the ground truth's own `delay_percentiles` (default p90/p99)
+    and, for every k, the all-packet family's signed absolute and relative
+    error at each of them (percentile_diffs / relative_percentile_diffs) -- the
+    tail-shape counterpart to the EMD, which a single distance number can hide.
+    Like the all-packet EMD these are the same fixed packet set every run, so
+    they are computed once here."""
     dir_prefix = '{}/scratch/{}/{}/{}/{}/'.format(ns3_path, results_folder, rate, load, experiment)
     file_path = dir_prefix + '{}_EndToEnd_packets.csv'.format(flow_name)
 
@@ -3370,8 +3432,15 @@ def prepare_emd_vs_flows_data(
         sample_interval_ns=delay_cdf_sample_interval_ns,
     )
 
+    # Normalize 90.0 -> 90 so percentiles read as "p90" in filenames/tables and compare
+    # equal as dict keys regardless of whether they arrived as int, float or CLI string.
+    delay_percentiles = tuple(int(q) if float(q).is_integer() else float(q)
+                               for q in (delay_percentiles or ()))
+    groundtruth_percentiles = compute_delay_percentiles(groundtruth_values, delay_percentiles)
+
     num_flows = _flow_count_values(len(flow_order), flow_count_step)
     emd_all_packets, all_packet_sizes = [], []
+    percentile_diff_all = {q: [] for q in delay_percentiles}
     for k in num_flows:
         all_values = full_df[full_df['FlowRank'] <= k]['Delay'].values
         all_packet_sizes.append(len(all_values))
@@ -3379,6 +3448,9 @@ def prepare_emd_vs_flows_data(
             emd_all_packets.append(wasserstein_distance(groundtruth_values, all_values))
         else:
             emd_all_packets.append(np.nan)
+        diffs = percentile_diffs(all_values, groundtruth_percentiles)
+        for q in delay_percentiles:
+            percentile_diff_all[q].append(diffs[q])
 
     return {
         'dir_prefix': dir_prefix,
@@ -3391,9 +3463,33 @@ def prepare_emd_vs_flows_data(
         'groundtruth_std': float(np.std(groundtruth_values)) if len(groundtruth_values) else np.nan,
         'emd_all_packets': emd_all_packets,
         'all_packet_sizes': all_packet_sizes,
+        'delay_percentiles': list(delay_percentiles),
+        'groundtruth_percentiles': groundtruth_percentiles,
+        'percentile_diff_all_packets': percentile_diff_all,
+        'percentile_reldiff_all_packets': relative_percentile_diffs(
+            percentile_diff_all, groundtruth_percentiles),
         'flow_name': flow_name,
         'path': path,
     }
+
+
+def scale_nested_values(values, divisor):
+    """Divide every scalar in an arbitrarily nested list/dict structure by one
+    scalar `divisor`, preserving the structure. Yields NaN wherever the divisor
+    is missing, non-finite or non-positive rather than inventing a ratio, so a
+    degenerate reference (an empty or all-zero ground truth) shows up as "no
+    value" instead of an infinity. Used to turn absolute quantities into
+    relative ones in one pass over a whole per-k (or per-k-per-run) structure --
+    see normalize_emd_values and relative_percentile_diffs."""
+    if isinstance(values, dict):
+        return {key: scale_nested_values(value, divisor) for key, value in values.items()}
+    if isinstance(values, (list, tuple)):
+        return [scale_nested_values(value, divisor) for value in values]
+    if divisor is None or not np.isfinite(divisor) or divisor <= 0:
+        return np.nan
+    if values is None or not np.isfinite(values):
+        return np.nan
+    return float(values) / float(divisor)
 
 
 def normalize_emd_values(values, groundtruth_mean):
@@ -3405,13 +3501,7 @@ def normalize_emd_values(values, groundtruth_mean):
     per-k (or per-k-per-run) structure can be normalized in one call, and
     yields NaN when the ground truth is empty or degenerate (mean <= 0) rather
     than inventing a ratio."""
-    if isinstance(values, dict):
-        return {key: normalize_emd_values(value, groundtruth_mean) for key, value in values.items()}
-    if isinstance(values, (list, tuple)):
-        return [normalize_emd_values(value, groundtruth_mean) for value in values]
-    if groundtruth_mean is None or not np.isfinite(groundtruth_mean) or groundtruth_mean <= 0:
-        return np.nan
-    return float(values) / float(groundtruth_mean)
+    return scale_nested_values(values, groundtruth_mean)
 
 
 POISSON_SUBSAMPLING_METHODS = {
@@ -3514,6 +3604,10 @@ def compute_emd_vs_num_tcp_flows_run(prepared, agg_stats, confidenceValue, min_s
       - 'uniform_emd' / 'uniform_consistency' / 'uniform_mean_diff' /
         'uniform_sample_sizes': the same, keyed by the method name whose
         sample count each uniform family matches.
+      - 'sampled_percentile_diff' / 'uniform_percentile_diff': signed absolute
+        `ground_truth_percentile - family_percentile` (ns) at every percentile
+        in prepared['delay_percentiles'], as {q: {name: per-k list}} -- the
+        tail-shape error the EMD can hide. NaN where that family had no values.
     """
     full_df = prepared['full_df']
     groundtruth_values = prepared['groundtruth_values']
@@ -3521,6 +3615,8 @@ def compute_emd_vs_num_tcp_flows_run(prepared, agg_stats, confidenceValue, min_s
     switch_mean = agg_stats['DelayMean']
     subsampling_methods = normalize_subsampling_methods(subsampling_methods)
     find_samples_by_method = {name: _resolve_subsampling_method(name) for name in subsampling_methods}
+    delay_percentiles = tuple(prepared.get('delay_percentiles') or ())
+    groundtruth_percentiles = prepared.get('groundtruth_percentiles', {})
 
     num_flows_list = []
     consistency_all_list, mean_diff_all_list = [], []
@@ -3532,6 +3628,8 @@ def compute_emd_vs_num_tcp_flows_run(prepared, agg_stats, confidenceValue, min_s
     uniform_consistency = {name: [] for name in subsampling_methods}
     uniform_mean_diff = {name: [] for name in subsampling_methods}
     uniform_sample_sizes = {name: [] for name in subsampling_methods}
+    sampled_percentile_diff = {q: {name: [] for name in subsampling_methods} for q in delay_percentiles}
+    uniform_percentile_diff = {q: {name: [] for name in subsampling_methods} for q in delay_percentiles}
 
     for k in prepared['num_flows']:
         subset = full_df[full_df['FlowRank'] <= k]
@@ -3553,6 +3651,7 @@ def compute_emd_vs_num_tcp_flows_run(prepared, agg_stats, confidenceValue, min_s
                 sampled_sample_sizes[name].append(0)
                 sampled_mean_diff[name].append(np.nan)
                 sampled_size = 0
+                sample_values = np.array([])
             else:
                 sample_values = subset[subset['SentTime'].isin(samples_times)]['Delay'].values
                 emd, consistency_pass, mean_diff, sampled_size = _evaluate_delay_family(
@@ -3561,6 +3660,9 @@ def compute_emd_vs_num_tcp_flows_run(prepared, agg_stats, confidenceValue, min_s
                 sampled_consistency[name].append(consistency_pass)
                 sampled_sample_sizes[name].append(sampled_size)
                 sampled_mean_diff[name].append(mean_diff)
+            sampled_diffs = percentile_diffs(sample_values, groundtruth_percentiles)
+            for q in delay_percentiles:
+                sampled_percentile_diff[q][name].append(sampled_diffs[q])
 
             # Spend exactly this method's sample budget on a blind uniform subsample,
             # so the two differ only in *which* packets they pick, not how many.
@@ -3572,6 +3674,9 @@ def compute_emd_vs_num_tcp_flows_run(prepared, agg_stats, confidenceValue, min_s
             uniform_consistency[name].append(consistency_pass if uniform_size else None)
             uniform_mean_diff[name].append(mean_diff)
             uniform_sample_sizes[name].append(uniform_size)
+            uniform_diffs = percentile_diffs(uniform_values, groundtruth_percentiles)
+            for q in delay_percentiles:
+                uniform_percentile_diff[q][name].append(uniform_diffs[q])
 
     return {
         'num_flows': num_flows_list,
@@ -3586,6 +3691,8 @@ def compute_emd_vs_num_tcp_flows_run(prepared, agg_stats, confidenceValue, min_s
         'uniform_consistency': uniform_consistency,
         'uniform_mean_diff': uniform_mean_diff,
         'uniform_sample_sizes': uniform_sample_sizes,
+        'sampled_percentile_diff': sampled_percentile_diff,
+        'uniform_percentile_diff': uniform_percentile_diff,
     }
 
 
@@ -3767,6 +3874,7 @@ def upgrade_emd_vs_flows_results_schema(results):
     expects. Returns the dict unchanged (not a copy) when it is already current,
     and never mutates its input otherwise."""
     if ('subsampling_methods' in results and 'uniform_series' in results
+            and 'delay_percentiles' in results
             and isinstance(results.get('emd_sampled_packets_by_run'), dict)):
         return results
 
@@ -3790,6 +3898,18 @@ def upgrade_emd_vs_flows_results_schema(results):
                          {m: [[] for _ in range(n_k)] for m in upgraded['subsampling_methods']})
     upgraded.setdefault('sample_sizes_uniform_by_run',
                          {s: [[] for _ in range(n_k)] for s in upgraded['uniform_series']})
+    # Percentile errors postdate these pickles entirely. Recovering them would need the
+    # raw per-run family values, which were never stored, so an old result simply carries
+    # no percentiles and every percentile table/plot is skipped for it rather than faked.
+    if 'delay_percentiles' not in upgraded:
+        upgraded['delay_percentiles'] = []
+        upgraded['groundtruth_percentiles'] = {}
+        upgraded['percentile_diff_all_packets'] = {}
+        upgraded['percentile_reldiff_all_packets'] = {}
+        upgraded['percentile_diff_sampled_by_run'] = {}
+        upgraded['percentile_reldiff_sampled_by_run'] = {}
+        upgraded['percentile_diff_uniform_by_run'] = {}
+        upgraded['percentile_reldiff_uniform_by_run'] = {}
     if 'groundtruth_mean' not in upgraded:
         gt = np.asarray(upgraded.get('groundtruth_values', []), dtype=float)
         upgraded['groundtruth_mean'] = float(np.mean(gt)) if gt.size else np.nan
@@ -3830,7 +3950,12 @@ def aggregate_emd_vs_flows_results(results_list):
     concatenated from each experiment's own already-normalized values rather than
     re-derived from the pooled raw ones: every experiment reconstructs its own ground
     truth and therefore has its own normalizer, so normalizing must happen before
-    pooling, not after.
+    pooling, not after. Relative percentile errors are pooled the same way and for the
+    same reason (each experiment's own p90/p99 is its own reference). Percentiles are
+    intersected rather than unioned across experiments -- a percentile only some
+    experiments measured would otherwise produce boxes backed by an inconsistent subset;
+    aggregating results computed with different `delay_percentiles` therefore keeps only
+    the ones common to all (and legacy results, which carry none, contribute none).
 
     `num_flows` is the *union* of every experiment's flow-count list, since different
     experiment realizations (different random seeds) can end up with slightly different
@@ -3869,6 +3994,10 @@ def aggregate_emd_vs_flows_results(results_list):
 
     if len(results_list) == 1:
         result = dict(results_list[0])
+        result['percentile_diff_all_packets_by_experiment'] = {
+            q: [[v] for v in per_k] for q, per_k in result['percentile_diff_all_packets'].items()}
+        result['percentile_reldiff_all_packets_by_experiment'] = {
+            q: [[v] for v in per_k] for q, per_k in result['percentile_reldiff_all_packets'].items()}
         result['num_experiments'] = 1
         result['experiments'] = experiments
         result['emd_all_packets_by_experiment'] = [[v] for v in result['emd_all_packets']]
@@ -3890,6 +4019,10 @@ def aggregate_emd_vs_flows_results(results_list):
         for key in r['uniform_series']:
             if key not in uniform_series:
                 uniform_series.append(key)
+    # Intersection, not union: a percentile only some experiments measured would give
+    # boxes backed by a different set of experiments than their neighbours.
+    percentiles = [q for q in results_list[0]['delay_percentiles']
+                    if all(q in r['delay_percentiles'] for r in results_list[1:])]
 
     emd_all_by_experiment, emd_all_by_experiment_norm, mean_diff_all = [], [], []
     pass_all_count, pass_all_total = [], []
@@ -3900,6 +4033,12 @@ def aggregate_emd_vs_flows_results(results_list):
     pass_sampled_total = {m: [] for m in methods}
     sample_sizes_sampled = {m: [] for m in methods}
     sample_sizes_uniform = {s: [] for s in uniform_series}
+    pdiff_all = {q: [] for q in percentiles}
+    preldiff_all = {q: [] for q in percentiles}
+    pdiff_sampled = {q: {m: [] for m in methods} for q in percentiles}
+    preldiff_sampled = {q: {m: [] for m in methods} for q in percentiles}
+    pdiff_uniform = {q: {s: [] for s in uniform_series} for q in percentiles}
+    preldiff_uniform = {q: {s: [] for s in uniform_series} for q in percentiles}
     emd_uniform_by_run = {s: [] for s in uniform_series}
     emd_uniform_by_run_norm = {s: [] for s in uniform_series}
     mean_diff_uniform = {s: [] for s in uniform_series}
@@ -3921,6 +4060,12 @@ def aggregate_emd_vs_flows_results(results_list):
         uniform_diff_vals = {s: [] for s in uniform_series}
         uniform_pass_c = {s: 0 for s in uniform_series}
         uniform_pass_t = {s: 0 for s in uniform_series}
+        pdiff_all_vals = {q: [] for q in percentiles}
+        preldiff_all_vals = {q: [] for q in percentiles}
+        pdiff_samp_vals = {q: {m: [] for m in methods} for q in percentiles}
+        preldiff_samp_vals = {q: {m: [] for m in methods} for q in percentiles}
+        pdiff_uni_vals = {q: {s: [] for s in uniform_series} for q in percentiles}
+        preldiff_uni_vals = {q: {s: [] for s in uniform_series} for q in percentiles}
 
         for r in results_list:
             if k not in r['num_flows']:
@@ -3934,6 +4079,10 @@ def aggregate_emd_vs_flows_results(results_list):
             pass_all_c += round(r['pass_rate_all_packets'][i] * num_runs)
             pass_all_t += num_runs
 
+            for q in percentiles:
+                pdiff_all_vals[q].append(r['percentile_diff_all_packets'][q][i])
+                preldiff_all_vals[q].append(r['percentile_reldiff_all_packets'][q][i])
+
             for m in r['subsampling_methods']:
                 sampled_vals = r['emd_sampled_packets_by_run'][m][i]
                 samp_emd_vals[m].extend(sampled_vals)
@@ -3943,6 +4092,9 @@ def aggregate_emd_vs_flows_results(results_list):
                 n_samp = len(sampled_vals)
                 samp_pass_c[m] += round(r['pass_rate_sampled'][m][i] * n_samp)
                 samp_pass_t[m] += n_samp
+                for q in percentiles:
+                    pdiff_samp_vals[q][m].extend(r['percentile_diff_sampled_by_run'][q][m][i])
+                    preldiff_samp_vals[q][m].extend(r['percentile_reldiff_sampled_by_run'][q][m][i])
 
             for s in r['uniform_series']:
                 uniform_emd_vals[s].extend(r['emd_uniform_packets_by_run'][s][i])
@@ -3951,12 +4103,25 @@ def aggregate_emd_vs_flows_results(results_list):
                 uniform_pass_c[s] += round(r['pass_rate_uniform'][s][i] * num_runs)
                 uniform_pass_t[s] += num_runs
                 uniform_size_vals[s].extend(r['sample_sizes_uniform_by_run'][s][i])
+                for q in percentiles:
+                    pdiff_uni_vals[q][s].extend(r['percentile_diff_uniform_by_run'][q][s][i])
+                    preldiff_uni_vals[q][s].extend(r['percentile_reldiff_uniform_by_run'][q][s][i])
 
         emd_all_by_experiment.append(emd_all_vals)
         emd_all_by_experiment_norm.append(emd_all_vals_norm)
         mean_diff_all.append(mean_diff_all_vals)
         pass_all_count.append(pass_all_c)
         pass_all_total.append(pass_all_t)
+
+        for q in percentiles:
+            pdiff_all[q].append(pdiff_all_vals[q])
+            preldiff_all[q].append(preldiff_all_vals[q])
+            for m in methods:
+                pdiff_sampled[q][m].append(pdiff_samp_vals[q][m])
+                preldiff_sampled[q][m].append(preldiff_samp_vals[q][m])
+            for s in uniform_series:
+                pdiff_uniform[q][s].append(pdiff_uni_vals[q][s])
+                preldiff_uniform[q][s].append(preldiff_uni_vals[q][s])
 
         for m in methods:
             emd_sampled_by_run[m].append(samp_emd_vals[m])
@@ -3996,6 +4161,21 @@ def aggregate_emd_vs_flows_results(results_list):
         'groundtruth_values': groundtruth_values,
         'groundtruth_mean': float(np.mean(groundtruth_values)) if groundtruth_values.size else np.nan,
         'groundtruth_std': float(np.std(groundtruth_values)) if groundtruth_values.size else np.nan,
+        'delay_percentiles': list(percentiles),
+        'groundtruth_percentiles': compute_delay_percentiles(groundtruth_values, percentiles),
+        # All-packets percentile error is one value per experiment once aggregated (each
+        # experiment has its own ground truth), so it becomes a distribution too -- the same
+        # treatment emd_all_packets_by_experiment gets.
+        'percentile_diff_all_packets': {q: [float(np.mean(v)) if len(v) else np.nan for v in pdiff_all[q]]
+                                         for q in percentiles},
+        'percentile_reldiff_all_packets': {q: [float(np.mean(v)) if len(v) else np.nan for v in preldiff_all[q]]
+                                            for q in percentiles},
+        'percentile_diff_all_packets_by_experiment': pdiff_all,
+        'percentile_reldiff_all_packets_by_experiment': preldiff_all,
+        'percentile_diff_sampled_by_run': pdiff_sampled,
+        'percentile_reldiff_sampled_by_run': preldiff_sampled,
+        'percentile_diff_uniform_by_run': pdiff_uniform,
+        'percentile_reldiff_uniform_by_run': preldiff_uniform,
         'emd_all_packets': [float(np.mean(v)) for v in emd_all_by_experiment],
         'emd_all_packets_normalized': [float(np.mean(v)) for v in emd_all_by_experiment_norm],
         'emd_all_packets_by_experiment': emd_all_by_experiment,
@@ -4042,6 +4222,7 @@ def compute_emd_vs_num_tcp_flows_multi_run(
     flow_count_step=1,
     subsampling_methods='find_samples_path',
     groundtruth_method='simultaneous',
+    delay_percentiles=DEFAULT_DELAY_PERCENTILES,
 ):
     """Repeat the flow-count EMD sweep `num_runs` times. Each run draws its
     own Poisson-process realization of `num_poisson_observations` switch
@@ -4095,6 +4276,14 @@ def compute_emd_vs_num_tcp_flows_multi_run(
     the same values divided by the mean ground-truth path delay
     (normalize_emd_values), which is what makes EMDs comparable across
     offered loads; the raw ns values are kept alongside them.
+
+    Alongside the EMD, every family also reports its **percentile** error at
+    each percentile in `delay_percentiles` (default p90/p99): signed
+    `ground_truth_percentile - family_percentile`, both absolute (ns,
+    '..._percentile_diff_...') and relative to the ground truth's own
+    percentile ('..._percentile_reldiff_...'). The EMD is one number for the
+    whole distribution, so a family can look good on it and still misplace the
+    tail -- which is the part delay SLOs are written against.
     """
     subsampling_methods = normalize_subsampling_methods(subsampling_methods)
     prepared = prepare_emd_vs_flows_data(
@@ -4102,10 +4291,13 @@ def compute_emd_vs_num_tcp_flows_multi_run(
         linkDelays, linkRates, steadyStart, steadyEnd, path=path,
         delay_cdf_sample_interval_ns=delay_cdf_sample_interval_ns, max_num_flows=max_num_flows,
         flow_count_step=flow_count_step, groundtruth_method=groundtruth_method,
+        delay_percentiles=delay_percentiles,
     )
     dir_prefix = prepared['dir_prefix']
     num_flows = prepared['num_flows']
     groundtruth_mean = prepared['groundtruth_mean']
+    delay_percentiles = tuple(prepared['delay_percentiles'])
+    groundtruth_percentiles = prepared['groundtruth_percentiles']
 
     # One extra, cheap concrete Poisson realization (compute_poisson_agg_stats itself is
     # not the expensive part -- reconstructing the ground truth is, and that's already
@@ -4135,6 +4327,8 @@ def compute_emd_vs_num_tcp_flows_multi_run(
     per_k_pass_uniform = {m: [0] * len(num_flows) for m in subsampling_methods}
     per_k_mean_diff_uniform = {m: [[] for _ in num_flows] for m in subsampling_methods}
     per_k_sample_sizes_uniform = {m: [[] for _ in num_flows] for m in subsampling_methods}
+    per_k_pdiff_sampled = _empty_percentile_structure(delay_percentiles, subsampling_methods, len(num_flows))
+    per_k_pdiff_uniform = _empty_percentile_structure(delay_percentiles, subsampling_methods, len(num_flows))
 
     for run_result in run_results:
         for i in range(len(num_flows)):
@@ -4162,6 +4356,14 @@ def compute_emd_vs_num_tcp_flows_multi_run(
                 if run_result['uniform_sample_sizes'][m][i]:
                     per_k_sample_sizes_uniform[m][i].append(run_result['uniform_sample_sizes'][m][i])
 
+                for q in delay_percentiles:
+                    sampled_pdiff = run_result['sampled_percentile_diff'][q][m][i]
+                    if np.isfinite(sampled_pdiff):
+                        per_k_pdiff_sampled[q][m][i].append(sampled_pdiff)
+                    uniform_pdiff = run_result['uniform_percentile_diff'][q][m][i]
+                    if np.isfinite(uniform_pdiff):
+                        per_k_pdiff_uniform[q][m][i].append(uniform_pdiff)
+
     return {
         'flow_name': flow_name,
         'path': path,
@@ -4178,6 +4380,16 @@ def compute_emd_vs_num_tcp_flows_multi_run(
         'groundtruth_values': prepared['groundtruth_values'],
         'groundtruth_mean': groundtruth_mean,
         'groundtruth_std': prepared['groundtruth_std'],
+        'delay_percentiles': list(delay_percentiles),
+        'groundtruth_percentiles': groundtruth_percentiles,
+        'percentile_diff_all_packets': prepared['percentile_diff_all_packets'],
+        'percentile_reldiff_all_packets': prepared['percentile_reldiff_all_packets'],
+        'percentile_diff_sampled_by_run': per_k_pdiff_sampled,
+        'percentile_reldiff_sampled_by_run': relative_percentile_diffs(
+            per_k_pdiff_sampled, groundtruth_percentiles),
+        'percentile_diff_uniform_by_run': per_k_pdiff_uniform,
+        'percentile_reldiff_uniform_by_run': relative_percentile_diffs(
+            per_k_pdiff_uniform, groundtruth_percentiles),
         'emd_all_packets': prepared['emd_all_packets'],
         'emd_all_packets_normalized': normalize_emd_values(prepared['emd_all_packets'], groundtruth_mean),
         'emd_sampled_packets_by_run': per_k_emd_sampled,
@@ -4216,19 +4428,25 @@ _SUBSAMPLE_FAMILY_STYLES = [
 
 
 def _draw_boxplot_family(axis, num_flows, values_by_k, pass_rate_by_k, position_offset, box_width,
-                          pass_threshold, pass_color, fail_color, style, edge_width=4.5):
+                          pass_threshold, pass_color, fail_color, style, edge_width=4.5,
+                          fill_color=None):
     """Draw one boxplot family (one box per k with data) at x = k + position_offset.
     The fill is *only* the pass/fail color (green/red) -- no hatch -- so it stays a clean,
     unambiguous read of the consistency check; families are told apart purely by the box
     border (edge_color/edge_style from `style`, see _SUBSAMPLE_FAMILY_STYLES) drawn thick
-    enough to read at a glance."""
+    enough to read at a glance.
+
+    Pass `fill_color` to fill every box with that one colour instead, for quantities the
+    consistency check says nothing about -- it tests the *mean*, so colouring e.g. a
+    percentile-error box by it would imply a verdict the check never made."""
     positions, data, colors = [], [], []
     for k, values, pass_rate in zip(num_flows, values_by_k, pass_rate_by_k):
         if len(values) == 0:
             continue
         positions.append(k + position_offset)
         data.append(values)
-        colors.append(pass_color if pass_rate >= pass_threshold else fail_color)
+        colors.append(fill_color if fill_color is not None
+                       else (pass_color if pass_rate >= pass_threshold else fail_color))
     if not data:
         return
     bp = axis.boxplot(data, positions=positions, widths=box_width, patch_artist=True,
@@ -4247,6 +4465,55 @@ def _draw_boxplot_family(axis, num_flows, values_by_k, pass_rate_by_k, position_
     for median in bp['medians']:
         median.set_color('black')
         median.set_linewidth(2.5)
+
+
+def _draw_all_packets_series(axis, num_flows, scalar_by_k, by_experiment, pass_rate_by_k, offset,
+                              box_width, pass_threshold, pass_color, fail_color, num_runs,
+                              num_experiments, quantity_name, fill_color=None):
+    """Render the all-packets comparison family and return its legend handles.
+
+    All packets of the first k flows is the same fixed set of packets on every run, so
+    within one experiment its distance/error to the ground truth is a single number per k
+    -- drawn as dots on a connecting line rather than a degenerate one-value boxplot. Once
+    aggregated over several experiments it varies again (each experiment reconstructs its
+    own ground truth), so it becomes a boxplot family like everything else. Both shapes are
+    handled here so every per-flow-count plot renders all-packets identically."""
+    is_boxplot = bool(by_experiment) and num_experiments > 1
+    if fill_color is not None:
+        pass_color = fail_color = fill_color
+    if is_boxplot:
+        _draw_boxplot_family(axis, num_flows, by_experiment, pass_rate_by_k, offset, box_width,
+                             pass_threshold, pass_color, fail_color, _ALL_PACKETS_STYLE,
+                             fill_color=fill_color)
+        missing = [k for k, values in zip(num_flows, by_experiment) if len(values) == 0]
+        handles = [Patch(facecolor='white', edgecolor=_ALL_PACKETS_STYLE['edge_color'], linewidth=4.5,
+                          label='All packets of considered flows (boxplot across experiments)')]
+    else:
+        values = np.asarray(scalar_by_k, dtype=float)
+        x = np.asarray(num_flows, dtype=float) + offset
+        valid = np.isfinite(values)
+        axis.plot(x[valid], values[valid], color='0.4', linewidth=2, zorder=1)
+        rates = np.asarray(pass_rate_by_k, dtype=float)
+        for mask, color in ((valid & (rates >= pass_threshold), pass_color),
+                             (valid & ~(rates >= pass_threshold), fail_color)):
+            if mask.any():
+                axis.scatter(x[mask], values[mask], marker='o', color=color,
+                             edgecolor='black', s=220, zorder=3)
+        missing = [k for k, v in zip(num_flows, values) if not np.isfinite(v)]
+        handles = [Line2D([0], [0], marker='o', color='0.4', markerfacecolor='white',
+                           markeredgecolor='black', markersize=16, linewidth=2,
+                           label='All packets of considered flows (dots + line)')]
+    if missing:
+        print("No all-packet {} value for {} flow-count(s), skipped: {}".format(
+            quantity_name, len(missing), missing))
+    if fill_color is None:
+        handles = [
+            Patch(facecolor=pass_color, edgecolor='black', alpha=0.85,
+                  label='Consistency check passed (>={:.0f}% of {} runs)'.format(pass_threshold * 100, num_runs)),
+            Patch(facecolor=fail_color, edgecolor='black', alpha=0.85,
+                  label='Consistency check failed (<{:.0f}% of {} runs)'.format(pass_threshold * 100, num_runs)),
+        ] + handles
+    return handles
 
 
 def _subsample_family_layout(subsampling_methods, uniform_series):
@@ -4325,17 +4592,65 @@ def _series_key_label(series_key):
     return str(series_key)
 
 
-def _load_plot_series_values(r, i, series_key, normalized=False):
+def _metric_result_keys(metric, normalized):
+    """The (all-packets scalar key, all-packets per-experiment key, sampled key, uniform key,
+    axis label) quadruple+label naming where one plotted quantity lives in a results dict.
+
+    `metric` is 'emd' (the default), or ('percentile_diff', q) / ('percentile_reldiff', q)
+    for the signed p-q error. `normalized` only applies to the EMD, whose normalized twin is
+    a separate stored series; the percentile error's "relative" form is its own metric."""
+    if metric in (None, 'emd'):
+        suffix = '_normalized' if normalized else ''
+        return ('emd_all_packets' + suffix,
+                'emd_all_packets_by_experiment' + suffix,
+                'emd_sampled_packets_by_run' + suffix,
+                'emd_uniform_packets_by_run' + suffix,
+                "EMD / mean ground-truth delay" if normalized
+                else "EMD to reconstructed network delay CDF (ns)")
+    if isinstance(metric, tuple) and metric[0] in ('percentile_diff', 'percentile_reldiff'):
+        name, q = metric
+        label = ("Ground-truth p{0} - family p{0}, relative to ground-truth p{0}" if name.endswith('reldiff')
+                  else "Ground-truth p{0} - family p{0} (ns)").format(q)
+        return ('{}_all_packets'.format(name),
+                '{}_all_packets_by_experiment'.format(name),
+                '{}_sampled_by_run'.format(name),
+                '{}_uniform_by_run'.format(name),
+                label)
+    raise ValueError("Unknown metric: {!r}".format(metric))
+
+
+def _metric_percentile(metric):
+    """The percentile a metric is about, or None for a whole-distribution metric."""
+    if isinstance(metric, tuple) and metric[0] in ('percentile_diff', 'percentile_reldiff'):
+        return metric[1]
+    return None
+
+
+def _load_plot_series_values(r, i, series_key, normalized=False, metric='emd'):
     """Return (values, pass_rate) for one series spec's `key` at flow-count index `i` of an
     aggregated/single results dict `r` (see plot_emd_vs_load_by_traffic). `series_key` is
     'all_packets', ('sampled', method), or ('uniform', key) -- a bare 'sampled' still
-    works and resolves to the results' first subsampling method. With `normalized` set, the
-    EMD values are the ones divided by the mean ground-truth delay
-    (normalize_emd_values) instead of the raw ns values; pass rates are unaffected."""
-    suffix = '_normalized' if normalized else ''
+    works and resolves to the results' first subsampling method.
+
+    `metric` selects *which* quantity ('emd', or ('percentile_diff'|'percentile_reldiff', q)
+    -- see _metric_result_keys); `normalized` additionally switches the EMD to its
+    normalized twin. Pass rates are unaffected by either, since the consistency check
+    itself is always the same mean-delay test."""
+    all_key, all_by_exp_key, sampled_key, uniform_key, _ = _metric_result_keys(metric, normalized)
+    q = _metric_percentile(metric)
+    if q is not None and q not in (r.get('delay_percentiles') or []):
+        return [], 0.0
+
+    def _at(container):
+        # Percentile series are nested one level deeper: {q: {name: per-k}}.
+        return container[q] if q is not None else container
+
     if series_key == 'all_packets':
-        by_experiment = r.get('emd_all_packets_by_experiment' + suffix)
-        values = by_experiment[i] if by_experiment else [r['emd_all_packets' + suffix][i]]
+        by_experiment = r.get(all_by_exp_key)
+        if by_experiment:
+            values = _at(by_experiment)[i]
+        else:
+            values = [_at(r[all_key])[i]]
         values = [v for v in values if v == v]  # drop NaN
         return values, r['pass_rate_all_packets'][i]
     if series_key == 'sampled':
@@ -4344,12 +4659,12 @@ def _load_plot_series_values(r, i, series_key, normalized=False):
         method = series_key[1]
         if method not in r['emd_sampled_packets_by_run']:
             return [], 0.0
-        return r['emd_sampled_packets_by_run' + suffix][method][i], r['pass_rate_sampled'][method][i]
+        return _at(r[sampled_key])[method][i], r['pass_rate_sampled'][method][i]
     if isinstance(series_key, tuple) and series_key[0] == 'uniform':
         key = series_key[1]
         if key not in r['emd_uniform_packets_by_run']:
             return [], 0.0
-        return r['emd_uniform_packets_by_run' + suffix][key][i], r['pass_rate_uniform'][key][i]
+        return _at(r[uniform_key])[key][i], r['pass_rate_uniform'][key][i]
     raise ValueError("Unknown series_key: {!r}".format(series_key))
 
 
@@ -4368,7 +4683,7 @@ def _load_plot_layout(n_traffics, loads, n_series=2):
 
 
 def plot_emd_vs_load_by_traffic(results_by_traffic_load, k, output_path, pass_threshold=0.9, title=None,
-                                 series_specs=None, normalized=False):
+                                 series_specs=None, normalized=False, metric='emd'):
     """Cross-traffic, cross-load comparison at one fixed flow count `k`: x-axis is load,
     y-axis is EMD to the reconstructed ground-truth delay CDF. Both comparison series are
     drawn together -- by default all packets of the k considered flows, and the
@@ -4387,6 +4702,12 @@ def plot_emd_vs_load_by_traffic(results_by_traffic_load, k, output_path, pass_th
     With `normalized` set, the y-axis is the EMD divided by the mean ground-truth path
     delay (normalize_emd_values) instead of raw nanoseconds -- the comparable-across-loads
     view, since raw EMD grows with the delay level that load itself drives.
+
+    `metric` switches the plotted quantity away from the EMD entirely: pass
+    ('percentile_diff', q) for the signed absolute p-q error in ns, or
+    ('percentile_reldiff', q) for it as a fraction of the ground truth's own p-q (see
+    _metric_result_keys). A combination whose results carry no such percentile is left
+    without boxes rather than failing.
 
     `k` is normally an int looked up exactly in each combination's num_flows. Pass the
     string 'max' instead to use each (traffic, load) combination's own maximum flow count
@@ -4441,7 +4762,8 @@ def plot_emd_vs_load_by_traffic(results_by_traffic_load, k, output_path, pass_th
                     pass_rate_by_load.append(0.0)
                     continue
                 i = -1 if use_max_k else r['num_flows'].index(k)
-                values, pass_rate = _load_plot_series_values(r, i, series_spec['key'], normalized=normalized)
+                values, pass_rate = _load_plot_series_values(r, i, series_spec['key'],
+                                                             normalized=normalized, metric=metric)
                 values_by_load.append(values)
                 pass_rate_by_load.append(pass_rate)
 
@@ -4458,13 +4780,22 @@ def plot_emd_vs_load_by_traffic(results_by_traffic_load, k, output_path, pass_th
         print("plot_emd_vs_load_by_traffic: no data at k={}, writing empty plot".format(k))
 
     series_names = ' vs. '.join(s['label'] for s in series_specs)
-    emd_name = 'Normalized EMD' if normalized else 'EMD'
-    default_title = '{} vs load by traffic ({}), all considered flows (each combination\'s own max)'.format(emd_name, series_names) if use_max_k \
-        else '{} vs load by traffic ({}), k={}'.format(emd_name, series_names, k)
+    _, _, _, _, y_label = _metric_result_keys(metric, normalized)
+    quantity_percentile = _metric_percentile(metric)
+    if quantity_percentile is not None:
+        quantity_name = 'p{} error{}'.format(quantity_percentile,
+                                              ' (relative)' if metric[0].endswith('reldiff') else ' (ns)')
+    else:
+        quantity_name = 'Normalized EMD' if normalized else 'EMD'
+    default_title = '{} vs load by traffic ({}), all considered flows (each combination\'s own max)'.format(quantity_name, series_names) if use_max_k \
+        else '{} vs load by traffic ({}), k={}'.format(quantity_name, series_names, k)
     axis.set_title(title or default_title, fontsize=34)
     axis.set_xlabel('Load')
-    axis.set_ylabel("EMD / mean ground-truth delay" if normalized
-                     else "EMD to reconstructed network delay CDF (ns)")
+    axis.set_ylabel(y_label)
+    if quantity_percentile is not None:
+        # Zero is "the family's tail matches the ground truth's" -- the reference the whole
+        # plot is read against, unlike EMD where zero is just the axis floor.
+        axis.axhline(0, color='black', linewidth=2, linestyle=':', zorder=1)
     axis.set_xticks(loads)
     if loads:
         pad = max(np.min(np.diff(loads)) * 0.6, span / 2 + box_width) if len(loads) > 1 else max(span / 2, 0.05)
@@ -4611,52 +4942,10 @@ def plot_emd_vs_num_flows_boxplot(results, output_path, title="EMD vs number of 
 
     fig, axis = plt.subplots(figsize=(30, 15))
 
-    if all_packets_is_boxplot:
-        # Aggregated over multiple experiments: all-packets EMD now varies (one value per
-        # experiment, since each experiment reconstructs its own ground truth), so it gets
-        # its own boxplot family instead of the single-value dots + line rendering below.
-        _draw_boxplot_family(axis, num_flows, emd_all_by_experiment, results['pass_rate_all_packets'],
-                             offset_all, box_width, pass_threshold, pass_color, fail_color, _ALL_PACKETS_STYLE)
-        missing_all_k = [k for k, values in zip(num_flows, emd_all_by_experiment) if len(values) == 0]
-        if missing_all_k:
-            print("No all-packet EMD value for {} flow-count(s), skipped: {}".format(len(missing_all_k), missing_all_k))
-        legend_handles = [
-            Patch(facecolor=pass_color, edgecolor='black', alpha=0.85,
-                  label='Consistency check passed (>={:.0f}% of {} runs)'.format(pass_threshold * 100, results['num_runs'])),
-            Patch(facecolor=fail_color, edgecolor='black', alpha=0.85,
-                  label='Consistency check failed (<{:.0f}% of {} runs)'.format(pass_threshold * 100, results['num_runs'])),
-            Patch(facecolor='white', edgecolor=_ALL_PACKETS_STYLE['edge_color'], linewidth=4.5,
-                  label='All packets of considered flows (boxplot across experiments)'),
-        ]
-    else:
-        # Single experiment: all packets of the first k flows is the same fixed set every
-        # run, so a single EMD value per k -- plotted as dots on a connecting line rather
-        # than a (degenerate) boxplot.
-        x_all = np.asarray(num_flows, dtype=float) + offset_all
-        valid_all = np.isfinite(emd_all)
-        axis.plot(x_all[valid_all], emd_all[valid_all], color='0.4', linewidth=2, zorder=1)
-        pass_all_mask = valid_all & (pass_rate_all >= pass_threshold)
-        fail_all_mask = valid_all & ~(pass_rate_all >= pass_threshold)
-        if pass_all_mask.any():
-            axis.scatter(x_all[pass_all_mask], emd_all[pass_all_mask], marker='o', color=pass_color,
-                         edgecolor='black', s=220, zorder=3)
-        if fail_all_mask.any():
-            axis.scatter(x_all[fail_all_mask], emd_all[fail_all_mask], marker='o', color=fail_color,
-                         edgecolor='black', s=220, zorder=3)
-        missing_all_k = [k for k, v in zip(num_flows, emd_all) if not np.isfinite(v)]
-        if missing_all_k:
-            print("No all-packet EMD value for {} flow-count(s), skipped: {}".format(len(missing_all_k), missing_all_k))
-
-        legend_handles = [
-            Line2D([0], [0], marker='o', color='0.4', markerfacecolor=pass_color, markeredgecolor='black',
-                   markersize=16, linewidth=2,
-                   label='Consistency check passed (>={:.0f}% of {} runs)'.format(pass_threshold * 100, results['num_runs'])),
-            Line2D([0], [0], marker='o', color='0.4', markerfacecolor=fail_color, markeredgecolor='black',
-                   markersize=16, linewidth=2,
-                   label='Consistency check failed (<{:.0f}% of {} runs)'.format(pass_threshold * 100, results['num_runs'])),
-            Line2D([0], [0], marker='o', color='0.4', markerfacecolor='white', markeredgecolor='black',
-                   markersize=16, linewidth=2, label='All packets of considered flows (dots + line)'),
-        ]
+    legend_handles = _draw_all_packets_series(
+        axis, num_flows, emd_all, emd_all_by_experiment, pass_rate_all, offset_all, box_width,
+        pass_threshold, pass_color, fail_color, results['num_runs'],
+        results.get('num_experiments', 1), 'EMD')
 
     # Poisson-adaptive subsamples: each differs every run -- one boxplot family per
     # method, so several algorithms run together are compared on the same axis.
@@ -4821,6 +5110,106 @@ def plot_mean_diff_vs_num_flows(results, output_path, title="Switch vs. packet m
     return output_path
 
 
+_PERCENTILE_FAMILY_FILLS = ['0.85', 'lightsteelblue', 'navajowhite', 'thistle',
+                             'lightseagreen', 'lightcoral', 'khaki']
+
+
+def plot_percentile_diff_vs_num_flows(results, percentile, output_path, relative=False,
+                                       title=None, pass_threshold=0.9, y_limit=None):
+    """Plot the signed percentile (tail-shape) error against the number of considered TCP
+    flows: at each flow count, `ground_truth_p<percentile> - family_p<percentile>` for the
+    all-packet CDF, every Poisson-adaptive subsampling method, and every rate-matched
+    uniform baseline. With `relative` set, each error is divided by the ground truth's own
+    percentile, which is the form comparable across offered loads.
+
+    A **positive** value means the family understates that percentile -- it is missing tail
+    delay the ground truth has; negative means it overstates it. The dotted line at zero is
+    exact agreement.
+
+    Unlike the EMD and mean-difference plots, boxes here are *not* coloured green/red: the
+    consistency check tests the mean, so it makes no claim about a percentile, and colouring
+    by it would imply one. Families are identified by border style (as elsewhere) plus a
+    per-family fill shade. All packets of the first k flows is a fixed packet set, so within
+    one experiment its error is one value per k (dots + line) and only becomes a boxplot once
+    aggregated across experiments -- see _draw_all_packets_series.
+
+    Returns the output path, or None when `results` carries no such percentile (e.g. a
+    results pickle predating percentile errors, see upgrade_emd_vs_flows_results_schema)."""
+    results = upgrade_emd_vs_flows_results_schema(results)
+    if percentile not in (results.get('delay_percentiles') or []):
+        print("plot_percentile_diff_vs_num_flows: results carry no p{} error, skipped".format(percentile))
+        return None
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    kind = 'percentile_reldiff' if relative else 'percentile_diff'
+    all_key, all_by_exp_key, sampled_key, uniform_key, y_label = _metric_result_keys(
+        (kind, percentile), False)
+
+    num_flows = results['num_flows']
+    methods = results['subsampling_methods']
+    uniform_series = results.get('uniform_series', [])
+    offset_all, offsets_poisson, offsets_uniform, box_width = _subsample_family_layout(
+        methods, uniform_series)
+    gt_percentile = (results.get('groundtruth_percentiles') or {}).get(percentile, np.nan)
+
+    fig, axis = plt.subplots(figsize=(30, 15))
+    axis.axhline(0, color='black', linewidth=2, linestyle=':', zorder=1)
+
+    fills = iter(_PERCENTILE_FAMILY_FILLS)
+    legend_handles = _draw_all_packets_series(
+        axis, num_flows, results[all_key][percentile],
+        (results.get(all_by_exp_key) or {}).get(percentile),
+        results['pass_rate_all_packets'], offset_all, box_width, pass_threshold,
+        None, None, results['num_runs'], results.get('num_experiments', 1),
+        'p{} error'.format(percentile), fill_color=next(fills))
+
+    for i, method in enumerate(methods):
+        style = _SUBSAMPLE_FAMILY_STYLES[i % len(_SUBSAMPLE_FAMILY_STYLES)]
+        fill = next(fills, _PERCENTILE_FAMILY_FILLS[-1])
+        values_by_k = results[sampled_key][percentile][method]
+        _draw_boxplot_family(axis, num_flows, values_by_k, results['pass_rate_sampled'][method],
+                             offsets_poisson[method], box_width, pass_threshold, fill, fill, style,
+                             fill_color=fill)
+        legend_handles.append(Patch(facecolor=fill, edgecolor=style['edge_color'], linewidth=4.5,
+                                     linestyle=style['edge_style'],
+                                     label='Poisson-adaptive subsample, {}'.format(method)))
+
+    for i, key in enumerate(uniform_series):
+        style = _SUBSAMPLE_FAMILY_STYLES[(len(methods) + i) % len(_SUBSAMPLE_FAMILY_STYLES)]
+        fill = next(fills, _PERCENTILE_FAMILY_FILLS[-1])
+        values_by_k = results[uniform_key][percentile][key]
+        _draw_boxplot_family(axis, num_flows, values_by_k, results['pass_rate_uniform'][key],
+                             offsets_uniform[key], box_width, pass_threshold, fill, fill, style,
+                             fill_color=fill)
+        legend_handles.append(Patch(facecolor=fill, edgecolor=style['edge_color'], linewidth=4.5,
+                                     linestyle=style['edge_style'],
+                                     label=_uniform_series_label(key)))
+
+    legend_handles.append(Line2D([0], [0], color='black', linewidth=2, linestyle=':',
+                                  label='zero = family percentile matches ground truth'))
+
+    gt_note = '' if not np.isfinite(gt_percentile) else ', ground-truth p{} = {:.1f} ns'.format(
+        percentile, gt_percentile)
+    axis.set_title(title or '{} vs number of TCP flows{}'.format(
+        y_label, gt_note), fontsize=34)
+    axis.set_xlabel('Number of TCP flows considered')
+    axis.set_ylabel(y_label)
+    axis.set_xticks(num_flows)
+    axis.set_xlim(min(num_flows) - 0.6, max(num_flows) + 0.6)
+    axis.grid(True, alpha=0.35, axis='y')
+    if relative:
+        axis.yaxis.set_major_formatter(PercentFormatter(xmax=1.0))
+    if y_limit is not None:
+        axis.set_ylim(-y_limit, y_limit)
+    axis.legend(handles=legend_handles, fontsize=18, loc='best')
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=150)
+    plt.close(fig)
+    return output_path
+
+
 def save_emd_vs_flows_results_text(results, output_path):
     """Write a plain-text, human-readable summary of the per-flow-count
     results from compute_emd_vs_num_tcp_flows_multi_run: run parameters, a
@@ -4839,7 +5228,13 @@ def save_emd_vs_flows_results_text(results, output_path):
 
     Every EMD is reported twice: raw (ns) and normalized by the mean
     ground-truth path delay (see normalize_emd_values), the latter being the
-    figure comparable across offered loads."""
+    figure comparable across offered loads.
+
+    A final section reports the signed percentile (tail-shape) error of every family at
+    each of results['delay_percentiles'], absolute (ns) and relative to the ground truth's
+    own percentile -- one row per flow count, one column per family, so the families are
+    directly comparable at a glance. Omitted entirely for results that carry no
+    percentiles (see upgrade_emd_vs_flows_results_schema)."""
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -4888,6 +5283,19 @@ def save_emd_vs_flows_results_text(results, output_path):
             p5, p25, p50, p75, p95))
     lines.append("EMD normalizer (mean ground-truth path delay): {:.2f} ns".format(gt_mean)
                   if np.isfinite(gt_mean) else "EMD normalizer (mean ground-truth path delay): n/a")
+    gt_percentiles = results.get('groundtruth_percentiles') or {}
+    percentiles = list(results.get('delay_percentiles') or [])
+    if percentiles:
+        lines.append("Ground-truth percentiles: {}".format(", ".join(
+            "p{}={:.2f} ns".format(q, gt_percentiles.get(q, np.nan)) for q in percentiles)))
+        if num_experiments > 1:
+            # Same caveat the normalizer above carries: these are of the pooled ground-truth
+            # samples, whereas each experiment's relative errors were divided by its *own*
+            # percentile (they must be, since each reconstructs its own ground truth). So
+            # dividing an absolute figure below by the number on this line will not exactly
+            # reproduce the relative one.
+            lines.append("  (of the pooled samples; each experiment's relative errors below use its own"
+                          " percentiles as the reference)")
     lines.append("")
     lines.append("Notes:")
     if all_packets_is_aggregated:
@@ -4915,6 +5323,14 @@ def save_emd_vs_flows_results_text(results, output_path):
     lines.append("    count (a run that found none neither passed nor failed).")
     lines.append("  * mean_diff = switch samples mean delay - packet-side mean delay (ns); this is the signed")
     lines.append("    quantity the consistency check thresholds (abs(mean_diff) <= epsilon bound).")
+    if percentiles:
+        lines.append("  * Percentile-error section at the end: signed ground-truth p_q minus family p_q, so")
+        lines.append("    POSITIVE means the family understates that percentile (missing tail delay the ground")
+        lines.append("    truth has) and negative means it overstates it. Reported absolute (ns) and relative")
+        lines.append("    to the ground truth's own p_q. The EMD is one number for the whole distribution, so")
+        lines.append("    a family can score well on it while still misplacing the tail -- which is the part")
+        lines.append("    delay SLOs are written against. Not covered by the consistency check, which is a")
+        lines.append("    test on the mean only.")
     lines.append("")
 
     lines.append("All packets of the considered flows:")
@@ -4977,6 +5393,46 @@ def save_emd_vs_flows_results_text(results, output_path):
                 _stat(diff_uniform_by_run[key][i]),
                 _stat(sizes_uniform.get(key, [[]] * len(results['num_flows']))[i], fmt="{:.0f}"),
             ))
+
+    if percentiles:
+        # Short column tags keep one row per flow count readable with every family side by
+        # side, which is the comparison this section exists for; the legend maps them back.
+        families = [('all', 'all_packets', 'all packets of considered flows')]
+        for j, method in enumerate(methods, start=1):
+            families.append(('P{}'.format(j), ('sampled', method),
+                              'Poisson-adaptive subsample, {}'.format(method)))
+        for j, key in enumerate(uniform_series, start=1):
+            families.append(('U{}'.format(j), ('uniform', key), _uniform_series_label(key)))
+
+        lines.append("")
+        lines.append("=" * 70)
+        lines.append("Percentile (tail-shape) error: ground-truth p_q  -  family p_q")
+        lines.append("=" * 70)
+        for tag, _key, label in families:
+            lines.append("  {:>4} = {}".format(tag, label))
+
+        for q in percentiles:
+            for kind, unit, fmt in (('percentile_diff', 'ns', "{:.1f}"),
+                                     ('percentile_reldiff', 'relative to ground-truth p{}'.format(q), "{:.1%}")):
+                lines.append("")
+                lines.append("p{} error [{}]  (positive = family understates the percentile):".format(q, unit))
+                header = "{:>3}".format("k") + "".join(" | {:>18}".format(tag) for tag, _, _ in families)
+                lines.append(header)
+                lines.append("-" * len(header))
+                for i, k in enumerate(results['num_flows']):
+                    row = "{:>3}".format(k)
+                    for _tag, key, _label in families:
+                        values, _ = _load_plot_series_values(results, i, key, metric=(kind, q))
+                        values = np.asarray(values, dtype=float).reshape(-1)
+                        values = values[np.isfinite(values)]
+                        if values.size == 0:
+                            cell = "n/a"
+                        elif values.size == 1:
+                            cell = fmt.format(values[0])
+                        else:
+                            cell = (fmt + " +/- " + fmt).format(np.mean(values), np.std(values))
+                        row += " | {:>18}".format(cell)
+                    lines.append(row)
 
     with open(output_path, 'w') as f:
         f.write("\n".join(lines) + "\n")
