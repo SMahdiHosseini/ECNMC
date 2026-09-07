@@ -3284,15 +3284,25 @@ def compute_poisson_agg_stats(dir_prefix, queue_names, linkDelays, linkRates, st
     return agg_stats
 
 
-def _flow_count_values(total_flows, step):
+def _flow_count_values(total_flows, step, all_flows_only=False):
     """The list of flow counts (k) at which the EMD-vs-flows sweep is
     evaluated: 1, 1+step, 1+2*step, ..., always ending at `total_flows` (even
     if it doesn't fall on the step) so the full-flow-count point is never
     skipped. step<=1 evaluates every k, matching the original behavior.
     Coarsening this is the main lever on the per-run cost, since
-    find_samples_path (the dominant cost) is called once per k per run."""
+    the subsampling search (the dominant cost) runs once per k per run per
+    method.
+
+    `all_flows_only` collapses the sweep to the single point k=`total_flows`:
+    all flows on the path, i.e. every received e2e packet. That is the headline
+    configuration (the same one the k='max' plots single out), and evaluating
+    only it is far and away the cheapest way to run the pipeline -- the per-run
+    cost drops by roughly the number of k values the sweep would otherwise
+    have had."""
     if total_flows <= 0:
         return []
+    if all_flows_only:
+        return [total_flows]
     step = max(1, int(step))
     if step <= 1:
         return list(range(1, total_flows + 1))
@@ -3446,6 +3456,7 @@ def prepare_emd_vs_flows_data(
     delay_cdf_sample_interval_ns=10,
     max_num_flows=None,
     flow_count_step=1,
+    all_flows_only=False,
     groundtruth_method='simultaneous',
     delay_percentiles=DEFAULT_DELAY_PERCENTILES,
 ):
@@ -3460,6 +3471,10 @@ def prepare_emd_vs_flows_data(
     compute_emd_vs_num_tcp_flows_multi_run -- unlike the subsampled CDF,
     "all packets of the first k flows" is the same fixed set of packets on
     every run, so its EMD is a single number per k, not a distribution.
+
+    Set `all_flows_only` to skip the flow-count sweep entirely and evaluate
+    only k = all flows on the path (every received e2e packet) -- see
+    _flow_count_values.
 
     `groundtruth_method` (one of GROUNDTRUTH_METHODS) selects how that
     ground-truth path-delay CDF is built: 'simultaneous' observes every queue
@@ -3512,7 +3527,7 @@ def prepare_emd_vs_flows_data(
                                for q in (delay_percentiles or ()))
     groundtruth_percentiles = compute_delay_percentiles(groundtruth_values, delay_percentiles)
 
-    num_flows = _flow_count_values(len(flow_order), flow_count_step)
+    num_flows = _flow_count_values(len(flow_order), flow_count_step, all_flows_only=all_flows_only)
     emd_all_packets, all_packet_sizes = [], []
     percentile_diff_all = {q: [] for q in delay_percentiles}
     for k in num_flows:
@@ -3631,14 +3646,22 @@ def subsampling_methods_tag(subsampling_methods):
     return '+'.join(normalize_subsampling_methods(subsampling_methods))
 
 
-def emd_vs_flows_file_tag(subsampling_methods, groundtruth_method='simultaneous'):
+def emd_vs_flows_file_tag(subsampling_methods, groundtruth_method='simultaneous',
+                           all_flows_only=False):
     """The full tag that identifies one EMD-vs-flows configuration in every
-    output filename: which subsampling algorithm(s) were compared, and which
-    ground truth they were compared against. Kept deliberately backwards
+    output filename: which subsampling algorithm(s) were compared, which
+    ground truth they were compared against, and whether the run swept flow
+    counts or evaluated only all-flows. Kept deliberately backwards
     compatible -- a single subsampling method against the original
-    'simultaneous' ground truth reproduces the pre-existing '<method>' tag
-    exactly, so already-computed results stay discoverable."""
-    return subsampling_methods_tag(subsampling_methods) + groundtruth_method_tag(groundtruth_method)
+    'simultaneous' ground truth, swept, reproduces the pre-existing '<method>'
+    tag exactly, so already-computed results stay discoverable.
+
+    The all-flows-only tag matters because such a run's results cover a single
+    k while a swept run covers many; without it the two would overwrite each
+    other's pickles for the same traffic/rate/load/experiment."""
+    return (subsampling_methods_tag(subsampling_methods)
+            + groundtruth_method_tag(groundtruth_method)
+            + ('_allflows' if all_flows_only else ''))
 
 
 def compute_emd_vs_num_tcp_flows_run(prepared, agg_stats, confidenceValue, min_sample_size=30,
@@ -4024,6 +4047,7 @@ def upgrade_emd_vs_flows_results_schema(results):
         if key in upgraded and not isinstance(upgraded[key], dict):
             upgraded[key] = {method: upgraded[key]}
     upgraded.setdefault('groundtruth_method', 'simultaneous')
+    upgraded.setdefault('all_flows_only', False)
     # Uniform families used to be a fixed set of integer "1-in-stride" rates; they are
     # now one rate-matched family per Poisson-adaptive method, keyed by that method's
     # name. Either way they are enumerated by 'uniform_series', so both shapes plot.
@@ -4346,6 +4370,7 @@ def aggregate_emd_vs_flows_results(results_list):
         'subsampling_methods': methods,
         'subsampling_method': methods[0],
         'groundtruth_method': results_list[0].get('groundtruth_method', 'simultaneous'),
+        'all_flows_only': all(r.get('all_flows_only', False) for r in results_list),
         'num_runs': sum(r['num_runs'] for r in results_list),
         'num_experiments': len(results_list),
         'experiments': experiments,
@@ -4424,6 +4449,7 @@ def compute_emd_vs_num_tcp_flows_multi_run(
     max_num_flows=None,
     num_workers=1,
     flow_count_step=1,
+    all_flows_only=False,
     subsampling_methods='find_samples_path',
     groundtruth_method='simultaneous',
     delay_percentiles=DEFAULT_DELAY_PERCENTILES,
@@ -4453,6 +4479,10 @@ def compute_emd_vs_num_tcp_flows_multi_run(
     across all runs -- only their delay-consistency check varies per run.
     Adding a subsampling method therefore costs only that method's own
     subsampling searches, not another ground-truth reconstruction.
+
+    Set `all_flows_only` to evaluate only k = all flows on the path (every
+    received e2e packet) instead of sweeping flow counts -- the headline
+    configuration, and much the cheapest to run.
 
     `groundtruth_method` (one of GROUNDTRUTH_METHODS) selects what every EMD
     is measured against: 'simultaneous' (all queues observed at one instant)
@@ -4498,8 +4528,8 @@ def compute_emd_vs_num_tcp_flows_multi_run(
         ns3_path, results_folder, rate, load, experiment, flow_name, queue_names,
         linkDelays, linkRates, steadyStart, steadyEnd, path=path,
         delay_cdf_sample_interval_ns=delay_cdf_sample_interval_ns, max_num_flows=max_num_flows,
-        flow_count_step=flow_count_step, groundtruth_method=groundtruth_method,
-        delay_percentiles=delay_percentiles,
+        flow_count_step=flow_count_step, all_flows_only=all_flows_only,
+        groundtruth_method=groundtruth_method, delay_percentiles=delay_percentiles,
     )
     dir_prefix = prepared['dir_prefix']
     num_flows = prepared['num_flows']
@@ -4600,6 +4630,7 @@ def compute_emd_vs_num_tcp_flows_multi_run(
         # text-summary headers); the full list lives in 'subsampling_methods'.
         'subsampling_method': subsampling_methods[0],
         'groundtruth_method': groundtruth_method,
+        'all_flows_only': all_flows_only,
         'num_runs': num_runs,
         'num_poisson_observations': num_poisson_observations,
         'uniform_series': list(subsampling_methods),
@@ -4654,18 +4685,43 @@ def compute_emd_vs_num_tcp_flows_multi_run(
 # One entry per subsampling family drawn on a flow-count plot -- every
 # Poisson-adaptive method first, then every uniform stride -- so a run
 # comparing several algorithms at once still tells them apart by border alone.
-_SUBSAMPLE_FAMILY_STYLES = [
-    dict(edge_color='navy', edge_style='dashed'),
-    dict(edge_color='darkorange', edge_style='solid'),
-    dict(edge_color='purple', edge_style='dashdot'),
-    dict(edge_color='teal', edge_style='dotted'),
-    dict(edge_color='crimson', edge_style=(0, (5, 1))),
-    dict(edge_color='olive', edge_style=(0, (3, 1, 1, 1, 1, 1))),
-    dict(edge_color='saddlebrown', edge_style='solid'),
-    dict(edge_color='magenta', edge_style='dashed'),
-    dict(edge_color='dimgray', edge_style='dashdot'),
-    dict(edge_color='darkgreen', edge_style='dotted'),
-]
+# Border *style* encodes what KIND of family a box is, so the plot answers "is this an
+# actual Poisson-instant estimator or a blind fixed-rate one?" before you read any legend:
+# every Poisson-based family (the Poisson-adaptive subsamples and the ideal Poisson probes)
+# is solid, and the uniform fixed-rate baselines are dashed. Individual families within a
+# kind are then told apart by border *colour*.
+_FAMILY_EDGE_STYLE_BY_KIND = {
+    'all_packets': 'solid',
+    'sampled': 'solid',
+    'oracle': 'solid',
+    'uniform': 'dashed',
+}
+
+# One distinct colour per comparison family, assigned in draw order across all kinds so no
+# two families on a plot ever share one.
+_FAMILY_COLORS = ['navy', 'darkorange', 'purple', 'teal', 'crimson',
+                   'olive', 'saddlebrown', 'magenta', 'dimgray', 'darkgreen']
+
+# Geometry of one x-tick's cluster of boxes. `_FAMILY_GROUP_SPAN` is how much of the gap to
+# the neighbouring tick the whole cluster may occupy; `_FAMILY_BOX_FILL` is how much of each
+# family's slot within that cluster the box itself fills -- the rest is the gap that keeps
+# adjacent boxes visually separate, which matters more the more families there are.
+_FAMILY_GROUP_SPAN = 0.80
+_FAMILY_BOX_FILL = 0.62
+
+
+def family_border_style(kind, color_index):
+    """The border (colour, dash) a comparison family is drawn with: dash from its `kind`
+    ('all_packets' / 'sampled' / 'oracle' / 'uniform', see _FAMILY_EDGE_STYLE_BY_KIND) and
+    colour from its position in the plot's family order. Warns rather than silently
+    reusing a colour if a plot ever carries more families than the palette holds, since two
+    families sharing both colour and dash would be indistinguishable."""
+    if color_index >= len(_FAMILY_COLORS):
+        print("Warning: {} comparison families exceed the {} distinct border colours "
+              "available; colours now repeat and some families are indistinguishable".format(
+                  color_index + 1, len(_FAMILY_COLORS)))
+    return dict(edge_color=_FAMILY_COLORS[color_index % len(_FAMILY_COLORS)],
+                 edge_style=_FAMILY_EDGE_STYLE_BY_KIND[kind])
 
 
 def _draw_boxplot_family(axis, num_flows, values_by_k, pass_rate_by_k, position_offset, box_width,
@@ -4674,7 +4730,7 @@ def _draw_boxplot_family(axis, num_flows, values_by_k, pass_rate_by_k, position_
     """Draw one boxplot family (one box per k with data) at x = k + position_offset.
     The fill is *only* the pass/fail color (green/red) -- no hatch -- so it stays a clean,
     unambiguous read of the consistency check; families are told apart purely by the box
-    border (edge_color/edge_style from `style`, see _SUBSAMPLE_FAMILY_STYLES) drawn thick
+    border (edge_color/edge_style from `style`, see family_border_style) drawn thick
     enough to read at a glance.
 
     Pass `fill_color` to fill every box with that one colour instead, for quantities the
@@ -4770,8 +4826,8 @@ def _subsample_family_layout(subsampling_methods, uniform_series, oracle_series=
     oracle_series = list(oracle_series)
     # all-packets + one per Poisson-adaptive method + one per uniform + one per ideal probe
     n_slots = 1 + len(subsampling_methods) + len(uniform_series) + len(oracle_series)
-    span = 0.75
-    box_width = (span / n_slots) * 0.85
+    span = _FAMILY_GROUP_SPAN
+    box_width = (span / n_slots) * _FAMILY_BOX_FILL
     offsets = np.linspace(-span / 2, span / 2, n_slots)
     offset_all_packets = offsets[0]
     offsets_poisson = {method: offsets[1 + i] for i, method in enumerate(subsampling_methods)}
@@ -4784,65 +4840,81 @@ def _subsample_family_layout(subsampling_methods, uniform_series, oracle_series=
 
 _TRAFFIC_COLORS = ['navy', 'darkorange', 'purple', 'teal', 'crimson', 'olive']
 
-# Border styles cycled through by the per-series specs below, so that
-# all-packets, each Poisson-adaptive method, and each uniform stride stay
-# distinguishable on a single axis no matter how many of each there are.
-_SERIES_EDGE_STYLES = ['solid', 'dashed', 'dotted', 'dashdot', (0, (5, 1)), (0, (3, 1, 1, 1, 1, 1))]
+# On the load plots border *colour* is taken by the traffic, so a series can only be
+# identified by its dash -- and the kind convention (solid for every Poisson-based family,
+# dashed for uniform) deliberately gives several series the same dash. Border *width* is
+# what separates same-kind series there, widest first, and the legend shows it.
+_LOAD_SERIES_EDGE_WIDTHS = [5.5, 3.75, 2.5, 1.5]
 
 
-def _series_edge_style(index):
-    if index >= len(_SERIES_EDGE_STYLES):
-        print("Warning: {} plot series exceed the {} distinct border styles available; "
-              "styles now repeat and some series are visually indistinguishable".format(
-                  index + 1, len(_SERIES_EDGE_STYLES)))
-    return _SERIES_EDGE_STYLES[index % len(_SERIES_EDGE_STYLES)]
+def _load_series_spec(specs, kind, key, label):
+    """Append one series spec to `specs`, taking its dash from the family `kind`
+    (_FAMILY_EDGE_STYLE_BY_KIND) and its border width from how many same-kind series are
+    already on the plot, so same-kind series stay distinguishable where colour cannot
+    help. See _LOAD_SERIES_EDGE_WIDTHS.
+
+    Width is the *only* thing separating same-kind series here, so running out of widths
+    genuinely makes two series indistinguishable -- that warns loudly rather than silently
+    producing an unreadable plot. Keep a load plot to a few series per kind (the callers
+    below build one plot per subsampling method for exactly this reason)."""
+    style = _FAMILY_EDGE_STYLE_BY_KIND[kind]
+    same_kind = sum(1 for spec in specs if spec['edge_style'] == style)
+    if same_kind >= len(_LOAD_SERIES_EDGE_WIDTHS):
+        print("Warning: {} '{}'-style series on one load plot exceeds the {} distinct border "
+              "widths available; '{}' repeats an earlier series' border and the two cannot be "
+              "told apart".format(same_kind + 1, style, len(_LOAD_SERIES_EDGE_WIDTHS), label))
+    specs.append(dict(key=key, edge_style=style, label=label,
+                       edge_width=_LOAD_SERIES_EDGE_WIDTHS[same_kind % len(_LOAD_SERIES_EDGE_WIDTHS)]))
+    return specs
 
 
 def all_packets_vs_sampled_load_plot_series(subsampling_methods):
     """Series specs for plot_emd_vs_load_by_traffic comparing all packets of the
     considered flows against every Poisson-adaptive subsampling method that was
     run. With one method this is the pair this plot has always drawn; with
-    several, each method gets its own border style on the same axis, so the
+    several, each method gets its own border on the same axis, so the
     algorithms are compared against each other and against the all-packets
     ceiling in one picture."""
-    specs = [dict(key='all_packets', edge_style=_series_edge_style(0),
-                   label='all packets of considered flows')]
-    for i, method in enumerate(normalize_subsampling_methods(subsampling_methods), start=1):
-        specs.append(dict(key=('sampled', method), edge_style=_series_edge_style(i),
-                           label='Poisson-adaptive subsample ({})'.format(method)))
+    specs = []
+    _load_series_spec(specs, 'all_packets', 'all_packets', 'all packets of considered flows')
+    for method in normalize_subsampling_methods(subsampling_methods):
+        _load_series_spec(specs, 'sampled', ('sampled', method),
+                           'Poisson-adaptive subsample ({})'.format(method))
     return specs
 
 
-def sampled_vs_oracle_load_plot_series(subsampling_methods):
-    """Series specs pairing each Poisson-adaptive subsampling method against the ideal
+def sampled_vs_oracle_load_plot_series(subsampling_method):
+    """Series specs pairing ONE Poisson-adaptive subsampling method against the ideal
     Poisson probe at that method's own sample count, plus the probe at the minimum
-    required sample size. The gap between a method and its own ideal probe is the part
+    required sample size. The gap between the method and its own ideal probe is the part
     of its error that is *not* finite-sample noise -- i.e. what selecting from the flow's
-    own packets costs."""
+    own packets costs.
+
+    One method per plot on purpose: every family here is Poisson-based and therefore solid
+    (the kind convention), and on a load plot colour is already spent on the traffic, so
+    border width is all that separates them -- three such series is readable, more is not.
+    Call once per method."""
+    method = normalize_subsampling_methods(subsampling_method)[0]
     specs = []
-    for method in normalize_subsampling_methods(subsampling_methods):
-        specs.append(dict(key=('sampled', method), edge_style=_series_edge_style(len(specs) + 1),
-                           label='Poisson-adaptive subsample ({})'.format(method)))
-        specs.append(dict(key=('oracle', method), edge_style=_series_edge_style(len(specs) + 1),
-                           label=_oracle_series_label(method)))
-    specs.append(dict(key=('oracle', ORACLE_MIN_REQUIRED_KEY),
-                       edge_style=_series_edge_style(len(specs) + 1),
-                       label=_oracle_series_label(ORACLE_MIN_REQUIRED_KEY)))
+    _load_series_spec(specs, 'sampled', ('sampled', method),
+                       'Poisson-adaptive subsample ({})'.format(method))
+    _load_series_spec(specs, 'oracle', ('oracle', method), _oracle_series_label(method))
+    _load_series_spec(specs, 'oracle', ('oracle', ORACLE_MIN_REQUIRED_KEY),
+                       _oracle_series_label(ORACLE_MIN_REQUIRED_KEY))
     return specs
 
 
 def poisson_vs_uniform_load_plot_series(subsampling_methods):
     """Series specs for plot_emd_vs_load_by_traffic pairing each Poisson-adaptive
-    subsampling method against its own rate-matched uniform family -- the two draw
-    the same number of packets, so the pair reads as a direct verdict on the
+    subsampling method (solid) against its own rate-matched uniform family (dashed) --
+    the two draw the same number of packets, so the pair reads as a direct verdict on the
     selection rule. Pass one method for a clean two-series plot, or several to put
     every pair on one axis."""
     specs = []
     for method in normalize_subsampling_methods(subsampling_methods):
-        specs.append(dict(key=('sampled', method), edge_style=_series_edge_style(len(specs) + 1),
-                           label='Poisson-adaptive subsample ({})'.format(method)))
-        specs.append(dict(key=('uniform', method), edge_style=_series_edge_style(len(specs) + 1),
-                           label=_uniform_series_label(method)))
+        _load_series_spec(specs, 'sampled', ('sampled', method),
+                           'Poisson-adaptive subsample ({})'.format(method))
+        _load_series_spec(specs, 'uniform', ('uniform', method), _uniform_series_label(method))
     return specs
 
 
@@ -4954,8 +5026,8 @@ def _load_plot_layout(n_traffics, loads, n_series=2):
     than a fixed constant -- otherwise neighboring load groups collide."""
     n_slots = max(n_series * n_traffics, 1)
     min_gap = float(np.min(np.diff(sorted(loads)))) if len(loads) > 1 else 1.0
-    span = min_gap * 0.85
-    box_width = (span / n_slots) * 0.85
+    span = min_gap * _FAMILY_GROUP_SPAN
+    box_width = (span / n_slots) * _FAMILY_BOX_FILL
     offsets = np.linspace(-span / 2, span / 2, n_slots) if n_slots > 1 else np.array([0.0])
     return offsets, box_width, span
 
@@ -4967,8 +5039,10 @@ def plot_emd_vs_load_by_traffic(results_by_traffic_load, k, output_path, pass_th
     drawn together -- by default all packets of the k considered flows, and the
     Poisson-adaptive subsample -- as one boxplot cluster per traffic per load
     (len(series_specs) x len(traffics) boxes at each load tick). Color identifies the
-    traffic (_TRAFFIC_COLORS); border style (solid/dashed/dotted/...) identifies the series;
-    fill is only ever the pass/fail color.
+    traffic (_TRAFFIC_COLORS); the border identifies the series -- its dash marks the family
+    *kind* (solid for every Poisson-based family, dashed for the uniform baselines, see
+    _FAMILY_EDGE_STYLE_BY_KIND) and its width separates same-kind series, since colour is
+    already spent on the traffic here; fill is only ever the pass/fail color.
 
     `series_specs` is a list of {'key', 'edge_style', 'label'} dicts (see
     _load_plot_series_values for valid `key`s); defaults to
@@ -5048,11 +5122,13 @@ def plot_emd_vs_load_by_traffic(results_by_traffic_load, k, output_path, pass_th
             if any(len(v) for v in values_by_load):
                 any_data = True
             _draw_boxplot_family(axis, loads, values_by_load, pass_rate_by_load,
-                                 offsets[n_series * ti + si], box_width, pass_threshold, pass_color, fail_color, style)
+                                 offsets[n_series * ti + si], box_width, pass_threshold, pass_color,
+                                 fail_color, style, edge_width=series_spec.get('edge_width', 4.5))
 
     for series_spec in series_specs:
-        legend_handles.append(Line2D([0], [0], color='black', linewidth=3, linestyle=series_spec['edge_style'],
-                                      label='{} (border style)'.format(series_spec['label'])))
+        legend_handles.append(Line2D([0], [0], color='black', linestyle=series_spec['edge_style'],
+                                      linewidth=series_spec.get('edge_width', 3),
+                                      label='{} (border)'.format(series_spec['label'])))
 
     if not any_data:
         print("plot_emd_vs_load_by_traffic: no data at k={}, writing empty plot".format(k))
@@ -5187,7 +5263,8 @@ def plot_emd_vs_num_flows_boxplot(results, output_path, title="EMD vs number of 
     results, each method's rate-matched uniform counterpart) differs every
     run, so its EMD is
     plotted as a boxplot of the distribution across runs, each with a
-    distinct, thick outline style (color/dash, see _SUBSAMPLE_FAMILY_STYLES) so
+    distinct, thick outline (colour per family, dash per family *kind* -- solid for
+    every Poisson-based family, dashed for the uniform baselines, see family_border_style) so
     the methods stay visually distinguishable -- the fill itself is only ever
     the plain pass/fail color, never a pattern. All
     are colored green when at least `pass_threshold` (e.g. 90%) of the runs'
@@ -5231,7 +5308,7 @@ def plot_emd_vs_num_flows_boxplot(results, output_path, title="EMD vs number of 
     # method, so several algorithms run together are compared on the same axis.
     emd_sampled_by_run = results['emd_sampled_packets_by_run' + suffix]
     for i, method in enumerate(methods):
-        style = _SUBSAMPLE_FAMILY_STYLES[i % len(_SUBSAMPLE_FAMILY_STYLES)]
+        style = family_border_style('sampled', i)
         values_by_k = emd_sampled_by_run[method]
         _draw_boxplot_family(axis, num_flows, values_by_k, results['pass_rate_sampled'][method],
                              offsets_poisson[method], box_width, pass_threshold, pass_color, fail_color, style)
@@ -5248,7 +5325,7 @@ def plot_emd_vs_num_flows_boxplot(results, output_path, title="EMD vs number of 
     emd_uniform_by_run = results.get('emd_uniform_packets_by_run' + suffix, {})
     pass_rate_uniform = results.get('pass_rate_uniform', {})
     for i, key in enumerate(uniform_series):
-        style = _SUBSAMPLE_FAMILY_STYLES[(len(methods) + i) % len(_SUBSAMPLE_FAMILY_STYLES)]
+        style = family_border_style('uniform', len(methods) + i)
         values_by_k = emd_uniform_by_run[key]
         _draw_boxplot_family(axis, num_flows, values_by_k, pass_rate_uniform[key],
                              offsets_uniform[key], box_width, pass_threshold, pass_color, fail_color, style)
@@ -5265,8 +5342,7 @@ def plot_emd_vs_num_flows_boxplot(results, output_path, title="EMD vs number of 
     emd_oracle_by_run = results.get('emd_oracle_by_run' + suffix, {})
     pass_rate_oracle = results.get('pass_rate_oracle', {})
     for i, key in enumerate(oracle_series):
-        style = _SUBSAMPLE_FAMILY_STYLES[
-            (len(methods) + len(uniform_series) + i) % len(_SUBSAMPLE_FAMILY_STYLES)]
+        style = family_border_style('oracle', len(methods) + len(uniform_series) + i)
         values_by_k = emd_oracle_by_run[key]
         _draw_boxplot_family(axis, num_flows, values_by_k, pass_rate_oracle[key],
                              offsets_oracle[key], box_width, pass_threshold, pass_color, fail_color, style)
@@ -5318,7 +5394,8 @@ def plot_mean_diff_vs_num_flows(results, output_path, title="Switch vs. packet m
     and one uniform family per entry in results['uniform_series'] -- for
     current results each method's rate-matched uniform counterpart -- each
     with its own thick outline style
-    (see _SUBSAMPLE_FAMILY_STYLES). All quantities vary run to run here (the
+    (colour per family, dash per family kind -- see family_border_style). All
+    quantities vary run to run here (the
     switch-side mean is re-drawn every run, and every subsampling method is
     redrawn every run too), so all are boxplots; the fill is only ever the
     plain pass/fail color (green/red), never a pattern, so the box outline
@@ -5361,7 +5438,7 @@ def plot_mean_diff_vs_num_flows(results, output_path, title="Switch vs. packet m
 
     diff_sampled_by_run = results['mean_diff_sampled_by_run']
     for i, method in enumerate(methods):
-        style = _SUBSAMPLE_FAMILY_STYLES[i % len(_SUBSAMPLE_FAMILY_STYLES)]
+        style = family_border_style('sampled', i)
         values_by_k = diff_sampled_by_run[method]
         missing_sampled_k = [k for k, values in zip(num_flows, values_by_k) if len(values) == 0]
         if missing_sampled_k:
@@ -5376,7 +5453,7 @@ def plot_mean_diff_vs_num_flows(results, output_path, title="Switch vs. packet m
     diff_uniform_by_run = results.get('mean_diff_uniform_packets_by_run', {})
     pass_rate_uniform = results.get('pass_rate_uniform', {})
     for i, key in enumerate(uniform_series):
-        style = _SUBSAMPLE_FAMILY_STYLES[(len(methods) + i) % len(_SUBSAMPLE_FAMILY_STYLES)]
+        style = family_border_style('uniform', len(methods) + i)
         values_by_k = diff_uniform_by_run[key]
         missing_k = [k for k, values in zip(num_flows, values_by_k) if len(values) == 0]
         if missing_k:
@@ -5391,8 +5468,7 @@ def plot_mean_diff_vs_num_flows(results, output_path, title="Switch vs. packet m
     diff_oracle_by_run = results.get('mean_diff_oracle_by_run', {})
     pass_rate_oracle = results.get('pass_rate_oracle', {})
     for i, key in enumerate(oracle_series):
-        style = _SUBSAMPLE_FAMILY_STYLES[
-            (len(methods) + len(uniform_series) + i) % len(_SUBSAMPLE_FAMILY_STYLES)]
+        style = family_border_style('oracle', len(methods) + len(uniform_series) + i)
         values_by_k = diff_oracle_by_run[key]
         missing_k = [k for k, values in zip(num_flows, values_by_k) if len(values) == 0]
         if missing_k:
@@ -5446,7 +5522,7 @@ def plot_percentile_diff_vs_num_flows(results, percentile, output_path, relative
 
     Unlike the EMD and mean-difference plots, boxes here are *not* coloured green/red: the
     consistency check tests the mean, so it makes no claim about a percentile, and colouring
-    by it would imply one. Families are identified by border style (as elsewhere) plus a
+    by it would imply one. Families are identified by border colour/dash (as elsewhere) plus a
     per-family fill shade. All packets of the first k flows is a fixed packet set, so within
     one experiment its error is one value per k (dots + line) and only becomes a boxplot once
     aggregated across experiments -- see _draw_all_packets_series.
@@ -5485,7 +5561,7 @@ def plot_percentile_diff_vs_num_flows(results, percentile, output_path, relative
         'p{} error'.format(percentile), fill_color=next(fills))
 
     for i, method in enumerate(methods):
-        style = _SUBSAMPLE_FAMILY_STYLES[i % len(_SUBSAMPLE_FAMILY_STYLES)]
+        style = family_border_style('sampled', i)
         fill = next(fills, _PERCENTILE_FAMILY_FILLS[-1])
         values_by_k = results[sampled_key][percentile][method]
         _draw_boxplot_family(axis, num_flows, values_by_k, results['pass_rate_sampled'][method],
@@ -5496,7 +5572,7 @@ def plot_percentile_diff_vs_num_flows(results, percentile, output_path, relative
                                      label='Poisson-adaptive subsample, {}'.format(method)))
 
     for i, key in enumerate(uniform_series):
-        style = _SUBSAMPLE_FAMILY_STYLES[(len(methods) + i) % len(_SUBSAMPLE_FAMILY_STYLES)]
+        style = family_border_style('uniform', len(methods) + i)
         fill = next(fills, _PERCENTILE_FAMILY_FILLS[-1])
         values_by_k = results[uniform_key][percentile][key]
         _draw_boxplot_family(axis, num_flows, values_by_k, results['pass_rate_uniform'][key],
@@ -5507,8 +5583,7 @@ def plot_percentile_diff_vs_num_flows(results, percentile, output_path, relative
                                      label=_uniform_series_label(key)))
 
     for i, key in enumerate(oracle_series):
-        style = _SUBSAMPLE_FAMILY_STYLES[
-            (len(methods) + len(uniform_series) + i) % len(_SUBSAMPLE_FAMILY_STYLES)]
+        style = family_border_style('oracle', len(methods) + len(uniform_series) + i)
         fill = next(fills, _PERCENTILE_FAMILY_FILLS[-1])
         values_by_k = results[oracle_key][percentile][key]
         _draw_boxplot_family(axis, num_flows, values_by_k, results['pass_rate_oracle'][key],
@@ -5598,6 +5673,8 @@ def save_emd_vs_flows_results_text(results, output_path):
     lines.append("Ground truth: {} ({})".format(
         results.get('groundtruth_method', 'simultaneous'),
         groundtruth_method_label(results.get('groundtruth_method', 'simultaneous'))))
+    if results.get('all_flows_only'):
+        lines.append("Flow-count sweep: skipped -- all flows on the path only (every received e2e packet)")
     if num_experiments > 1:
         lines.append("Aggregated over {} experiments: {}".format(num_experiments, results.get('experiments')))
     lines.append("Number of runs (N): {}".format(results['num_runs']))
