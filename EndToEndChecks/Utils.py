@@ -3136,18 +3136,71 @@ def _delay_consistency_check(values, agg_stats, confidenceValue, min_sample_size
     return bool(abs(sample_mean - agg_stats['DelayMean']) <= epsilon_bound)
 
 
-def sample_uniform_stride(subset_sorted_by_time, stride):
-    """Systematic "1-in-`stride`" packet sampling (e.g. sFlow-style fixed-rate
-    sampling): take every `stride`-th row of `subset_sorted_by_time` (which
-    must already be sorted by SentTime), starting from a phase drawn fresh
-    each call so that repeated calls (one per run) see a different subset.
-    A simpler, non-adaptive baseline against the Poisson-based subsampling in
-    find_samples_path."""
+def sample_uniform_count(subset_sorted_by_time, target_count):
+    """Systematic uniform packet sampling of `subset_sorted_by_time` (which must
+    already be sorted by SentTime) returning **exactly** `target_count` rows --
+    the rate-matched counterpart of sFlow-style fixed-rate sampling.
+
+    The sampling period is `N / target_count`, which is generally fractional, and
+    the phase is drawn fresh each call from [0, period) so repeated calls (one per
+    run) see a different subset. A fractional period is what makes the count exact:
+    an integer "1-in-stride" rule can only hit counts of the form floor(N/stride)
+    and would overshoot a requested count by up to ~stride/N (e.g. N=1000,
+    target=300 gives stride=3 and 334 samples, 11% too many). Rows are still
+    evenly spaced in index, so this keeps the "blind, non-adaptive, fixed-rate"
+    character that makes uniform sampling the baseline of interest -- it just
+    spends exactly the sample budget it was given.
+
+    `target_count` >= N returns every row (the sampler cannot invent packets), and
+    a non-positive count or empty input returns no rows.
+    """
     n = len(subset_sorted_by_time)
-    if n == 0 or stride <= 0:
+    target_count = int(target_count)
+    if n == 0 or target_count <= 0:
         return subset_sorted_by_time.iloc[0:0]
-    offset = np.random.randint(0, min(stride, n))
-    return subset_sorted_by_time.iloc[offset::stride]
+    if target_count >= n:
+        return subset_sorted_by_time
+    period = n / target_count
+    phase = np.random.uniform(0.0, period)
+    # period >= 1 here, so these indices are strictly increasing and all < n.
+    positions = np.floor(phase + np.arange(target_count) * period).astype(int)
+    return subset_sorted_by_time.iloc[positions]
+
+
+def matched_uniform_target_count(sampled_size, min_samples):
+    """How many packets the rate-matched uniform baseline should draw so that it
+    is compared against a Poisson-adaptive method at the *same sample size*.
+
+    Normally that is simply `sampled_size`, the count that method actually
+    retained: EMD and the consistency-check bound both tighten with sample size,
+    so a uniform baseline drawing a different number of packets would confound
+    "which selection rule is better" with "which one kept more packets". Matching
+    the count isolates the selection rule.
+
+    When the Poisson-adaptive method found no valid subsample at all
+    (`sampled_size == 0`) there is no count to match, so the budget falls back to
+    `min_samples` -- the minimum sample size that method was required to reach
+    (agg_stats['MinimumE2ESampleSizeDelay'], the same figure handed to it as
+    MinimumNumberOfSamples). That answers the natural question at those flow
+    counts: what would blind uniform sampling have produced with the sample
+    budget the adaptive method was asked for and could not deliver?
+    """
+    if sampled_size and sampled_size > 0:
+        return int(sampled_size)
+    try:
+        return max(0, int(np.ceil(float(min_samples))))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _uniform_series_label(series_key):
+    """Legend/table name of a uniform-sampling family. New results key these by
+    the Poisson-adaptive method whose sample count they match (a string); results
+    pickles written before rate matching keyed them by a fixed integer stride, and
+    still plot, so both shapes are named here."""
+    if isinstance(series_key, str):
+        return 'Rate-matched uniform ({} sample count)'.format(series_key)
+    return 'Uniform 1-in-{} subsample'.format(series_key)
 
 
 def _evaluate_delay_family(values, groundtruth_values, agg_stats, confidenceValue, min_sample_size):
@@ -3417,21 +3470,28 @@ def emd_vs_flows_file_tag(subsampling_methods, groundtruth_method='simultaneous'
     return subsampling_methods_tag(subsampling_methods) + groundtruth_method_tag(groundtruth_method)
 
 
-def compute_emd_vs_num_tcp_flows_run(prepared, agg_stats, confidenceValue, min_sample_size=30, uniform_sample_strides=(10, 100),
+def compute_emd_vs_num_tcp_flows_run(prepared, agg_stats, confidenceValue, min_sample_size=30,
                                       subsampling_methods='find_samples_path'):
     """Run one realization of the flow-count EMD sweep against a given
     per-run `agg_stats` (see compute_poisson_agg_stats): grow the set of
     considered TCP flows one at a time and, for each size, compare the
     ground-truth CDF in `prepared` against every way of subsampling the
-    considered flows' packets: one fresh Poisson-adaptive subsample per entry
-    in `subsampling_methods` (any number of POISSON_SUBSAMPLING_METHODS keys,
-    e.g. both find_samples_path and find_samples_path_intensity in the same
-    run, so the algorithms are compared on identical packets, flows, ground
-    truth and per-run switch statistics), and, for every stride in
-    `uniform_sample_strides`, a fresh systematic "1-in-`stride`" uniform
-    subsample (sample_uniform_stride) -- e.g. stride=10 keeps 1 packet out of
-    every 10, stride=100 keeps 1 out of every 100, as a simpler non-adaptive
-    baseline.
+    considered flows' packets:
+
+      - one fresh Poisson-adaptive subsample per entry in `subsampling_methods`
+        (any number of POISSON_SUBSAMPLING_METHODS keys, e.g. both
+        find_samples_path and find_samples_path_intensity in the same run, so
+        the algorithms are compared on identical packets, flows, ground truth
+        and per-run switch statistics), and
+      - for each of those methods, one **rate-matched** systematic uniform
+        subsample drawing exactly as many packets as that method just retained
+        (sample_uniform_count / matched_uniform_target_count). Matching the
+        count is what isolates the question of interest: EMD and the
+        consistency bound both tighten with sample size, so a uniform baseline
+        at a different size would confound "better selection rule" with "more
+        packets". Where a method found no valid subsample, its uniform
+        counterpart falls back to the minimum sample size that method was
+        required to reach.
 
     "All packets of the first k flows" is the same fixed set on every run --
     its EMD (prepared['emd_all_packets']) is computed once in
@@ -3452,8 +3512,8 @@ def compute_emd_vs_num_tcp_flows_run(prepared, agg_stats, confidenceValue, min_s
         holding that method's per-k list; NaN/None/0 at a k where that method
         found no valid subsample (e.g. too few packets/windows).
       - 'uniform_emd' / 'uniform_consistency' / 'uniform_mean_diff' /
-        'uniform_sample_sizes': the same, keyed by stride (NaN/None when the
-        considered flows have no packets at that k).
+        'uniform_sample_sizes': the same, keyed by the method name whose
+        sample count each uniform family matches.
     """
     full_df = prepared['full_df']
     groundtruth_values = prepared['groundtruth_values']
@@ -3468,10 +3528,10 @@ def compute_emd_vs_num_tcp_flows_run(prepared, agg_stats, confidenceValue, min_s
     sampled_consistency = {name: [] for name in subsampling_methods}
     sampled_mean_diff = {name: [] for name in subsampling_methods}
     sampled_sample_sizes = {name: [] for name in subsampling_methods}
-    uniform_emd = {stride: [] for stride in uniform_sample_strides}
-    uniform_consistency = {stride: [] for stride in uniform_sample_strides}
-    uniform_mean_diff = {stride: [] for stride in uniform_sample_strides}
-    uniform_sample_sizes = {stride: [] for stride in uniform_sample_strides}
+    uniform_emd = {name: [] for name in subsampling_methods}
+    uniform_consistency = {name: [] for name in subsampling_methods}
+    uniform_mean_diff = {name: [] for name in subsampling_methods}
+    uniform_sample_sizes = {name: [] for name in subsampling_methods}
 
     for k in prepared['num_flows']:
         subset = full_df[full_df['FlowRank'] <= k]
@@ -3492,23 +3552,26 @@ def compute_emd_vs_num_tcp_flows_run(prepared, agg_stats, confidenceValue, min_s
                 sampled_consistency[name].append(None)
                 sampled_sample_sizes[name].append(0)
                 sampled_mean_diff[name].append(np.nan)
-                continue
-            sample_values = subset[subset['SentTime'].isin(samples_times)]['Delay'].values
-            emd, consistency_pass, mean_diff, sample_size = _evaluate_delay_family(
-                sample_values, groundtruth_values, agg_stats, confidenceValue, min_sample_size)
-            sampled_emd[name].append(emd)
-            sampled_consistency[name].append(consistency_pass)
-            sampled_sample_sizes[name].append(sample_size)
-            sampled_mean_diff[name].append(mean_diff)
+                sampled_size = 0
+            else:
+                sample_values = subset[subset['SentTime'].isin(samples_times)]['Delay'].values
+                emd, consistency_pass, mean_diff, sampled_size = _evaluate_delay_family(
+                    sample_values, groundtruth_values, agg_stats, confidenceValue, min_sample_size)
+                sampled_emd[name].append(emd)
+                sampled_consistency[name].append(consistency_pass)
+                sampled_sample_sizes[name].append(sampled_size)
+                sampled_mean_diff[name].append(mean_diff)
 
-        for stride in uniform_sample_strides:
-            uniform_values = sample_uniform_stride(subset, stride)['Delay'].values
-            emd, consistency_pass, mean_diff, sample_size = _evaluate_delay_family(
+            # Spend exactly this method's sample budget on a blind uniform subsample,
+            # so the two differ only in *which* packets they pick, not how many.
+            target_count = matched_uniform_target_count(sampled_size, min_samples)
+            uniform_values = sample_uniform_count(subset, target_count)['Delay'].values
+            emd, consistency_pass, mean_diff, uniform_size = _evaluate_delay_family(
                 uniform_values, groundtruth_values, agg_stats, confidenceValue, min_sample_size)
-            uniform_emd[stride].append(emd)
-            uniform_consistency[stride].append(consistency_pass if sample_size else None)
-            uniform_mean_diff[stride].append(mean_diff)
-            uniform_sample_sizes[stride].append(sample_size)
+            uniform_emd[name].append(emd)
+            uniform_consistency[name].append(consistency_pass if uniform_size else None)
+            uniform_mean_diff[name].append(mean_diff)
+            uniform_sample_sizes[name].append(uniform_size)
 
     return {
         'num_flows': num_flows_list,
@@ -3528,18 +3591,18 @@ def compute_emd_vs_num_tcp_flows_run(prepared, agg_stats, confidenceValue, min_s
 
 def _run_one_poisson_run(prepared, dir_prefix, queue_names, linkDelays, linkRates, steadyStart, steadyEnd,
                           num_poisson_observations, confidenceValue, DelayConsistencyGaurantee, min_sample_size,
-                          uniform_sample_strides, subsampling_methods):
+                          subsampling_methods):
     agg_stats = compute_poisson_agg_stats(
         dir_prefix, queue_names, linkDelays, linkRates, steadyStart, steadyEnd,
         num_poisson_observations, confidenceValue, DelayConsistencyGaurantee,
     )
-    return compute_emd_vs_num_tcp_flows_run(prepared, agg_stats, confidenceValue, min_sample_size, uniform_sample_strides,
+    return compute_emd_vs_num_tcp_flows_run(prepared, agg_stats, confidenceValue, min_sample_size,
                                              subsampling_methods)
 
 
 def _poisson_run_worker(return_dict, run_indices, prepared, dir_prefix, queue_names, linkDelays, linkRates,
                          steadyStart, steadyEnd, num_poisson_observations, confidenceValue,
-                         DelayConsistencyGaurantee, min_sample_size, uniform_sample_strides, subsampling_methods):
+                         DelayConsistencyGaurantee, min_sample_size, subsampling_methods):
     # A forked worker inherits the parent's numpy random state verbatim, so without
     # reseeding here every worker would draw the exact same "independent" runs.
     np.random.seed()
@@ -3547,18 +3610,18 @@ def _poisson_run_worker(return_dict, run_indices, prepared, dir_prefix, queue_na
         return_dict[idx] = _run_one_poisson_run(
             prepared, dir_prefix, queue_names, linkDelays, linkRates, steadyStart, steadyEnd,
             num_poisson_observations, confidenceValue, DelayConsistencyGaurantee, min_sample_size,
-            uniform_sample_strides, subsampling_methods,
+            subsampling_methods,
         )
 
 
 def _run_poisson_runs(prepared, dir_prefix, queue_names, linkDelays, linkRates, steadyStart, steadyEnd,
                        num_poisson_observations, confidenceValue, DelayConsistencyGaurantee, min_sample_size,
-                       num_runs, num_workers, uniform_sample_strides, subsampling_methods):
+                       num_runs, num_workers, subsampling_methods):
     if num_workers is None or num_workers <= 1:
         return [
             _run_one_poisson_run(prepared, dir_prefix, queue_names, linkDelays, linkRates, steadyStart, steadyEnd,
                                   num_poisson_observations, confidenceValue, DelayConsistencyGaurantee, min_sample_size,
-                                  uniform_sample_strides, subsampling_methods)
+                                  subsampling_methods)
             for _ in range(num_runs)
         ]
 
@@ -3573,7 +3636,7 @@ def _run_poisson_runs(prepared, dir_prefix, queue_names, linkDelays, linkRates, 
             target=_poisson_run_worker,
             args=(return_dict, run_indices, prepared, dir_prefix, queue_names, linkDelays, linkRates,
                   steadyStart, steadyEnd, num_poisson_observations, confidenceValue,
-                  DelayConsistencyGaurantee, min_sample_size, uniform_sample_strides, subsampling_methods),
+                  DelayConsistencyGaurantee, min_sample_size, subsampling_methods),
         )
         processes.append(p)
         p.start()
@@ -3582,7 +3645,7 @@ def _run_poisson_runs(prepared, dir_prefix, queue_names, linkDelays, linkRates, 
     return [return_dict[i] for i in range(num_runs)]
 
 
-def _collect_one_run_delay_cdfs(prepared, agg_stats, min_sample_size, uniform_sample_strides,
+def _collect_one_run_delay_cdfs(prepared, agg_stats, min_sample_size,
                                  subsampling_methods='find_samples_path'):
     """For a single concrete Poisson-process realization (`agg_stats`, as
     produced by one call to compute_poisson_agg_stats), collect the raw
@@ -3590,11 +3653,12 @@ def _collect_one_run_delay_cdfs(prepared, agg_stats, min_sample_size, uniform_sa
     subsampling method being compared against the ground-truth CDF: all
     packets of every currently-considered flow, one Poisson-adaptive
     subsample per entry in `subsampling_methods` (keys of
-    POISSON_SUBSAMPLING_METHODS), and one uniform "1-in-stride" subsample per
-    entry in `uniform_sample_strides` (sample_uniform_stride). Uses the full
-    flow_order (all considered flows) since this is meant to illustrate what
-    each method's delay distribution actually looks like, not to sweep over
-    flow count. See plot_one_run_delay_cdfs for the corresponding plot.
+    POISSON_SUBSAMPLING_METHODS), and, for each of those, its rate-matched
+    uniform counterpart drawing the same number of packets
+    (sample_uniform_count). Uses the full flow_order (all considered flows)
+    since this is meant to illustrate what each method's delay distribution
+    actually looks like, not to sweep over flow count. See
+    plot_one_run_delay_cdfs for the corresponding plot.
     """
     full_df = prepared['full_df']
     subset = full_df[full_df['FlowRank'] <= len(prepared['flow_order'])]
@@ -3604,16 +3668,15 @@ def _collect_one_run_delay_cdfs(prepared, agg_stats, min_sample_size, uniform_sa
     min_samples = agg_stats.get('MinimumE2ESampleSizeDelay', 0)
     subsampling_methods = normalize_subsampling_methods(subsampling_methods)
 
-    poisson_values = {}
+    poisson_values, uniform_values = {}, {}
     for name in subsampling_methods:
         samples_times, sub_err = _resolve_subsampling_method(name)(times, MinimumNumberOfSamples=min_samples)
         if sub_err != SubSamplingError.NoError or len(samples_times) == 0:
             poisson_values[name] = np.array([])
         else:
             poisson_values[name] = subset[subset['SentTime'].isin(samples_times)]['Delay'].values
-
-    uniform_values = {stride: sample_uniform_stride(subset, stride)['Delay'].values
-                       for stride in uniform_sample_strides}
+        target_count = matched_uniform_target_count(len(poisson_values[name]), min_samples)
+        uniform_values[name] = sample_uniform_count(subset, target_count)['Delay'].values
 
     return {
         'all_packets': all_values,
@@ -3653,11 +3716,13 @@ def plot_one_run_delay_cdfs(results, output_path, title="Delay CDF comparison (o
     subsampling method's delay CDF from a single concrete Poisson-process
     realization (see _collect_one_run_delay_cdfs / results['one_run_delay_cdfs']):
     all packets of the considered flows, one Poisson-adaptive subsample per
-    entry in results['subsampling_methods'], and one uniform "1-in-stride"
-    subsample per entry in results['uniform_sample_strides']. Unlike the
-    EMD/mean-diff boxplots (which summarize across all `num_runs` runs), this
-    shows one concrete instance so it's visually obvious what each method's
-    delay distribution actually looks like next to the ground truth."""
+    entry in results['subsampling_methods'], and one uniform subsample per
+    entry in results['uniform_series'] (for current results, one per
+    Poisson-adaptive method, drawing that method's own sample count). Unlike
+    the EMD/mean-diff boxplots (which summarize across all `num_runs` runs),
+    this shows one concrete instance so it's visually obvious what each
+    method's delay distribution actually looks like next to the ground
+    truth."""
     results = upgrade_emd_vs_flows_results_schema(results)
     one_run = results['one_run_delay_cdfs']
     poisson_by_method = _one_run_poisson_subsamples(one_run)
@@ -3672,9 +3737,9 @@ def plot_one_run_delay_cdfs(results, output_path, title="Delay CDF comparison (o
         extra_series.append((poisson_by_method[method],
                               'Poisson-adaptive subsample ({})'.format(method),
                               palette[i % len(palette)]))
-    for j, stride in enumerate(results.get('uniform_sample_strides', []), start=len(methods)):
-        extra_series.append((one_run['uniform'].get(stride, []),
-                              'Uniform 1-in-{} subsample'.format(stride),
+    for j, key in enumerate(results.get('uniform_series', []), start=len(methods)):
+        extra_series.append((one_run['uniform'].get(key, []),
+                              _uniform_series_label(key),
                               palette[j % len(palette)]))
 
     first_method = methods[0] if methods else None
@@ -3701,7 +3766,8 @@ def upgrade_emd_vs_flows_results_schema(results):
     that run's single 'subsampling_method', which is what every consumer now
     expects. Returns the dict unchanged (not a copy) when it is already current,
     and never mutates its input otherwise."""
-    if 'subsampling_methods' in results and isinstance(results.get('emd_sampled_packets_by_run'), dict):
+    if ('subsampling_methods' in results and 'uniform_series' in results
+            and isinstance(results.get('emd_sampled_packets_by_run'), dict)):
         return results
 
     upgraded = dict(results)
@@ -3712,6 +3778,18 @@ def upgrade_emd_vs_flows_results_schema(results):
         if key in upgraded and not isinstance(upgraded[key], dict):
             upgraded[key] = {method: upgraded[key]}
     upgraded.setdefault('groundtruth_method', 'simultaneous')
+    # Uniform families used to be a fixed set of integer "1-in-stride" rates; they are
+    # now one rate-matched family per Poisson-adaptive method, keyed by that method's
+    # name. Either way they are enumerated by 'uniform_series', so both shapes plot.
+    if 'uniform_series' not in upgraded:
+        upgraded['uniform_series'] = list(upgraded.get('uniform_sample_strides') or [])
+    # Per-run retained sample counts were not recorded before rate-matched uniform
+    # sampling made them worth reporting; an empty record per k simply shows as "n/a".
+    n_k = len(upgraded.get('num_flows', []))
+    upgraded.setdefault('sample_sizes_sampled_by_run',
+                         {m: [[] for _ in range(n_k)] for m in upgraded['subsampling_methods']})
+    upgraded.setdefault('sample_sizes_uniform_by_run',
+                         {s: [[] for _ in range(n_k)] for s in upgraded['uniform_series']})
     if 'groundtruth_mean' not in upgraded:
         gt = np.asarray(upgraded.get('groundtruth_values', []), dtype=float)
         upgraded['groundtruth_mean'] = float(np.mean(gt)) if gt.size else np.nan
@@ -3762,7 +3840,8 @@ def aggregate_emd_vs_flows_results(results_list):
     run count), so 'num_flows' entries near the union's upper end are typically backed by
     fewer experiments than ones every experiment reached. Poisson-adaptive subsampling
     methods are unioned the same way, so aggregating a single-method run together with a
-    multi-method one keeps whatever each actually measured.
+    multi-method one keeps whatever each actually measured; each method's rate-matched
+    uniform family (see compute_emd_vs_num_tcp_flows_run) follows its method.
 
     The all-packets EMD is no longer a single fixed value once aggregated (each
     experiment reconstructs its own ground truth), so it becomes 'emd_all_packets_by_experiment'
@@ -3801,12 +3880,16 @@ def aggregate_emd_vs_flows_results(results_list):
     if not all_k:
         raise ValueError("No flow-count (k) value found in any experiment to aggregate")
 
-    uniform_strides = results_list[0]['uniform_sample_strides']
     methods = []
     for r in results_list:
         for name in r['subsampling_methods']:
             if name not in methods:
                 methods.append(name)
+    uniform_series = []
+    for r in results_list:
+        for key in r['uniform_series']:
+            if key not in uniform_series:
+                uniform_series.append(key)
 
     emd_all_by_experiment, emd_all_by_experiment_norm, mean_diff_all = [], [], []
     pass_all_count, pass_all_total = [], []
@@ -3815,11 +3898,13 @@ def aggregate_emd_vs_flows_results(results_list):
     mean_diff_sampled = {m: [] for m in methods}
     pass_sampled_count = {m: [] for m in methods}
     pass_sampled_total = {m: [] for m in methods}
-    emd_uniform_by_run = {s: [] for s in uniform_strides}
-    emd_uniform_by_run_norm = {s: [] for s in uniform_strides}
-    mean_diff_uniform = {s: [] for s in uniform_strides}
-    pass_uniform_count = {s: [] for s in uniform_strides}
-    pass_uniform_total = {s: [] for s in uniform_strides}
+    sample_sizes_sampled = {m: [] for m in methods}
+    sample_sizes_uniform = {s: [] for s in uniform_series}
+    emd_uniform_by_run = {s: [] for s in uniform_series}
+    emd_uniform_by_run_norm = {s: [] for s in uniform_series}
+    mean_diff_uniform = {s: [] for s in uniform_series}
+    pass_uniform_count = {s: [] for s in uniform_series}
+    pass_uniform_total = {s: [] for s in uniform_series}
 
     for k in all_k:
         emd_all_vals, emd_all_vals_norm, mean_diff_all_vals = [], [], []
@@ -3829,11 +3914,13 @@ def aggregate_emd_vs_flows_results(results_list):
         samp_diff_vals = {m: [] for m in methods}
         samp_pass_c = {m: 0 for m in methods}
         samp_pass_t = {m: 0 for m in methods}
-        uniform_emd_vals = {s: [] for s in uniform_strides}
-        uniform_emd_vals_norm = {s: [] for s in uniform_strides}
-        uniform_diff_vals = {s: [] for s in uniform_strides}
-        uniform_pass_c = {s: 0 for s in uniform_strides}
-        uniform_pass_t = {s: 0 for s in uniform_strides}
+        samp_size_vals = {m: [] for m in methods}
+        uniform_size_vals = {s: [] for s in uniform_series}
+        uniform_emd_vals = {s: [] for s in uniform_series}
+        uniform_emd_vals_norm = {s: [] for s in uniform_series}
+        uniform_diff_vals = {s: [] for s in uniform_series}
+        uniform_pass_c = {s: 0 for s in uniform_series}
+        uniform_pass_t = {s: 0 for s in uniform_series}
 
         for r in results_list:
             if k not in r['num_flows']:
@@ -3852,16 +3939,18 @@ def aggregate_emd_vs_flows_results(results_list):
                 samp_emd_vals[m].extend(sampled_vals)
                 samp_emd_vals_norm[m].extend(r['emd_sampled_packets_by_run_normalized'][m][i])
                 samp_diff_vals[m].extend(r['mean_diff_sampled_by_run'][m][i])
+                samp_size_vals[m].extend(r['sample_sizes_sampled_by_run'][m][i])
                 n_samp = len(sampled_vals)
                 samp_pass_c[m] += round(r['pass_rate_sampled'][m][i] * n_samp)
                 samp_pass_t[m] += n_samp
 
-            for s in uniform_strides:
+            for s in r['uniform_series']:
                 uniform_emd_vals[s].extend(r['emd_uniform_packets_by_run'][s][i])
                 uniform_emd_vals_norm[s].extend(r['emd_uniform_packets_by_run_normalized'][s][i])
                 uniform_diff_vals[s].extend(r['mean_diff_uniform_packets_by_run'][s][i])
                 uniform_pass_c[s] += round(r['pass_rate_uniform'][s][i] * num_runs)
                 uniform_pass_t[s] += num_runs
+                uniform_size_vals[s].extend(r['sample_sizes_uniform_by_run'][s][i])
 
         emd_all_by_experiment.append(emd_all_vals)
         emd_all_by_experiment_norm.append(emd_all_vals_norm)
@@ -3875,13 +3964,15 @@ def aggregate_emd_vs_flows_results(results_list):
             mean_diff_sampled[m].append(samp_diff_vals[m])
             pass_sampled_count[m].append(samp_pass_c[m])
             pass_sampled_total[m].append(samp_pass_t[m])
+            sample_sizes_sampled[m].append(samp_size_vals[m])
 
-        for s in uniform_strides:
+        for s in uniform_series:
             emd_uniform_by_run[s].append(uniform_emd_vals[s])
             emd_uniform_by_run_norm[s].append(uniform_emd_vals_norm[s])
             mean_diff_uniform[s].append(uniform_diff_vals[s])
             pass_uniform_count[s].append(uniform_pass_c[s])
             pass_uniform_total[s].append(uniform_pass_t[s])
+            sample_sizes_uniform[s].append(uniform_size_vals[s])
 
     groundtruth_values = np.concatenate(
         [np.asarray(r['groundtruth_values'], dtype=float) for r in results_list])
@@ -3899,7 +3990,7 @@ def aggregate_emd_vs_flows_results(results_list):
         'num_experiments': len(results_list),
         'experiments': experiments,
         'num_poisson_observations': results_list[0]['num_poisson_observations'],
-        'uniform_sample_strides': list(uniform_strides),
+        'uniform_series': list(uniform_series),
         'total_flows': max(all_k),
         'num_flows': all_k,
         'groundtruth_values': groundtruth_values,
@@ -3916,10 +4007,12 @@ def aggregate_emd_vs_flows_results(results_list):
                                for m in methods},
         'mean_diff_all_packets_by_run': mean_diff_all,
         'mean_diff_sampled_by_run': mean_diff_sampled,
+        'sample_sizes_sampled_by_run': sample_sizes_sampled,
+        'sample_sizes_uniform_by_run': sample_sizes_uniform,
         'emd_uniform_packets_by_run': emd_uniform_by_run,
         'emd_uniform_packets_by_run_normalized': emd_uniform_by_run_norm,
         'pass_rate_uniform': {s: [_rate(c, t) for c, t in zip(pass_uniform_count[s], pass_uniform_total[s])]
-                               for s in uniform_strides},
+                               for s in uniform_series},
         'mean_diff_uniform_packets_by_run': mean_diff_uniform,
         'one_run_delay_cdfs': results_list[0]['one_run_delay_cdfs'],
     }
@@ -3946,7 +4039,6 @@ def compute_emd_vs_num_tcp_flows_multi_run(
     path=0,
     max_num_flows=None,
     num_workers=1,
-    uniform_sample_strides=(10, 100),
     flow_count_step=1,
     subsampling_methods='find_samples_path',
     groundtruth_method='simultaneous',
@@ -3960,9 +4052,12 @@ def compute_emd_vs_num_tcp_flows_multi_run(
     `subsampling_methods` (any number of POISSON_SUBSAMPLING_METHODS keys --
     pass several, e.g. ['find_samples_path', 'find_samples_path_intensity'],
     to compare the algorithms within one run, on identical packets, flows,
-    ground truth and per-run switch statistics) and, for every stride in
-    `uniform_sample_strides`, a fresh systematic "1-in-stride" uniform
-    subsample (sample_uniform_stride) as a simpler non-adaptive baseline. The
+    ground truth and per-run switch statistics) and, for each of those
+    methods, a fresh **rate-matched** systematic uniform subsample drawing
+    exactly as many packets as that method retained -- a blind, non-adaptive
+    baseline at the same sample size, so the comparison isolates the selection
+    rule rather than the sample count (see compute_emd_vs_num_tcp_flows_run
+    and matched_uniform_target_count). The
     ground-truth reconstructed delay CDF, the underlying packet/flow data,
     and the all-packet EMD curve (prepare_emd_vs_flows_data) do not depend on
     the switch-side Poisson probing, so they are computed once and shared
@@ -3984,7 +4079,8 @@ def compute_emd_vs_num_tcp_flows_multi_run(
     all-packet EMD value; the list of Poisson-subsampled-CDF EMD values
     observed across the `num_runs` runs (a run that found no valid subsample
     at a given k simply contributes no value there), keyed by subsampling
-    method, and the same for every uniform-stride method (keyed by stride);
+    method, and the same for each method's rate-matched uniform family (keyed
+    by that same method name);
     the fraction of runs for which the delay consistency check passed at that
     k, for the all-packet mean and for every subsampling method -- for the
     Poisson-adaptive subsamples this is a fraction of the runs that actually
@@ -4019,13 +4115,13 @@ def compute_emd_vs_num_tcp_flows_multi_run(
         dir_prefix, queue_names, linkDelays, linkRates, steadyStart, steadyEnd,
         num_poisson_observations, confidenceValue, DelayConsistencyGaurantee,
     )
-    one_run_delay_cdfs = _collect_one_run_delay_cdfs(prepared, one_run_agg_stats, min_sample_size, uniform_sample_strides,
+    one_run_delay_cdfs = _collect_one_run_delay_cdfs(prepared, one_run_agg_stats, min_sample_size,
                                                       subsampling_methods)
 
     run_results = _run_poisson_runs(
         prepared, dir_prefix, queue_names, linkDelays, linkRates, steadyStart, steadyEnd,
         num_poisson_observations, confidenceValue, DelayConsistencyGaurantee, min_sample_size,
-        num_runs, num_workers, uniform_sample_strides, subsampling_methods,
+        num_runs, num_workers, subsampling_methods,
     )
 
     per_k_pass_all = [0] * len(num_flows)
@@ -4033,9 +4129,12 @@ def compute_emd_vs_num_tcp_flows_multi_run(
     per_k_emd_sampled = {m: [[] for _ in num_flows] for m in subsampling_methods}
     per_k_pass_sampled = {m: [0] * len(num_flows) for m in subsampling_methods}
     per_k_mean_diff_sampled = {m: [[] for _ in num_flows] for m in subsampling_methods}
-    per_k_emd_uniform = {stride: [[] for _ in num_flows] for stride in uniform_sample_strides}
-    per_k_pass_uniform = {stride: [0] * len(num_flows) for stride in uniform_sample_strides}
-    per_k_mean_diff_uniform = {stride: [[] for _ in num_flows] for stride in uniform_sample_strides}
+    per_k_sample_sizes_sampled = {m: [[] for _ in num_flows] for m in subsampling_methods}
+    # One rate-matched uniform family per Poisson-adaptive method, keyed by that method.
+    per_k_emd_uniform = {m: [[] for _ in num_flows] for m in subsampling_methods}
+    per_k_pass_uniform = {m: [0] * len(num_flows) for m in subsampling_methods}
+    per_k_mean_diff_uniform = {m: [[] for _ in num_flows] for m in subsampling_methods}
+    per_k_sample_sizes_uniform = {m: [[] for _ in num_flows] for m in subsampling_methods}
 
     for run_result in run_results:
         for i in range(len(num_flows)):
@@ -4051,14 +4150,17 @@ def compute_emd_vs_num_tcp_flows_multi_run(
                     per_k_pass_sampled[m][i] += 1
                 if np.isfinite(run_result['sampled_mean_diff'][m][i]):
                     per_k_mean_diff_sampled[m][i].append(run_result['sampled_mean_diff'][m][i])
+                if run_result['sampled_sample_sizes'][m][i]:
+                    per_k_sample_sizes_sampled[m][i].append(run_result['sampled_sample_sizes'][m][i])
 
-            for stride in uniform_sample_strides:
-                if np.isfinite(run_result['uniform_emd'][stride][i]):
-                    per_k_emd_uniform[stride][i].append(run_result['uniform_emd'][stride][i])
-                if run_result['uniform_consistency'][stride][i] is True:
-                    per_k_pass_uniform[stride][i] += 1
-                if np.isfinite(run_result['uniform_mean_diff'][stride][i]):
-                    per_k_mean_diff_uniform[stride][i].append(run_result['uniform_mean_diff'][stride][i])
+                if np.isfinite(run_result['uniform_emd'][m][i]):
+                    per_k_emd_uniform[m][i].append(run_result['uniform_emd'][m][i])
+                if run_result['uniform_consistency'][m][i] is True:
+                    per_k_pass_uniform[m][i] += 1
+                if np.isfinite(run_result['uniform_mean_diff'][m][i]):
+                    per_k_mean_diff_uniform[m][i].append(run_result['uniform_mean_diff'][m][i])
+                if run_result['uniform_sample_sizes'][m][i]:
+                    per_k_sample_sizes_uniform[m][i].append(run_result['uniform_sample_sizes'][m][i])
 
     return {
         'flow_name': flow_name,
@@ -4070,7 +4172,7 @@ def compute_emd_vs_num_tcp_flows_multi_run(
         'groundtruth_method': groundtruth_method,
         'num_runs': num_runs,
         'num_poisson_observations': num_poisson_observations,
-        'uniform_sample_strides': list(uniform_sample_strides),
+        'uniform_series': list(subsampling_methods),
         'total_flows': len(prepared['flow_order']),
         'num_flows': num_flows,
         'groundtruth_values': prepared['groundtruth_values'],
@@ -4090,9 +4192,11 @@ def compute_emd_vs_num_tcp_flows_multi_run(
             for m in subsampling_methods},
         'mean_diff_all_packets_by_run': per_k_mean_diff_all,
         'mean_diff_sampled_by_run': per_k_mean_diff_sampled,
+        'sample_sizes_sampled_by_run': per_k_sample_sizes_sampled,
+        'sample_sizes_uniform_by_run': per_k_sample_sizes_uniform,
         'emd_uniform_packets_by_run': per_k_emd_uniform,
         'emd_uniform_packets_by_run_normalized': normalize_emd_values(per_k_emd_uniform, groundtruth_mean),
-        'pass_rate_uniform': {stride: [c / num_runs for c in counts] for stride, counts in per_k_pass_uniform.items()},
+        'pass_rate_uniform': {m: [c / num_runs for c in counts] for m, counts in per_k_pass_uniform.items()},
         'mean_diff_uniform_packets_by_run': per_k_mean_diff_uniform,
         'one_run_delay_cdfs': one_run_delay_cdfs,
     }
@@ -4145,23 +4249,23 @@ def _draw_boxplot_family(axis, num_flows, values_by_k, pass_rate_by_k, position_
         median.set_linewidth(2.5)
 
 
-def _subsample_family_layout(subsampling_methods, uniform_sample_strides):
+def _subsample_family_layout(subsampling_methods, uniform_series):
     """Evenly space the all-packets series plus one boxplot family per
     subsampling method (one per Poisson-adaptive method, then one per uniform
-    stride) around each flow-count tick. Returns (offset_all_packets,
-    offsets_poisson (dict keyed by method name), offsets_uniform (dict keyed by
-    stride), box_width)."""
+    family in `uniform_series`) around each flow-count tick. Returns
+    (offset_all_packets, offsets_poisson (dict keyed by method name),
+    offsets_uniform (dict keyed by uniform-series key), box_width)."""
     subsampling_methods = list(subsampling_methods)
-    uniform_sample_strides = list(uniform_sample_strides)
-    # all-packets + one per Poisson-adaptive method + one per uniform stride
-    n_slots = 1 + len(subsampling_methods) + len(uniform_sample_strides)
+    uniform_series = list(uniform_series)
+    # all-packets + one per Poisson-adaptive method + one per uniform family
+    n_slots = 1 + len(subsampling_methods) + len(uniform_series)
     span = 0.75
     box_width = (span / n_slots) * 0.85
     offsets = np.linspace(-span / 2, span / 2, n_slots)
     offset_all_packets = offsets[0]
     offsets_poisson = {method: offsets[1 + i] for i, method in enumerate(subsampling_methods)}
-    offsets_uniform = {stride: offsets[1 + len(subsampling_methods) + i]
-                        for i, stride in enumerate(uniform_sample_strides)}
+    offsets_uniform = {key: offsets[1 + len(subsampling_methods) + i]
+                        for i, key in enumerate(uniform_series)}
     return offset_all_packets, offsets_poisson, offsets_uniform, box_width
 
 
@@ -4192,23 +4296,24 @@ def all_packets_vs_sampled_load_plot_series(subsampling_methods):
     return specs
 
 
-def poisson_vs_uniform_load_plot_series(stride, subsampling_methods='find_samples_path'):
-    """Series specs for plot_emd_vs_load_by_traffic comparing every
-    Poisson-adaptive subsampling method against one uniform "1-in-stride"
-    subsample, the same way all_packets_vs_sampled_load_plot_series compares
-    them against all-packets."""
+def poisson_vs_uniform_load_plot_series(subsampling_methods):
+    """Series specs for plot_emd_vs_load_by_traffic pairing each Poisson-adaptive
+    subsampling method against its own rate-matched uniform family -- the two draw
+    the same number of packets, so the pair reads as a direct verdict on the
+    selection rule. Pass one method for a clean two-series plot, or several to put
+    every pair on one axis."""
     specs = []
-    for i, method in enumerate(normalize_subsampling_methods(subsampling_methods)):
-        specs.append(dict(key=('sampled', method), edge_style=_series_edge_style(i + 1),
+    for method in normalize_subsampling_methods(subsampling_methods):
+        specs.append(dict(key=('sampled', method), edge_style=_series_edge_style(len(specs) + 1),
                            label='Poisson-adaptive subsample ({})'.format(method)))
-    specs.append(dict(key=('uniform', stride), edge_style=_series_edge_style(len(specs) + 1),
-                       label='Uniform 1-in-{} subsample'.format(stride)))
+        specs.append(dict(key=('uniform', method), edge_style=_series_edge_style(len(specs) + 1),
+                           label=_uniform_series_label(method)))
     return specs
 
 
 def _series_key_label(series_key):
     """Human-readable name of a series key ('all_packets', ('sampled', method),
-    ('uniform', stride), or a bare 'sampled'), for legends and titles."""
+    ('uniform', key), or a bare 'sampled'), for legends and titles."""
     if series_key == 'all_packets':
         return 'all packets'
     if series_key == 'sampled':
@@ -4216,14 +4321,14 @@ def _series_key_label(series_key):
     if isinstance(series_key, tuple) and series_key[0] == 'sampled':
         return 'Poisson-adaptive subsample ({})'.format(series_key[1])
     if isinstance(series_key, tuple) and series_key[0] == 'uniform':
-        return 'uniform 1-in-{} subsample'.format(series_key[1])
+        return _uniform_series_label(series_key[1])
     return str(series_key)
 
 
 def _load_plot_series_values(r, i, series_key, normalized=False):
     """Return (values, pass_rate) for one series spec's `key` at flow-count index `i` of an
     aggregated/single results dict `r` (see plot_emd_vs_load_by_traffic). `series_key` is
-    'all_packets', ('sampled', method), or ('uniform', stride) -- a bare 'sampled' still
+    'all_packets', ('sampled', method), or ('uniform', key) -- a bare 'sampled' still
     works and resolves to the results' first subsampling method. With `normalized` set, the
     EMD values are the ones divided by the mean ground-truth delay
     (normalize_emd_values) instead of the raw ns values; pass rates are unaffected."""
@@ -4241,8 +4346,10 @@ def _load_plot_series_values(r, i, series_key, normalized=False):
             return [], 0.0
         return r['emd_sampled_packets_by_run' + suffix][method][i], r['pass_rate_sampled'][method][i]
     if isinstance(series_key, tuple) and series_key[0] == 'uniform':
-        stride = series_key[1]
-        return r['emd_uniform_packets_by_run' + suffix][stride][i], r['pass_rate_uniform'][stride][i]
+        key = series_key[1]
+        if key not in r['emd_uniform_packets_by_run']:
+            return [], 0.0
+        return r['emd_uniform_packets_by_run' + suffix][key][i], r['pass_rate_uniform'][key][i]
     raise ValueError("Unknown series_key: {!r}".format(series_key))
 
 
@@ -4467,8 +4574,9 @@ def plot_emd_vs_num_flows_boxplot(results, output_path, title="EMD vs number of 
     of packets on every run, so its EMD-to-ground-truth is a single value --
     plotted as a connected line of dots. Every subsampling method (one per
     Poisson-adaptive method in results['subsampling_methods'], plus one
-    uniform "1-in-stride" method per entry in
-    results['uniform_sample_strides']) differs every run, so its EMD is
+    uniform family per entry in results['uniform_series'] -- for current
+    results, each method's rate-matched uniform counterpart) differs every
+    run, so its EMD is
     plotted as a boxplot of the distribution across runs, each with a
     distinct, thick outline style (color/dash, see _SUBSAMPLE_FAMILY_STYLES) so
     the methods stay visually distinguishable -- the fill itself is only ever
@@ -4494,12 +4602,12 @@ def plot_emd_vs_num_flows_boxplot(results, output_path, title="EMD vs number of 
     methods = results['subsampling_methods']
     emd_all = np.asarray(results['emd_all_packets' + suffix], dtype=float)
     pass_rate_all = np.asarray(results['pass_rate_all_packets'], dtype=float)
-    uniform_strides = results.get('uniform_sample_strides', [])
+    uniform_series = results.get('uniform_series', [])
     emd_all_by_experiment = results.get('emd_all_packets_by_experiment' + suffix)
     all_packets_is_boxplot = bool(emd_all_by_experiment) and results.get('num_experiments', 1) > 1
 
     pass_color, fail_color = 'tab:green', 'tab:red'
-    offset_all, offsets_poisson, offsets_uniform, box_width = _subsample_family_layout(methods, uniform_strides)
+    offset_all, offsets_poisson, offsets_uniform, box_width = _subsample_family_layout(methods, uniform_series)
 
     fig, axis = plt.subplots(figsize=(30, 15))
 
@@ -4566,20 +4674,22 @@ def plot_emd_vs_num_flows_boxplot(results, output_path, title="EMD vs number of 
                                      linestyle=style['edge_style'],
                                      label='Poisson-adaptive subsample, {} (boxplot)'.format(method)))
 
-    # Uniform "1-in-stride" subsamples: same idea, one boxplot family per stride.
+    # Uniform families: same idea, one boxplot family each -- for current results one
+    # per Poisson-adaptive method, drawing that method's own sample count.
     emd_uniform_by_run = results.get('emd_uniform_packets_by_run' + suffix, {})
     pass_rate_uniform = results.get('pass_rate_uniform', {})
-    for i, stride in enumerate(uniform_strides):
+    for i, key in enumerate(uniform_series):
         style = _SUBSAMPLE_FAMILY_STYLES[(len(methods) + i) % len(_SUBSAMPLE_FAMILY_STYLES)]
-        values_by_k = emd_uniform_by_run[stride]
-        _draw_boxplot_family(axis, num_flows, values_by_k, pass_rate_uniform[stride],
-                             offsets_uniform[stride], box_width, pass_threshold, pass_color, fail_color, style)
+        values_by_k = emd_uniform_by_run[key]
+        _draw_boxplot_family(axis, num_flows, values_by_k, pass_rate_uniform[key],
+                             offsets_uniform[key], box_width, pass_threshold, pass_color, fail_color, style)
         missing_k = [k for k, values in zip(num_flows, values_by_k) if len(values) == 0]
         if missing_k:
-            print("No uniform 1-in-{} EMD values for {} flow-count(s), skipped: {}".format(stride, len(missing_k), missing_k))
+            print("No {} EMD values for {} flow-count(s), skipped: {}".format(
+                _uniform_series_label(key), len(missing_k), missing_k))
         legend_handles.append(Patch(facecolor='white', edgecolor=style['edge_color'], linewidth=4.5,
                                      linestyle=style['edge_style'],
-                                     label='Uniform 1-in-{} subsample (boxplot)'.format(stride)))
+                                     label='{} (boxplot)'.format(_uniform_series_label(key))))
 
     axis.set_title(title, fontsize=34)
     axis.set_xlabel('Number of TCP flows considered')
@@ -4593,7 +4703,7 @@ def plot_emd_vs_num_flows_boxplot(results, output_path, title="EMD vs number of 
                                else [emd_all[np.isfinite(emd_all)]])
         all_values = np.concatenate(all_packets_values
                                      + [np.asarray(v, dtype=float) for m in methods for v in emd_sampled_by_run[m]]
-                                     + [np.asarray(v, dtype=float) for s in uniform_strides for v in emd_uniform_by_run[s]])
+                                     + [np.asarray(v, dtype=float) for s in uniform_series for v in emd_uniform_by_run[s]])
         if all_values.size and np.nanmax(all_values) > y_max:
             axis.text(0.995, 0.01, 'y-axis capped at {:g}; some boxes/whiskers extend beyond\n'
                                     '(see results text file for full range)'.format(y_max),
@@ -4617,9 +4727,10 @@ def plot_mean_diff_vs_num_flows(results, output_path, title="Switch vs. packet m
     mean delay -- the quantity abs()-thresholded by the delay consistency
     check -- for the all-packet CDF (thick solid black outline), each
     Poisson-adaptive subsampling method in results['subsampling_methods'],
-    and one uniform "1-in-stride" subsample per entry in
-    results['uniform_sample_strides'] (each with its own thick outline style,
-    see _SUBSAMPLE_FAMILY_STYLES). All quantities vary run to run here (the
+    and one uniform family per entry in results['uniform_series'] -- for
+    current results each method's rate-matched uniform counterpart -- each
+    with its own thick outline style
+    (see _SUBSAMPLE_FAMILY_STYLES). All quantities vary run to run here (the
     switch-side mean is re-drawn every run, and every subsampling method is
     redrawn every run too), so all are boxplots; the fill is only ever the
     plain pass/fail color (green/red), never a pattern, so the box outline
@@ -4634,9 +4745,9 @@ def plot_mean_diff_vs_num_flows(results, output_path, title="Switch vs. packet m
     results = upgrade_emd_vs_flows_results_schema(results)
     num_flows = results['num_flows']
     methods = results['subsampling_methods']
-    uniform_strides = results.get('uniform_sample_strides', [])
+    uniform_series = results.get('uniform_series', [])
     pass_color, fail_color = 'tab:green', 'tab:red'
-    offset_all, offsets_poisson, offsets_uniform, box_width = _subsample_family_layout(methods, uniform_strides)
+    offset_all, offsets_poisson, offsets_uniform, box_width = _subsample_family_layout(methods, uniform_series)
 
     fig, axis = plt.subplots(figsize=(30, 15))
     axis.axhline(0, color='black', linewidth=2, linestyle=':', zorder=1)
@@ -4674,17 +4785,18 @@ def plot_mean_diff_vs_num_flows(results, output_path, title="Switch vs. packet m
 
     diff_uniform_by_run = results.get('mean_diff_uniform_packets_by_run', {})
     pass_rate_uniform = results.get('pass_rate_uniform', {})
-    for i, stride in enumerate(uniform_strides):
+    for i, key in enumerate(uniform_series):
         style = _SUBSAMPLE_FAMILY_STYLES[(len(methods) + i) % len(_SUBSAMPLE_FAMILY_STYLES)]
-        values_by_k = diff_uniform_by_run[stride]
+        values_by_k = diff_uniform_by_run[key]
         missing_k = [k for k, values in zip(num_flows, values_by_k) if len(values) == 0]
         if missing_k:
-            print("No uniform 1-in-{} mean-diff values for {} flow-count(s), skipped: {}".format(stride, len(missing_k), missing_k))
-        _draw_boxplot_family(axis, num_flows, values_by_k, pass_rate_uniform[stride],
-                             offsets_uniform[stride], box_width, pass_threshold, pass_color, fail_color, style)
+            print("No {} mean-diff values for {} flow-count(s), skipped: {}".format(
+                _uniform_series_label(key), len(missing_k), missing_k))
+        _draw_boxplot_family(axis, num_flows, values_by_k, pass_rate_uniform[key],
+                             offsets_uniform[key], box_width, pass_threshold, pass_color, fail_color, style)
         legend_handles.append(Patch(facecolor='white', edgecolor=style['edge_color'], linewidth=4.5,
                                      linestyle=style['edge_style'],
-                                     label='Uniform 1-in-{} subsample'.format(stride)))
+                                     label=_uniform_series_label(key)))
 
     axis.set_title(title, fontsize=34)
     axis.set_xlabel('Number of TCP flows considered')
@@ -4695,7 +4807,7 @@ def plot_mean_diff_vs_num_flows(results, output_path, title="Switch vs. packet m
     if y_limit is not None:
         all_values = np.concatenate([np.asarray(v, dtype=float) for v in diff_all_by_run]
                                      + [np.asarray(v, dtype=float) for m in methods for v in diff_sampled_by_run[m]]
-                                     + [np.asarray(v, dtype=float) for s in uniform_strides for v in diff_uniform_by_run[s]])
+                                     + [np.asarray(v, dtype=float) for s in uniform_series for v in diff_uniform_by_run[s]])
         if all_values.size and np.nanmax(np.abs(all_values)) > y_limit:
             axis.text(0.995, 0.01, 'y-axis capped at +/-{:.0f} ns; some boxes/whiskers extend beyond\n'
                                     '(see results text file for full range)'.format(y_limit),
@@ -4715,10 +4827,15 @@ def save_emd_vs_flows_results_text(results, output_path):
     summary of the (very large) ground-truth sample array, a main table
     (one row per number of considered TCP flows) covering all-packets, and
     one further table per subsampling method -- each Poisson-adaptive method
-    that was run, then each uniform "1-in-stride" method. All-packet EMD is a
+    that was run, then each uniform family. All-packet EMD is a
     single value (the same fixed packet set every run); everything else that
     varies run to run is reported as mean +/- std across the runs that had a
     valid value at that flow count, alongside consistency-check pass rates.
+
+    Each per-method table carries an 'n_pkts' column: the number of packets that
+    method actually retained. For a rate-matched uniform family this is the count it
+    was told to match, so the two paired tables' n_pkts columns agreeing is the
+    direct confirmation that the comparison is at equal sample size.
 
     Every EMD is reported twice: raw (ns) and normalized by the mean
     ground-truth path delay (see normalize_emd_values), the latter being the
@@ -4738,7 +4855,7 @@ def save_emd_vs_flows_results_text(results, output_path):
         return (fmt + " +/- " + fmt + " (n={})").format(np.mean(values), np.std(values), values.size)
 
     methods = results['subsampling_methods']
-    uniform_strides = results.get('uniform_sample_strides', [])
+    uniform_series = results.get('uniform_series', [])
     num_experiments = results.get('num_experiments', 1)
     emd_all_by_experiment = results.get('emd_all_packets_by_experiment')
     emd_all_by_experiment_norm = results.get('emd_all_packets_by_experiment_normalized')
@@ -4758,7 +4875,8 @@ def save_emd_vs_flows_results_text(results, output_path):
         lines.append("Aggregated over {} experiments: {}".format(num_experiments, results.get('experiments')))
     lines.append("Number of runs (N): {}".format(results['num_runs']))
     lines.append("Poisson observations per run (M): {}".format(results['num_poisson_observations']))
-    lines.append("Uniform sampling strides tested: {}".format(uniform_strides))
+    lines.append("Uniform baselines: {}".format(
+        ", ".join(_uniform_series_label(key) for key in uniform_series) or "none"))
     lines.append("Total TCP flows considered (max k): {}".format(results['total_flows']))
     lines.append("")
     lines.append("Ground-truth reconstructed delay samples: {}".format(gt.size))
@@ -4781,8 +4899,14 @@ def save_emd_vs_flows_results_text(results, output_path):
         lines.append("    mean_diff still varies run to run because the switch-side mean is redrawn each run).")
     lines.append("  * One table per Poisson-adaptive subsampling method below, each a fresh subsample drawn")
     lines.append("    every run; 'n_samp' is how many of the N runs found a valid subsample at that flow count.")
-    lines.append("  * Uniform 1-in-N tables further below: a fresh systematic 1-in-N subsample drawn each run")
-    lines.append("    (simpler, non-adaptive baseline -- always has a value since it needs no minimum sample size).")
+    lines.append("  * Uniform tables further below: a fresh systematic uniform subsample drawn each run, drawing")
+    lines.append("    exactly as many packets as its paired Poisson-adaptive method retained that run (or, where")
+    lines.append("    that method found no valid subsample, the minimum sample size it was required to reach).")
+    lines.append("    Equal sample size is the point: it makes the pair a verdict on *which* packets each rule")
+    lines.append("    picks, not on how many. Matching is exact run by run; the two n_pkts columns therefore")
+    lines.append("    agree at any k where the method found a subsample on every run. Where it failed on some")
+    lines.append("    runs (n_samp < N) the uniform column averages the matched runs *together with* the")
+    lines.append("    fallback runs, so its aggregate n_pkts sits below the method's own -- not a mismatch.")
     lines.append("  * normEMD = EMD / mean ground-truth path delay -- dimensionless, and unlike the raw ns")
     lines.append("    figure it stays comparable across offered loads (raw EMD grows with the delay level).")
     lines.append("  * pass(...): fraction of runs where the delay consistency check passed. For pass(all)")
@@ -4814,40 +4938,44 @@ def save_emd_vs_flows_results_text(results, output_path):
 
     emd_sampled_by_run = results['emd_sampled_packets_by_run']
     emd_sampled_by_run_norm = results['emd_sampled_packets_by_run_normalized']
+    sizes_sampled = results.get('sample_sizes_sampled_by_run', {})
     for method in methods:
         lines.append("")
         lines.append("Poisson-adaptive subsample -- {}:".format(method))
-        header = "{:>3} | {:>6} | {:>24} | {:>24} | {:>9} | {:>24}".format(
-            "k", "n_samp", "EMD [ns]", "normEMD", "pass", "mean_diff [ns]")
+        header = "{:>3} | {:>6} | {:>24} | {:>24} | {:>9} | {:>24} | {:>20}".format(
+            "k", "n_samp", "EMD [ns]", "normEMD", "pass", "mean_diff [ns]", "n_pkts")
         lines.append(header)
         lines.append("-" * len(header))
         for i, k in enumerate(results['num_flows']):
-            lines.append("{:>3} | {:>6} | {:>24} | {:>24} | {:>8.0%} | {:>24}".format(
+            lines.append("{:>3} | {:>6} | {:>24} | {:>24} | {:>8.0%} | {:>24} | {:>20}".format(
                 k, len(emd_sampled_by_run[method][i]),
                 _stat(emd_sampled_by_run[method][i]),
                 _stat(emd_sampled_by_run_norm[method][i], fmt="{:.4f}"),
                 results['pass_rate_sampled'][method][i],
                 _stat(results['mean_diff_sampled_by_run'][method][i]),
+                _stat(sizes_sampled.get(method, [[]] * len(results['num_flows']))[i], fmt="{:.0f}"),
             ))
 
     emd_uniform_by_run = results.get('emd_uniform_packets_by_run', {})
     emd_uniform_by_run_norm = results.get('emd_uniform_packets_by_run_normalized', {})
     pass_rate_uniform = results.get('pass_rate_uniform', {})
     diff_uniform_by_run = results.get('mean_diff_uniform_packets_by_run', {})
-    for stride in uniform_strides:
+    sizes_uniform = results.get('sample_sizes_uniform_by_run', {})
+    for key in uniform_series:
         lines.append("")
-        lines.append("Uniform 1-in-{} subsample:".format(stride))
-        header = "{:>3} | {:>6} | {:>24} | {:>24} | {:>9} | {:>24}".format(
-            "k", "n_samp", "EMD [ns]", "normEMD", "pass", "mean_diff [ns]")
+        lines.append("{}:".format(_uniform_series_label(key)))
+        header = "{:>3} | {:>6} | {:>24} | {:>24} | {:>9} | {:>24} | {:>20}".format(
+            "k", "n_samp", "EMD [ns]", "normEMD", "pass", "mean_diff [ns]", "n_pkts")
         lines.append(header)
         lines.append("-" * len(header))
         for i, k in enumerate(results['num_flows']):
-            lines.append("{:>3} | {:>6} | {:>24} | {:>24} | {:>8.0%} | {:>24}".format(
-                k, len(emd_uniform_by_run[stride][i]),
-                _stat(emd_uniform_by_run[stride][i]),
-                _stat(emd_uniform_by_run_norm[stride][i], fmt="{:.4f}"),
-                pass_rate_uniform[stride][i],
-                _stat(diff_uniform_by_run[stride][i]),
+            lines.append("{:>3} | {:>6} | {:>24} | {:>24} | {:>8.0%} | {:>24} | {:>20}".format(
+                k, len(emd_uniform_by_run[key][i]),
+                _stat(emd_uniform_by_run[key][i]),
+                _stat(emd_uniform_by_run_norm[key][i], fmt="{:.4f}"),
+                pass_rate_uniform[key][i],
+                _stat(diff_uniform_by_run[key][i]),
+                _stat(sizes_uniform.get(key, [[]] * len(results['num_flows']))[i], fmt="{:.0f}"),
             ))
 
     with open(output_path, 'w') as f:

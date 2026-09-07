@@ -788,13 +788,14 @@ def __main__():
                     print("Rate {} done".format(rate))
                 print("Traffic {} done".format(traffic))
 
-def run_emd_vs_flows_experiment(rate, steadyStart, steadyEnd, confidenceValue, results_folder, config, experiment=0, ns3_path=__ns3_path, load=None, flow_name='R0H0R2H3', queue_names=None, path=0, delay_cdf_sample_interval_ns=90, num_runs=100, num_poisson_observations=9000, pass_threshold=0.9, num_workers=1, uniform_sample_strides=(10, 100), emd_y_max=None, mean_diff_y_limit=None, flow_count_step=1, subsampling_methods='find_samples_path', groundtruth_method='simultaneous'):
+def run_emd_vs_flows_experiment(rate, steadyStart, steadyEnd, confidenceValue, results_folder, config, experiment=0, ns3_path=__ns3_path, load=None, flow_name='R0H0R2H3', queue_names=None, path=0, delay_cdf_sample_interval_ns=90, num_runs=100, num_poisson_observations=9000, pass_threshold=0.9, num_workers=1, emd_y_max=None, mean_diff_y_limit=None, flow_count_step=1, subsampling_methods='find_samples_path', groundtruth_method='simultaneous'):
     """Reconstruct the network queuing delay CDF once (ground truth), then repeat `num_runs` times: draw
     `num_poisson_observations` fresh Poisson-process observation instants at the path's switches, derive the
     per-segment aggregated delay statistics from them, and grow the set of considered TCP flows of `flow_name`
     one at a time, comparing the EMD of the all-packet CDF against one Poisson-adaptive subsample per entry in
-    `subsampling_methods` and, for every stride in `uniform_sample_strides`, a systematic "1-in-stride" uniform
-    subsample of the considered flows' packets. Saves, under the experiment's results directory (`<tag>` below
+    `subsampling_methods` and, for each of those methods, a systematic uniform subsample drawing exactly as
+    many of the considered flows' packets as that method retained (the rate-matched baseline, see
+    Utils.matched_uniform_target_count). Saves, under the experiment's results directory (`<tag>` below
     being emd_vs_flows_file_tag(subsampling_methods, groundtruth_method)):
       - `<flow_name>_path_<path>_<tag>_emd_vs_num_flows_boxplot.png`: EMD distribution
         across runs, one boxplot family per subsampling method, plus a `..._normalized.png`
@@ -836,7 +837,7 @@ def run_emd_vs_flows_experiment(rate, steadyStart, steadyEnd, confidenceValue, r
         steadyStart, steadyEnd, confidenceValue, DelayConsistencyGaurantee,
         num_runs=num_runs, num_poisson_observations=num_poisson_observations,
         min_sample_size=min_sample_size, delay_cdf_sample_interval_ns=delay_cdf_sample_interval_ns, path=path,
-        num_workers=num_workers, uniform_sample_strides=uniform_sample_strides, flow_count_step=flow_count_step,
+        num_workers=num_workers, flow_count_step=flow_count_step,
         subsampling_methods=subsampling_methods, groundtruth_method=groundtruth_method,
     )
 
@@ -959,9 +960,10 @@ def aggregate_emd_vs_flows_across_traffics_and_loads(ns3_path, dir_name, traffic
     cross-traffic comparison plots: for every flow-count k seen in any combination, one plot
     of EMD vs. load with all-packets and every Poisson-adaptive subsampling method together
     -- as one boxplot cluster per traffic per load (see plot_emd_vs_load_by_traffic). For
-    every uniform-stride method, a second set of plots (same k values) compares the
-    Poisson-adaptive method(s) against that uniform "1-in-stride" subsample instead, the
-    same way (poisson_vs_uniform_load_plot_series). Every one of these plots is written
+    every Poisson-adaptive method, a second set of plots (same k values) pairs that method
+    against its own rate-matched uniform baseline, which draws the same number of packets
+    (poisson_vs_uniform_load_plot_series) -- so the pair reads as a verdict on the selection
+    rule rather than on sample size. Every one of these plots is written
     twice: in raw nanoseconds and, as a `..._normalized.png` twin, in units of the mean
     ground-truth delay -- the latter being the version actually comparable across the loads
     on the x-axis. Also saves, for each of these plot kinds, one additional plot using each
@@ -996,7 +998,6 @@ def aggregate_emd_vs_flows_across_traffics_and_loads(ns3_path, dir_name, traffic
         return None
 
     all_k = sorted(set().union(*(set(r['num_flows']) for r in results_by_traffic_load.values())))
-    uniform_sample_strides = next(iter(results_by_traffic_load.values())).get('uniform_sample_strides', [])
 
     output_dir = '{}/scratch/ECNMC/Results/results_{}/emd_vs_load_by_traffic/{}/'.format(ns3_path, dir_name, rate)
     os.makedirs(output_dir, exist_ok=True)
@@ -1006,10 +1007,12 @@ def aggregate_emd_vs_flows_across_traffics_and_loads(ns3_path, dir_name, traffic
 
     plot_kinds = [(all_packets_vs_sampled_load_plot_series(subsampling_methods), '',
                     'all packets vs. Poisson-adaptive subsample(s)')]
-    for stride in uniform_sample_strides:
-        plot_kinds.append((poisson_vs_uniform_load_plot_series(stride, subsampling_methods),
-                            '_poisson_vs_uniform{}'.format(stride),
-                            'Poisson-adaptive subsample(s) vs. uniform 1-in-{} subsample'.format(stride)))
+    # One clean two-series plot per method: that method against the uniform baseline
+    # drawing its own sample count.
+    for method in subsampling_methods:
+        plot_kinds.append((poisson_vs_uniform_load_plot_series(method),
+                            '_poisson_vs_uniform_{}'.format(method),
+                            '{} vs. its rate-matched uniform baseline (equal sample size)'.format(method)))
 
     # Raw nanoseconds and the load-comparable normalized twin of every plot below.
     emd_variants = [(False, '', 'EMD'), (True, '_normalized', 'Normalized EMD')]
@@ -1020,13 +1023,13 @@ def aggregate_emd_vs_flows_across_traffics_and_loads(ns3_path, dir_name, traffic
                 plot_emd_vs_load_by_traffic(
                     results_by_traffic_load, k, '{}_k{}{}{}.png'.format(file_prefix, k, suffix, norm_suffix),
                     pass_threshold=pass_threshold, series_specs=series_specs, normalized=normalized,
-                    title='{} vs load by traffic, {} considered flows: {}, path {}, rate {}\n{} | {}'.format(
+                    title='{} vs load by traffic, {} considered flows: {}, path {}, rate {}\n{}\n{}'.format(
                         emd_desc, k, flow_name, path, rate, kind_desc, gt_desc),
                 )
             plot_emd_vs_load_by_traffic(
                 results_by_traffic_load, 'max', '{}_kmax{}{}.png'.format(file_prefix, suffix, norm_suffix),
                 pass_threshold=pass_threshold, series_specs=series_specs, normalized=normalized,
-                title='{} vs load by traffic, all considered flows: {}, path {}, rate {}\n{} | {}'.format(
+                title='{} vs load by traffic, all considered flows: {}, path {}, rate {}\n{}\n{}'.format(
                     emd_desc, flow_name, path, rate, kind_desc, gt_desc),
             )
 
@@ -1035,13 +1038,13 @@ def aggregate_emd_vs_flows_across_traffics_and_loads(ns3_path, dir_name, traffic
             plot_pass_rate_vs_load_by_traffic(
                 results_by_traffic_load, k, '{}_k{}_{}_pass_rate.png'.format(file_prefix, k, method),
                 series_key=('sampled', method), pass_threshold=pass_threshold,
-                title='Consistency pass rate vs load by traffic, {} considered flows: {}, path {}, rate {}\n{} | {}'.format(
+                title='Consistency pass rate vs load by traffic, {} considered flows: {}, path {}, rate {}\n{}\n{}'.format(
                     k, flow_name, path, rate, method, gt_desc),
             )
         plot_pass_rate_vs_load_by_traffic(
             results_by_traffic_load, 'max', '{}_kmax_{}_pass_rate.png'.format(file_prefix, method),
             series_key=('sampled', method), pass_threshold=pass_threshold,
-            title='Consistency pass rate vs load by traffic, all considered flows: {}, path {}, rate {}\n{} | {}'.format(
+            title='Consistency pass rate vs load by traffic, all considered flows: {}, path {}, rate {}\n{}\n{}'.format(
                 flow_name, path, rate, method, gt_desc),
         )
 
