@@ -3193,6 +3193,128 @@ def matched_uniform_target_count(sampled_size, min_samples):
         return 0
 
 
+POISSON_TEST_NAMES = ('ad', 'ad_chi')
+
+_POISSON_TEST_LABELS = {
+    'ad': 'Anderson-Darling (exponential gaps)',
+    'ad_chi': 'Anderson-Darling + multi-lag chi-squared (independence)',
+}
+
+
+def poisson_test_label(test_name):
+    """Human-readable name of a Poisson-ness test combination (POISSON_TEST_NAMES)."""
+    return _POISSON_TEST_LABELS.get(test_name, str(test_name))
+
+
+def poisson_process_tests(times, steady_start=None, steady_end=None, lags=None,
+                           run_chi_squared=True):
+    """Test whether a set of sampling instants looks like a Poisson process, using exactly
+    the two criteria the Poisson-adaptive samplers validate themselves against:
+
+      - **Anderson-Darling** on the inter-arrival gaps against an exponential: the marginal
+        shape test find_samples_path uses (pass = p > 0.05).
+      - **Multi-lag chi-squared** independence of arrivals across lags (chi_squared_test):
+        the test find_samples_path_intensity adds, since AD alone passes streams whose gaps
+        are individually exponential-looking but serially dependent. Pass = the fraction of
+        lags rejecting independence stays under 0.05 plus its own 95% binomial band, the
+        same rule find_samples_path_intensity applies.
+
+    The point of running these on families that are *not* Poissonized -- all packets, and
+    the fixed-rate uniform subsets -- is that those families never had to pass anything: it
+    says whether their instants happen to look Poisson anyway, which is the premise PASTA
+    needs before their sample mean can stand in for a time average.
+
+    `steady_start`/`steady_end` default to the span of `times` itself, matching
+    find_samples_path_intensity's convention. Set `run_chi_squared=False` to skip the
+    chi-squared part, which is by far the more expensive of the two (~1s per call: it bins
+    the whole window at 120ns and sweeps 511 lags); 'chi_pass' is then None.
+
+    Returns a dict with 'ad_pass', 'ad_pvalue', 'chi_pass', 'chi_reject_fraction',
+    'chi_upper_band', and 'both_pass' (AD and chi together; None when chi was skipped).
+    Fewer than 3 instants cannot be tested at all and come back as failures.
+    """
+    result = {'ad_pass': False, 'ad_pvalue': np.nan, 'chi_pass': None,
+               'chi_reject_fraction': np.nan, 'chi_upper_band': np.nan, 'both_pass': None}
+    times = np.sort(np.asarray(times, dtype=float).reshape(-1))
+    times = times[np.isfinite(times)]
+    if times.size < 3:
+        result['both_pass'] = False if run_chi_squared else None
+        return result
+
+    gaps = np.diff(times)
+    if not np.any(gaps > 0):
+        result['both_pass'] = False if run_chi_squared else None
+        return result
+    try:
+        ad_res = anderson(gaps, 'expon', method='interpolate')
+        result['ad_pvalue'] = float(ad_res.pvalue)
+        result['ad_pass'] = bool(ad_res.pvalue > 0.05)
+    except (ValueError, ZeroDivisionError):
+        # A degenerate gap distribution is not exponential; treat it as a failed test
+        # rather than letting one family abort a whole run.
+        result['ad_pass'] = False
+
+    if not run_chi_squared:
+        return result
+
+    if steady_start is None:
+        steady_start = times[0]
+    if steady_end is None:
+        steady_end = times[-1]
+    try:
+        test_lags, rejects, _ = chi_squared_test(times, steady_start, steady_end, lags=lags)
+    except (ValueError, ZeroDivisionError):
+        test_lags, rejects = [], []
+    if len(test_lags) == 0:
+        result['chi_pass'] = False
+    else:
+        upper_band = 0.05 + 1.96 * np.sqrt(0.95 * 0.05) / np.sqrt(len(test_lags))
+        reject_fraction = sum(rejects) / len(test_lags)
+        result['chi_reject_fraction'] = float(reject_fraction)
+        result['chi_upper_band'] = float(upper_band)
+        result['chi_pass'] = bool(reject_fraction < upper_band)
+    result['both_pass'] = bool(result['ad_pass'] and result['chi_pass'])
+    return result
+
+
+def _all_packets_test_flags(results, i, test_name):
+    """The all-packet family's Poisson-test verdicts at flow-count index `i`, as a list
+    aligned with that family's plotted values: one entry per experiment for an aggregated
+    result, or a single entry for one experiment (where the all-packet instants are the
+    same fixed set every run, so there is one verdict, not one per run). Empty when the
+    family was not tested. Entries may be None where a test was not evaluated."""
+    tests = results.get('poisson_tests_all_packets') or {}
+    if not tests or 'ad_pass' not in tests:
+        return []
+    ad, chi = tests['ad_pass'][i], tests['chi_pass'][i]
+    pairs = list(zip(ad, chi)) if isinstance(ad, (list, tuple)) else [(ad, chi)]
+    return [poisson_test_outcome({'ad_pass': a, 'chi_pass': c}, test_name) for a, c in pairs]
+
+
+def _all_packets_plot_values(results, i, value_key, by_experiment_key):
+    """The all-packet family's plotted values at flow-count index `i`, as a list aligned
+    with _all_packets_test_flags: the per-experiment values when aggregated, else the
+    single value wrapped in a list."""
+    by_experiment = results.get(by_experiment_key)
+    if by_experiment:
+        return list(by_experiment[i])
+    return [results[value_key][i]]
+
+
+def poisson_test_outcome(tests, test_name):
+    """Whether one recorded poisson_process_tests result passes the named test
+    combination ('ad' -> Anderson-Darling only; 'ad_chi' -> both). None when that
+    combination was not evaluated (e.g. chi-squared was skipped)."""
+    if test_name == 'ad':
+        return tests.get('ad_pass')
+    if test_name == 'ad_chi':
+        if tests.get('chi_pass') is None:
+            return None
+        return bool(tests.get('ad_pass') and tests.get('chi_pass'))
+    raise ValueError("Unknown Poisson test name {!r}; choose one of {}".format(
+        test_name, list(POISSON_TEST_NAMES)))
+
+
 def _uniform_series_label(series_key):
     """Legend/table name of a uniform-sampling family. New results key these by
     the Poisson-adaptive method whose sample count they match (a string); results
@@ -3459,6 +3581,8 @@ def prepare_emd_vs_flows_data(
     all_flows_only=False,
     groundtruth_method='simultaneous',
     delay_percentiles=DEFAULT_DELAY_PERCENTILES,
+    run_chi_squared_test=True,
+    poisson_test_lags=None,
 ):
     """Load and preprocess everything that stays fixed across repeated runs
     of the flow-count EMD sweep: the flow's received packets on `path`,
@@ -3475,6 +3599,12 @@ def prepare_emd_vs_flows_data(
     Set `all_flows_only` to skip the flow-count sweep entirely and evaluate
     only k = all flows on the path (every received e2e packet) -- see
     _flow_count_values.
+
+    Also runs the Poisson-ness tests (poisson_process_tests) on the all-packet
+    arrival instants at every k. That family is never Poissonized, so whether
+    its instants happen to look Poisson at all is exactly the premise PASTA
+    needs -- and, like its EMD, it is the same fixed packet set every run, so
+    the test outcome is computed once here rather than per run.
 
     `groundtruth_method` (one of GROUNDTRUTH_METHODS) selects how that
     ground-truth path-delay CDF is built: 'simultaneous' observes every queue
@@ -3530,9 +3660,16 @@ def prepare_emd_vs_flows_data(
     num_flows = _flow_count_values(len(flow_order), flow_count_step, all_flows_only=all_flows_only)
     emd_all_packets, all_packet_sizes = [], []
     percentile_diff_all = {q: [] for q in delay_percentiles}
+    poisson_tests_all = {'ad_pass': [], 'ad_pvalue': [], 'chi_pass': [], 'chi_reject_fraction': []}
     for k in num_flows:
-        all_values = full_df[full_df['FlowRank'] <= k]['Delay'].values
+        considered = full_df[full_df['FlowRank'] <= k]
+        all_values = considered['Delay'].values
         all_packet_sizes.append(len(all_values))
+        tests = poisson_process_tests(
+            considered['SentTime'].values, steadyStart, steadyEnd,
+            lags=poisson_test_lags, run_chi_squared=run_chi_squared_test)
+        for field in poisson_tests_all:
+            poisson_tests_all[field].append(tests[field])
         if len(all_values) and len(groundtruth_values):
             emd_all_packets.append(wasserstein_distance(groundtruth_values, all_values))
         else:
@@ -3557,6 +3694,9 @@ def prepare_emd_vs_flows_data(
         'percentile_diff_all_packets': percentile_diff_all,
         'percentile_reldiff_all_packets': relative_percentile_diffs(
             percentile_diff_all, groundtruth_percentiles),
+        'poisson_tests_all_packets': poisson_tests_all,
+        'run_chi_squared_test': run_chi_squared_test,
+        'poisson_test_lags': poisson_test_lags,
         # Kept so a run can rebuild the ground-truth construction at a lower rate for the
         # ideal-Poisson-probe family (construct_oracle_poisson_delays).
         'queue_names': list(queue_names),
@@ -3748,6 +3888,16 @@ def compute_emd_vs_num_tcp_flows_run(prepared, agg_stats, confidenceValue, min_s
     oracle_mean_diff = {key: [] for key in oracle_series}
     oracle_sample_sizes = {key: [] for key in oracle_series}
     oracle_percentile_diff = {q: {key: [] for key in oracle_series} for q in delay_percentiles}
+    run_chi = prepared.get('run_chi_squared_test', True)
+    test_lags = prepared.get('poisson_test_lags')
+    steady_start = prepared.get('steady_start')
+    steady_end = prepared.get('steady_end')
+    # Per-run Poisson-ness of each uniform subset's own instants, kept strictly in lockstep
+    # with that family's EMD/mean-diff so the plots can split runs by test outcome without
+    # any risk of pairing a value with another run's verdict.
+    uniform_test_split = {name: {'emd': [], 'emd_normalized': [], 'mean_diff': [],
+                                  'ad_pass': [], 'chi_pass': []}
+                           for name in subsampling_methods}
 
     for k in prepared['num_flows']:
         subset = full_df[full_df['FlowRank'] <= k]
@@ -3785,7 +3935,8 @@ def compute_emd_vs_num_tcp_flows_run(prepared, agg_stats, confidenceValue, min_s
             # Spend exactly this method's sample budget on a blind uniform subsample,
             # so the two differ only in *which* packets they pick, not how many.
             target_count = matched_uniform_target_count(sampled_size, min_samples)
-            uniform_values = sample_uniform_count(subset, target_count)['Delay'].values
+            uniform_rows = sample_uniform_count(subset, target_count)
+            uniform_values = uniform_rows['Delay'].values
             emd, consistency_pass, mean_diff, uniform_size = _evaluate_delay_family(
                 uniform_values, groundtruth_values, agg_stats, confidenceValue, min_sample_size)
             uniform_emd[name].append(emd)
@@ -3795,6 +3946,14 @@ def compute_emd_vs_num_tcp_flows_run(prepared, agg_stats, confidenceValue, min_s
             uniform_diffs = percentile_diffs(uniform_values, groundtruth_percentiles)
             for q in delay_percentiles:
                 uniform_percentile_diff[q][name].append(uniform_diffs[q])
+
+            uniform_tests = poisson_process_tests(
+                uniform_rows['SentTime'].values, steady_start, steady_end,
+                lags=test_lags, run_chi_squared=run_chi)
+            uniform_test_split[name]['emd'].append(emd)
+            uniform_test_split[name]['mean_diff'].append(mean_diff)
+            uniform_test_split[name]['ad_pass'].append(uniform_tests['ad_pass'])
+            uniform_test_split[name]['chi_pass'].append(uniform_tests['chi_pass'])
 
         # The ideal-Poisson-probe ceiling: same construction as the ground truth, at the
         # sample budget each real method actually achieved (plus the bare minimum budget).
@@ -3836,6 +3995,7 @@ def compute_emd_vs_num_tcp_flows_run(prepared, agg_stats, confidenceValue, min_s
         'oracle_mean_diff': oracle_mean_diff,
         'oracle_sample_sizes': oracle_sample_sizes,
         'oracle_percentile_diff': oracle_percentile_diff,
+        'uniform_test_split': uniform_test_split,
     }
 
 
@@ -4036,6 +4196,7 @@ def upgrade_emd_vs_flows_results_schema(results):
     and never mutates its input otherwise."""
     if ('subsampling_methods' in results and 'uniform_series' in results
             and 'delay_percentiles' in results and 'oracle_series' in results
+            and 'poisson_test_series' in results
             and isinstance(results.get('emd_sampled_packets_by_run'), dict)):
         return results
 
@@ -4048,6 +4209,14 @@ def upgrade_emd_vs_flows_results_schema(results):
             upgraded[key] = {method: upgraded[key]}
     upgraded.setdefault('groundtruth_method', 'simultaneous')
     upgraded.setdefault('all_flows_only', False)
+    # Poisson-ness testing of the non-Poissonized families postdates these pickles and
+    # needs the raw per-run instants, which were never stored -- so an old result carries
+    # no verdicts and the split plots/tables are skipped for it rather than faked.
+    if 'poisson_test_series' not in upgraded:
+        upgraded['poisson_test_series'] = []
+        upgraded['run_chi_squared_test'] = False
+        upgraded['poisson_tests_all_packets'] = {}
+        upgraded['uniform_test_split_by_run'] = {}
     # Uniform families used to be a fixed set of integer "1-in-stride" rates; they are
     # now one rate-matched family per Poisson-adaptive method, keyed by that method's
     # name. Either way they are enumerated by 'uniform_series', so both shapes plot.
@@ -4204,6 +4373,11 @@ def aggregate_emd_vs_flows_results(results_list):
         for key in r['oracle_series']:
             if key not in oracle_series:
                 oracle_series.append(key)
+    # Only families every experiment tested: a split backed by a subset of experiments at
+    # some k and all of them at another would not be comparable across k.
+    poisson_test_series = [key for key in results_list[0]['poisson_test_series']
+                            if all(key in r['poisson_test_series'] for r in results_list[1:])]
+    run_chi = all(r.get('run_chi_squared_test', False) for r in results_list)
 
     emd_all_by_experiment, emd_all_by_experiment_norm, mean_diff_all = [], [], []
     pass_all_count, pass_all_total = [], []
@@ -4227,6 +4401,10 @@ def aggregate_emd_vs_flows_results(results_list):
     pass_oracle_total = {key: [] for key in oracle_series}
     sample_sizes_oracle = {key: [] for key in oracle_series}
     pdiff_oracle = {q: {key: [] for key in oracle_series} for q in percentiles}
+    split_fields = ('emd', 'emd_normalized', 'mean_diff', 'ad_pass', 'chi_pass')
+    uniform_split = {m: {field: [] for field in split_fields} for m in methods}
+    tests_all_fields = ('ad_pass', 'ad_pvalue', 'chi_pass', 'chi_reject_fraction')
+    tests_all_by_experiment = {field: [] for field in tests_all_fields}
     preldiff_oracle = {q: {key: [] for key in oracle_series} for q in percentiles}
     emd_uniform_by_run = {s: [] for s in uniform_series}
     emd_uniform_by_run_norm = {s: [] for s in uniform_series}
@@ -4261,6 +4439,8 @@ def aggregate_emd_vs_flows_results(results_list):
         oracle_pass_c = {key: 0 for key in oracle_series}
         oracle_pass_t = {key: 0 for key in oracle_series}
         oracle_size_vals = {key: [] for key in oracle_series}
+        uniform_split_vals = {m: {field: [] for field in split_fields} for m in methods}
+        tests_all_vals = {field: [] for field in tests_all_fields}
         pdiff_ora_vals = {q: {key: [] for key in oracle_series} for q in percentiles}
         preldiff_ora_vals = {q: {key: [] for key in oracle_series} for q in percentiles}
 
@@ -4279,6 +4459,10 @@ def aggregate_emd_vs_flows_results(results_list):
             for q in percentiles:
                 pdiff_all_vals[q].append(r['percentile_diff_all_packets'][q][i])
                 preldiff_all_vals[q].append(r['percentile_reldiff_all_packets'][q][i])
+
+            if 'all_packets' in poisson_test_series:
+                for field in tests_all_fields:
+                    tests_all_vals[field].append(r['poisson_tests_all_packets'][field][i])
 
             for m in r['subsampling_methods']:
                 sampled_vals = r['emd_sampled_packets_by_run'][m][i]
@@ -4303,6 +4487,12 @@ def aggregate_emd_vs_flows_results(results_list):
                 for q in percentiles:
                     pdiff_uni_vals[q][s].extend(r['percentile_diff_uniform_by_run'][q][s][i])
                     preldiff_uni_vals[q][s].extend(r['percentile_reldiff_uniform_by_run'][q][s][i])
+
+            for m in methods:
+                if ('uniform', m) not in poisson_test_series or m not in r['uniform_test_split_by_run']:
+                    continue
+                for field in split_fields:
+                    uniform_split_vals[m][field].extend(r['uniform_test_split_by_run'][m][field][i])
 
             for key in r['oracle_series']:
                 oracle_emd_vals[key].extend(r['emd_oracle_by_run'][key][i])
@@ -4349,6 +4539,12 @@ def aggregate_emd_vs_flows_results(results_list):
             pass_uniform_count[s].append(uniform_pass_c[s])
             pass_uniform_total[s].append(uniform_pass_t[s])
             sample_sizes_uniform[s].append(uniform_size_vals[s])
+
+        for m in methods:
+            for field in split_fields:
+                uniform_split[m][field].append(uniform_split_vals[m][field])
+        for field in tests_all_fields:
+            tests_all_by_experiment[field].append(tests_all_vals[field])
 
         for key in oracle_series:
             emd_oracle_by_run[key].append(oracle_emd_vals[key])
@@ -4399,6 +4595,15 @@ def aggregate_emd_vs_flows_results(results_list):
         'percentile_reldiff_uniform_by_run': preldiff_uniform,
         'percentile_diff_oracle_by_run': pdiff_oracle,
         'percentile_reldiff_oracle_by_run': preldiff_oracle,
+        'poisson_test_series': poisson_test_series,
+        'run_chi_squared_test': run_chi,
+        # All-packets is one verdict per k per experiment. Aggregated, each k therefore
+        # holds a *list* of verdicts (one per experiment) aligned with
+        # emd_all_packets_by_experiment -- exactly the shape the uniform families' per-run
+        # verdicts have, so the same split logic covers both. See _all_packets_test_flags,
+        # which also understands the single-experiment (one bare verdict per k) shape.
+        'poisson_tests_all_packets': tests_all_by_experiment,
+        'uniform_test_split_by_run': uniform_split,
         'emd_all_packets': [float(np.mean(v)) for v in emd_all_by_experiment],
         'emd_all_packets_normalized': [float(np.mean(v)) for v in emd_all_by_experiment_norm],
         'emd_all_packets_by_experiment': emd_all_by_experiment,
@@ -4453,6 +4658,8 @@ def compute_emd_vs_num_tcp_flows_multi_run(
     subsampling_methods='find_samples_path',
     groundtruth_method='simultaneous',
     delay_percentiles=DEFAULT_DELAY_PERCENTILES,
+    run_chi_squared_test=True,
+    poisson_test_lags=None,
 ):
     """Repeat the flow-count EMD sweep `num_runs` times. Each run draws its
     own Poisson-process realization of `num_poisson_observations` switch
@@ -4515,6 +4722,18 @@ def compute_emd_vs_num_tcp_flows_multi_run(
     (normalize_emd_values), which is what makes EMDs comparable across
     offered loads; the raw ns values are kept alongside them.
 
+    The two families that are *not* Poissonized -- all packets, and each
+    rate-matched uniform subset -- additionally get their sampling instants put
+    through the Poisson-ness tests the adaptive samplers validate themselves
+    against (poisson_process_tests: Anderson-Darling on the gaps, and the
+    multi-lag chi-squared independence test). For the uniform families the
+    outcome is recorded per run *in lockstep with that run's EMD and
+    mean-difference*, so the plots can split runs by whether their instants
+    actually looked Poisson; for all-packets it is one verdict per flow count,
+    since that family is the same fixed packet set every run. Set
+    `run_chi_squared_test=False` to skip the chi-squared half, which dominates
+    the cost of this (~1s per call, per family, per flow count, per run).
+
     Alongside the EMD, every family also reports its **percentile** error at
     each percentile in `delay_percentiles` (default p90/p99): signed
     `ground_truth_percentile - family_percentile`, both absolute (ns,
@@ -4530,6 +4749,7 @@ def compute_emd_vs_num_tcp_flows_multi_run(
         delay_cdf_sample_interval_ns=delay_cdf_sample_interval_ns, max_num_flows=max_num_flows,
         flow_count_step=flow_count_step, all_flows_only=all_flows_only,
         groundtruth_method=groundtruth_method, delay_percentiles=delay_percentiles,
+        run_chi_squared_test=run_chi_squared_test, poisson_test_lags=poisson_test_lags,
     )
     dir_prefix = prepared['dir_prefix']
     num_flows = prepared['num_flows']
@@ -4573,6 +4793,11 @@ def compute_emd_vs_num_tcp_flows_multi_run(
     per_k_mean_diff_oracle = {key: [[] for _ in num_flows] for key in oracle_series}
     per_k_sample_sizes_oracle = {key: [[] for _ in num_flows] for key in oracle_series}
     per_k_pdiff_oracle = _empty_percentile_structure(delay_percentiles, oracle_series, len(num_flows))
+    # Aligned per-run records for the Poisson-ness split: value and verdict appended
+    # together, so index j of every list below belongs to the same run.
+    split_fields = ('emd', 'emd_normalized', 'mean_diff', 'ad_pass', 'chi_pass')
+    per_k_uniform_split = {name: {field: [[] for _ in num_flows] for field in split_fields}
+                            for name in subsampling_methods}
 
     for run_result in run_results:
         for i in range(len(num_flows)):
@@ -4599,6 +4824,16 @@ def compute_emd_vs_num_tcp_flows_multi_run(
                     per_k_mean_diff_uniform[m][i].append(run_result['uniform_mean_diff'][m][i])
                 if run_result['uniform_sample_sizes'][m][i]:
                     per_k_sample_sizes_uniform[m][i].append(run_result['uniform_sample_sizes'][m][i])
+
+                split = run_result['uniform_test_split'][m]
+                emd_value = split['emd'][i]
+                if np.isfinite(emd_value):
+                    per_k_uniform_split[m]['emd'][i].append(emd_value)
+                    per_k_uniform_split[m]['emd_normalized'][i].append(
+                        normalize_emd_values(emd_value, groundtruth_mean))
+                    per_k_uniform_split[m]['mean_diff'][i].append(split['mean_diff'][i])
+                    per_k_uniform_split[m]['ad_pass'][i].append(split['ad_pass'][i])
+                    per_k_uniform_split[m]['chi_pass'][i].append(split['chi_pass'][i])
 
                 for q in delay_percentiles:
                     sampled_pdiff = run_result['sampled_percentile_diff'][q][m][i]
@@ -4653,6 +4888,10 @@ def compute_emd_vs_num_tcp_flows_multi_run(
         'percentile_diff_oracle_by_run': per_k_pdiff_oracle,
         'percentile_reldiff_oracle_by_run': relative_percentile_diffs(
             per_k_pdiff_oracle, groundtruth_percentiles),
+        'poisson_test_series': ['all_packets'] + [('uniform', m) for m in subsampling_methods],
+        'run_chi_squared_test': run_chi_squared_test,
+        'poisson_tests_all_packets': prepared['poisson_tests_all_packets'],
+        'uniform_test_split_by_run': per_k_uniform_split,
         'emd_all_packets': prepared['emd_all_packets'],
         'emd_all_packets_normalized': normalize_emd_values(prepared['emd_all_packets'], groundtruth_mean),
         'emd_sampled_packets_by_run': per_k_emd_sampled,
@@ -5616,6 +5855,163 @@ def plot_percentile_diff_vs_num_flows(results, percentile, output_path, relative
     return output_path
 
 
+# Fills for the Poisson-test split. Deliberately NOT green/red: on every other plot that
+# pair means the delay consistency check, and this split is a different question entirely.
+_POISSON_TEST_FILLS = {True: 'steelblue', False: '0.78'}
+
+
+def _poisson_split_layout(n_families):
+    """Offsets/box-width for a Poisson-test split plot: two boxes (test passed, test
+    failed) per tested family, grouped so each family's pair sits together. Shares the
+    spacing constants with the other flow-count plots."""
+    n_slots = max(2 * n_families, 1)
+    span = _FAMILY_GROUP_SPAN
+    box_width = (span / n_slots) * _FAMILY_BOX_FILL
+    offsets = np.linspace(-span / 2, span / 2, n_slots) if n_slots > 1 else np.array([0.0])
+    return offsets, box_width
+
+
+def plot_poisson_test_split_vs_num_flows(results, output_path, test_name='ad', quantity='emd',
+                                          title=None, y_max=None, y_limit=None):
+    """Plot one metric against flow count for the families that are *not* Poissonized --
+    all packets, and each rate-matched uniform subset -- with each family's runs **split by
+    whether that run's own sampling instants passed the Poisson-ness test**
+    (poisson_process_tests): one box for the runs that passed, one for those that failed.
+
+    `test_name` selects the criterion: 'ad' = Anderson-Darling on the inter-arrival gaps
+    alone; 'ad_chi' = Anderson-Darling *and* the multi-lag chi-squared independence test
+    (see poisson_test_label). `quantity` is 'emd', 'emd_normalized' or 'mean_diff'.
+
+    The question this answers: those two families never had to pass anything, so does it
+    matter whether their instants happen to look Poisson? If the passing runs' boxes sit
+    closer to the ground truth than the failing ones, Poisson-ness of the instants is
+    doing real work; if the two boxes coincide, it is not the thing driving the error here.
+
+    Fill encodes the *test* outcome (blue = passed, grey = failed) and deliberately avoids
+    the green/red used everywhere else for the delay consistency check, which is a
+    different question -- the check tests the mean against the switch bound, not whether
+    the instants form a Poisson process. Border colour/dash identifies the family as usual.
+
+    An empty box simply means no run landed on that side of the split, which is itself the
+    result (these families are expected to fail AD most of the time -- that is why
+    Poissonization exists). Returns None when `results` carries no test verdicts, e.g. a
+    pickle predating this, or a run with `run_chi_squared_test=False` asked for 'ad_chi'.
+    """
+    results = upgrade_emd_vs_flows_results_schema(results)
+    series = results.get('poisson_test_series') or []
+    if not series:
+        print("plot_poisson_test_split_vs_num_flows: results carry no Poisson-test verdicts, skipped")
+        return None
+    if test_name == 'ad_chi' and not results.get('run_chi_squared_test'):
+        print("plot_poisson_test_split_vs_num_flows: chi-squared test was not run, "
+              "skipping the '{}' split".format(test_name))
+        return None
+
+    value_keys = {
+        'emd': ('emd_all_packets', 'emd_all_packets_by_experiment', 'emd',
+                 'EMD to reconstructed network delay CDF (ns)'),
+        'emd_normalized': ('emd_all_packets_normalized', 'emd_all_packets_by_experiment_normalized',
+                            'emd_normalized', 'EMD / mean ground-truth delay'),
+        'mean_diff': (None, 'mean_diff_all_packets_by_run', 'mean_diff',
+                       'Switch samples mean delay - packet mean delay (ns)'),
+    }
+    if quantity not in value_keys:
+        raise ValueError("Unknown quantity {!r}; choose one of {}".format(quantity, list(value_keys)))
+    all_key, all_by_exp_key, split_field, y_label = value_keys[quantity]
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    num_flows = results['num_flows']
+    offsets, box_width = _poisson_split_layout(len(series))
+
+    fig, axis = plt.subplots(figsize=(30, 15))
+    if quantity == 'mean_diff':
+        axis.axhline(0, color='black', linewidth=2, linestyle=':', zorder=1)
+
+    legend_handles = [
+        Patch(facecolor=_POISSON_TEST_FILLS[True], edgecolor='black', alpha=0.85,
+              label='Runs whose sampling instants PASSED {}'.format(poisson_test_label(test_name))),
+        Patch(facecolor=_POISSON_TEST_FILLS[False], edgecolor='black', alpha=0.85,
+              label='Runs whose sampling instants FAILED {}'.format(poisson_test_label(test_name))),
+    ]
+
+    any_data = False
+    for fi, key in enumerate(series):
+        if key == 'all_packets':
+            style = family_border_style('all_packets', fi)
+            label = 'All packets of considered flows'
+            values_by_k, flags_by_k = [], []
+            for i in range(len(num_flows)):
+                if quantity == 'mean_diff':
+                    # mean_diff varies per run (the switch mean is redrawn), while the
+                    # all-packet verdict is per experiment -- so every run of an experiment
+                    # inherits that experiment's verdict. With one experiment that puts the
+                    # whole box on one side of the split, which is the honest rendering.
+                    flags = _all_packets_test_flags(results, i, test_name)
+                    values = list(results['mean_diff_all_packets_by_run'][i])
+                    flag = flags[0] if len(set(flags)) == 1 and flags else None
+                    values_by_k.append(values)
+                    flags_by_k.append([flag] * len(values))
+                    continue
+                values = _all_packets_plot_values(results, i, all_key, all_by_exp_key)
+                flags = _all_packets_test_flags(results, i, test_name)
+                if len(flags) != len(values):
+                    values, flags = [], []
+                values_by_k.append(values)
+                flags_by_k.append(flags)
+        else:
+            method = key[1]
+            style = family_border_style('uniform', fi)
+            label = _uniform_series_label(method)
+            record = (results.get('uniform_test_split_by_run') or {}).get(method)
+            if record is None:
+                continue
+            values_by_k = [list(v) for v in record[split_field]]
+            flags_by_k = [[poisson_test_outcome({'ad_pass': a, 'chi_pass': c}, test_name)
+                            for a, c in zip(record['ad_pass'][i], record['chi_pass'][i])]
+                           for i in range(len(num_flows))]
+
+        for oi, passed in enumerate((True, False)):
+            selected = []
+            for values, flags in zip(values_by_k, flags_by_k):
+                selected.append([v for v, f in zip(values, flags)
+                                  if f is passed and v == v])
+            if any(len(v) for v in selected):
+                any_data = True
+            fill = _POISSON_TEST_FILLS[passed]
+            _draw_boxplot_family(axis, num_flows, selected, [1.0] * len(num_flows),
+                                 offsets[2 * fi + oi], box_width, 0.0, fill, fill, style,
+                                 fill_color=fill)
+            counts = [len(v) for v in selected]
+            print("{} -- {} {}: runs per flow count {}".format(
+                label, poisson_test_label(test_name), 'PASSED' if passed else 'FAILED', counts))
+        legend_handles.append(Patch(facecolor='white', edgecolor=style['edge_color'], linewidth=4.5,
+                                     linestyle=style['edge_style'], label=label))
+
+    if not any_data:
+        print("plot_poisson_test_split_vs_num_flows: no run fell on either side of the "
+              "'{}' split, writing empty plot".format(test_name))
+
+    axis.set_title(title or '{} split by {}'.format(y_label, poisson_test_label(test_name)),
+                    fontsize=34)
+    axis.set_xlabel('Number of TCP flows considered')
+    axis.set_ylabel(y_label)
+    axis.set_xticks(num_flows)
+    axis.set_xlim(min(num_flows) - 0.6, max(num_flows) + 0.6)
+    axis.grid(True, alpha=0.35, axis='y')
+    if quantity == 'emd_normalized' and y_max is not None:
+        axis.set_ylim(bottom=0, top=y_max)
+    elif quantity == 'emd' and y_max is not None:
+        axis.set_ylim(bottom=0, top=y_max)
+    elif quantity == 'mean_diff' and y_limit is not None:
+        axis.set_ylim(-y_limit, y_limit)
+    axis.legend(handles=legend_handles, fontsize=18, loc='best')
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=150)
+    plt.close(fig)
+    return output_path
+
+
 def save_emd_vs_flows_results_text(results, output_path):
     """Write a plain-text, human-readable summary of the per-flow-count
     results from compute_emd_vs_num_tcp_flows_multi_run: run parameters, a
@@ -5836,6 +6232,51 @@ def save_emd_vs_flows_results_text(results, output_path):
                 _stat(diff_uniform_by_run[key][i]),
                 _stat(sizes_uniform.get(key, [[]] * len(results['num_flows']))[i], fmt="{:.0f}"),
             ))
+
+    poisson_series = results.get('poisson_test_series') or []
+    if poisson_series:
+        lines.append("")
+        lines.append("=" * 70)
+        lines.append("Poisson-ness of the NON-Poissonized families' own sampling instants")
+        lines.append("=" * 70)
+        lines.append("  Anderson-Darling (AD) on the inter-arrival gaps, and the multi-lag chi-squared")
+        lines.append("  independence test -- the same two criteria the Poisson-adaptive samplers must")
+        lines.append("  satisfy. All packets and the fixed-rate uniform subsets never had to pass")
+        lines.append("  anything, so this says whether their instants happen to look Poisson anyway,")
+        lines.append("  which is the premise PASTA needs before their sample mean can stand in for a")
+        lines.append("  time average. 'pass' columns are the fraction of runs (for all-packets: of")
+        lines.append("  experiments, its instants being the same fixed set every run) that passed.")
+        if not results.get('run_chi_squared_test'):
+            lines.append("  NOTE: the chi-squared test was not run for this result; only AD is reported.")
+        for key in poisson_series:
+            if key == 'all_packets':
+                label = 'All packets of considered flows'
+                get = lambda i: (_all_packets_test_flags(results, i, 'ad'),
+                                  _all_packets_test_flags(results, i, 'ad_chi'))
+            else:
+                record = (results.get('uniform_test_split_by_run') or {}).get(key[1])
+                if record is None:
+                    continue
+                label = _uniform_series_label(key[1])
+                get = lambda i, record=record: (
+                    [poisson_test_outcome({'ad_pass': a, 'chi_pass': c}, 'ad')
+                      for a, c in zip(record['ad_pass'][i], record['chi_pass'][i])],
+                    [poisson_test_outcome({'ad_pass': a, 'chi_pass': c}, 'ad_chi')
+                      for a, c in zip(record['ad_pass'][i], record['chi_pass'][i])])
+            lines.append("")
+            lines.append("{}:".format(label))
+            header = "{:>3} | {:>6} | {:>14} | {:>18}".format("k", "n", "pass(AD)", "pass(AD + chi2)")
+            lines.append(header)
+            lines.append("-" * len(header))
+            for i, k in enumerate(results['num_flows']):
+                ad_flags, both_flags = get(i)
+                ad_known = [f for f in ad_flags if f is not None]
+                both_known = [f for f in both_flags if f is not None]
+                lines.append("{:>3} | {:>6} | {:>14} | {:>18}".format(
+                    k, len(ad_flags),
+                    "{:.0%}".format(sum(ad_known) / len(ad_known)) if ad_known else "n/a",
+                    "{:.0%}".format(sum(both_known) / len(both_known)) if both_known else "n/a",
+                ))
 
     if percentiles:
         # Short column tags keep one row per flow count readable with every family side by
