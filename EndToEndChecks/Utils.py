@@ -4924,16 +4924,19 @@ def compute_emd_vs_num_tcp_flows_multi_run(
 # One entry per subsampling family drawn on a flow-count plot -- every
 # Poisson-adaptive method first, then every uniform stride -- so a run
 # comparing several algorithms at once still tells them apart by border alone.
-# Border *style* encodes what KIND of family a box is, so the plot answers "is this an
-# actual Poisson-instant estimator or a blind fixed-rate one?" before you read any legend:
-# every Poisson-based family (the Poisson-adaptive subsamples and the ideal Poisson probes)
-# is solid, and the uniform fixed-rate baselines are dashed. Individual families within a
-# kind are then told apart by border *colour*.
+# Border *style* encodes what KIND of family a box is, so the plot answers "is this the
+# no-subsampling ceiling, a Poisson-instant estimator, its ideal-probe ceiling, or a blind
+# fixed-rate baseline?" before you read any legend: all packets is solid, Poisson-adaptive
+# subsamples are dashed, ideal Poisson probes are dash-dot, and uniform fixed-rate baselines
+# are dotted -- four kinds, four styles, none shared, so no two kinds are ever separable by
+# border width alone. Individual families within a kind are then told apart by border
+# *colour* (flow-count plots) or, on load plots where colour is spent on the traffic, by
+# border width and/or a same-kind dash variant (see _load_series_spec).
 _FAMILY_EDGE_STYLE_BY_KIND = {
     'all_packets': 'solid',
-    'sampled': 'solid',
-    'oracle': 'solid',
-    'uniform': 'dashed',
+    'sampled': 'dashed',
+    'oracle': 'dashdot',
+    'uniform': 'dotted',
 }
 
 # One distinct colour per comparison family, assigned in draw order across all kinds so no
@@ -5080,40 +5083,82 @@ def _subsample_family_layout(subsampling_methods, uniform_series, oracle_series=
 _TRAFFIC_COLORS = ['navy', 'darkorange', 'purple', 'teal', 'crimson', 'olive']
 
 # On the load plots border *colour* is taken by the traffic, so a series can only be
-# identified by its dash -- and the kind convention (solid for every Poisson-based family,
-# dashed for uniform) deliberately gives several series the same dash. Border *width* is
-# what separates same-kind series there, widest first, and the legend shows it.
+# identified by its dash and width. Unlike the flow-count plots (family_border_style), a kind's
+# dash here is NOT fixed globally -- a given load-plot comparison only ever includes a couple of
+# the four kinds (e.g. "ideal Poisson probe vs Poisson-adaptive subsample" never touches
+# all_packets or uniform at all), and always deferring to a global kind table left 'solid' --
+# the boldest, most legible style -- unused on plots that happen not to include all_packets.
+# Styles are instead assigned per plot, in the order each kind first appears in that plot's own
+# specs list (_STYLE_ORDER), so the first kind on ANY comparison gets solid, the second dashed,
+# and so on -- every load plot uses the full style range starting from the clearest one. A kind
+# can still carry several series at once (e.g. several Poisson-adaptive algorithms in the
+# all-packets-vs-Poisson comparison, or a method's own oracle probe next to the
+# minimum-required one) -- those are told apart by BOTH a same-kind dash *variant* (a distinct
+# line type per algorithm, not just the plain kind dash repeated) and, as a second cue, border
+# *width*, widest first. The legend shows both.
+_STYLE_ORDER = ['solid', 'dashed', 'dashdot', 'dotted']
 _LOAD_SERIES_EDGE_WIDTHS = [5.5, 3.75, 2.5, 1.5]
+
+# Dash variants for same-kind series on a load plot, keyed by base style (see _STYLE_ORDER).
+# Index 0 is always the kind's own plain named style, so a plot with only one series per kind
+# -- the common case -- renders exactly as before; a second/third same-kind series (e.g. a
+# second Poisson-adaptive method) gets a visually distinct variant of that same dash family
+# rather than just a thinner copy of it.
+_LOAD_SERIES_STYLE_VARIANTS_BY_BASE = {
+    'solid': ['solid', (0, (8, 2, 1, 2)), (0, (2, 1))],
+    'dashed': ['dashed', (0, (3, 1, 1, 1)), (0, (1, 1))],
+    'dashdot': ['dashdot', (0, (5, 1, 1, 1, 1, 1)), (0, (4, 2, 1, 2, 1, 2))],
+    'dotted': ['dotted', (0, (1, 1, 3, 1)), (0, (1, 3))],
+}
 
 
 def _load_series_spec(specs, kind, key, label):
-    """Append one series spec to `specs`, taking its dash from the family `kind`
-    (_FAMILY_EDGE_STYLE_BY_KIND) and its border width from how many same-kind series are
-    already on the plot, so same-kind series stay distinguishable where colour cannot
-    help. See _LOAD_SERIES_EDGE_WIDTHS.
+    """Append one series spec to `specs`. The base dash a kind gets is NOT the global
+    family-kind convention (_FAMILY_EDGE_STYLE_BY_KIND, used by the flow-count plots) --
+    it's assigned fresh per plot, from _STYLE_ORDER, in the order distinct kinds first
+    appear in `specs` -- so whichever kind is added first on this particular comparison
+    gets 'solid', the next distinct kind 'dashed', and so on. This guarantees every load
+    plot actually uses 'solid' (rather than leaving it unused whenever a comparison doesn't
+    happen to include all_packets, e.g. Poisson-adaptive vs its own ideal probe).
 
-    Width is the *only* thing separating same-kind series here, so running out of widths
-    genuinely makes two series indistinguishable -- that warns loudly rather than silently
-    producing an unreadable plot. Keep a load plot to a few series per kind (the callers
-    below build one plot per subsampling method for exactly this reason)."""
-    style = _FAMILY_EDGE_STYLE_BY_KIND[kind]
-    same_kind = sum(1 for spec in specs if spec['edge_style'] == style)
-    if same_kind >= len(_LOAD_SERIES_EDGE_WIDTHS):
+    Border width (_LOAD_SERIES_EDGE_WIDTHS) and a same-kind dash variant
+    (_LOAD_SERIES_STYLE_VARIANTS_BY_BASE) together separate multiple series that share one
+    kind, so same-kind series stay distinguishable where colour cannot help -- running out
+    of either genuinely risks two series looking alike, which warns loudly rather than
+    silently producing an unreadable plot. Keep a load plot to a few series per kind (the
+    callers below build one plot per subsampling method for exactly this reason)."""
+    kinds_so_far = []
+    for spec in specs:
+        if spec['kind'] not in kinds_so_far:
+            kinds_so_far.append(spec['kind'])
+    if kind not in kinds_so_far:
+        kinds_so_far.append(kind)
+    kind_index = kinds_so_far.index(kind)
+    if kind_index >= len(_STYLE_ORDER):
+        print("Warning: {} distinct kinds on one load plot exceeds the {} distinct base "
+              "styles available; '{}' repeats an earlier kind's style".format(
+                  kind_index + 1, len(_STYLE_ORDER), label))
+    base_style = _STYLE_ORDER[kind_index % len(_STYLE_ORDER)]
+    variants = _LOAD_SERIES_STYLE_VARIANTS_BY_BASE[base_style]
+    same_kind = sum(1 for spec in specs if spec['kind'] == kind)
+    if same_kind >= len(_LOAD_SERIES_EDGE_WIDTHS) or same_kind >= len(variants):
         print("Warning: {} '{}'-style series on one load plot exceeds the {} distinct border "
-              "widths available; '{}' repeats an earlier series' border and the two cannot be "
-              "told apart".format(same_kind + 1, style, len(_LOAD_SERIES_EDGE_WIDTHS), label))
-    specs.append(dict(key=key, edge_style=style, label=label,
+              "widths/variants available; '{}' repeats an earlier series' border and the two "
+              "cannot be told apart".format(
+                  same_kind + 1, base_style, min(len(_LOAD_SERIES_EDGE_WIDTHS), len(variants)), label))
+    specs.append(dict(key=key, kind=kind, edge_style=variants[same_kind % len(variants)], label=label,
                        edge_width=_LOAD_SERIES_EDGE_WIDTHS[same_kind % len(_LOAD_SERIES_EDGE_WIDTHS)]))
     return specs
 
 
 def all_packets_vs_sampled_load_plot_series(subsampling_methods):
     """Series specs for plot_emd_vs_load_by_traffic comparing all packets of the
-    considered flows against every Poisson-adaptive subsampling method that was
-    run. With one method this is the pair this plot has always drawn; with
-    several, each method gets its own border on the same axis, so the
-    algorithms are compared against each other and against the all-packets
-    ceiling in one picture."""
+    considered flows (solid) against every Poisson-adaptive subsampling method that was
+    run (dashed). With one method this is the pair this plot has always drawn; with
+    several, each method additionally gets its own dash variant and border width (see
+    _load_series_spec), so the algorithms are compared against each other and against the
+    all-packets ceiling in one picture without relying on colour, which is spent on the
+    traffic here."""
     specs = []
     _load_series_spec(specs, 'all_packets', 'all_packets', 'all packets of considered flows')
     for method in normalize_subsampling_methods(subsampling_methods):
@@ -5123,15 +5168,15 @@ def all_packets_vs_sampled_load_plot_series(subsampling_methods):
 
 
 def sampled_vs_oracle_load_plot_series(subsampling_method):
-    """Series specs pairing ONE Poisson-adaptive subsampling method against the ideal
-    Poisson probe at that method's own sample count, plus the probe at the minimum
-    required sample size. The gap between the method and its own ideal probe is the part
-    of its error that is *not* finite-sample noise -- i.e. what selecting from the flow's
-    own packets costs.
+    """Series specs pairing ONE Poisson-adaptive subsampling method (solid -- the first, and
+    here only real, kind on this comparison) against the ideal Poisson probe at that method's
+    own sample count, plus the probe at the minimum required sample size (both dashed). The
+    gap between the method and its own ideal probe is the part of its error that is *not*
+    finite-sample noise -- i.e. what selecting from the flow's own packets costs.
 
-    One method per plot on purpose: every family here is Poisson-based and therefore solid
-    (the kind convention), and on a load plot colour is already spent on the traffic, so
-    border width is all that separates them -- three such series is readable, more is not.
+    One method per plot on purpose: the two oracle series share the 'oracle' kind and so lean
+    on their dash variant and border width, on top of colour already being spent on the
+    traffic, to stay apart from each other -- three such series is readable, more is not.
     Call once per method."""
     method = normalize_subsampling_methods(subsampling_method)[0]
     specs = []
@@ -5143,17 +5188,35 @@ def sampled_vs_oracle_load_plot_series(subsampling_method):
     return specs
 
 
-def poisson_vs_uniform_load_plot_series(subsampling_methods):
-    """Series specs for plot_emd_vs_load_by_traffic pairing each Poisson-adaptive
-    subsampling method (solid) against its own rate-matched uniform family (dashed) --
-    the two draw the same number of packets, so the pair reads as a direct verdict on the
-    selection rule. Pass one method for a clean two-series plot, or several to put
-    every pair on one axis."""
+def poisson_vs_uniform_vs_ideal_load_plot_series(subsampling_methods):
+    """Series specs for plot_emd_vs_load_by_traffic putting THREE families on one axis per
+    Poisson-adaptive method: the method itself (solid -- first kind on this comparison), its
+    own rate-matched uniform baseline (dashed), and the ideal Poisson probe at that same
+    sample count (dash-dot) -- all three draw ~the same number of packets, so the three-way
+    reads as a verdict on the selection rule (method vs. uniform) *and* on how much of the
+    method's own remaining error is finite-sample noise vs. selection bias (method vs. its
+    ideal probe) in one picture. Pass one method for a clean three-series plot, or several to
+    put every triple on one axis."""
     specs = []
     for method in normalize_subsampling_methods(subsampling_methods):
         _load_series_spec(specs, 'sampled', ('sampled', method),
                            'Poisson-adaptive subsample ({})'.format(method))
         _load_series_spec(specs, 'uniform', ('uniform', method), _uniform_series_label(method))
+        _load_series_spec(specs, 'oracle', ('oracle', method), _oracle_series_label(method))
+    return specs
+
+
+def all_packets_vs_oracle_load_plot_series(subsampling_methods):
+    """Series specs for plot_emd_vs_load_by_traffic comparing all packets of the considered
+    flows (solid) against the ideal Poisson probe (dashed) at each Poisson-adaptive method's
+    own sample count -- the theoretical ceiling a real sampler could reach, independent of any
+    particular sampler's own selection-rule imperfections. Reads alongside
+    all_packets_vs_sampled_load_plot_series: the gap there that ISN'T explained by this plot
+    is what the real sampler itself is costing, versus what subsampling costs in principle."""
+    specs = []
+    _load_series_spec(specs, 'all_packets', 'all_packets', 'all packets of considered flows')
+    for method in normalize_subsampling_methods(subsampling_methods):
+        _load_series_spec(specs, 'oracle', ('oracle', method), _oracle_series_label(method))
     return specs
 
 
@@ -5279,9 +5342,17 @@ def plot_emd_vs_load_by_traffic(results_by_traffic_load, k, output_path, pass_th
     Poisson-adaptive subsample -- as one boxplot cluster per traffic per load
     (len(series_specs) x len(traffics) boxes at each load tick). Color identifies the
     traffic (_TRAFFIC_COLORS); the border identifies the series -- its dash marks the family
-    *kind* (solid for every Poisson-based family, dashed for the uniform baselines, see
-    _FAMILY_EDGE_STYLE_BY_KIND) and its width separates same-kind series, since colour is
-    already spent on the traffic here; fill is only ever the pass/fail color.
+    *kind* (solid for all packets, dashed for Poisson-adaptive subsamples, dash-dot for ideal
+    Poisson probes, dotted for uniform baselines, see _FAMILY_EDGE_STYLE_BY_KIND), with a
+    same-kind dash variant and/or width separating multiple series of one kind, since colour
+    is already spent on the traffic here; fill is only ever the pass/fail color.
+
+    The y-axis is capped (view only, not the underlying data) to keep one extreme run from
+    washing out the rest of the load sweep: relative quantities (`normalized`, or
+    `metric=('percentile_reldiff', q)`) to +/-100%, absolute ones (raw EMD in ns, or
+    `('percentile_diff', q)`) to 500ns (+/-500ns if signed) -- only ever narrowing the
+    autoscaled range, never expanding a tighter one, with a note drawn on the plot when it
+    actually clips something.
 
     `series_specs` is a list of {'key', 'edge_style', 'label'} dicts (see
     _load_plot_series_values for valid `key`s); defaults to
@@ -5340,6 +5411,7 @@ def plot_emd_vs_load_by_traffic(results_by_traffic_load, k, output_path, pass_th
     ]
 
     any_data = False
+    all_plotted_values = []
     for ti, traffic in enumerate(traffics):
         color = _TRAFFIC_COLORS[ti % len(_TRAFFIC_COLORS)]
         legend_handles.append(Patch(facecolor='white', edgecolor=color, linewidth=4.5, label=traffic))
@@ -5357,6 +5429,7 @@ def plot_emd_vs_load_by_traffic(results_by_traffic_load, k, output_path, pass_th
                                                              normalized=normalized, metric=metric)
                 values_by_load.append(values)
                 pass_rate_by_load.append(pass_rate)
+                all_plotted_values.extend(values)
 
             if any(len(v) for v in values_by_load):
                 any_data = True
@@ -5389,6 +5462,30 @@ def plot_emd_vs_load_by_traffic(results_by_traffic_load, k, output_path, pass_th
         # Zero is "the family's tail matches the ground truth's" -- the reference the whole
         # plot is read against, unlike EMD where zero is just the axis floor.
         axis.axhline(0, color='black', linewidth=2, linestyle=':', zorder=1)
+
+    # Cap the y-axis view to a fixed, known scale so a rare extreme run doesn't wash out the
+    # rest of the load sweep -- same convention as plot_emd_vs_num_flows_boxplot's y_max.
+    # Relative quantities (normalized EMD, or a percentile error taken as a fraction of the
+    # ground truth's own p_q) are capped at +/-100%; absolute ones (raw EMD ns, or a
+    # percentile error in ns) at 500ns. Percentile errors are signed (ground truth - family)
+    # so their cap is symmetric; EMD is never negative, so only its top is ever clipped. The
+    # note only appears when data actually reaches beyond the cap, not merely because the
+    # fixed view differs from what autoscale would have chosen.
+    is_relative = normalized or (isinstance(metric, tuple) and metric[0] == 'percentile_reldiff')
+    signed = isinstance(metric, tuple)
+    cap = 1.0 if is_relative else 500.0
+    bottom = -cap if signed else 0.0
+    flat_values = np.asarray(all_plotted_values, dtype=float)
+    finite_values = flat_values[np.isfinite(flat_values)]
+    # if finite_values.size and (np.max(finite_values) > cap or (signed and np.min(finite_values) < bottom)):
+    #     axis.text(0.995, 0.01,
+    #                'y-axis capped at {}{:g}{}; some boxes/whiskers extend beyond\n'
+    #                '(see the aggregated results for the full range)'.format(
+    #                    '+/-' if signed else '', cap * (100 if is_relative else 1), '%' if is_relative else 'ns'),
+    #                transform=axis.transAxes, ha='right', va='top', fontsize=14, style='italic',
+    #                bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+    axis.set_ylim(bottom=bottom, top=cap)
+
     axis.set_xticks(loads)
     if loads:
         pad = max(np.min(np.diff(loads)) * 0.6, span / 2 + box_width) if len(loads) > 1 else max(span / 2, 0.05)
@@ -5502,8 +5599,9 @@ def plot_emd_vs_num_flows_boxplot(results, output_path, title="EMD vs number of 
     results, each method's rate-matched uniform counterpart) differs every
     run, so its EMD is
     plotted as a boxplot of the distribution across runs, each with a
-    distinct, thick outline (colour per family, dash per family *kind* -- solid for
-    every Poisson-based family, dashed for the uniform baselines, see family_border_style) so
+    distinct, thick outline (colour per family, dash per family *kind* -- solid for all
+    packets, dashed for Poisson-adaptive subsamples, dash-dot for ideal Poisson probes,
+    dotted for uniform baselines, see family_border_style) so
     the methods stay visually distinguishable -- the fill itself is only ever
     the plain pass/fail color, never a pattern. All
     are colored green when at least `pass_threshold` (e.g. 90%) of the runs'
@@ -5607,11 +5705,11 @@ def plot_emd_vs_num_flows_boxplot(results, output_path, title="EMD vs number of 
                                      + [np.asarray(v, dtype=float) for m in methods for v in emd_sampled_by_run[m]]
                                      + [np.asarray(v, dtype=float) for s in uniform_series for v in emd_uniform_by_run[s]]
                                      + [np.asarray(v, dtype=float) for s in oracle_series for v in emd_oracle_by_run[s]])
-        if all_values.size and np.nanmax(all_values) > y_max:
-            axis.text(0.995, 0.01, 'y-axis capped at {:g}; some boxes/whiskers extend beyond\n'
-                                    '(see results text file for full range)'.format(y_max),
-                       transform=axis.transAxes, ha='right', va='bottom', fontsize=14, style='italic',
-                       bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+        # if all_values.size and np.nanmax(all_values) > y_max:
+        #     axis.text(0.995, 0.01, 'y-axis capped at {:g}; some boxes/whiskers extend beyond\n'
+        #                             '(see results text file for full range)'.format(y_max),
+        #                transform=axis.transAxes, ha='right', va='top', fontsize=14, style='italic',
+        #                bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
         axis.set_ylim(bottom=0, top=y_max)
     axis.legend(handles=legend_handles, fontsize=18, loc='best')
     fig.tight_layout()
@@ -5730,11 +5828,11 @@ def plot_mean_diff_vs_num_flows(results, output_path, title="Switch vs. packet m
                                      + [np.asarray(v, dtype=float) for m in methods for v in diff_sampled_by_run[m]]
                                      + [np.asarray(v, dtype=float) for s in uniform_series for v in diff_uniform_by_run[s]]
                                      + [np.asarray(v, dtype=float) for s in oracle_series for v in diff_oracle_by_run[s]])
-        if all_values.size and np.nanmax(np.abs(all_values)) > y_limit:
-            axis.text(0.995, 0.01, 'y-axis capped at +/-{:.0f} ns; some boxes/whiskers extend beyond\n'
-                                    '(see results text file for full range)'.format(y_limit),
-                       transform=axis.transAxes, ha='right', va='bottom', fontsize=14, style='italic',
-                       bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+        # if all_values.size and np.nanmax(np.abs(all_values)) > y_limit:
+        #     axis.text(0.995, 0.01, 'y-axis capped at +/-{:.0f} ns; some boxes/whiskers extend beyond\n'
+        #                             '(see results text file for full range)'.format(y_limit),
+        #                transform=axis.transAxes, ha='right', va='bottom', fontsize=14, style='italic',
+        #                bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
         axis.set_ylim(-y_limit, y_limit)
     axis.legend(handles=legend_handles, fontsize=18, loc='best')
     fig.tight_layout()

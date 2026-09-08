@@ -683,7 +683,8 @@ def __main__():
                          "combined plots/pickle/text under scratch/ECNMC/Results/results_<dir>/<traffic>/"
                          "<rate>/<load>/, and for each rate it additionally saves cross-traffic comparison "
                          "plots (EMD vs load, one boxplot family per traffic, one plot per flow-count k) "
-                         "under scratch/ECNMC/Results/results_<dir>/emd_vs_load_by_traffic/<rate>/. Takes "
+                         "under scratch/ECNMC/Results/results_<dir>/emd_vs_load_by_traffic_<methods><gt>/<rate>/ "
+                         "(tagged with the subsampling method(s) and ground-truth method used). Takes "
                          "precedence over --emd-vs-flows. Only used in the 'forward' branch.")
     parser.add_argument("--subsampling-method", dest="subsampling_methods", nargs='+',
                     default=["find_samples_path"], metavar="METHOD",
@@ -747,15 +748,15 @@ def __main__():
     # steadyEnd = 0.015 * 1e9
     experiments = int(config.get('Settings', 'experiments'))
     experiments = 30
-    experiments = 1
+    # experiments = 1
     serviceRateScales = [float(x) for x in config.get('Settings', 'serviceRateScales').split(',')]
     # serviceRateScales = [0.5]
     loads = [float(x) for x in config.get('Settings', 'load').split(',')]
     loads = [0.5, 0.6, 0.7, 0.8, 0.95]
-    loads = [0.80]
+    # loads = [0.80]
     traffics = config.get('Settings', 'traffic').split(',')
-    traffics = ["Google_AllRPC", "Fabricated_Heavy_Head", "Fabricated_Heavy_Middle", "Google_SearchRPC", "Facebook_HadoopDist_All"]
-    traffics = ["Google_AllRPC"]
+    traffics = ["Google_AllRPC", "Google_SearchRPC", "Facebook_HadoopDist_All"]
+    # traffics = ["Google_AllRPC"]
     errorRates = [float(x) for x in config.get('Settings', 'errorRate').split(',')]
     # errorRates = [0.1, 0.3, 0.5, 0.7, 0.9]
     # errorRates = [0.1]
@@ -1062,14 +1063,19 @@ def aggregate_emd_vs_flows_across_traffics_and_loads(ns3_path, dir_name, traffic
     cross-traffic comparison plots: for every flow-count k seen in any combination, one plot
     of EMD vs. load with all-packets and every Poisson-adaptive subsampling method together
     -- as one boxplot cluster per traffic per load (see plot_emd_vs_load_by_traffic). For
-    every Poisson-adaptive method, a second set of plots (same k values) pairs that method
-    against its own rate-matched uniform baseline, which draws the same number of packets
-    (poisson_vs_uniform_load_plot_series) -- so the pair reads as a verdict on the selection
-    rule rather than on sample size. Every one of these plots is written
-    twice: in raw nanoseconds and, as a `..._normalized.png` twin, in units of the mean
-    ground-truth delay -- the latter being the version actually comparable across the loads
-    on the x-axis. Also saves, for each of these plot kinds, one additional plot using each
-    combination's own maximum flow count instead of a fixed k (k='max' in
+    every Poisson-adaptive method, a second set of plots (same k values) puts that method,
+    its own rate-matched uniform baseline, and the ideal Poisson probe at the same sample
+    count together (poisson_vs_uniform_vs_ideal_load_plot_series) -- so the group reads as a
+    verdict on the selection rule (vs. uniform) and on how much of the remaining error is
+    finite-sample noise vs. selection bias (vs. the ideal probe). A third set pairs each
+    method against its ideal probe alone plus the minimum-required-sample-size probe
+    (sampled_vs_oracle_load_plot_series), and a fourth compares all-packets against the ideal
+    probe(s) directly (all_packets_vs_oracle_load_plot_series) -- the ceiling any subsampling
+    scheme could reach, independent of a particular sampler's own imperfections. Every one of
+    these plots is written twice: in raw nanoseconds and, as a `..._normalized.png` twin, in
+    units of the mean ground-truth delay -- the latter being the version actually comparable
+    across the loads on the x-axis. Also saves, for each of these plot kinds, one additional
+    plot using each combination's own maximum flow count instead of a fixed k (k='max' in
     plot_emd_vs_load_by_traffic), to compare "all the flows we have" per traffic/load even
     though the exact max count can differ across combinations.
 
@@ -1085,7 +1091,10 @@ def aggregate_emd_vs_flows_across_traffics_and_loads(ns3_path, dir_name, traffic
     (see plot_pass_rate_vs_load_by_traffic) -- unlike the EMD plots above, this is the
     success rate, not the EMD distribution.
 
-    Saved under scratch/ECNMC/Results/results_<dir_name>/emd_vs_load_by_traffic/<rate>/.
+    Saved under scratch/ECNMC/Results/results_<dir_name>/emd_vs_load_by_traffic_<methods><gt>/<rate>/,
+    where <methods>/<gt> are the subsampling-method(s) and ground-truth-method tags (see
+    subsampling_methods_tag / groundtruth_method_tag) -- so different subsampling/GT
+    configurations for the same dir_name land in separate folders.
 
     Returns the {(traffic, load): aggregated_results} dict used to build the plots, or None
     if no traffic/load combination had any experiment results to aggregate.
@@ -1108,7 +1117,13 @@ def aggregate_emd_vs_flows_across_traffics_and_loads(ns3_path, dir_name, traffic
 
     all_k = sorted(set().union(*(set(r['num_flows']) for r in results_by_traffic_load.values())))
 
-    output_dir = '{}/scratch/ECNMC/Results/results_{}/emd_vs_load_by_traffic/{}/'.format(ns3_path, dir_name, rate)
+    # Folder is tagged with the subsampling method(s) and ground-truth method this run used
+    # (same tag pieces as the per-output filenames, see emd_vs_flows_file_tag) so runs with
+    # different configurations land in different folders instead of all piling into one
+    # generic 'emd_vs_load_by_traffic' directory.
+    folder_tag = subsampling_methods_tag(subsampling_methods) + groundtruth_method_tag(groundtruth_method)
+    output_dir = '{}/scratch/ECNMC/Results/results_{}/emd_vs_load_by_traffic_{}/{}/'.format(
+        ns3_path, dir_name, folder_tag, rate)
     os.makedirs(output_dir, exist_ok=True)
     file_prefix = '{}{}_path_{}_{}'.format(
         output_dir, flow_name, path,
@@ -1117,19 +1132,31 @@ def aggregate_emd_vs_flows_across_traffics_and_loads(ns3_path, dir_name, traffic
 
     plot_kinds = [(all_packets_vs_sampled_load_plot_series(subsampling_methods), '',
                     'all packets vs. Poisson-adaptive subsample(s)')]
-    # One clean two-series plot per method: that method against the uniform baseline
-    # drawing its own sample count.
+    # One three-series plot per method: that method, its rate-matched uniform baseline, and
+    # the ideal Poisson probe, all at ~the same sample count -- so the plot answers both "does
+    # the selection rule beat blind uniform sampling" and "how much of what's left is
+    # finite-sample noise vs. selection bias" together.
     for method in subsampling_methods:
-        plot_kinds.append((poisson_vs_uniform_load_plot_series(method),
-                            '_poisson_vs_uniform_{}'.format(method),
-                            '{} vs. its rate-matched uniform baseline (equal sample size)'.format(method)))
-    # And each method against the ideal Poisson probe at its own sample count: the gap is
-    # the part of the error that having few samples does not explain. One plot per method,
-    # since every series in this comparison is Poisson-based and so drawn solid.
+        plot_kinds.append((poisson_vs_uniform_vs_ideal_load_plot_series(method),
+                            '_poisson_vs_uniform_vs_ideal_{}'.format(method),
+                            '{} vs. its rate-matched uniform baseline vs. the ideal Poisson probe '
+                            '(all ~equal sample size)'.format(method)))
+    # And each method against the ideal Poisson probe at its own sample count alone (plus the
+    # probe at the minimum required sample size): the gap between the method and its own ideal
+    # probe is the part of its error that having few samples does not explain. One plot per
+    # method, since the two oracle series (this method's probe + the minimum-required one)
+    # still need width/variant to stay apart from each other.
     for method in subsampling_methods:
         plot_kinds.append((sampled_vs_oracle_load_plot_series(method),
                             '_poisson_vs_ideal_{}'.format(method),
                             '{} vs. the ideal Poisson probe at the same sample budget'.format(method)))
+    # All packets vs. the ideal Poisson probe: the theoretical ceiling a real sampler could
+    # reach, independent of any particular sampler's own selection-rule imperfections -- reads
+    # alongside the all-packets-vs-Poisson-adaptive plot above to separate "what subsampling
+    # costs in principle" from "what this particular sampler costs beyond that".
+    plot_kinds.append((all_packets_vs_oracle_load_plot_series(subsampling_methods),
+                        '_all_vs_ideal',
+                        'all packets vs. the ideal Poisson probe(s)'))
 
     # Raw nanoseconds and the load-comparable normalized twin of every plot below.
     emd_variants = [(False, '', 'EMD'), (True, '_normalized', 'Normalized EMD')]
