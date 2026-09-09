@@ -8,8 +8,8 @@
 
 std::unordered_map<uint32_t, uint32_t> DCWorkloadGenerator::SOCKET_COUNT;
 
-DCWorkloadGenerator::DCWorkloadGenerator(const Ptr<Node>& sender, const vector<Ptr<Node>>& receivers, double avgRate, uint32_t poolSize, const string workloadPath, const string protocol, Time trafficStartTime, Time trafficEndTime) :
-        _sender(sender), _receivers(receivers), _avgRate(avgRate), _poolSize(poolSize), _workloadPath(workloadPath), protocol(protocol), trafficStartTime(trafficStartTime), trafficEndTime(trafficEndTime) {}
+DCWorkloadGenerator::DCWorkloadGenerator(const Ptr<Node>& sender, const vector<Ptr<Node>>& receivers, double avgRate, uint32_t poolSize, const string workloadPath, const string protocol, Time trafficStartTime, Time trafficEndTime, const string arrivalProcess, uint32_t fixedMsgSize, double startPhase) :
+        _sender(sender), _receivers(receivers), _avgRate(avgRate), _poolSize(poolSize), _workloadPath(workloadPath), protocol(protocol), trafficStartTime(trafficStartTime), trafficEndTime(trafficEndTime), _arrivalProcess(arrivalProcess), _fixedMsgSize(fixedMsgSize), _startPhase(startPhase) {}
 
 vector<Address> 
 DCWorkloadGenerator::establishPairConnections(uint32_t receiverId) {
@@ -49,6 +49,9 @@ DCWorkloadGenerator::GenrateTraffic(bool pctPacedBack, bool probe, Time probeInt
     factory.Set("EnablePacing", BooleanValue(pctPacedBack));
     factory.Set("Probe", BooleanValue(probe));
     factory.Set("ProbeInterval", DoubleValue(probeInterval.GetSeconds()));
+    factory.Set("ArrivalProcess", StringValue(_arrivalProcess));
+    factory.Set("FixedMessageSize", UintegerValue(_fixedMsgSize));
+    factory.Set("StartPhase", DoubleValue(_startPhase));
     Ptr<WorkloadApp> nodeAppsHandler = factory.Create<WorkloadApp>();
     nodeAppsHandler->SetReceiverAddress(receiversAddresses);
     nodeAppsHandler->SetTrafficStartTime(StartTime);

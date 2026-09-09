@@ -746,6 +746,15 @@ void run_DC_simulation(int argc, char* argv[]){
     uint32_t incastMessageSize = 10000;                // The size of the incast messages
     uint16_t incastFactor = 10;                        // The incast factor
     int seed = 1;                                      // The seed for the random number generator
+    bool periodicTraffic = false;                      // Periodic incast instead of the Poisson all-to-all workload
+    int periodicSenderRacks = 1;                       // How many racks (0..n-1) take part as senders
+    int periodicSenders = 6;                           // How many hosts per sending rack send in the periodic incast
+    uint32_t periodicMsgSize = 16384;                  // Bytes per message
+    string periodicPeriod = "50us";                    // Time between successive messages (`load` is not used)
+    int periodicDstRack = 2;                           // Rack holding the receiver(s) the periodic senders target
+    int periodicDstHost = 3;                           // First receiver host within periodicDstRack
+    int periodicDstHosts = 1;                          // Distinct receivers in that rack, one per sending rack (1 = one shared receiver)
+    double periodicPhaseSpread = 0.0;                  // 0 = all senders fire together (one batch); 1 = phases spread evenly over the period (smooth)
     int nHosts = 6;                                   // Hosts per rack
     int nRacks = 4;                                    // Number of ToR racks
     int nAggSwitches = 2;                              // Number of aggregation switches
@@ -801,8 +810,6 @@ void run_DC_simulation(int argc, char* argv[]){
     cmd.AddValue("incastFactor", "The incast factor", incastFactor);
     cmd.AddValue("nHosts", "Number of hosts per rack", nHosts);
     cmd.AddValue("nRacks", "Number of racks", nRacks);
-    cmd.AddValue("nAggSwitches", "Number of aggregation switches", nAggSwitches);
-    cmd.AddValue("nCoreSwitches", "Number of core switches", nCoreSwitches);
     cmd.AddValue("tbfSrcRack", "Rack of the source host whose flows are eligible for shaping at T0's ingress", tbfSrcRack);
     cmd.AddValue("tbfSrcHost", "Host (within tbfSrcRack) whose flows are eligible for shaping at T0's ingress", tbfSrcHost);
     cmd.AddValue("tbfDstRack", "Rack of the destination host whose flows are eligible for shaping at T0's ingress", tbfDstRack);
@@ -810,6 +817,15 @@ void run_DC_simulation(int argc, char* argv[]){
     cmd.AddValue("tbfFlowRedirectFraction", "Fraction of the tbfSrcHost->tbfDstHost TCP flows delayed by the token bucket at T0's ingress before reaching RED", tbfFlowRedirectFraction);
     cmd.AddValue("tbfRate", "Token bucket fill rate for shaped flows at T0's ingress", tbfRate);
     cmd.AddValue("tbfBurst", "Token bucket burst size for shaped flows at T0's ingress", tbfBurst);
+    cmd.AddValue("periodicTraffic", "Periodic incast instead of the Poisson all-to-all workload", periodicTraffic);
+    cmd.AddValue("periodicSenderRacks", "How many racks take part as senders in the periodic incast", periodicSenderRacks);
+    cmd.AddValue("periodicSenders", "How many hosts per sending rack send in the periodic incast", periodicSenders);
+    cmd.AddValue("periodicMsgSize", "Bytes per periodic message", periodicMsgSize);
+    cmd.AddValue("periodicPeriod", "Time between successive periodic messages", periodicPeriod);
+    cmd.AddValue("periodicDstRack", "Rack holding the receiver(s) the periodic senders target", periodicDstRack);
+    cmd.AddValue("periodicDstHost", "First receiver host within periodicDstRack", periodicDstHost);
+    cmd.AddValue("periodicDstHosts", "Distinct receivers in the destination rack, one per sending rack", periodicDstHosts);
+    cmd.AddValue("periodicPhaseSpread", "0 = all periodic senders fire together, 1 = phases spread evenly over the period", periodicPhaseSpread);
     cmd.Parse(argc, argv);
 
     /*set default values*/
@@ -831,6 +847,15 @@ void run_DC_simulation(int argc, char* argv[]){
     Config::SetDefault("ns3::TcpSocket::InitialCwnd", UintegerValue(66));
     Config::SetDefault("ns3::TcpSocket::ConnTimeout", TimeValue(Seconds(0.0002)));
     Config::SetDefault("ns3::TcpSocketBase::MinRto", TimeValue(Seconds(0.0002)));
+    // RFC 6298 computes RTO as SRTT + max(clockGranularity, 4*RTTVAR), and ns-3 defaults the
+    // granularity to 1 ms. On this fabric the RTT is ~9 us, so that default pins every RTO at
+    // ~1.009 ms -- 100x the RTT, and 5x MinRto, which therefore never binds. Any flow that loses
+    // its window then needs a full millisecond per recovery step, and with DelAckCount=2 a
+    // one-segment window deadlocks: the receiver holds the ACK waiting for a second segment
+    // (DelAckTimeout is 200 ms), the sender times out first, its retransmission is a duplicate
+    // that does get ACKed immediately, and the flow advances exactly one segment per RTO. That
+    // is what starved R0H0 to 11.5 Mbps for a whole second in the first collective pilot.
+    Config::SetDefault("ns3::TcpSocketBase::ClockGranularity", TimeValue(MicroSeconds(10)));
     GlobalValue::Bind("ChecksumEnabled", BooleanValue(false));
     Config::SetDefault("ns3::RedQueueDisc::UseHardDrop", BooleanValue(false));
     Config::SetDefault("ns3::RedQueueDisc::MeanPktSize", UintegerValue(1500));
@@ -1120,36 +1145,107 @@ void run_DC_simulation(int argc, char* argv[]){
 
     // DC Workload traffic
     avgMsgSize = readAvgMsgSize(traffic);
-    hostTrafficRate = computeTraffciRate(load, DataRate(hostToTorLinkRate), avgMsgSize);
+    // The periodic incast is specified directly -- period and message size -- so `load` plays no
+    // part in it; only the Poisson background workload derives its message rate from `load`.
+    hostTrafficRate = periodicTraffic ? (1.0 / Time(periodicPeriod).GetSeconds())
+                                      : computeTraffciRate(load, DataRate(hostToTorLinkRate), (uint32_t) avgMsgSize);
     // vector<Ptr<Node>> dstNodes;
     // dstNodes.push_back(racks[1].Get(0));
     // auto* dcTrafficGenerator = new DCWorkloadGenerator(racks[0].Get(0), dstNodes, hostTrafficRate, poolSize, "scratch/ECNMC/DCWorkloads/" + traffic, "ns3::TcpSocketFactory", Time(Seconds(0)), stopTime - Seconds(0.002));
     // dcTrafficGenerator->GenrateTraffic(pctPacedBack, passiveProbe, Time(probeInterval));
-    for (int i = 0; i < nRacks; i++) {
-        for (int j = 0; j < nHosts; j++) {
-            vector<Ptr<Node>> dstNodes;
-            // all nodes except this node are destination nodes
-            for (int k = 0; k < nRacks; k++) {
-                // if (i == 1 && k == 3)
-                //     continue;
-                // if (i == 3 && k == 1)
-                //     continue;
-                for (int l = 0; l < nHosts; l++) {
-                    if (k != i || l != j) {
-                        dstNodes.push_back(racks[k].Get(l));
-                    }
-                }
+    // Two traffic modes, selected by `periodicTraffic`:
+    //  - false (the original): every host posts Poisson-arriving messages, sized from the CDF, to a
+    //    uniformly-chosen peer. Every destination's last hop is then continuously busy and the
+    //    packet arrival process on any one path is already close to Poisson, which is exactly the
+    //    regime where a naive all-packets delay average happens to be right.
+    //  - true: an ML-style synchronized incast. The first `periodicSenders` hosts of each of the
+    //    first `periodicSenderRacks` racks post one `periodicMsgSize`-byte message to the SAME
+    //    receiver, at deterministic instants `periodicPeriod` apart (`load` is not involved). The
+    //    receiver's last hop takes the whole burst at once and is idle until the next period, so
+    //    e2e packets exist only while that queue is busy while the switch-side Poisson sampler
+    //    also sees the idle gaps -- which is what pushes the all-packets average away from the
+    //    time-average and makes Poissonizing the e2e sample necessary.
+    //    Burstiness is `periodicPeriod` at a fixed burst volume: the busy fraction is
+    //    delta = 8*burst/(period*linkRate) and the packet average overstates the time average by
+    //    about 1/delta, so a longer period concentrates the same bytes into rarer bursts and makes
+    //    the naive estimator monotonically worse.
+    //    For this to hold with PACING ENABLED, one burst must stay below the ECN marking threshold
+    //    (MinTh of the last-hop buffer). ns-3 paces at max(cwnd,inFlight)*8*factor/RTT, so once RED
+    //    starts marking, DCTCP cuts cwnd, the paced rate collapses to the flow's average rate and
+    //    the burst is smeared flat across its own period -- which is exactly what happened when a
+    //    98 KB burst met a 60 KB threshold. Below the threshold nothing marks, cwnd stays large,
+    //    and pacing is a no-op.
+    // Either way the messages go over the pre-established connection pool (`poolSize` sockets per
+    // sender/receiver pair), so a period never pays for connection setup or slow-start from idle.
+    // Senders are in rack 0 because that is where the E2E monitors are attached (R0H*->R2H3).
+    if (periodicTraffic) {
+        // Sending racks are the first `periodicSenderRacks` racks other than the destination rack
+        // (intra-rack traffic would bypass T0A0/A0T2 and so would not sit on the monitored path).
+        // Each sending rack is handed one receiver in the destination rack, cycling through
+        // `periodicDstHosts` of them: with periodicDstHosts == 1 every sender converges on one host
+        // (a single incast); with more, the racks split evenly over several receivers -- concurrent
+        // incasts that still share the same fabric links. The first sending rack always keeps
+        // `periodicDstHost`, so R0H*->R2H3 remains the monitored path.
+        vector<int> sendingRacks;
+        for (int r = 0; r < nRacks && (int) sendingRacks.size() < max(1, periodicSenderRacks); r++) {
+            if (r == periodicDstRack) {
+                continue;
             }
-            auto* dcTrafficGenerator = new DCWorkloadGenerator(racks[i].Get(j), dstNodes, hostTrafficRate, poolSize, "scratch/ECNMC/DCWorkloads/" + traffic, "ns3::TcpSocketFactory", Time(Seconds(0)), stopTime - Seconds(0.00002));
-            // if this is the the traffic from R0H0, activate the passiveProbing
-            if (i == 0 && j == 0) {
-                dcTrafficGenerator->GenrateTraffic(pctPacedBack, passiveProbe, Time(probeInterval), Seconds(stof(trafficStartTime)));
-            }
-            else {
-                dcTrafficGenerator->GenrateTraffic(pctPacedBack, false, Time(probeInterval), Seconds(stof(trafficStartTime)));
+            sendingRacks.push_back(r);
+        }
+        int distinctDsts = max(1, min(periodicDstHosts, nHosts));
+        int sendersPerRack = min(periodicSenders, nHosts);
+        int totalSenders = (int) sendingRacks.size() * sendersPerRack;
+        // `periodicPhaseSpread` is the burstiness knob. Sender i of the job starts at
+        // phase spread*i/totalSenders of the period, so at 0 every sender fires at the same
+        // instant and the receiver sees one totalSenders-packet batch, while at 1 the senders are
+        // spread evenly and it sees a near-deterministic smooth stream. Offered load, message
+        // size, buffer and ECN threshold are identical across the sweep, and relative phase is
+        // one thing TCP pacing cannot undo -- pacing reshapes a message within itself, it does not
+        // move senders relative to each other.
+        for (size_t p = 0; p < sendingRacks.size(); p++) {
+            int senderRack = sendingRacks[p];
+            int dstHost = (periodicDstHost + (int) (p % (size_t) distinctDsts)) % nHosts;
+            for (int j = 0; j < sendersPerRack; j++) {
+                int senderIndex = (int) p * sendersPerRack + j;
+                double phase = periodicPhaseSpread * ((double) senderIndex / (double) totalSenders);
+                vector<Ptr<Node>> dstNodes;
+                dstNodes.push_back(racks[periodicDstRack].Get(dstHost));
+                auto* dcTrafficGenerator = new DCWorkloadGenerator(racks[senderRack].Get(j), dstNodes, hostTrafficRate, poolSize, "scratch/ECNMC/DCWorkloads/" + traffic, "ns3::TcpSocketFactory", Time(Seconds(0)), stopTime - Seconds(0.00002), "Periodic", periodicMsgSize, phase);
+                // if this is the the traffic from R0H0, activate the passiveProbing
+                bool probeThisSender = (senderRack == 0 && j == 0);
+                dcTrafficGenerator->GenrateTraffic(pctPacedBack, probeThisSender && passiveProbe, Time(probeInterval), Seconds(stof(trafficStartTime)));
             }
         }
     }
+    else {
+        for (int i = 0; i < nRacks; i++) {
+            for (int j = 0; j < nHosts; j++) {
+                vector<Ptr<Node>> dstNodes;
+                // all nodes except this node are destination nodes
+                for (int k = 0; k < nRacks; k++) {
+                    // if (i == 1 && k == 3)
+                    //     continue;
+                    // if (i == 3 && k == 1)
+                    //     continue;
+                    for (int l = 0; l < nHosts; l++) {
+                        if (k != i || l != j) {
+                            dstNodes.push_back(racks[k].Get(l));
+                        }
+                    }
+                }
+                auto* dcTrafficGenerator = new DCWorkloadGenerator(racks[i].Get(j), dstNodes, hostTrafficRate, poolSize, "scratch/ECNMC/DCWorkloads/" + traffic, "ns3::TcpSocketFactory", Time(Seconds(0)), stopTime - Seconds(0.00002));
+                // if this is the the traffic from R0H0, activate the passiveProbing
+                if (i == 0 && j == 0) {
+                    dcTrafficGenerator->GenrateTraffic(pctPacedBack, passiveProbe, Time(probeInterval), Seconds(stof(trafficStartTime)));
+                }
+                else {
+                    dcTrafficGenerator->GenrateTraffic(pctPacedBack, false, Time(probeInterval), Seconds(stof(trafficStartTime)));
+                }
+            }
+        }
+    }
+
     // Incast Traffic 
     // auto* incastTrafficGenerator = new IncastGenerator(racks, incastFactor, incastMessageSize, Time(incastperiod), Seconds(stof(trafficStartTime)), Seconds(stof(trafficStopTime)));
     // incastTrafficGenerator->Start();
@@ -1357,6 +1453,63 @@ void run_DC_simulation(int argc, char* argv[]){
     cout << "Incast Factor: " << incastFactor << endl;
     cout << "Incast Message Size: " << incastMessageSize << endl;
     cout << "Incast Period: " << incastperiod << endl;
+    cout << "periodicTraffic: " << periodicTraffic << endl;
+    if (periodicTraffic) {
+        int racksSending = 0;
+        for (int r = 0; r < nRacks && racksSending < max(1, periodicSenderRacks); r++) {
+            if (r != periodicDstRack) {
+                racksSending++;
+            }
+        }
+        int distinctDsts = max(1, min(periodicDstHosts, nHosts));
+        int racksPerDst = (racksSending + distinctDsts - 1) / distinctDsts;
+        int senders = racksSending * min(periodicSenders, nHosts);
+        double period = Time(periodicPeriod).GetSeconds();
+        // The monitored last hop only sees the racks assigned to its own receiver.
+        double burst = (double) racksPerDst * min(periodicSenders, nHosts) * periodicMsgSize;
+        double duty = (8.0 * burst) / (period * DataRate(hostToTorLinkRate).GetBitRate());
+        uint32_t lastHopBuffer = QueueSize(switchSrcREDQueueDiscMaxSize).GetValue();
+        cout << "  receiver: R" << periodicDstRack << "H" << periodicDstHost << endl;
+        cout << "  senders: " << senders << " host(s) over " << racksSending << " rack(s)" << endl;
+        cout << "  receivers: " << distinctDsts << " host(s) of rack " << periodicDstRack
+             << " from H" << periodicDstHost << " (" << racksPerDst << " sending rack(s) each)" << endl;
+        cout << "  phase spread: " << periodicPhaseSpread << " (senders staggered by "
+             << (periodicPhaseSpread * period * 1e9 / max(1, senders)) << " ns; 0 = one batch)" << endl;
+        cout << "  message size: " << periodicMsgSize << " B ("
+             << (periodicMsgSize / 1448 + (periodicMsgSize % 1448 ? 1 : 0)) << " segments)" << endl;
+        cout << "  period: " << period * 1e9 << " ns" << endl;
+        cout << "  burst per period at the monitored receiver: " << burst
+             << " B (instantaneous only at phase spread 0) into a " << lastHopBuffer
+             << " B last-hop buffer" << endl;
+        cout << "  receiver last-hop busy fraction (delta): " << duty << endl;
+        cout << "  expected all-packets mean-delay overstatement (1/delta): " << (1.0 / duty) << endl;
+        // A thinned periodic stream has gaps that are integer multiples of the period, and the
+        // Anderson-Darling test rejects that lattice unless the retention is about 3% or less. So
+        // the largest Poisson subsample the e2e sampler can ever return is ~3% of the number of
+        // periods in the measurement window, and that has to clear the consistency check's
+        // minimum sample size (a few hundred here).
+        double periodsInWindow = (stof(steadyStopTime) - stof(steadyStartTime)) / period;
+        cout << "  periods in the steady window: " << periodsInWindow
+             << "  -> largest Poissonizable subsample ~" << (0.03 * periodsInWindow) << endl;
+        if (pctPacedBack > 0) {
+            cout << "  WARNING: pctPacedBack > 0 paces each message out over its own period, which "
+                    "removes the burst and leaves the queues empty" << endl;
+        }
+        double ecnThreshold = minTh * lastHopBuffer;
+        cout << "  burst vs ECN marking threshold: " << (burst / ecnThreshold * 100) << "% of "
+             << ecnThreshold << " B" << endl;
+        if (burst > ecnThreshold) {
+            cout << "  WARNING: one burst exceeds the last-hop ECN marking threshold. RED will mark, "
+                    "DCTCP will cut cwnd, and with pacing enabled the paced rate collapses to the "
+                    "flow's average rate, smearing the burst flat over its period. Either shrink "
+                    "periodicSenders*periodicMsgSize below the threshold, raise minTh, or disable "
+                    "pacing (pctPacedBack=0)" << endl;
+        }
+        if (burst > 0.5 * lastHopBuffer) {
+            cout << "  WARNING: the burst exceeds half the last-hop buffer -- expect drops, and a "
+                    "flow that loses its window can stay starved" << endl;
+        }
+    }
     cout << "Seed: " << seed << endl;
     /* ########## END: Check Config ########## */
 

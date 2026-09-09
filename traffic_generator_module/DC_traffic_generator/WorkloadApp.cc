@@ -45,6 +45,26 @@ TypeId WorkloadApp::GetTypeId() {
                             TimeValue(Seconds(1)),
                             MakeTimeAccessor(&WorkloadApp::_probeStopTime),
                             MakeTimeChecker())
+            .AddAttribute("ArrivalProcess",
+                            "Message arrival process: \"Poisson\" (exponential inter-message times, the "
+                            "original background DC workload) or \"Periodic\" (a deterministic 1/Rate "
+                            "inter-message time, so that senders configured alike fire together)",
+                            StringValue("Poisson"),
+                            MakeStringAccessor(&WorkloadApp::_arrivalProcess),
+                            MakeStringChecker())
+            .AddAttribute("StartPhase",
+                            "Offset of this application's first message, in units of one period. "
+                            "Senders given different phases fire staggered rather than together, "
+                            "which is what turns one synchronized batch into a smooth stream",
+                            DoubleValue(0.0),
+                            MakeDoubleAccessor(&WorkloadApp::_startPhase),
+                            MakeDoubleChecker<double>(0.0, 1.0))
+            .AddAttribute("FixedMessageSize",
+                            "If non-zero, every message is exactly this many bytes instead of a draw "
+                            "from the workload's message-size CDF",
+                            UintegerValue(0),
+                            MakeUintegerAccessor(&WorkloadApp::_fixedMsgSize),
+                            MakeUintegerChecker<uint32_t>())
     ;
     return tid;
 }
@@ -111,9 +131,15 @@ void WorkloadApp::StartApplication() {
     NS_LOG_FUNCTION(this);
     cout << "Node " << GetNodeIP(GetNode(), 1) << " WorkloadApp started at: " << Simulator::Now().GetSeconds() << " Will end at: " << this->m_stopTime.GetNanoSeconds() << endl;
     m_var->SetAttribute("Mean", DoubleValue(1/_rate));
+    if (_arrivalProcess == "Periodic") {
+        cout << "    Periodic arrival process: period " << (1e9 / _rate) << " ns, message size "
+             << (_fixedMsgSize > 0 ? to_string(_fixedMsgSize) + " B" : string("from the workload CDF"))
+             << ", start phase " << _startPhase << " period(s) = " << (_startPhase * 1e9 / _rate)
+             << " ns" << endl;
+    }
     ReadWorkloadFile();
     PrepareConnections();
-    double nextEventTime = m_var->GetValue();
+    double nextEventTime = (_startPhase / _rate) + NextInterval();
     _sendEvent = Simulator::Schedule(_trafficStartTime + Seconds(nextEventTime), &WorkloadApp::ScheduleNextSend, this);
 }
 
@@ -140,7 +166,7 @@ void WorkloadApp::StopApplication() {
 
 void WorkloadApp::Send() {
     NS_LOG_FUNCTION(this);
-    uint32_t segmentSize = m_erv->GetValue();
+    uint32_t segmentSize = _fixedMsgSize > 0 ? _fixedMsgSize : (uint32_t) m_erv->GetValue();
     // segmentSize *= 1442; // for DCTCP workload
     uint32_t selectedReceiver = m_uniform->GetInteger(0, _receiversNumber - 1);
     // cout << "Node " << GetNodeIP(GetNode(), 1) << " WorkloadApp sending to receiver size of: " << segmentSize << " at: " << Simulator::Now().GetNanoSeconds() << endl;
@@ -148,7 +174,11 @@ void WorkloadApp::Send() {
     stringstream ss;
     ss << GetNodeIP(GetNode(), 1);
     string nodeIp = ss.str();
-    if (nodeIp.find("10.2.") != string::npos || nodeIp.find("10.4.") != string::npos) {
+    // Poisson (all-to-all background) mode only: suppress rack1<->rack3 traffic. Periodic senders
+    // are given an explicit destination, so this filter must not silently discard their messages
+    // -- it would do exactly that for a rack-1 sender aimed at a rack-3 receiver.
+    if (_arrivalProcess != "Periodic" &&
+        (nodeIp.find("10.2.") != string::npos || nodeIp.find("10.4.") != string::npos)) {
         stringstream receiverSs;
         receiverSs << InetSocketAddress::ConvertFrom(_receiverAddress[selectedReceiver][0]).GetIpv4();
         string receiverIp = receiverSs.str();
@@ -161,10 +191,19 @@ void WorkloadApp::Send() {
     _connectionPools[selectedReceiver]->SendData(Create<Packet>(segmentSize));
 }
 
+double WorkloadApp::NextInterval() {
+    // "Periodic": a deterministic inter-message time, so every sender configured this way fires at
+    // the same instants. The Poisson branch is the original behaviour and is left bit-identical.
+    if (_arrivalProcess == "Periodic") {
+        return 1.0 / _rate;
+    }
+    return m_var->GetValue();
+}
+
 void WorkloadApp::ScheduleNextSend() {
     // cout << "Node " << GetNodeIP(GetNode(), 1) << " WorkloadApp sending at: " << Simulator::Now().GetNanoSeconds() << endl;
     Send();
-    double nextEvent = m_var->GetValue();
+    double nextEvent = NextInterval();
     _sendEvent = Simulator::Schedule(Seconds(nextEvent), &WorkloadApp::ScheduleNextSend, this);
     // cout << "Node " << GetNodeIP(GetNode(), 1) << " WorkloadApp next event at: " << (Simulator::Now() + Seconds(nextEvent)).GetNanoSeconds() << " Event: " << _sendEvent.GetUid() << endl;
 }

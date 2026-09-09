@@ -29,11 +29,17 @@ private:
     string protocol;
     Time trafficStartTime;
     Time trafficEndTime;
+    string _arrivalProcess;
+    uint32_t _fixedMsgSize;
+    double _startPhase;
 
     vector<vector<Address>> receiversAddresses;
     vector<Address> establishPairConnections(uint32_t receiverId);
 public:
-    DCWorkloadGenerator(const Ptr<Node>& sender, const vector<Ptr<Node>>& receivers, double avgRate, uint32_t poolSize, const string workloadPath, const string protocol, Time trafficStartTime, Time trafficEndTime);
+    // `arrivalProcess` is "Poisson" (exponential inter-message times, the default) or "Periodic"
+    // (a deterministic 1/avgRate inter-message time). `fixedMsgSize` of 0 draws every message size
+    // from `workloadPath`'s CDF; non-zero makes every message exactly that many bytes.
+    DCWorkloadGenerator(const Ptr<Node>& sender, const vector<Ptr<Node>>& receivers, double avgRate, uint32_t poolSize, const string workloadPath, const string protocol, Time trafficStartTime, Time trafficEndTime, const string arrivalProcess = "Poisson", uint32_t fixedMsgSize = 0, double startPhase = 0.0);
 
     void GenrateTraffic(bool pctPacedBack, bool probe, Time probeInterval, Time trafficStartTime);
 };

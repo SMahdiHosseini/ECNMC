@@ -32,6 +32,7 @@ public:
 private:
     vector<Ptr<Socket>> sockets;
     size_t establishedConnections;
+    uint64_t _failedSends = 0;   //!< Offered messages dropped because every TX buffer was full
     vector<bool> socketStates;
     Address remoteAddress;
     string protocol;

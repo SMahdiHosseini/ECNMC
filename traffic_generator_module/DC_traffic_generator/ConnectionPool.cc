@@ -29,6 +29,11 @@ ConnectionPool::CloseConnections() {
     }
     sockets.clear();
     socketStates.clear();
+    if (_failedSends > 0) {
+        cout << "ConnectionPool SUMMARY: " << GetNodeIP(senderNode, 1) << " -> "
+             << InetSocketAddress::ConvertFrom(remoteAddress).GetIpv4() << " dropped "
+             << _failedSends << " offered messages (transmit buffers full)" << endl;
+    }
 }
 
 void ConnectionPool::ConnectionSucceeded(Ptr<Socket> socket) {
@@ -207,7 +212,18 @@ ConnectionPool::SendData(const Ptr<Packet>& packet) {
     }
 
     if (findIdleSocket()->Send(packet) < 0) {
-        // cout << "Error sending packet from " << GetNodeIP(senderNode, 1) << " to " << InetSocketAddress::ConvertFrom(remoteAddress).GetIpv4() << endl;
+        // A rejected Send() means every socket's transmit buffer is full, i.e. the flow is not
+        // keeping up with the rate the application offers, and the message is dropped here and
+        // now -- it is never retried. Announce it, because a silent drop here is indistinguishable
+        // from the traffic generator simply not having produced the load: in the first collective
+        // pilot one stalled flow discarded ~478 MB of its 480 MB this way with no visible error.
+        _failedSends += 1;
+        if (_failedSends == 1 || _failedSends % 10000 == 0) {
+            cout << "ConnectionPool WARNING: " << GetNodeIP(senderNode, 1) << " -> "
+                 << InetSocketAddress::ConvertFrom(remoteAddress).GetIpv4()
+                 << " dropped an offered message, all transmit buffers full (drop #"
+                 << _failedSends << " at " << Simulator::Now().GetNanoSeconds() << " ns)" << endl;
+        }
         NS_LOG_INFO ("Error while sending packet to " << InetSocketAddress::ConvertFrom(remoteAddress).GetIpv4());
     } else {
         // cout << "Packet sent from " << GetNodeIP(senderNode, 1) << " to " << InetSocketAddress::ConvertFrom(remoteAddress).GetIpv4() << endl;

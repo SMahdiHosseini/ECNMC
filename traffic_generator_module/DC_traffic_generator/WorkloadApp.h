@@ -25,6 +25,7 @@ private:
     void Send();
     void ScheduleNextSend();
     void ReadWorkloadFile();
+    double NextInterval();
 
     vector<vector<Address>> _receiverAddress;
     vector<ConnectionPool *> _connectionPools;
@@ -42,6 +43,9 @@ private:
     Time _probeStartTime;
     Time _probeStopTime;
     Time _trafficStartTime;
+    string _arrivalProcess;
+    uint32_t _fixedMsgSize;
+    double _startPhase;
 protected:
     void DoDispose() override;
 
