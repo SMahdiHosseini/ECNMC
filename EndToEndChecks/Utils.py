@@ -3804,6 +3804,17 @@ def emd_vs_flows_file_tag(subsampling_methods, groundtruth_method='simultaneous'
             + ('_allflows' if all_flows_only else ''))
 
 
+def steady_window_tag(steadyStart, steadyEnd):
+    """Folder-name fragment identifying the steady-state analysis window (both in ns) a set
+    of EMD-vs-flows outputs was computed over, e.g. steadyStart=1e7, steadyEnd=1e8 ->
+    'steady_10-100ms'. The same raw ns-3 run can be re-analyzed over a different window (e.g.
+    to check stationarity, or because a longer/shorter steady period was configured) without
+    colliding with or silently overwriting an earlier window's outputs -- every EMD-vs-flows
+    output path (per-experiment, per-traffic/load aggregate, and cross-traffic/load aggregate)
+    includes this tag as its own folder level."""
+    return 'steady_{:g}-{:g}ms'.format(steadyStart / 1e6, steadyEnd / 1e6)
+
+
 def compute_emd_vs_num_tcp_flows_run(prepared, agg_stats, confidenceValue, min_sample_size=30,
                                       subsampling_methods='find_samples_path'):
     """Run one realization of the flow-count EMD sweep against a given
@@ -4930,8 +4941,10 @@ def compute_emd_vs_num_tcp_flows_multi_run(
 # subsamples are dashed, ideal Poisson probes are dash-dot, and uniform fixed-rate baselines
 # are dotted -- four kinds, four styles, none shared, so no two kinds are ever separable by
 # border width alone. Individual families within a kind are then told apart by border
-# *colour* (flow-count plots) or, on load plots where colour is spent on the traffic, by
-# border width and/or a same-kind dash variant (see _load_series_spec).
+# *colour* on flow-count plots. Load plots don't use this table at all -- colour there is
+# spent on the traffic, so a series can only be told apart by *style*, and every load plot
+# assigns its own series one of the four canonical styles fresh, in the order they're added
+# (see _load_series_spec / _STYLE_ORDER), rather than by `kind`.
 _FAMILY_EDGE_STYLE_BY_KIND = {
     'all_packets': 'solid',
     'sampled': 'dashed',
@@ -5083,82 +5096,47 @@ def _subsample_family_layout(subsampling_methods, uniform_series, oracle_series=
 _TRAFFIC_COLORS = ['navy', 'darkorange', 'purple', 'teal', 'crimson', 'olive']
 
 # On the load plots border *colour* is taken by the traffic, so a series can only be
-# identified by its dash and width. Unlike the flow-count plots (family_border_style), a kind's
-# dash here is NOT fixed globally -- a given load-plot comparison only ever includes a couple of
-# the four kinds (e.g. "ideal Poisson probe vs Poisson-adaptive subsample" never touches
-# all_packets or uniform at all), and always deferring to a global kind table left 'solid' --
-# the boldest, most legible style -- unused on plots that happen not to include all_packets.
-# Styles are instead assigned per plot, in the order each kind first appears in that plot's own
-# specs list (_STYLE_ORDER), so the first kind on ANY comparison gets solid, the second dashed,
-# and so on -- every load plot uses the full style range starting from the clearest one. A kind
-# can still carry several series at once (e.g. several Poisson-adaptive algorithms in the
-# all-packets-vs-Poisson comparison, or a method's own oracle probe next to the
-# minimum-required one) -- those are told apart by BOTH a same-kind dash *variant* (a distinct
-# line type per algorithm, not just the plain kind dash repeated) and, as a second cue, border
-# *width*, widest first. The legend shows both.
-_STYLE_ORDER = ['solid', 'dashed', 'dashdot', 'dotted']
-_LOAD_SERIES_EDGE_WIDTHS = [5.5, 3.75, 2.5, 1.5]
-
-# Dash variants for same-kind series on a load plot, keyed by base style (see _STYLE_ORDER).
-# Index 0 is always the kind's own plain named style, so a plot with only one series per kind
-# -- the common case -- renders exactly as before; a second/third same-kind series (e.g. a
-# second Poisson-adaptive method) gets a visually distinct variant of that same dash family
-# rather than just a thinner copy of it.
-_LOAD_SERIES_STYLE_VARIANTS_BY_BASE = {
-    'solid': ['solid', (0, (8, 2, 1, 2)), (0, (2, 1))],
-    'dashed': ['dashed', (0, (3, 1, 1, 1)), (0, (1, 1))],
-    'dashdot': ['dashdot', (0, (5, 1, 1, 1, 1, 1)), (0, (4, 2, 1, 2, 1, 2))],
-    'dotted': ['dotted', (0, (1, 1, 3, 1)), (0, (1, 3))],
-}
+# identified by its border *style* -- and only that, deliberately: earlier revisions also
+# varied border *width* and invented custom per-kind dash patterns to fit more series on one
+# axis, but a thick dash-dot border on a narrow boxplot box reads almost like a thick dashed
+# one -- variable thickness and synthetic dash patterns make things *harder* to tell apart, not
+# easier. So a load plot uses only the four canonical, maximally-distinct matplotlib
+# linestyles, always at the same width, one per series, in the order series are added to the
+# plot (_STYLE_ORDER) -- not tied to family `kind` at all (a kind can land on a different style
+# on a different plot, e.g. 'oracle' is 'dashed' on one comparison and 'dotted' on another,
+# depending only on what order it was added on that particular plot). 'dotted' is deliberately
+# placed before 'dashdot' in _STYLE_ORDER since dotted is the one most visually distinct from
+# both solid and dashed, while dashdot is the one most easily confused with dashed at these
+# widths -- so dashdot is the last style reached for, used only when a plot truly has four
+# series. A plot with more than four series can't be told apart this way -- that warns loudly
+# rather than silently repeating a style.
+_STYLE_ORDER = ['solid', 'dashed', 'dotted', 'dashdot']
+_LOAD_SERIES_EDGE_WIDTH = 4.5
 
 
 def _load_series_spec(specs, kind, key, label):
-    """Append one series spec to `specs`. The base dash a kind gets is NOT the global
-    family-kind convention (_FAMILY_EDGE_STYLE_BY_KIND, used by the flow-count plots) --
-    it's assigned fresh per plot, from _STYLE_ORDER, in the order distinct kinds first
-    appear in `specs` -- so whichever kind is added first on this particular comparison
-    gets 'solid', the next distinct kind 'dashed', and so on. This guarantees every load
-    plot actually uses 'solid' (rather than leaving it unused whenever a comparison doesn't
-    happen to include all_packets, e.g. Poisson-adaptive vs its own ideal probe).
-
-    Border width (_LOAD_SERIES_EDGE_WIDTHS) and a same-kind dash variant
-    (_LOAD_SERIES_STYLE_VARIANTS_BY_BASE) together separate multiple series that share one
-    kind, so same-kind series stay distinguishable where colour cannot help -- running out
-    of either genuinely risks two series looking alike, which warns loudly rather than
-    silently producing an unreadable plot. Keep a load plot to a few series per kind (the
-    callers below build one plot per subsampling method for exactly this reason)."""
-    kinds_so_far = []
-    for spec in specs:
-        if spec['kind'] not in kinds_so_far:
-            kinds_so_far.append(spec['kind'])
-    if kind not in kinds_so_far:
-        kinds_so_far.append(kind)
-    kind_index = kinds_so_far.index(kind)
-    if kind_index >= len(_STYLE_ORDER):
-        print("Warning: {} distinct kinds on one load plot exceeds the {} distinct base "
-              "styles available; '{}' repeats an earlier kind's style".format(
-                  kind_index + 1, len(_STYLE_ORDER), label))
-    base_style = _STYLE_ORDER[kind_index % len(_STYLE_ORDER)]
-    variants = _LOAD_SERIES_STYLE_VARIANTS_BY_BASE[base_style]
-    same_kind = sum(1 for spec in specs if spec['kind'] == kind)
-    if same_kind >= len(_LOAD_SERIES_EDGE_WIDTHS) or same_kind >= len(variants):
-        print("Warning: {} '{}'-style series on one load plot exceeds the {} distinct border "
-              "widths/variants available; '{}' repeats an earlier series' border and the two "
-              "cannot be told apart".format(
-                  same_kind + 1, base_style, min(len(_LOAD_SERIES_EDGE_WIDTHS), len(variants)), label))
-    specs.append(dict(key=key, kind=kind, edge_style=variants[same_kind % len(variants)], label=label,
-                       edge_width=_LOAD_SERIES_EDGE_WIDTHS[same_kind % len(_LOAD_SERIES_EDGE_WIDTHS)]))
+    """Append one series spec to `specs`, taking the next unused style from _STYLE_ORDER (by
+    position in `specs`, not by `kind` -- see the comment above _STYLE_ORDER) at a fixed
+    border width. `kind` is kept on the spec only for callers/labels that want it, not used
+    for styling."""
+    index = len(specs)
+    if index >= len(_STYLE_ORDER):
+        print("Warning: {} series on one load plot exceeds the {} distinct border styles "
+              "available; '{}' repeats an earlier series' style and the two cannot be told "
+              "apart".format(index + 1, len(_STYLE_ORDER), label))
+    specs.append(dict(key=key, kind=kind, edge_style=_STYLE_ORDER[index % len(_STYLE_ORDER)],
+                       label=label, edge_width=_LOAD_SERIES_EDGE_WIDTH))
     return specs
 
 
 def all_packets_vs_sampled_load_plot_series(subsampling_methods):
     """Series specs for plot_emd_vs_load_by_traffic comparing all packets of the
     considered flows (solid) against every Poisson-adaptive subsampling method that was
-    run (dashed). With one method this is the pair this plot has always drawn; with
-    several, each method additionally gets its own dash variant and border width (see
-    _load_series_spec), so the algorithms are compared against each other and against the
-    all-packets ceiling in one picture without relying on colour, which is spent on the
-    traffic here."""
+    run (dashed, dotted, ... one style per method, see _load_series_spec). With one method
+    this is the pair this plot has always drawn; with several, each method gets its own
+    style, so the algorithms are compared against each other and against the all-packets
+    ceiling in one picture without relying on colour, which is spent on the traffic here.
+    Keep this to at most 3 methods -- a 4th plus all_packets exceeds the 4 styles available."""
     specs = []
     _load_series_spec(specs, 'all_packets', 'all_packets', 'all packets of considered flows')
     for method in normalize_subsampling_methods(subsampling_methods):
@@ -5168,16 +5146,15 @@ def all_packets_vs_sampled_load_plot_series(subsampling_methods):
 
 
 def sampled_vs_oracle_load_plot_series(subsampling_method):
-    """Series specs pairing ONE Poisson-adaptive subsampling method (solid -- the first, and
-    here only real, kind on this comparison) against the ideal Poisson probe at that method's
-    own sample count, plus the probe at the minimum required sample size (both dashed). The
-    gap between the method and its own ideal probe is the part of its error that is *not*
-    finite-sample noise -- i.e. what selecting from the flow's own packets costs.
+    """Series specs pairing ONE Poisson-adaptive subsampling method (solid) against the ideal
+    Poisson probe at that method's own sample count (dashed), plus the probe at the minimum
+    required sample size (dotted). The gap between the method and its own ideal probe is the
+    part of its error that is *not* finite-sample noise -- i.e. what selecting from the
+    flow's own packets costs.
 
-    One method per plot on purpose: the two oracle series share the 'oracle' kind and so lean
-    on their dash variant and border width, on top of colour already being spent on the
-    traffic, to stay apart from each other -- three such series is readable, more is not.
-    Call once per method."""
+    One method per plot on purpose: three series is the most one load plot can show while
+    keeping every border a distinct style (see _load_series_spec) with colour already spent
+    on the traffic. Call once per method."""
     method = normalize_subsampling_methods(subsampling_method)[0]
     specs = []
     _load_series_spec(specs, 'sampled', ('sampled', method),
@@ -5190,13 +5167,13 @@ def sampled_vs_oracle_load_plot_series(subsampling_method):
 
 def poisson_vs_uniform_vs_ideal_load_plot_series(subsampling_methods):
     """Series specs for plot_emd_vs_load_by_traffic putting THREE families on one axis per
-    Poisson-adaptive method: the method itself (solid -- first kind on this comparison), its
-    own rate-matched uniform baseline (dashed), and the ideal Poisson probe at that same
-    sample count (dash-dot) -- all three draw ~the same number of packets, so the three-way
-    reads as a verdict on the selection rule (method vs. uniform) *and* on how much of the
-    method's own remaining error is finite-sample noise vs. selection bias (method vs. its
-    ideal probe) in one picture. Pass one method for a clean three-series plot, or several to
-    put every triple on one axis."""
+    Poisson-adaptive method: the method itself (solid), its own rate-matched uniform baseline
+    (dashed), and the ideal Poisson probe at that same sample count (dotted) -- all three draw
+    ~the same number of packets, so the three-way reads as a verdict on the selection rule
+    (method vs. uniform) *and* on how much of the method's own remaining error is
+    finite-sample noise vs. selection bias (method vs. its ideal probe) in one picture. Pass
+    one method for a clean three-series plot (several would exceed the 4 distinct styles a
+    load plot can show, see _load_series_spec)."""
     specs = []
     for method in normalize_subsampling_methods(subsampling_methods):
         _load_series_spec(specs, 'sampled', ('sampled', method),
@@ -5208,11 +5185,13 @@ def poisson_vs_uniform_vs_ideal_load_plot_series(subsampling_methods):
 
 def all_packets_vs_oracle_load_plot_series(subsampling_methods):
     """Series specs for plot_emd_vs_load_by_traffic comparing all packets of the considered
-    flows (solid) against the ideal Poisson probe (dashed) at each Poisson-adaptive method's
-    own sample count -- the theoretical ceiling a real sampler could reach, independent of any
-    particular sampler's own selection-rule imperfections. Reads alongside
-    all_packets_vs_sampled_load_plot_series: the gap there that ISN'T explained by this plot
-    is what the real sampler itself is costing, versus what subsampling costs in principle."""
+    flows (solid) against the ideal Poisson probe (one style per method, see
+    _load_series_spec) at each Poisson-adaptive method's own sample count -- the theoretical
+    ceiling a real sampler could reach, independent of any particular sampler's own
+    selection-rule imperfections. Reads alongside all_packets_vs_sampled_load_plot_series: the
+    gap there that ISN'T explained by this plot is what the real sampler itself is costing,
+    versus what subsampling costs in principle. Keep this to at most 3 methods -- a 4th plus
+    all_packets exceeds the 4 styles available."""
     specs = []
     _load_series_spec(specs, 'all_packets', 'all_packets', 'all packets of considered flows')
     for method in normalize_subsampling_methods(subsampling_methods):
@@ -5341,11 +5320,12 @@ def plot_emd_vs_load_by_traffic(results_by_traffic_load, k, output_path, pass_th
     drawn together -- by default all packets of the k considered flows, and the
     Poisson-adaptive subsample -- as one boxplot cluster per traffic per load
     (len(series_specs) x len(traffics) boxes at each load tick). Color identifies the
-    traffic (_TRAFFIC_COLORS); the border identifies the series -- its dash marks the family
-    *kind* (solid for all packets, dashed for Poisson-adaptive subsamples, dash-dot for ideal
-    Poisson probes, dotted for uniform baselines, see _FAMILY_EDGE_STYLE_BY_KIND), with a
-    same-kind dash variant and/or width separating multiple series of one kind, since colour
-    is already spent on the traffic here; fill is only ever the pass/fail color.
+    traffic (_TRAFFIC_COLORS); the border identifies the series -- each series in
+    `series_specs` gets one of the four canonical linestyles (solid, dashed, dotted,
+    dash-dot), assigned fresh per plot in the order the series were added (see
+    _load_series_spec / _STYLE_ORDER), all drawn at the same width, since colour is already
+    spent on the traffic here; fill is only ever the pass/fail color. At most 4 series per
+    plot can be told apart this way.
 
     The y-axis is capped (view only, not the underlying data) to keep one extreme run from
     washing out the rest of the load sweep: relative quantities (`normalized`, or
