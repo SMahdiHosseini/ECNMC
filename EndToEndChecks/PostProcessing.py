@@ -1,4 +1,7 @@
 from Utils import *
+# Leading-underscore names aren't picked up by `from Utils import *`; this one is needed by
+# backfill_all_packets_rate_oracle's lean per-run oracle loop below.
+from Utils import _evaluate_delay_family
 import pandas as pd
 import glob
 import configparser
@@ -743,9 +746,9 @@ def __main__():
     config = configparser.ConfigParser()
     config.read('../Results/results_{}/Parameters.config'.format(args.dir))
     steadyStart = convert_to_float(config.get('Settings', 'steadyStart')) * 1e9
-    # steadyStart = 0.08 * 1e9
+    # steadyStart = 0.2 * 1e9
     steadyEnd = convert_to_float(config.get('Settings', 'steadyEnd')) * 1e9
-    # steadyEnd = 0.015 * 1e9
+    # steadyEnd = 0.5 * 1e9
     experiments = int(config.get('Settings', 'experiments'))
     experiments = 30
     experiments = 1
@@ -753,10 +756,10 @@ def __main__():
     # serviceRateScales = [0.5]
     loads = [float(x) for x in config.get('Settings', 'load').split(',')]
     loads = [0.5, 0.6, 0.7, 0.8, 0.95]
-    loads = [0.0, 0.125]
+    loads = [0.5]
     traffics = config.get('Settings', 'traffic').split(',')
     traffics = ["Google_AllRPC", "Google_SearchRPC", "Facebook_HadoopDist_All"]
-    traffics = ["Fabricated_Heavy_Middle"]
+    traffics = ["Facebook_HadoopDist_All"]
     errorRates = [float(x) for x in config.get('Settings', 'errorRate').split(',')]
     # errorRates = [0.1, 0.3, 0.5, 0.7, 0.9]
     # errorRates = [0.1]
@@ -917,11 +920,13 @@ def run_emd_vs_flows_experiment(rate, steadyStart, steadyEnd, confidenceValue, r
         title='EMD vs number of TCP flows ({}): {}, path {}\n{}'.format(run_desc, flow_name, path, gt_desc),
         y_max=emd_y_max,
     )
-    # The same plot in normalized units (EMD / mean ground-truth delay): raw EMD grows with
-    # the delay level the offered load itself drives, so only this one is comparable across loads.
+    # The same plot relative to mean queuing delay (EMD / mean ground-truth delay): raw EMD
+    # grows with the delay level the offered load itself drives, so only this one is
+    # comparable across loads.
     plot_emd_vs_num_flows_boxplot(
         results, file_prefix + '_emd_vs_num_flows_boxplot_normalized.png', pass_threshold=pass_threshold,
-        title='Normalized EMD vs number of TCP flows ({}): {}, path {}\n{}'.format(run_desc, flow_name, path, gt_desc),
+        title='EMD relative to mean queuing delay vs number of TCP flows ({}): {}, path {}\n{}'.format(
+            run_desc, flow_name, path, gt_desc),
         normalized=True,
     )
     plot_mean_diff_vs_num_flows(
@@ -944,7 +949,7 @@ def run_emd_vs_flows_experiment(rate, steadyStart, steadyEnd, confidenceValue, r
     # rate-matched uniform subset -- with their runs split by whether their own sampling
     # instants passed. One plot per (test, quantity): AD alone, and AD + chi-squared.
     for test_name in POISSON_TEST_NAMES:
-        for quantity, quantity_desc in (('emd', 'EMD'), ('emd_normalized', 'Normalized EMD'),
+        for quantity, quantity_desc in (('emd', 'EMD'), ('emd_normalized', 'EMD relative to mean queuing delay'),
                                          ('mean_diff', 'Switch vs. packet mean delay difference')):
             plot_poisson_test_split_vs_num_flows(
                 results, '{}_{}_{}_split.png'.format(file_prefix, quantity, test_name),
@@ -960,6 +965,222 @@ def run_emd_vs_flows_experiment(rate, steadyStart, steadyEnd, confidenceValue, r
         pickle.dump(results, f)
     save_emd_vs_flows_results_text(results, file_prefix + '_emd_vs_num_flows_results.txt')
 
+    return results
+
+
+def backfill_burstiness_metrics(rate, steadyStart, steadyEnd, dir_name, traffic, config, experiment=0,
+                                 ns3_path=__ns3_path, load=None, flow_name='R0H0R2H3', queue_names=None,
+                                 path=0, delay_cdf_sample_interval_ns=90, flow_count_step=1,
+                                 all_flows_only=False, subsampling_methods='find_samples_path',
+                                 groundtruth_method='simultaneous', delay_percentiles=DEFAULT_DELAY_PERCENTILES,
+                                 run_chi_squared_test=True, pass_threshold=0.9, emd_y_max=None):
+    """Add burst_gap_threshold_ns / burstiness_all_packets (IDC at one RTT, mean burst
+    duration/inter-burst gap -- see Utils.burstiness_metrics) to an ALREADY-COMPUTED
+    run_emd_vs_flows_experiment pickle, in place, WITHOUT redoing the 100-run Poisson sweep.
+
+    Burstiness of all-packets only depends on the raw packet CSV (exactly like
+    emd_all_packets), so it's cheap to re-derive: this calls prepare_emd_vs_flows_data again
+    (one ground-truth reconstruction, no subsampling search, no per-run loop) purely to get
+    the two new fields, merges them into the existing results dict, re-saves the pickle and
+    text summary, and replots just the EMD boxplot (raw + relative-to-mean-delay) -- the only
+    plot that shows the all-packets family with an annotation this touches.
+
+    Looks up the pickle via resolve_emd_vs_flows_pickle_path (current nested layout, falling
+    back to the pre-2026-09-09 flat one). Returns the updated results dict, or None if no
+    pickle was found or its flow-count grid doesn't match what prepare_emd_vs_flows_data
+    produces now (e.g. flow_count_step/all_flows_only don't match the original run)."""
+    if queue_names is None:
+        queue_names = ["T0A0", "A0T2", "T2H3"]
+    subsampling_methods = normalize_subsampling_methods(subsampling_methods)
+    hostToTorLinkRate = convert_to_float(config.get('Settings', 'hostToTorLinkRate')) * 1e-3
+    torToAggLinkRate = convert_to_float(config.get('Settings', 'torToAggLinkRate')) * rate * 1e-3
+    linkDelay = convert_to_float(config.get('Settings', 'hostToTorLinkDelay')) * 1e6
+    linkRates = [hostToTorLinkRate, torToAggLinkRate, torToAggLinkRate, hostToTorLinkRate]
+    linkDelays = [linkDelay, linkDelay, linkDelay, linkDelay]
+
+    results_folder = 'Results_' + dir_name + '/' + traffic
+    steady_tag = steady_window_tag(steadyStart, steadyEnd)
+    config_tag = emd_vs_flows_file_tag(subsampling_methods, groundtruth_method, all_flows_only)
+    pkl_path, file_prefix = resolve_emd_vs_flows_pickle_path(
+        ns3_path, results_folder, rate, load, experiment, steady_tag, config_tag, flow_name, path)
+    if pkl_path is None:
+        print("backfill_burstiness_metrics: no results pickle found for {} rate={} load={} "
+              "experiment={} window={} tag={}".format(traffic, rate, load, experiment, steady_tag, config_tag))
+        return None
+
+    with open(pkl_path, 'rb') as f:
+        results = upgrade_emd_vs_flows_results_schema(pickle.load(f))
+
+    prepared = prepare_emd_vs_flows_data(
+        ns3_path, results_folder, rate, load, experiment, flow_name, queue_names,
+        linkDelays, linkRates, steadyStart, steadyEnd, path=path,
+        delay_cdf_sample_interval_ns=delay_cdf_sample_interval_ns,
+        flow_count_step=flow_count_step, all_flows_only=all_flows_only,
+        groundtruth_method=groundtruth_method, delay_percentiles=delay_percentiles,
+        run_chi_squared_test=run_chi_squared_test,
+    )
+    if prepared['num_flows'] != results['num_flows']:
+        print("backfill_burstiness_metrics: flow-count grid for {} is {} but prepare_emd_vs_flows_data "
+              "produced {} -- skipping (check flow_count_step/all_flows_only match the original "
+              "run_emd_vs_flows_experiment call)".format(pkl_path, results['num_flows'], prepared['num_flows']))
+        return None
+
+    results['burst_gap_threshold_ns'] = prepared['burst_gap_threshold_ns']
+    results['burstiness_all_packets'] = prepared['burstiness_all_packets']
+
+    with open(pkl_path, 'wb') as f:
+        pickle.dump(results, f)
+    save_emd_vs_flows_results_text(results, file_prefix + '_emd_vs_num_flows_results.txt')
+
+    run_desc = '{} runs x {} Poisson obs'.format(results['num_runs'], results['num_poisson_observations'])
+    gt_desc = groundtruth_method_label(results.get('groundtruth_method', groundtruth_method))
+    plot_emd_vs_num_flows_boxplot(
+        results, file_prefix + '_emd_vs_num_flows_boxplot.png', pass_threshold=pass_threshold,
+        title='EMD vs number of TCP flows ({}): {}, path {}\n{}'.format(run_desc, flow_name, path, gt_desc),
+        y_max=emd_y_max,
+    )
+    plot_emd_vs_num_flows_boxplot(
+        results, file_prefix + '_emd_vs_num_flows_boxplot_normalized.png', pass_threshold=pass_threshold,
+        title='EMD relative to mean queuing delay vs number of TCP flows ({}): {}, path {}\n{}'.format(
+            run_desc, flow_name, path, gt_desc),
+        normalized=True,
+    )
+    print("backfill_burstiness_metrics: updated {} (burst_gap_threshold_ns={:.2f} ns)".format(
+        pkl_path, results['burst_gap_threshold_ns']))
+    return results
+
+
+def backfill_all_packets_rate_oracle(rate, steadyStart, steadyEnd, dir_name, traffic, config, experiment=0,
+                                      ns3_path=__ns3_path, load=None, flow_name='R0H0R2H3', queue_names=None,
+                                      path=0, delay_cdf_sample_interval_ns=90, flow_count_step=1,
+                                      all_flows_only=False, subsampling_methods='find_samples_path',
+                                      groundtruth_method='simultaneous', delay_percentiles=DEFAULT_DELAY_PERCENTILES,
+                                      run_chi_squared_test=True, pass_threshold=0.9, emd_y_max=None):
+    """Add the ideal-Poisson-probe-at-all-packets-rate oracle family
+    (Utils.ORACLE_ALL_PACKETS_RATE_KEY) to an ALREADY-COMPUTED run_emd_vs_flows_experiment
+    pickle, in place, WITHOUT redoing the full 100-run sweep.
+
+    Unlike burstiness, this genuinely needs one fresh Poisson realization per run (its whole
+    point is to have no selection bias, which needs real Poisson sampling instants) -- but it
+    only redoes the *oracle construction* at the all-packets rate, num_runs times, skipping
+    the dominant cost of the original sweep entirely (the Poisson-adaptive subsampling
+    searches and the rate-matched uniform draws, for every method). num_runs and
+    num_poisson_observations are taken from the existing pickle, so the backfilled family is
+    directly comparable to what's already there.
+
+    Looks up the pickle via resolve_emd_vs_flows_pickle_path (current nested layout, falling
+    back to the pre-2026-09-09 flat one). Returns the updated results dict, or None if no
+    pickle was found, its flow-count grid doesn't match a fresh prepare_emd_vs_flows_data
+    call, or it already carries this oracle family (nothing to do)."""
+    if queue_names is None:
+        queue_names = ["T0A0", "A0T2", "T2H3"]
+    subsampling_methods = normalize_subsampling_methods(subsampling_methods)
+    hostToTorLinkRate = convert_to_float(config.get('Settings', 'hostToTorLinkRate')) * 1e-3
+    torToAggLinkRate = convert_to_float(config.get('Settings', 'torToAggLinkRate')) * rate * 1e-3
+    linkDelay = convert_to_float(config.get('Settings', 'hostToTorLinkDelay')) * 1e6
+    linkRates = [hostToTorLinkRate, torToAggLinkRate, torToAggLinkRate, hostToTorLinkRate]
+    linkDelays = [linkDelay, linkDelay, linkDelay, linkDelay]
+
+    results_folder = 'Results_' + dir_name + '/' + traffic
+    steady_tag = steady_window_tag(steadyStart, steadyEnd)
+    config_tag = emd_vs_flows_file_tag(subsampling_methods, groundtruth_method, all_flows_only)
+    pkl_path, file_prefix = resolve_emd_vs_flows_pickle_path(
+        ns3_path, results_folder, rate, load, experiment, steady_tag, config_tag, flow_name, path)
+    if pkl_path is None:
+        print("backfill_all_packets_rate_oracle: no results pickle found for {} rate={} load={} "
+              "experiment={} window={} tag={}".format(traffic, rate, load, experiment, steady_tag, config_tag))
+        return None
+
+    with open(pkl_path, 'rb') as f:
+        results = upgrade_emd_vs_flows_results_schema(pickle.load(f))
+    if ORACLE_ALL_PACKETS_RATE_KEY in (results.get('oracle_series') or []):
+        print("backfill_all_packets_rate_oracle: {} already has the all-packets-rate oracle family, "
+              "nothing to do".format(pkl_path))
+        return results
+
+    prepared = prepare_emd_vs_flows_data(
+        ns3_path, results_folder, rate, load, experiment, flow_name, queue_names,
+        linkDelays, linkRates, steadyStart, steadyEnd, path=path,
+        delay_cdf_sample_interval_ns=delay_cdf_sample_interval_ns,
+        flow_count_step=flow_count_step, all_flows_only=all_flows_only,
+        groundtruth_method=groundtruth_method, delay_percentiles=delay_percentiles,
+        run_chi_squared_test=run_chi_squared_test,
+    )
+    if prepared['num_flows'] != results['num_flows']:
+        print("backfill_all_packets_rate_oracle: flow-count grid for {} is {} but "
+              "prepare_emd_vs_flows_data produced {} -- skipping (check flow_count_step/"
+              "all_flows_only match the original run_emd_vs_flows_experiment call)".format(
+                  pkl_path, results['num_flows'], prepared['num_flows']))
+        return None
+
+    num_runs = results['num_runs']
+    num_poisson_observations = results['num_poisson_observations']
+    num_k = len(prepared['num_flows'])
+    per_k_emd, per_k_mean_diff, per_k_sizes = [[] for _ in range(num_k)], [[] for _ in range(num_k)], [[] for _ in range(num_k)]
+    per_k_pass = [0] * num_k
+    per_k_pdiff = {q: [[] for _ in range(num_k)] for q in prepared['delay_percentiles']}
+
+    for _ in range(num_runs):
+        agg_stats = compute_poisson_agg_stats(
+            prepared['dir_prefix'], queue_names, linkDelays, linkRates, steadyStart, steadyEnd,
+            num_poisson_observations, confidenceValue, DelayConsistencyGaurantee,
+        )
+        min_samples = agg_stats.get('MinimumE2ESampleSizeDelay', 0)
+        for i in range(num_k):
+            target_count = matched_uniform_target_count(prepared['all_packet_sizes'][i], min_samples)
+            oracle_values = construct_oracle_poisson_delays(
+                prepared['groundtruth_method'], prepared['queue_names'], prepared['dir_prefix'],
+                prepared['steady_start'], prepared['steady_end'], prepared['link_delays'],
+                prepared['link_rates'], target_count,
+            )
+            emd, consistency_pass, mean_diff, oracle_size = _evaluate_delay_family(
+                oracle_values, prepared['groundtruth_values'], agg_stats, confidenceValue, min_sample_size)
+            if np.isfinite(emd):
+                per_k_emd[i].append(emd)
+            if consistency_pass is True:
+                per_k_pass[i] += 1
+            if np.isfinite(mean_diff):
+                per_k_mean_diff[i].append(mean_diff)
+            if oracle_size:
+                per_k_sizes[i].append(oracle_size)
+            diffs = percentile_diffs(oracle_values, prepared['groundtruth_percentiles'])
+            for q in prepared['delay_percentiles']:
+                if np.isfinite(diffs[q]):
+                    per_k_pdiff[q][i].append(diffs[q])
+
+    key = ORACLE_ALL_PACKETS_RATE_KEY
+    results['oracle_series'] = list(results.get('oracle_series') or []) + [key]
+    results.setdefault('emd_oracle_by_run', {})[key] = per_k_emd
+    results.setdefault('emd_oracle_by_run_normalized', {})[key] = normalize_emd_values(
+        per_k_emd, results['groundtruth_mean'])
+    results.setdefault('pass_rate_oracle', {})[key] = [c / num_runs for c in per_k_pass]
+    results.setdefault('mean_diff_oracle_by_run', {})[key] = per_k_mean_diff
+    results.setdefault('sample_sizes_oracle_by_run', {})[key] = per_k_sizes
+    per_k_preldiff = relative_percentile_diffs(per_k_pdiff, prepared['groundtruth_percentiles'])
+    results.setdefault('percentile_diff_oracle_by_run', {})
+    results.setdefault('percentile_reldiff_oracle_by_run', {})
+    for q in prepared['delay_percentiles']:
+        results['percentile_diff_oracle_by_run'].setdefault(q, {})[key] = per_k_pdiff[q]
+        results['percentile_reldiff_oracle_by_run'].setdefault(q, {})[key] = per_k_preldiff[q]
+
+    with open(pkl_path, 'wb') as f:
+        pickle.dump(results, f)
+    save_emd_vs_flows_results_text(results, file_prefix + '_emd_vs_num_flows_results.txt')
+
+    run_desc = '{} runs x {} Poisson obs'.format(num_runs, num_poisson_observations)
+    gt_desc = groundtruth_method_label(results.get('groundtruth_method', groundtruth_method))
+    plot_emd_vs_num_flows_boxplot(
+        results, file_prefix + '_emd_vs_num_flows_boxplot.png', pass_threshold=pass_threshold,
+        title='EMD vs number of TCP flows ({}): {}, path {}\n{}'.format(run_desc, flow_name, path, gt_desc),
+        y_max=emd_y_max,
+    )
+    plot_emd_vs_num_flows_boxplot(
+        results, file_prefix + '_emd_vs_num_flows_boxplot_normalized.png', pass_threshold=pass_threshold,
+        title='EMD relative to mean queuing delay vs number of TCP flows ({}): {}, path {}\n{}'.format(
+            run_desc, flow_name, path, gt_desc),
+        normalized=True,
+    )
+    print("backfill_all_packets_rate_oracle: updated {} ({} runs x {} k)".format(pkl_path, num_runs, num_k))
     return results
 
 
@@ -1048,7 +1269,7 @@ def aggregate_emd_vs_flows_across_experiments(ns3_path, dir_name, traffic, rate,
     )
     plot_emd_vs_num_flows_boxplot(
         aggregated, file_prefix + '_emd_vs_num_flows_boxplot_normalized.png', pass_threshold=pass_threshold,
-        title='Normalized EMD vs number of TCP flows, aggregated ({}): {}, path {}\n{}'.format(
+        title='EMD relative to mean queuing delay vs number of TCP flows, aggregated ({}): {}, path {}\n{}'.format(
             run_desc, flow_name, path, gt_desc),
         normalized=True,
     )
@@ -1068,11 +1289,19 @@ def aggregate_emd_vs_flows_across_experiments(ns3_path, dir_name, traffic, rate,
             title='Relative p{} error (ground truth - family), aggregated ({}): {}, path {}\n{}'.format(
                 q, run_desc, flow_name, path, gt_desc),
         )
+    # Burstiness of the all-packets arrival process itself vs number of TCP flows -- the
+    # burstiness counterpart of the EMD-vs-num-flows plots above.
+    for burstiness_field in BURSTINESS_METRIC_LABELS:
+        plot_burstiness_vs_num_flows(
+            aggregated, burstiness_field, '{}_{}_vs_num_flows.png'.format(file_prefix, burstiness_field),
+            title='{} vs number of TCP flows, aggregated ({}): {}, path {}'.format(
+                BURSTINESS_METRIC_LABELS[burstiness_field], run_desc, flow_name, path),
+        )
     # The two families that never had to pass a Poisson-ness test -- all packets and each
     # rate-matched uniform subset -- with their runs split by whether their own sampling
     # instants passed. One plot per (test, quantity): AD alone, and AD + chi-squared.
     for test_name in POISSON_TEST_NAMES:
-        for quantity, quantity_desc in (('emd', 'EMD'), ('emd_normalized', 'Normalized EMD'),
+        for quantity, quantity_desc in (('emd', 'EMD'), ('emd_normalized', 'EMD relative to mean queuing delay'),
                                          ('mean_diff', 'Switch vs. packet mean delay difference')):
             plot_poisson_test_split_vs_num_flows(
                 aggregated, '{}_{}_{}_split.png'.format(file_prefix, quantity, test_name),
@@ -1137,11 +1366,17 @@ def aggregate_emd_vs_flows_across_traffics_and_loads(ns3_path, dir_name, traffic
     where <steady_tag> = Utils.steady_window_tag(steadyStart, steadyEnd) and <config_tag> =
     emd_vs_flows_file_tag(subsampling_methods, groundtruth_method, all_flows_only) -- each its
     own folder level -- so different steady windows or subsampling/GT configurations for the
-    same dir_name land in separate folders, and within <rate>/ each of the four comparison
-    kinds above gets its own subfolder (all_vs_poisson/, poisson_vs_uniform_vs_ideal/<method>/,
-    poisson_vs_ideal/<method>/, all_vs_ideal/, pass_rate/<method>/) so filenames only need
-    `<flow_name>_path_<path>_...` plus the k/normalized/percentile suffix, not the whole
-    comparison description.
+    same dir_name land in separate folders, and within <rate>/ each comparison kind above gets
+    its own subfolder (all_vs_poisson/, poisson_vs_uniform_vs_ideal/<method>/,
+    poisson_vs_ideal/<method>/, all_vs_ideal/, all_vs_ideal_own_rate/, pass_rate/<method>/) so
+    filenames only need `<flow_name>_path_<path>_...` plus the k/normalized/percentile suffix,
+    not the whole comparison description.
+
+    Every one of those plot kinds is then repeated with the x-axis swapped from load to each
+    burstiness metric of the all-packets arrival process (IDC at one RTT, mean burst
+    duration, mean inter-burst gap -- see Utils.burstiness_metrics /
+    Utils.plot_emd_vs_burstiness_by_traffic), under a sibling tree
+    `emd_vs_burstiness_by_traffic/<steady_tag>/<config_tag>/<rate>/<burstiness_field>/<same subfolders>/`.
 
     Returns the {(traffic, load): aggregated_results} dict used to build the plots, or None
     if no traffic/load combination had any experiment results to aggregate.
@@ -1202,9 +1437,15 @@ def aggregate_emd_vs_flows_across_traffics_and_loads(ns3_path, dir_name, traffic
     plot_kinds.append((all_packets_vs_oracle_load_plot_series(subsampling_methods),
                         'all_vs_ideal',
                         'all packets vs. the ideal Poisson probe(s)'))
+    # All packets vs. the ideal Poisson probe at ITS OWN rate (no subsampling-method
+    # comparison mixed in) -- isolates what arriving as a real application's traffic costs
+    # relative to an idealized Poisson process at an identical rate.
+    plot_kinds.append((all_packets_vs_own_rate_oracle_load_plot_series(),
+                        'all_vs_ideal_own_rate',
+                        'all packets vs. the ideal Poisson probe at the same rate'))
 
     # Raw nanoseconds and the load-comparable normalized twin of every plot below.
-    emd_variants = [(False, '', 'EMD'), (True, '_normalized', 'Normalized EMD')]
+    emd_variants = [(False, '', 'EMD'), (True, '_normalized', 'EMD relative to mean queuing delay')]
 
     percentiles = next(iter(results_by_traffic_load.values())).get('delay_percentiles') or []
 
@@ -1261,11 +1502,77 @@ def aggregate_emd_vs_flows_across_traffics_and_loads(ns3_path, dir_name, traffic
                 flow_name, path, rate, method, gt_desc),
         )
 
+    # Same plots again, but with each burstiness metric of the all-packets arrival process
+    # (IDC(1RTT), mean burst duration, mean inter-burst gap -- see BURSTINESS_METRIC_LABELS)
+    # as the x-axis instead of load -- reuses the same plot_kinds/emd_variants/fixed_k_values
+    # built above. A combination whose results predate burstiness metrics (see
+    # backfill_burstiness_metrics) or all_flows_only having none of it just contributes no
+    # point, exactly like a missing k does for the load plots.
+    burstiness_dir = '{}/scratch/ECNMC/Results/results_{}/emd_vs_burstiness_by_traffic/{}/{}/{}/'.format(
+        ns3_path, dir_name, steady_tag, config_tag, rate)
+    for burstiness_field in BURSTINESS_METRIC_LABELS:
+        field_dir = '{}{}/'.format(burstiness_dir, burstiness_field)
+        for series_specs, subfolder, kind_desc in plot_kinds:
+            kind_dir = '{}{}/'.format(field_dir, subfolder)
+            os.makedirs(kind_dir, exist_ok=True)
+            kind_prefix = '{}{}_path_{}'.format(kind_dir, flow_name, path)
+            for normalized, norm_suffix, emd_desc in emd_variants:
+                for k in fixed_k_values:
+                    plot_emd_vs_burstiness_by_traffic(
+                        results_by_traffic_load, k, burstiness_field,
+                        '{}_k{}{}.png'.format(kind_prefix, k, norm_suffix),
+                        pass_threshold=pass_threshold, series_specs=series_specs, normalized=normalized,
+                        title='{} vs {} by traffic, {} considered flows: {}, path {}, rate {}\n{}\n{}'.format(
+                            emd_desc, BURSTINESS_METRIC_LABELS[burstiness_field], k, flow_name, path, rate,
+                            kind_desc, gt_desc),
+                    )
+                plot_emd_vs_burstiness_by_traffic(
+                    results_by_traffic_load, 'max', burstiness_field, '{}_kmax{}.png'.format(kind_prefix, norm_suffix),
+                    pass_threshold=pass_threshold, series_specs=series_specs, normalized=normalized,
+                    title='{} vs {} by traffic, all considered flows: {}, path {}, rate {}\n{}\n{}'.format(
+                        emd_desc, BURSTINESS_METRIC_LABELS[burstiness_field], flow_name, path, rate,
+                        kind_desc, gt_desc),
+                )
+            for q in percentiles:
+                for kind, kind_suffix, desc in (
+                        ('percentile_diff', '_p{}_diff'.format(q), 'p{} error (ns)'.format(q)),
+                        ('percentile_reldiff', '_p{}_reldiff'.format(q), 'Relative p{} error'.format(q))):
+                    plot_emd_vs_burstiness_by_traffic(
+                        results_by_traffic_load, 'max', burstiness_field, '{}_kmax{}.png'.format(kind_prefix, kind_suffix),
+                        pass_threshold=pass_threshold, series_specs=series_specs, metric=(kind, q),
+                        title='{} (ground truth - family) vs {} by traffic, all considered flows: {}, path {}, rate {}\n{}\n{}'.format(
+                            desc, BURSTINESS_METRIC_LABELS[burstiness_field], flow_name, path, rate,
+                            kind_desc, gt_desc),
+                    )
+
+    # Burstiness metric itself (not EMD) vs load by traffic -- one boxplot per traffic per
+    # load, mirroring the EMD-vs-load plots' layout but with the metric as the plotted
+    # quantity (see plot_burstiness_vs_load_by_traffic).
+    burstiness_vs_load_dir = '{}burstiness_vs_load/'.format(rate_dir)
+    for burstiness_field in BURSTINESS_METRIC_LABELS:
+        field_dir = '{}{}/'.format(burstiness_vs_load_dir, burstiness_field)
+        os.makedirs(field_dir, exist_ok=True)
+        field_prefix = '{}{}_path_{}'.format(field_dir, flow_name, path)
+        for k in fixed_k_values:
+            plot_burstiness_vs_load_by_traffic(
+                results_by_traffic_load, k, burstiness_field, '{}_k{}.png'.format(field_prefix, k),
+                title='{} vs load by traffic, {} considered flows: {}, path {}, rate {}\n{}'.format(
+                    BURSTINESS_METRIC_LABELS[burstiness_field], k, flow_name, path, rate, gt_desc),
+            )
+        plot_burstiness_vs_load_by_traffic(
+            results_by_traffic_load, 'max', burstiness_field, '{}_kmax.png'.format(field_prefix),
+            title='{} vs load by traffic, all considered flows: {}, path {}, rate {}\n{}'.format(
+                BURSTINESS_METRIC_LABELS[burstiness_field], flow_name, path, rate, gt_desc),
+        )
+
     print("Saved {} cross-traffic/load plot kinds x {} EMD variants x {} k values (plus one all-flows plot each), "
           "plus {} percentile-error plots per kind ({} percentile(s) x absolute/relative, all-flows only), "
-          "plus {} pass-rate-vs-load plots per method x {} method(s) (plus one all-flows plot each), to {}".format(
+          "plus {} pass-rate-vs-load plots per method x {} method(s) (plus one all-flows plot each), "
+          "plus the same EMD/percentile plots again vs each of {} burstiness metrics instead of load, "
+          "plus {} burstiness-metric-vs-load plots per metric (plus one all-flows plot each), to {}".format(
         len(plot_kinds), len(emd_variants), len(fixed_k_values), 2 * len(percentiles), len(percentiles),
-        len(fixed_k_values), len(subsampling_methods), rate_dir))
+        len(fixed_k_values), len(subsampling_methods), len(BURSTINESS_METRIC_LABELS),
+        len(fixed_k_values), rate_dir))
     return results_by_traffic_load
 
 

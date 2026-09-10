@@ -3483,15 +3483,22 @@ def relative_percentile_diffs(absolute_diffs, groundtruth_percentiles):
 
 
 ORACLE_MIN_REQUIRED_KEY = 'min_required'
+# The ideal-Poisson-probe family run at the SAME rate as "all packets of the considered
+# flows" -- i.e. what a perfectly Poisson process would look like at the sample count/rate
+# the no-subsampling ceiling itself draws, as a reference point alongside the
+# subsampling-method-matched probes (see oracle_target_counts).
+ORACLE_ALL_PACKETS_RATE_KEY = 'all_packets_rate'
 
 
 def _oracle_series_label(series_key):
-    """Legend/table name of an ideal-Poisson-probe family. Keyed either by
-    ORACLE_MIN_REQUIRED_KEY (the probe run at the minimum sample rate the
-    consistency check demands) or by the Poisson-adaptive method whose retained
-    sample count it matches."""
+    """Legend/table name of an ideal-Poisson-probe family. Keyed by
+    ORACLE_MIN_REQUIRED_KEY (the probe run at the minimum sample rate the consistency check
+    demands), ORACLE_ALL_PACKETS_RATE_KEY (matched to all packets' own count), or the
+    Poisson-adaptive method whose retained sample count it matches."""
     if series_key == ORACLE_MIN_REQUIRED_KEY:
         return 'Ideal Poisson probe (minimum required samples)'
+    if series_key == ORACLE_ALL_PACKETS_RATE_KEY:
+        return 'Ideal Poisson probe (all-packets rate)'
     return 'Ideal Poisson probe ({} sample count)'.format(series_key)
 
 
@@ -3537,7 +3544,7 @@ def construct_oracle_poisson_delays(groundtruth_method, queue_names, dir_prefix,
     )
 
 
-def oracle_target_counts(sampled_sizes_by_method, min_samples):
+def oracle_target_counts(sampled_sizes_by_method, min_samples, all_packets_size=None):
     """The sample budget for each ideal-Poisson-probe family, as an ordered
     {key: target_count} dict:
 
@@ -3549,10 +3556,16 @@ def oracle_target_counts(sampled_sizes_by_method, min_samples):
         size, falling back to the required minimum where the method found no
         valid subsample (the same rule the rate-matched uniform baseline uses,
         matched_uniform_target_count).
+      - ORACLE_ALL_PACKETS_RATE_KEY (only if `all_packets_size` is given) -> the
+        all-packets family's own count at this flow count: "what would a perfectly
+        Poisson process look like at the rate all packets arrive, with no
+        subsampling at all?"
     """
     targets = {ORACLE_MIN_REQUIRED_KEY: matched_uniform_target_count(0, min_samples)}
     for method, size in sampled_sizes_by_method.items():
         targets[method] = matched_uniform_target_count(size, min_samples)
+    if all_packets_size is not None:
+        targets[ORACLE_ALL_PACKETS_RATE_KEY] = matched_uniform_target_count(all_packets_size, min_samples)
     return targets
 
 
@@ -3560,6 +3573,93 @@ def _empty_percentile_structure(percentiles, keys, num_k):
     """A {q: {key: [[] per k]}} skeleton -- the shape the per-run percentile-diff
     records take, with nothing recorded yet."""
     return {q: {key: [[] for _ in range(num_k)] for key in keys} for q in percentiles}
+
+
+MSS_BYTES = 1500
+# The reference round-trip time IDC(1RTT) is measured at, per the project's assumed DC RTT.
+ONE_RTT_NS = 8000.0
+
+
+def burst_gap_threshold_ns(host_link_rate_gbps):
+    """Max inter-arrival gap (ns) for two arrivals to belong to the same burst: the
+    transmission time of one full MSS (1500B) at the sender's own outgoing link rate
+    (`host_link_rate_gbps`, in Gbit/s -- ECNMC's link-rate convention makes this numerically
+    bit/ns, see linkRates in run_emd_vs_flows_experiment). Packets arriving no slower than
+    back-to-back line rate from the source are considered part of the same burst."""
+    return (MSS_BYTES * 8) / host_link_rate_gbps
+
+
+def detect_bursts(times, gap_threshold):
+    """Group arrival times (ns) into bursts: consecutive arrivals gapped by <= gap_threshold
+    (ns) belong to the same burst (see burst_gap_threshold_ns for the threshold this project
+    uses). Returns (starts, ends, sizes), one triple per burst, sorted by time -- a lone
+    arrival not within gap_threshold of any neighbour is its own size-1, zero-duration burst
+    (a degenerate case, not a "real" burst -- see burstiness_metrics, which excludes these
+    from the duration average). Empty arrays if `times` is empty."""
+    times = np.sort(np.asarray(times, dtype=float))
+    n = len(times)
+    if n == 0:
+        return np.array([]), np.array([]), np.array([], dtype=int)
+    is_new_burst = np.empty(n, dtype=bool)
+    is_new_burst[0] = True
+    is_new_burst[1:] = np.diff(times) > gap_threshold
+    starts = times[is_new_burst]
+    is_burst_end = np.empty(n, dtype=bool)
+    is_burst_end[:-1] = is_new_burst[1:]
+    is_burst_end[-1] = True
+    ends = times[is_burst_end]
+    burst_id = np.cumsum(is_new_burst) - 1
+    sizes = np.bincount(burst_id)
+    return starts, ends, sizes
+
+
+def idc_at_delta(times, delta):
+    """IDC(delta) = Var(N_delta)/E[N_delta] for one specific bin width `delta` (ns), reusing
+    idc_curve's binning (non-overlapping bins spanning [min(times), max(times)]). NaN if
+    `times` has fewer than 2 points, `delta` isn't positive, or idc_curve can't produce a
+    value at this delta (e.g. mean bin count is 0)."""
+    times = np.asarray(times, dtype=float)
+    if len(times) < 2 or not np.isfinite(delta) or delta <= 0:
+        return float('nan')
+    try:
+        _, idc_vals, _, _ = idc_curve(times, np.array([delta]))
+    except (ValueError, RuntimeError):
+        return float('nan')
+    return float(idc_vals[0]) if len(idc_vals) else float('nan')
+
+
+def burstiness_metrics(times, gap_threshold, rtt_ns=ONE_RTT_NS):
+    """The three burstiness metrics for one arrival-time array `times` (ns): IDC at one RTT,
+    mean burst duration, and mean inter-burst gap (see detect_bursts for the burst
+    definition). NaN for any metric `times` has too little data for.
+
+    `avg_burst_duration_ns` averages only over MULTI-packet bursts (size >= 2) -- a lone
+    arrival is a degenerate, zero-duration "burst" by detect_bursts' bookkeeping, not a real
+    one, and on most real traffic the large majority of bursts are lone arrivals (e.g.
+    ~95-98% observed on Google_AllRPC), so including them would dilute the average toward 0
+    and mostly measure how rare multi-packet bursts are rather than how long one lasts when
+    it happens. NaN when there are no multi-packet bursts at all in `times`. Inter-burst gap
+    does NOT have this issue (a gap is well-defined between any two bursts regardless of
+    either one's size), so it still averages over all of them."""
+    starts, ends, sizes = detect_bursts(times, gap_threshold)
+    if len(starts) == 0:
+        avg_duration, avg_interarrival = float('nan'), float('nan')
+    else:
+        multi = sizes > 1
+        avg_duration = float(np.mean((ends - starts)[multi])) if multi.any() else float('nan')
+        avg_interarrival = float(np.mean(starts[1:] - ends[:-1])) if len(starts) >= 2 else float('nan')
+    return {
+        'idc_1rtt': idc_at_delta(times, rtt_ns),
+        'avg_burst_duration_ns': avg_duration,
+        'avg_burst_interarrival_ns': avg_interarrival,
+    }
+
+
+BURSTINESS_METRIC_LABELS = {
+    'idc_1rtt': 'IDC(1 RTT = {:g}ns)'.format(ONE_RTT_NS),
+    'avg_burst_duration_ns': 'Avg burst duration (ns)',
+    'avg_burst_interarrival_ns': 'Avg inter-burst gap (ns)',
+}
 
 
 def prepare_emd_vs_flows_data(
@@ -3661,6 +3761,8 @@ def prepare_emd_vs_flows_data(
     emd_all_packets, all_packet_sizes = [], []
     percentile_diff_all = {q: [] for q in delay_percentiles}
     poisson_tests_all = {'ad_pass': [], 'ad_pvalue': [], 'chi_pass': [], 'chi_reject_fraction': []}
+    burst_gap = burst_gap_threshold_ns(linkRates[0])
+    burstiness_all_packets = {field: [] for field in BURSTINESS_METRIC_LABELS}
     for k in num_flows:
         considered = full_df[full_df['FlowRank'] <= k]
         all_values = considered['Delay'].values
@@ -3677,6 +3779,9 @@ def prepare_emd_vs_flows_data(
         diffs = percentile_diffs(all_values, groundtruth_percentiles)
         for q in delay_percentiles:
             percentile_diff_all[q].append(diffs[q])
+        burst_metrics = burstiness_metrics(considered['SentTime'].values, burst_gap)
+        for field in burstiness_all_packets:
+            burstiness_all_packets[field].append(burst_metrics[field])
 
     return {
         'dir_prefix': dir_prefix,
@@ -3697,6 +3802,13 @@ def prepare_emd_vs_flows_data(
         'poisson_tests_all_packets': poisson_tests_all,
         'run_chi_squared_test': run_chi_squared_test,
         'poisson_test_lags': poisson_test_lags,
+        # Burstiness of the all-packets arrival process itself (see burstiness_metrics):
+        # IDC at one RTT, and mean burst duration/inter-burst gap using a burst defined as
+        # consecutive SentTime arrivals no farther apart than one MSS's transmission time on
+        # the sender's own outgoing link (burst_gap_threshold_ns). Same fixed packet set
+        # every run, so computed once here like emd_all_packets.
+        'burst_gap_threshold_ns': burst_gap,
+        'burstiness_all_packets': burstiness_all_packets,
         # Kept so a run can rebuild the ground-truth construction at a lower rate for the
         # ideal-Poisson-probe family (construct_oracle_poisson_delays).
         'queue_names': list(queue_names),
@@ -3815,6 +3927,28 @@ def steady_window_tag(steadyStart, steadyEnd):
     return 'steady_{:g}-{:g}ms'.format(steadyStart / 1e6, steadyEnd / 1e6)
 
 
+def resolve_emd_vs_flows_pickle_path(ns3_path, results_folder, rate, load, experiment,
+                                      steady_tag, config_tag, flow_name, path):
+    """The on-disk path of one run_emd_vs_flows_experiment pickle for one specific
+    experiment, preferring the current nested `<steady_tag>/<config_tag>/` layout and
+    falling back to the pre-2026-09-09 flat layout (config_tag as a filename infix, no
+    steady-window folder) if that's where it actually lives -- see
+    aggregate_emd_vs_flows_across_experiments for the equivalent multi-experiment scan this
+    mirrors. Returns (pkl_path, file_prefix) for whichever layout exists on disk, so a caller
+    can save companion outputs (replots, the .txt summary) alongside it with the same
+    prefix; (None, None) if neither layout has it."""
+    base = '{}/scratch/{}/{}/{}/{}/'.format(ns3_path, results_folder, rate, load, experiment)
+    new_prefix = '{}{}/{}/{}_path_{}'.format(base, steady_tag, config_tag, flow_name, path)
+    new_pkl = new_prefix + '_emd_vs_num_flows_results.pkl'
+    if os.path.isfile(new_pkl):
+        return new_pkl, new_prefix
+    legacy_prefix = '{}{}_path_{}_{}'.format(base, flow_name, path, config_tag)
+    legacy_pkl = legacy_prefix + '_emd_vs_num_flows_results.pkl'
+    if os.path.isfile(legacy_pkl):
+        return legacy_pkl, legacy_prefix
+    return None, None
+
+
 def compute_emd_vs_num_tcp_flows_run(prepared, agg_stats, confidenceValue, min_sample_size=30,
                                       subsampling_methods='find_samples_path'):
     """Run one realization of the flow-count EMD sweep against a given
@@ -3893,7 +4027,7 @@ def compute_emd_vs_num_tcp_flows_run(prepared, agg_stats, confidenceValue, min_s
     uniform_sample_sizes = {name: [] for name in subsampling_methods}
     sampled_percentile_diff = {q: {name: [] for name in subsampling_methods} for q in delay_percentiles}
     uniform_percentile_diff = {q: {name: [] for name in subsampling_methods} for q in delay_percentiles}
-    oracle_series = [ORACLE_MIN_REQUIRED_KEY] + list(subsampling_methods)
+    oracle_series = [ORACLE_MIN_REQUIRED_KEY] + list(subsampling_methods) + [ORACLE_ALL_PACKETS_RATE_KEY]
     oracle_emd = {key: [] for key in oracle_series}
     oracle_consistency = {key: [] for key in oracle_series}
     oracle_mean_diff = {key: [] for key in oracle_series}
@@ -3967,9 +4101,11 @@ def compute_emd_vs_num_tcp_flows_run(prepared, agg_stats, confidenceValue, min_s
             uniform_test_split[name]['chi_pass'].append(uniform_tests['chi_pass'])
 
         # The ideal-Poisson-probe ceiling: same construction as the ground truth, at the
-        # sample budget each real method actually achieved (plus the bare minimum budget).
+        # sample budget each real method actually achieved (plus the bare minimum budget,
+        # plus all packets' own count/rate with no subsampling at all).
         targets = oracle_target_counts(
-            {name: sampled_sample_sizes[name][-1] for name in subsampling_methods}, min_samples)
+            {name: sampled_sample_sizes[name][-1] for name in subsampling_methods}, min_samples,
+            all_packets_size=len(all_values))
         for key in oracle_series:
             oracle_values = construct_oracle_poisson_delays(
                 prepared['groundtruth_method'], prepared['queue_names'], prepared['dir_prefix'],
@@ -4102,7 +4238,7 @@ def _collect_one_run_delay_cdfs(prepared, agg_stats, min_sample_size,
         uniform_values[name] = sample_uniform_count(subset, target_count)['Delay'].values
 
     targets = oracle_target_counts({name: len(poisson_values[name]) for name in subsampling_methods},
-                                    min_samples)
+                                    min_samples, all_packets_size=len(all_values))
     oracle_values = {
         key: construct_oracle_poisson_delays(
             prepared['groundtruth_method'], prepared['queue_names'], prepared['dir_prefix'],
@@ -4266,6 +4402,16 @@ def upgrade_emd_vs_flows_results_schema(results):
         upgraded['percentile_reldiff_uniform_by_run'] = {}
         upgraded['percentile_diff_oracle_by_run'] = {}
         upgraded['percentile_reldiff_oracle_by_run'] = {}
+    # Burstiness metrics postdate these pickles. Unlike the percentiles/oracle probe above,
+    # they ARE cheaply recoverable without redoing the run (they only need the same raw
+    # packet CSV, not a fresh multi-run Poisson sweep) -- see backfill_burstiness_metrics --
+    # but this function only has the pickle itself to work with, so it fills in NaN
+    # placeholders here and the real values come from running that backfill separately.
+    if 'burstiness_all_packets' not in upgraded:
+        upgraded.setdefault('burst_gap_threshold_ns', float('nan'))
+        upgraded['burstiness_all_packets'] = {field: [float('nan')] * n_k for field in BURSTINESS_METRIC_LABELS}
+    upgraded.setdefault('burstiness_all_packets_by_experiment',
+                         {field: [[] for _ in range(n_k)] for field in BURSTINESS_METRIC_LABELS})
     if 'groundtruth_mean' not in upgraded:
         gt = np.asarray(upgraded.get('groundtruth_values', []), dtype=float)
         upgraded['groundtruth_mean'] = float(np.mean(gt)) if gt.size else np.nan
@@ -4302,7 +4448,7 @@ def aggregate_emd_vs_flows_results(results_list):
     convention used for pass_rate_sampled within a single experiment (see
     compute_emd_vs_num_tcp_flows_multi_run).
 
-    Normalized EMDs (EMD / mean ground-truth delay, see normalize_emd_values) are
+    Normalized EMDs (EMD relative to mean queuing delay, see normalize_emd_values) are
     concatenated from each experiment's own already-normalized values rather than
     re-derived from the pooled raw ones: every experiment reconstructs its own ground
     truth and therefore has its own normalizer, so normalizing must happen before
@@ -4359,6 +4505,9 @@ def aggregate_emd_vs_flows_results(results_list):
         result['emd_all_packets_by_experiment'] = [[v] for v in result['emd_all_packets']]
         result['emd_all_packets_by_experiment_normalized'] = [
             [v] for v in result['emd_all_packets_normalized']]
+        result['burstiness_all_packets_by_experiment'] = {
+            field: [([v] if v == v else []) for v in per_k]
+            for field, per_k in (result.get('burstiness_all_packets') or {}).items()}
         return result
 
     all_k = sorted(set().union(*(set(r['num_flows']) for r in results_list)))
@@ -4571,6 +4720,32 @@ def aggregate_emd_vs_flows_results(results_list):
     def _rate(c, t):
         return c / t if t else 0.0
 
+    # Burstiness of all-packets (see burstiness_metrics) only depends on the traffic's own
+    # sending pattern, not on the switch-side Poisson probing, so unlike EMD it doesn't need
+    # per-run values -- one value per (k, experiment) is all there is (self-contained pass,
+    # independent of the per-run loop above). Kept both as a per-k mean (agg_burstiness,
+    # for a quick single-number read) and as the full per-k-per-experiment list
+    # (agg_burstiness_by_experiment, so it can be drawn as a boxplot across experiments --
+    # the same treatment emd_all_packets_by_experiment gets).
+    agg_burst_gap = next((r['burst_gap_threshold_ns'] for r in results_list
+                           if np.isfinite(r.get('burst_gap_threshold_ns', np.nan))), np.nan)
+    agg_burstiness = {}
+    agg_burstiness_by_experiment = {}
+    for field in BURSTINESS_METRIC_LABELS:
+        per_k, per_k_values = [], []
+        for k in all_k:
+            vals = []
+            for r in results_list:
+                if k in r['num_flows']:
+                    v = (r.get('burstiness_all_packets') or {}).get(field, [])
+                    idx = r['num_flows'].index(k)
+                    if idx < len(v) and v[idx] == v[idx]:
+                        vals.append(v[idx])
+            per_k_values.append(vals)
+            per_k.append(float(np.mean(vals)) if vals else float('nan'))
+        agg_burstiness[field] = per_k
+        agg_burstiness_by_experiment[field] = per_k_values
+
     return {
         'flow_name': results_list[0]['flow_name'],
         'path': results_list[0]['path'],
@@ -4591,6 +4766,9 @@ def aggregate_emd_vs_flows_results(results_list):
         'groundtruth_std': float(np.std(groundtruth_values)) if groundtruth_values.size else np.nan,
         'delay_percentiles': list(percentiles),
         'groundtruth_percentiles': compute_delay_percentiles(groundtruth_values, percentiles),
+        'burst_gap_threshold_ns': agg_burst_gap,
+        'burstiness_all_packets': agg_burstiness,
+        'burstiness_all_packets_by_experiment': agg_burstiness_by_experiment,
         # All-packets percentile error is one value per experiment once aggregated (each
         # experiment has its own ground truth), so it becomes a distribution too -- the same
         # treatment emd_all_packets_by_experiment gets.
@@ -4798,7 +4976,7 @@ def compute_emd_vs_num_tcp_flows_multi_run(
     per_k_sample_sizes_uniform = {m: [[] for _ in num_flows] for m in subsampling_methods}
     per_k_pdiff_sampled = _empty_percentile_structure(delay_percentiles, subsampling_methods, len(num_flows))
     per_k_pdiff_uniform = _empty_percentile_structure(delay_percentiles, subsampling_methods, len(num_flows))
-    oracle_series = [ORACLE_MIN_REQUIRED_KEY] + list(subsampling_methods)
+    oracle_series = [ORACLE_MIN_REQUIRED_KEY] + list(subsampling_methods) + [ORACLE_ALL_PACKETS_RATE_KEY]
     per_k_emd_oracle = {key: [[] for _ in num_flows] for key in oracle_series}
     per_k_pass_oracle = {key: [0] * len(num_flows) for key in oracle_series}
     per_k_mean_diff_oracle = {key: [[] for _ in num_flows] for key in oracle_series}
@@ -4888,6 +5066,8 @@ def compute_emd_vs_num_tcp_flows_multi_run(
         'groundtruth_std': prepared['groundtruth_std'],
         'delay_percentiles': list(delay_percentiles),
         'groundtruth_percentiles': groundtruth_percentiles,
+        'burst_gap_threshold_ns': prepared['burst_gap_threshold_ns'],
+        'burstiness_all_packets': prepared['burstiness_all_packets'],
         'percentile_diff_all_packets': prepared['percentile_diff_all_packets'],
         'percentile_reldiff_all_packets': prepared['percentile_reldiff_all_packets'],
         'percentile_diff_sampled_by_run': per_k_pdiff_sampled,
@@ -5019,9 +5199,37 @@ def _draw_boxplot_family(axis, num_flows, values_by_k, pass_rate_by_k, position_
         median.set_linewidth(2.5)
 
 
+def _annotate_all_packets_burstiness(axis, num_flows, offset, y_by_k, burstiness_by_k):
+    """Small rotated text label above each all-packets position on a flow-count plot,
+    showing its burstiness (see burstiness_metrics): IDC at one RTT and mean burst
+    duration/inter-burst gap. `y_by_k` is the y-value to anchor each label above (the
+    all-packets point itself, or the top of its box once aggregated across experiments) --
+    a k with no finite anchor or no burstiness data is simply skipped."""
+    if not burstiness_by_k:
+        return
+    idc = burstiness_by_k.get('idc_1rtt', [])
+    dur = burstiness_by_k.get('avg_burst_duration_ns', [])
+    gap = burstiness_by_k.get('avg_burst_interarrival_ns', [])
+    for i, k in enumerate(num_flows):
+        if i >= len(y_by_k) or not np.isfinite(y_by_k[i]):
+            continue
+        parts = []
+        if i < len(idc) and idc[i] == idc[i]:
+            parts.append('IDC(1RTT)={:.2g}'.format(idc[i]))
+        if i < len(dur) and dur[i] == dur[i]:
+            parts.append('burst_dur={:.3g}ns'.format(dur[i]))
+        if i < len(gap) and gap[i] == gap[i]:
+            parts.append('burst_gap={:.3g}ns'.format(gap[i]))
+        if not parts:
+            continue
+        axis.annotate('\n'.join(parts), xy=(k + offset, y_by_k[i]), xytext=(0, 6),
+                       textcoords='offset points', ha='center', va='bottom',
+                       fontsize=7, color='0.25', rotation=90, annotation_clip=False, zorder=4)
+
+
 def _draw_all_packets_series(axis, num_flows, scalar_by_k, by_experiment, pass_rate_by_k, offset,
                               box_width, pass_threshold, pass_color, fail_color, num_runs,
-                              num_experiments, quantity_name, fill_color=None):
+                              num_experiments, quantity_name, fill_color=None, burstiness_by_k=None):
     """Render the all-packets comparison family and return its legend handles.
 
     All packets of the first k flows is the same fixed set of packets on every run, so
@@ -5029,7 +5237,12 @@ def _draw_all_packets_series(axis, num_flows, scalar_by_k, by_experiment, pass_r
     -- drawn as dots on a connecting line rather than a degenerate one-value boxplot. Once
     aggregated over several experiments it varies again (each experiment reconstructs its
     own ground truth), so it becomes a boxplot family like everything else. Both shapes are
-    handled here so every per-flow-count plot renders all-packets identically."""
+    handled here so every per-flow-count plot renders all-packets identically.
+
+    Pass `burstiness_by_k` (results['burstiness_all_packets']) to additionally annotate
+    each all-packets position with its IDC(1RTT)/burst-duration/inter-burst-gap (see
+    _annotate_all_packets_burstiness) -- omitted (None) wherever that would just clutter a
+    plot that isn't about the all-packets family specifically."""
     is_boxplot = bool(by_experiment) and num_experiments > 1
     if fill_color is not None:
         pass_color = fail_color = fill_color
@@ -5040,6 +5253,7 @@ def _draw_all_packets_series(axis, num_flows, scalar_by_k, by_experiment, pass_r
         missing = [k for k, values in zip(num_flows, by_experiment) if len(values) == 0]
         handles = [Patch(facecolor='white', edgecolor=_ALL_PACKETS_STYLE['edge_color'], linewidth=4.5,
                           label='All packets of considered flows (boxplot across experiments)')]
+        y_by_k = [max((v for v in values if np.isfinite(v)), default=np.nan) for values in by_experiment]
     else:
         values = np.asarray(scalar_by_k, dtype=float)
         x = np.asarray(num_flows, dtype=float) + offset
@@ -5055,9 +5269,11 @@ def _draw_all_packets_series(axis, num_flows, scalar_by_k, by_experiment, pass_r
         handles = [Line2D([0], [0], marker='o', color='0.4', markerfacecolor='white',
                            markeredgecolor='black', markersize=16, linewidth=2,
                            label='All packets of considered flows (dots + line)')]
+        y_by_k = list(values)
     if missing:
         print("No all-packet {} value for {} flow-count(s), skipped: {}".format(
             quantity_name, len(missing), missing))
+    _annotate_all_packets_burstiness(axis, num_flows, offset, y_by_k, burstiness_by_k)
     if fill_color is None:
         handles = [
             Patch(facecolor=pass_color, edgecolor='black', alpha=0.85,
@@ -5199,6 +5415,20 @@ def all_packets_vs_oracle_load_plot_series(subsampling_methods):
     return specs
 
 
+def all_packets_vs_own_rate_oracle_load_plot_series():
+    """Series specs pairing all packets of the considered flows (solid) against the ideal
+    Poisson probe run at that SAME rate/count (dashed, ORACLE_ALL_PACKETS_RATE_KEY) -- with
+    no method-specific comparison mixed in, this isolates exactly what "arriving as a real
+    application's traffic" costs relative to an idealized Poisson process at an identical
+    rate, no subsampling involved at all. See all_packets_vs_oracle_load_plot_series for the
+    per-subsampling-method version (each method's own, smaller, sample count)."""
+    specs = []
+    _load_series_spec(specs, 'all_packets', 'all_packets', 'all packets of considered flows')
+    _load_series_spec(specs, 'oracle', ('oracle', ORACLE_ALL_PACKETS_RATE_KEY),
+                       _oracle_series_label(ORACLE_ALL_PACKETS_RATE_KEY))
+    return specs
+
+
 def _series_key_label(series_key):
     """Human-readable name of a series key ('all_packets', ('sampled', method),
     ('uniform', key), or a bare 'sampled'), for legends and titles."""
@@ -5229,7 +5459,7 @@ def _metric_result_keys(metric, normalized):
                 'emd_sampled_packets_by_run' + suffix,
                 'emd_uniform_packets_by_run' + suffix,
                 'emd_oracle_by_run' + suffix,
-                "EMD / mean ground-truth delay" if normalized
+                "EMD relative to mean queuing delay" if normalized
                 else "EMD to reconstructed network delay CDF (ns)")
     if isinstance(metric, tuple) and metric[0] in ('percentile_diff', 'percentile_reldiff'):
         name, q = metric
@@ -5351,6 +5581,11 @@ def plot_emd_vs_load_by_traffic(results_by_traffic_load, k, output_path, pass_th
     _metric_result_keys). A combination whose results carry no such percentile is left
     without boxes rather than failing.
 
+    Whenever `series_specs` includes the 'all_packets' key, each (traffic, load)'s
+    all-packets box is also annotated with its burstiness (IDC(1RTT), mean burst
+    duration/inter-burst gap -- see burstiness_metrics), via the same
+    _annotate_all_packets_burstiness helper plot_emd_vs_num_flows_boxplot uses.
+
     `k` is normally an int looked up exactly in each combination's num_flows. Pass the
     string 'max' instead to use each (traffic, load) combination's own maximum flow count
     (its last num_flows entry) regardless of what that count actually is -- e.g. one
@@ -5392,6 +5627,9 @@ def plot_emd_vs_load_by_traffic(results_by_traffic_load, k, output_path, pass_th
 
     any_data = False
     all_plotted_values = []
+    # (x, y-anchor, burstiness dict) for each (traffic, load) where the 'all_packets' series
+    # is on this plot -- annotated after the main loop (see _annotate_all_packets_burstiness).
+    burstiness_annotations = []
     for ti, traffic in enumerate(traffics):
         color = _TRAFFIC_COLORS[ti % len(_TRAFFIC_COLORS)]
         legend_handles.append(Patch(facecolor='white', edgecolor=color, linewidth=4.5, label=traffic))
@@ -5410,12 +5648,21 @@ def plot_emd_vs_load_by_traffic(results_by_traffic_load, k, output_path, pass_th
                 values_by_load.append(values)
                 pass_rate_by_load.append(pass_rate)
                 all_plotted_values.extend(values)
+                if series_spec['key'] == 'all_packets' and len(values):
+                    burstiness = (r.get('burstiness_all_packets') or {})
+                    burstiness_annotations.append((
+                        load + offsets[n_series * ti + si], max(values),
+                        {field: [vals[i] if i < len(vals) else float('nan')]
+                         for field, vals in burstiness.items()}))
 
             if any(len(v) for v in values_by_load):
                 any_data = True
             _draw_boxplot_family(axis, loads, values_by_load, pass_rate_by_load,
                                  offsets[n_series * ti + si], box_width, pass_threshold, pass_color,
                                  fail_color, style, edge_width=series_spec.get('edge_width', 4.5))
+
+    for x, y, burstiness in burstiness_annotations:
+        _annotate_all_packets_burstiness(axis, [x], 0.0, [y], burstiness)
 
     for series_spec in series_specs:
         legend_handles.append(Line2D([0], [0], color='black', linestyle=series_spec['edge_style'],
@@ -5432,7 +5679,7 @@ def plot_emd_vs_load_by_traffic(results_by_traffic_load, k, output_path, pass_th
         quantity_name = 'p{} error{}'.format(quantity_percentile,
                                               ' (relative)' if metric[0].endswith('reldiff') else ' (ns)')
     else:
-        quantity_name = 'Normalized EMD' if normalized else 'EMD'
+        quantity_name = 'EMD relative to mean queuing delay' if normalized else 'EMD'
     default_title = '{} vs load by traffic ({}), all considered flows (each combination\'s own max)'.format(quantity_name, series_names) if use_max_k \
         else '{} vs load by traffic ({}), k={}'.format(quantity_name, series_names, k)
     axis.set_title(title or default_title, fontsize=34)
@@ -5470,6 +5717,224 @@ def plot_emd_vs_load_by_traffic(results_by_traffic_load, k, output_path, pass_th
     if loads:
         pad = max(np.min(np.diff(loads)) * 0.6, span / 2 + box_width) if len(loads) > 1 else max(span / 2, 0.05)
         axis.set_xlim(min(loads) - pad, max(loads) + pad)
+    axis.grid(True, alpha=0.35, axis='y')
+    axis.legend(handles=legend_handles, fontsize=16, loc='best', ncol=2)
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=150)
+    plt.close(fig)
+    return output_path
+
+
+def plot_burstiness_vs_load_by_traffic(results_by_traffic_load, k, burstiness_field, output_path,
+                                        title=None):
+    """One burstiness metric of the all-packets arrival process vs load, one boxplot (across
+    that combination's experiments) per traffic per load -- the burstiness counterpart of
+    plot_emd_vs_load_by_traffic, but with the metric itself as the plotted quantity rather
+    than EMD, so there is exactly one series per traffic (no series_specs / families to
+    compare) and no pass/fail colouring (burstiness isn't part of the delay consistency
+    check) -- each traffic's boxes share that traffic's colour (_TRAFFIC_COLORS) with a
+    plain solid border. `k` behaves as in plot_emd_vs_load_by_traffic ('max' = each
+    combination's own maximum flow count)."""
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    use_max_k = (k == 'max')
+    results_by_traffic_load = {key: upgrade_emd_vs_flows_results_schema(r)
+                                for key, r in results_by_traffic_load.items()}
+    traffics = sorted({t for (t, _l) in results_by_traffic_load})
+    loads = sorted({l for (_t, l) in results_by_traffic_load})
+    n_traffics = max(len(traffics), 1)
+    offsets, box_width, span = _load_plot_layout(n_traffics, loads, n_series=1)
+
+    fig, axis = plt.subplots(figsize=(30, 15))
+    legend_handles = []
+    any_data = False
+    for ti, traffic in enumerate(traffics):
+        color = _TRAFFIC_COLORS[ti % len(_TRAFFIC_COLORS)]
+        legend_handles.append(Patch(facecolor='white', edgecolor=color, linewidth=4.5, label=traffic))
+        positions, data = [], []
+        for load in loads:
+            r = results_by_traffic_load.get((traffic, load))
+            if r is None or not r['num_flows'] or (not use_max_k and k not in r['num_flows']):
+                continue
+            i = -1 if use_max_k else r['num_flows'].index(k)
+            by_experiment = (r.get('burstiness_all_packets_by_experiment') or {}).get(burstiness_field)
+            if by_experiment and i < len(by_experiment):
+                values = [v for v in by_experiment[i] if v == v]
+            else:
+                scalar = (r.get('burstiness_all_packets') or {}).get(burstiness_field, [])
+                values = [scalar[i]] if i < len(scalar) and scalar[i] == scalar[i] else []
+            if not values:
+                continue
+            positions.append(load + offsets[ti])
+            data.append(values)
+        if data:
+            any_data = True
+            bp = axis.boxplot(data, positions=positions, widths=box_width, patch_artist=True,
+                               showfliers=False, manage_ticks=False)
+            for patch in bp['boxes']:
+                patch.set_facecolor(color)
+                patch.set_alpha(0.85)
+                patch.set_edgecolor(color)
+                patch.set_linewidth(4.5)
+            for part in ('whiskers', 'caps'):
+                for line in bp[part]:
+                    line.set_color(color)
+                    line.set_linewidth(4.5)
+            for median in bp['medians']:
+                median.set_color('black')
+                median.set_linewidth(2.5)
+
+    if not any_data:
+        print("plot_burstiness_vs_load_by_traffic: no {} data at k={}, writing empty plot".format(
+            burstiness_field, k))
+
+    y_label = BURSTINESS_METRIC_LABELS.get(burstiness_field, burstiness_field)
+    default_title = '{} vs load by traffic, all considered flows (each combination\'s own max)'.format(y_label) \
+        if use_max_k else '{} vs load by traffic, k={}'.format(y_label, k)
+    axis.set_title(title or default_title, fontsize=34)
+    axis.set_xlabel('Load')
+    axis.set_ylabel(y_label)
+    axis.set_xticks(loads)
+    if loads:
+        pad = max(np.min(np.diff(loads)) * 0.6, span / 2 + box_width) if len(loads) > 1 else max(span / 2, 0.05)
+        axis.set_xlim(min(loads) - pad, max(loads) + pad)
+    axis.grid(True, alpha=0.35, axis='y')
+    axis.legend(handles=legend_handles, fontsize=16, loc='best')
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=150)
+    plt.close(fig)
+    return output_path
+
+
+def plot_emd_vs_burstiness_by_traffic(results_by_traffic_load, k, burstiness_field, output_path,
+                                       pass_threshold=0.9, title=None, series_specs=None,
+                                       normalized=False, metric='emd'):
+    """Like plot_emd_vs_load_by_traffic, but the x-axis is a burstiness metric of the
+    all-packets arrival process at this k (results['burstiness_all_packets'][burstiness_field],
+    see burstiness_metrics) instead of load. One point/box per (traffic, load) combination,
+    positioned at ITS OWN measured burstiness rather than a shared nominal x-tick -- unlike
+    load, burstiness isn't a controlled experimental parameter with a handful of common
+    values, it's whatever that combination's traffic actually did, so two combinations can
+    legitimately land at (near-)identical x if their sending pattern was equally bursty.
+
+    `burstiness_field` is one of 'idc_1rtt' / 'avg_burst_duration_ns' /
+    'avg_burst_interarrival_ns' (see BURSTINESS_METRIC_LABELS, which also supplies the axis
+    label). `k`, `series_specs`, `normalized`, `metric` and the y-axis capping behave exactly
+    as in plot_emd_vs_load_by_traffic; series are still colour-per-traffic,
+    style-per-series (see _load_series_spec)."""
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    use_max_k = (k == 'max')
+    results_by_traffic_load = {key: upgrade_emd_vs_flows_results_schema(r)
+                                for key, r in results_by_traffic_load.items()}
+    if not series_specs:
+        methods = []
+        for r in results_by_traffic_load.values():
+            for name in r['subsampling_methods']:
+                if name not in methods:
+                    methods.append(name)
+        series_specs = all_packets_vs_sampled_load_plot_series(methods or ['find_samples_path'])
+
+    traffics = sorted({t for (t, _l) in results_by_traffic_load})
+    pass_color, fail_color = 'tab:green', 'tab:red'
+    n_series = max(len(series_specs), 1)
+
+    # Each (traffic, load) combination's x position is its OWN measured burstiness at this k
+    # -- not a shared discrete value like load -- so the usual "gap between distinct loads"
+    # spacing doesn't apply. Derive a data-driven slot width from the actual spread of
+    # positions instead, so series at one combination stay visually distinct from each other
+    # without assuming anything about the scale of this particular metric (IDC is O(1),
+    # burst gaps are O(1e3) ns, etc).
+    combo_x = {}
+    for (traffic, load), r in results_by_traffic_load.items():
+        if not r['num_flows'] or (not use_max_k and k not in r['num_flows']):
+            continue
+        i = -1 if use_max_k else r['num_flows'].index(k)
+        values = (r.get('burstiness_all_packets') or {}).get(burstiness_field, [])
+        if i < len(values) and np.isfinite(values[i]):
+            combo_x[(traffic, load)] = values[i]
+
+    x_label = BURSTINESS_METRIC_LABELS.get(burstiness_field, burstiness_field)
+    fig, axis = plt.subplots(figsize=(30, 15))
+    if not combo_x:
+        print("plot_emd_vs_burstiness_by_traffic: no {} data at k={}, writing empty plot".format(
+            burstiness_field, k))
+        axis.set_title(title or 'No {} data available'.format(x_label), fontsize=34)
+        fig.savefig(output_path, dpi=150)
+        plt.close(fig)
+        return output_path
+
+    xs = sorted(combo_x.values())
+    x_span = (xs[-1] - xs[0]) if len(xs) > 1 else max(abs(xs[0]), 1.0)
+    slot = max(x_span * 0.03, abs(x_span) * 1e-6 + 1e-9)
+    span = slot * n_series
+    box_width = (span / n_series) * _FAMILY_BOX_FILL
+    offsets = np.linspace(-span / 2, span / 2, n_series) if n_series > 1 else np.array([0.0])
+
+    legend_handles = [
+        Patch(facecolor=pass_color, edgecolor='black', alpha=0.85,
+              label='Consistency check passed (≥{:.0f}%)'.format(pass_threshold * 100)),
+        Patch(facecolor=fail_color, edgecolor='black', alpha=0.85,
+              label='Consistency check failed (<{:.0f}%)'.format(pass_threshold * 100)),
+    ]
+
+    any_data = False
+    all_plotted_values = []
+    for ti, traffic in enumerate(traffics):
+        color = _TRAFFIC_COLORS[ti % len(_TRAFFIC_COLORS)]
+        combo_loads = sorted(load for (t, load) in combo_x if t == traffic)
+        if not combo_loads:
+            continue
+        legend_handles.append(Patch(facecolor='white', edgecolor=color, linewidth=4.5, label=traffic))
+        for load in combo_loads:
+            r = results_by_traffic_load[(traffic, load)]
+            i = -1 if use_max_k else r['num_flows'].index(k)
+            x0 = combo_x[(traffic, load)]
+            for si, series_spec in enumerate(series_specs):
+                style = dict(edge_color=color, edge_style=series_spec['edge_style'])
+                values, pass_rate = _load_plot_series_values(r, i, series_spec['key'],
+                                                             normalized=normalized, metric=metric)
+                if len(values):
+                    any_data = True
+                    all_plotted_values.extend(values)
+                _draw_boxplot_family(axis, [x0], [values], [pass_rate], offsets[si], box_width,
+                                     pass_threshold, pass_color, fail_color, style,
+                                     edge_width=series_spec.get('edge_width', 4.5))
+
+    for series_spec in series_specs:
+        legend_handles.append(Line2D([0], [0], color='black', linestyle=series_spec['edge_style'],
+                                      linewidth=series_spec.get('edge_width', 3),
+                                      label='{} (border)'.format(series_spec['label'])))
+
+    if not any_data:
+        print("plot_emd_vs_burstiness_by_traffic: no data at k={}, writing empty plot".format(k))
+
+    series_names = ' vs. '.join(s['label'] for s in series_specs)
+    y_label = _metric_result_keys(metric, normalized)[-1]
+    quantity_percentile = _metric_percentile(metric)
+    if quantity_percentile is not None:
+        quantity_name = 'p{} error{}'.format(quantity_percentile,
+                                              ' (relative)' if metric[0].endswith('reldiff') else ' (ns)')
+    else:
+        quantity_name = 'EMD relative to mean queuing delay' if normalized else 'EMD'
+    default_title = '{} vs {} by traffic ({}), all considered flows (each combination\'s own max)'.format(
+        quantity_name, x_label, series_names) if use_max_k \
+        else '{} vs {} by traffic ({}), k={}'.format(quantity_name, x_label, series_names, k)
+    axis.set_title(title or default_title, fontsize=34)
+    axis.set_xlabel(x_label)
+    axis.set_ylabel(y_label)
+    if quantity_percentile is not None:
+        axis.axhline(0, color='black', linewidth=2, linestyle=':', zorder=1)
+
+    # Same fixed-scale y-axis capping as plot_emd_vs_load_by_traffic (see there for the
+    # rationale) -- kept silent (no "capped at..." annotation) to match that plot's current
+    # convention.
+    is_relative = normalized or (isinstance(metric, tuple) and metric[0] == 'percentile_reldiff')
+    signed = isinstance(metric, tuple)
+    cap = 1.0 if is_relative else 500.0
+    bottom = -cap if signed else 0.0
+    axis.set_ylim(bottom=bottom, top=cap)
+
     axis.grid(True, alpha=0.35, axis='y')
     axis.legend(handles=legend_handles, fontsize=16, loc='best', ncol=2)
     fig.tight_layout()
@@ -5595,7 +6060,12 @@ def plot_emd_vs_num_flows_boxplot(results, output_path, title="EMD vs number of 
 
     With `normalized` set, the plotted quantity is the EMD divided by the mean
     ground-truth path delay (normalize_emd_values) rather than raw nanoseconds
-    -- the view that stays comparable across offered loads."""
+    -- the view that stays comparable across offered loads.
+
+    Each all-packets position is also annotated with its burstiness (IDC at one RTT, mean
+    burst duration/inter-burst gap -- see burstiness_metrics), rotated vertically above the
+    point/box (_annotate_all_packets_burstiness), when results['burstiness_all_packets']
+    has it (absent for pre-burstiness-metrics results -- see backfill_burstiness_metrics)."""
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -5619,7 +6089,8 @@ def plot_emd_vs_num_flows_boxplot(results, output_path, title="EMD vs number of 
     legend_handles = _draw_all_packets_series(
         axis, num_flows, emd_all, emd_all_by_experiment, pass_rate_all, offset_all, box_width,
         pass_threshold, pass_color, fail_color, results['num_runs'],
-        results.get('num_experiments', 1), 'EMD')
+        results.get('num_experiments', 1), 'EMD',
+        burstiness_by_k=results.get('burstiness_all_packets'))
 
     # Poisson-adaptive subsamples: each differs every run -- one boxplot family per
     # method, so several algorithms run together are compared on the same axis.
@@ -5673,7 +6144,7 @@ def plot_emd_vs_num_flows_boxplot(results, output_path, title="EMD vs number of 
 
     axis.set_title(title, fontsize=34)
     axis.set_xlabel('Number of TCP flows considered')
-    axis.set_ylabel("EMD / mean ground-truth delay" if normalized
+    axis.set_ylabel("EMD relative to mean queuing delay" if normalized
                      else "EMD to reconstructed network delay CDF (ns)")
     axis.set_xticks(num_flows)
     axis.set_xlim(min(num_flows) - 0.6, max(num_flows) + 0.6)
@@ -5699,6 +6170,75 @@ def plot_emd_vs_num_flows_boxplot(results, output_path, title="EMD vs number of 
 
 
 _ALL_PACKETS_STYLE = dict(edge_color='black', edge_style='solid')
+
+
+def plot_burstiness_vs_num_flows(results, burstiness_field, output_path, title=None):
+    """One burstiness metric of the all-packets arrival process (IDC(1RTT),
+    avg_burst_duration_ns, or avg_burst_interarrival_ns -- see burstiness_metrics /
+    BURSTINESS_METRIC_LABELS) against the number of considered TCP flows, for a single
+    (traffic, load) combination -- the burstiness counterpart of
+    plot_emd_vs_num_flows_boxplot's all-packets series (dots + line for a single experiment,
+    a boxplot across experiments once aggregated over more than one via
+    aggregate_emd_vs_flows_results). Not part of the delay consistency check, so drawn in a
+    single plain colour rather than pass/fail green/red."""
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    results = upgrade_emd_vs_flows_results_schema(results)
+    num_flows = results['num_flows']
+    by_experiment = (results.get('burstiness_all_packets_by_experiment') or {}).get(burstiness_field)
+    scalar = (results.get('burstiness_all_packets') or {}).get(burstiness_field, [])
+    is_boxplot = bool(by_experiment) and results.get('num_experiments', 1) > 1
+    color = 'teal'
+
+    fig, axis = plt.subplots(figsize=(30, 15))
+    missing = []
+    if is_boxplot:
+        positions, data = [], []
+        for k, values in zip(num_flows, by_experiment):
+            finite = [v for v in values if v == v]
+            if not finite:
+                missing.append(k)
+                continue
+            positions.append(k)
+            data.append(finite)
+        if data:
+            bp = axis.boxplot(data, positions=positions, widths=0.5, patch_artist=True,
+                               showfliers=False, manage_ticks=False)
+            for patch in bp['boxes']:
+                patch.set_facecolor(color)
+                patch.set_alpha(0.85)
+                patch.set_edgecolor('black')
+                patch.set_linewidth(2.5)
+            for part in ('whiskers', 'caps'):
+                for line in bp[part]:
+                    line.set_color('black')
+                    line.set_linewidth(2.5)
+            for median in bp['medians']:
+                median.set_color(color)
+                median.set_linewidth(2.5)
+    else:
+        values = np.asarray(scalar, dtype=float)
+        x = np.asarray(num_flows, dtype=float)
+        valid = np.isfinite(values)
+        missing = [k for k, v in zip(num_flows, values) if not np.isfinite(v)]
+        axis.plot(x[valid], values[valid], color='0.4', linewidth=2, zorder=1)
+        axis.scatter(x[valid], values[valid], marker='o', color=color,
+                     edgecolor='black', s=220, zorder=3)
+    if missing:
+        print("No {} value for {} flow-count(s), skipped: {}".format(
+            burstiness_field, len(missing), missing))
+
+    y_label = BURSTINESS_METRIC_LABELS.get(burstiness_field, burstiness_field)
+    axis.set_title(title or '{} vs number of TCP flows'.format(y_label), fontsize=34)
+    axis.set_xlabel('Number of TCP flows considered')
+    axis.set_ylabel(y_label)
+    axis.set_xticks(num_flows)
+    axis.set_xlim(min(num_flows) - 0.6, max(num_flows) + 0.6)
+    axis.grid(True, alpha=0.35, axis='y')
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=150)
+    plt.close(fig)
+    return output_path
 
 
 def plot_mean_diff_vs_num_flows(results, output_path, title="Switch vs. packet mean delay difference", pass_threshold=0.9, y_limit=None):
@@ -5989,7 +6529,7 @@ def plot_poisson_test_split_vs_num_flows(results, output_path, test_name='ad', q
         'emd': ('emd_all_packets', 'emd_all_packets_by_experiment', 'emd',
                  'EMD to reconstructed network delay CDF (ns)'),
         'emd_normalized': ('emd_all_packets_normalized', 'emd_all_packets_by_experiment_normalized',
-                            'emd_normalized', 'EMD / mean ground-truth delay'),
+                            'emd_normalized', 'EMD relative to mean queuing delay'),
         'mean_diff': (None, 'mean_diff_all_packets_by_run', 'mean_diff',
                        'Switch samples mean delay - packet mean delay (ns)'),
     }
@@ -6168,6 +6708,10 @@ def save_emd_vs_flows_results_text(results, output_path):
             p5, p25, p50, p75, p95))
     lines.append("EMD normalizer (mean ground-truth path delay): {:.2f} ns".format(gt_mean)
                   if np.isfinite(gt_mean) else "EMD normalizer (mean ground-truth path delay): n/a")
+    burst_gap = results.get('burst_gap_threshold_ns', np.nan)
+    lines.append("Burst gap threshold (1 MSS={}B transmission time at the sender's own link rate): {:.2f} ns".format(
+        MSS_BYTES, burst_gap) if np.isfinite(burst_gap)
+        else "Burst gap threshold: n/a (results predate burstiness metrics -- see backfill_burstiness_metrics)")
     gt_percentiles = results.get('groundtruth_percentiles') or {}
     percentiles = list(results.get('delay_percentiles') or [])
     if percentiles:
@@ -6211,8 +6755,19 @@ def save_emd_vs_flows_results_text(results, output_path):
     lines.append("    agree at any k where the method found a subsample on every run. Where it failed on some")
     lines.append("    runs (n_samp < N) the uniform column averages the matched runs *together with* the")
     lines.append("    fallback runs, so its aggregate n_pkts sits below the method's own -- not a mismatch.")
-    lines.append("  * normEMD = EMD / mean ground-truth path delay -- dimensionless, and unlike the raw ns")
-    lines.append("    figure it stays comparable across offered loads (raw EMD grows with the delay level).")
+    lines.append("  * relEMD = EMD relative to mean queuing delay (EMD / mean ground-truth path delay) --")
+    lines.append("    dimensionless, and unlike the raw ns figure it stays comparable across offered loads")
+    lines.append("    (raw EMD grows with the delay level).")
+    lines.append("  * IDC(1RTT)/burst_dur/burst_gap (all-packets table only): burstiness of the all-packets")
+    lines.append("    SentTime arrival process -- IDC(1RTT) = Var/Mean of arrival counts in non-overlapping")
+    lines.append("    windows one RTT ({:g}ns) wide (1.0 = Poisson-like, >1 = bursty); a burst is consecutive".format(ONE_RTT_NS))
+    lines.append("    arrivals no farther apart than the burst gap threshold above (see detect_bursts).")
+    lines.append("    burst_dur is the mean duration of MULTI-packet bursts only (a lone arrival is a")
+    lines.append("    degenerate size-1/zero-duration \"burst\", not a real one, and excluding it matters --")
+    lines.append("    on real traffic most bursts are lone arrivals, e.g. ~95-98% observed on Google_AllRPC,")
+    lines.append("    so including them would mostly measure how rare real bursts are rather than how long")
+    lines.append("    one lasts; n/a when there are no multi-packet bursts at all). burst_gap is the mean")
+    lines.append("    gap between bursts of any size, all-packets, same fixed packet set every run like EMD(all).")
     lines.append("  * pass(...): fraction of runs where the delay consistency check passed. For pass(all)")
     lines.append("    and the uniform tables, this is out of all N runs. For a Poisson-adaptive method, this")
     lines.append("    is out of only the 'n_samp' runs that actually found a valid subsample at that flow")
@@ -6230,8 +6785,10 @@ def save_emd_vs_flows_results_text(results, output_path):
     lines.append("")
 
     lines.append("All packets of the considered flows:")
-    header = "{:>3} | {:>24} | {:>24} | {:>9} | {:>24}".format(
-        "k", "EMD(all) [ns]", "normEMD(all)", "pass(all)", "mean_diff(all) [ns]")
+    burstiness_all = results.get('burstiness_all_packets') or {}
+    header = "{:>3} | {:>24} | {:>24} | {:>9} | {:>24} | {:>10} | {:>14} | {:>14}".format(
+        "k", "EMD(all) [ns]", "relEMD(all)", "pass(all)", "mean_diff(all) [ns]",
+        "IDC(1RTT)", "burst_dur[ns]", "burst_gap[ns]")
     lines.append(header)
     lines.append("-" * len(header))
     for i, k in enumerate(results['num_flows']):
@@ -6243,9 +6800,17 @@ def save_emd_vs_flows_results_text(results, output_path):
             emd_all_str = "{:.2f}".format(emd_all) if emd_all == emd_all else "n/a"
             emd_all_norm = results['emd_all_packets_normalized'][i]
             emd_all_norm_str = "{:.4f}".format(emd_all_norm) if emd_all_norm == emd_all_norm else "n/a"
-        lines.append("{:>3} | {:>24} | {:>24} | {:>8.0%} | {:>24}".format(
+
+        def _burst_field(field):
+            values = burstiness_all.get(field, [])
+            v = values[i] if i < len(values) else float('nan')
+            return "{:.3f}".format(v) if v == v else "n/a"
+
+        lines.append("{:>3} | {:>24} | {:>24} | {:>8.0%} | {:>24} | {:>10} | {:>14} | {:>14}".format(
             k, emd_all_str, emd_all_norm_str, results['pass_rate_all_packets'][i],
             _stat(results['mean_diff_all_packets_by_run'][i]),
+            _burst_field('idc_1rtt'), _burst_field('avg_burst_duration_ns'),
+            _burst_field('avg_burst_interarrival_ns'),
         ))
 
     emd_sampled_by_run = results['emd_sampled_packets_by_run']
@@ -6255,7 +6820,7 @@ def save_emd_vs_flows_results_text(results, output_path):
         lines.append("")
         lines.append("Poisson-adaptive subsample -- {}:".format(method))
         header = "{:>3} | {:>6} | {:>24} | {:>24} | {:>9} | {:>24} | {:>20}".format(
-            "k", "n_samp", "EMD [ns]", "normEMD", "pass", "mean_diff [ns]", "n_pkts")
+            "k", "n_samp", "EMD [ns]", "relEMD", "pass", "mean_diff [ns]", "n_pkts")
         lines.append(header)
         lines.append("-" * len(header))
         for i, k in enumerate(results['num_flows']):
@@ -6282,7 +6847,7 @@ def save_emd_vs_flows_results_text(results, output_path):
         lines.append("")
         lines.append("{}:".format(_oracle_series_label(key)))
         header = "{:>3} | {:>6} | {:>24} | {:>24} | {:>9} | {:>24} | {:>20}".format(
-            "k", "n_runs", "EMD [ns]", "normEMD", "pass", "mean_diff [ns]", "n_pkts")
+            "k", "n_runs", "EMD [ns]", "relEMD", "pass", "mean_diff [ns]", "n_pkts")
         lines.append(header)
         lines.append("-" * len(header))
         for i, k in enumerate(results['num_flows']):
@@ -6298,7 +6863,7 @@ def save_emd_vs_flows_results_text(results, output_path):
         lines.append("")
         lines.append("{}:".format(_uniform_series_label(key)))
         header = "{:>3} | {:>6} | {:>24} | {:>24} | {:>9} | {:>24} | {:>20}".format(
-            "k", "n_samp", "EMD [ns]", "normEMD", "pass", "mean_diff [ns]", "n_pkts")
+            "k", "n_samp", "EMD [ns]", "relEMD", "pass", "mean_diff [ns]", "n_pkts")
         lines.append(header)
         lines.append("-" * len(header))
         for i, k in enumerate(results['num_flows']):
