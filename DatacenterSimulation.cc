@@ -307,7 +307,7 @@ void run_single_queue_simulation(int argc, char* argv[]) {
     Config::SetDefault("ns3::CoDelQueueDisc::UseEcn", BooleanValue(false));
     Config::SetDefault("ns3::FqCoDelQueueDisc::UseEcn", BooleanValue(false));
     Config::SetDefault("ns3::TcpSocket::SegmentSize", UintegerValue(1448));
-    Config::SetDefault("ns3::TcpSocket::DelAckCount", UintegerValue(1));
+    Config::SetDefault("ns3::TcpSocket::DelAckCount", UintegerValue(2));
     Config::SetDefault("ns3::TcpSocket::SndBufSize", UintegerValue(25000000));
     Config::SetDefault("ns3::TcpSocket::RcvBufSize", UintegerValue(25000000));
     Config::SetDefault("ns3::TcpSocket::TcpNoDelay", BooleanValue(!Nagle));
@@ -842,7 +842,7 @@ void run_DC_simulation(int argc, char* argv[]){
     Config::SetDefault("ns3::CoDelQueueDisc::UseEcn", BooleanValue(false));
     Config::SetDefault("ns3::FqCoDelQueueDisc::UseEcn", BooleanValue(false));
     Config::SetDefault("ns3::TcpSocket::SegmentSize", UintegerValue(1448));
-    Config::SetDefault("ns3::TcpSocket::DelAckCount", UintegerValue(1));
+    Config::SetDefault("ns3::TcpSocket::DelAckCount", UintegerValue(2));
     Config::SetDefault("ns3::TcpSocket::SndBufSize", UintegerValue(25000000));
     Config::SetDefault("ns3::TcpSocket::RcvBufSize", UintegerValue(25000000));
     Config::SetDefault("ns3::TcpSocket::TcpNoDelay", BooleanValue(!Nagle));
@@ -857,7 +857,7 @@ void run_DC_simulation(int argc, char* argv[]){
     // (DelAckTimeout is 200 ms), the sender times out first, its retransmission is a duplicate
     // that does get ACKed immediately, and the flow advances exactly one segment per RTO. That
     // is what starved R0H0 to 11.5 Mbps for a whole second in the first collective pilot.
-    Config::SetDefault("ns3::TcpSocketBase::ClockGranularity", TimeValue(MicroSeconds(10)));
+    // Config::SetDefault("ns3::TcpSocketBase::ClockGranularity", TimeValue(MicroSeconds(10)));
     GlobalValue::Bind("ChecksumEnabled", BooleanValue(false));
     Config::SetDefault("ns3::RedQueueDisc::UseHardDrop", BooleanValue(false));
     Config::SetDefault("ns3::RedQueueDisc::MeanPktSize", UintegerValue(1500));
