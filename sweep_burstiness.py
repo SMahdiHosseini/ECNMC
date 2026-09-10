@@ -9,13 +9,21 @@ K > C*RTT/7 rule, giving a 15 KB marking threshold:
            together and the receiver sees one 12-packet batch; at 1 they are staggered evenly and
            it sees a near-deterministic smooth stream. Offered load, message size, buffer and ECN
            threshold are identical at every point, and relative phase is the one thing TCP pacing
-           cannot undo. The burst stays at 14.4 KB, under the 15 KB threshold, so with pacing on
-           nothing marks and pacing is a no-op throughout. Values are dense below 0.25 because the
-           transition happens where the stagger reaches the burst's drain time (~1.15 us, i.e.
-           spread ~0.08 at a 15 us period).
+           cannot undo. Values are dense below 0.25 because the transition happens where the
+           stagger reaches the burst's drain time (0.98 us at 6 x 2048 B, i.e. spread ~0.077 at a
+           12.8 us period), so 0.04/0.08/0.15 bracket it. The burst is 82% of the ECN threshold at
+           every point, so nothing marks and pacing is inert -- this axis is measured in the clean
+           regime, and `msgsize` is where crossing into marking is measured.
+           NOTE the message must stay multi-segment (16384 B = 12 segments). With a one-segment
+           message each sender contributes a single packet, the monitored flow's position in the
+           batch is fixed by ns-3's deterministic tie-break, and it reads exactly 0 ns queuing
+           delay at every point -- measured, against 246-843 ns for its rack-mates.
 
-  msgsize  The validation axis. Phase spread is pinned at 0 and the message grows from under to
-           well over the ECN threshold, with the period scaled to hold the offered load fixed.
+  msgsize  The validation axis. Phase spread is pinned at 0 and the message grows, with the period
+           scaled to hold the offered load fixed, so the burst runs from 82% to 328% of the ECN
+           marking threshold -- crossing it between the first and second point. Below it nothing
+           marks and paced and unpaced should coincide; above it RED marks, DCTCP cuts cwnd and
+           pacing smears the burst, so the two arms separate. That separation is the measurement.
            The larger points are NOMINALLY burstier, but RED marks, DCTCP cuts cwnd, and pacing
            then smears the burst flat -- so their MEASURED burstiness should stop rising. Plotted
            against measured IDC rather than against the config knob they should fall on the same
@@ -46,28 +54,35 @@ RAW = os.path.join(NS3, 'scratch', 'Results_forward')
 LINK_BPS = 100e9          # hostToTorLinkRate
 BUFFER_B = 100e3          # switchSrcREDQueueDiscMaxSize
 MIN_TH = 0.15             # ECN marking threshold as a fraction of the buffer
-SENDERS = 12              # periodicSenderRacks * periodicSenders
+# Senders feeding the MONITORED receiver, i.e. (sending racks per receiver) x
+# periodicSenders. With 3 sending racks split over 3 receivers that is 1 x 6 = 6, so the
+# monitored last hop sees the same 98 KB burst as the single-rack version did.
+SENDERS_PER_RECEIVER = 6
 DELTA = 0.0768            # offered load on the receiver's last hop, held fixed across both sweeps
 
 def period_for(msg_size):
     """Period that holds the busy fraction at DELTA for this message size."""
-    return 8.0 * SENDERS * msg_size / (DELTA * LINK_BPS)
+    return 8.0 * SENDERS_PER_RECEIVER * msg_size / (DELTA * LINK_BPS)
 
 SWEEPS = {
     'spread': {
         'dir': 'forward_burstiness_spread',
-        'fixed': {'periodicMsgSize': 1200, 'periodicPeriod': '15us'},
+        'fixed': {'periodicMsgSize': 2048, 'periodicPeriod': '12.800us',
+                  'periodicSenderRacks': 3, 'periodicSenders': 6,
+                  'periodicDstHosts': 3},
         # label -> overrides. The label is also the x-axis value.
         'points': [(s, {'periodicPhaseSpread': s}) for s in
-                   (0.0, 0.02, 0.05, 0.08, 0.12, 0.18, 0.25, 0.40, 0.60, 1.0)],
+                   (0.0, 0.04, 0.08, 0.15, 0.30, 1.0)],
     },
     'msgsize': {
         'dir': 'forward_burstiness_msgsize',
-        'fixed': {'periodicPhaseSpread': 0.0},
+        'fixed': {'periodicPhaseSpread': 0.0,
+                  'periodicSenderRacks': 3, 'periodicSenders': 6,
+                  'periodicDstHosts': 3},
         'points': [(round(m / 1000.0, 3),
                     {'periodicMsgSize': m,
                      'periodicPeriod': '%.3fus' % (period_for(m) * 1e6)})
-                   for m in (1000, 1200, 1500, 2048, 2560, 3072, 4096)],
+                   for m in (2048, 2560, 3072, 4096, 8192)],
     },
 }
 
@@ -92,7 +107,7 @@ def describe(name):
         per = v.get('periodicPeriod', c.get('DCSim', 'periodicPeriod'))
         per_s = float(str(per).replace('us', '')) * 1e-6
         spread = float(v.get('periodicPhaseSpread', c.getfloat('DCSim', 'periodicPhaseSpread')))
-        burst = SENDERS * msg
+        burst = SENDERS_PER_RECEIVER * msg
         delta = 8.0 * burst / (per_s * LINK_BPS)
         flag = '' if burst <= MIN_TH * BUFFER_B else '  <-- marks, pacing flattens'
         print('  %-9s %-10s %-10s %-8s %7.1fK %8.0f%% %8.4f %10.0f%s' %

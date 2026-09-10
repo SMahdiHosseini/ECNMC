@@ -25,7 +25,7 @@ private:
     void Send();
     void ScheduleNextSend();
     void ReadWorkloadFile();
-    double NextInterval();
+    void ScheduleAtNominal();
 
     vector<vector<Address>> _receiverAddress;
     vector<ConnectionPool *> _connectionPools;
@@ -46,6 +46,8 @@ private:
     string _arrivalProcess;
     uint32_t _fixedMsgSize;
     double _startPhase;
+    double _jitterNs;
+    Time _nominalNext;
 protected:
     void DoDispose() override;
 

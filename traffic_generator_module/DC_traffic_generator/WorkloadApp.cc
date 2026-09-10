@@ -52,6 +52,17 @@ TypeId WorkloadApp::GetTypeId() {
                             StringValue("Poisson"),
                             MakeStringAccessor(&WorkloadApp::_arrivalProcess),
                             MakeStringChecker())
+            .AddAttribute("JitterNs",
+                            "Per-message dither, drawn uniformly in [0, JitterNs) nanoseconds and "
+                            "applied around an exact periodic grid rather than added to the "
+                            "interval, so it never accumulates into a drift. A few nanoseconds is "
+                            "far below one packet's serialisation time, so the senders still land "
+                            "in the same burst -- it only randomises which of them the switch "
+                            "serves first, which is otherwise fixed by ns-3's deterministic "
+                            "tie-break and pins the monitored flow's position in every batch",
+                            DoubleValue(0.0),
+                            MakeDoubleAccessor(&WorkloadApp::_jitterNs),
+                            MakeDoubleChecker<double>(0.0))
             .AddAttribute("StartPhase",
                             "Offset of this application's first message, in units of one period. "
                             "Senders given different phases fire staggered rather than together, "
@@ -135,12 +146,18 @@ void WorkloadApp::StartApplication() {
         cout << "    Periodic arrival process: period " << (1e9 / _rate) << " ns, message size "
              << (_fixedMsgSize > 0 ? to_string(_fixedMsgSize) + " B" : string("from the workload CDF"))
              << ", start phase " << _startPhase << " period(s) = " << (_startPhase * 1e9 / _rate)
-             << " ns" << endl;
+             << " ns, per-message jitter [0, " << _jitterNs << ") ns" << endl;
     }
     ReadWorkloadFile();
     PrepareConnections();
-    double nextEventTime = (_startPhase / _rate) + NextInterval();
-    _sendEvent = Simulator::Schedule(_trafficStartTime + Seconds(nextEventTime), &WorkloadApp::ScheduleNextSend, this);
+    if (_arrivalProcess == "Periodic") {
+        _nominalNext = _trafficStartTime + Seconds((_startPhase + 1.0) / _rate);
+        ScheduleAtNominal();
+    }
+    else {
+        double nextEventTime = m_var->GetValue();
+        _sendEvent = Simulator::Schedule(_trafficStartTime + Seconds(nextEventTime), &WorkloadApp::ScheduleNextSend, this);
+    }
 }
 
 void WorkloadApp::PrepareConnections() {
@@ -191,20 +208,29 @@ void WorkloadApp::Send() {
     _connectionPools[selectedReceiver]->SendData(Create<Packet>(segmentSize));
 }
 
-double WorkloadApp::NextInterval() {
-    // "Periodic": a deterministic inter-message time, so every sender configured this way fires at
-    // the same instants. The Poisson branch is the original behaviour and is left bit-identical.
-    if (_arrivalProcess == "Periodic") {
-        return 1.0 / _rate;
-    }
-    return m_var->GetValue();
+void WorkloadApp::ScheduleAtNominal() {
+    // Fire on the exact grid `_nominalNext`, dithered by [0, JitterNs). The dither is applied to
+    // the grid point and NOT to the inter-message interval: adding it to the interval would make
+    // it a random walk, and over 60000 periods a few-ns step would drift senders hundreds of ns
+    // apart, destroying the synchronisation the incast depends on.
+    Time jitter = _jitterNs > 0 ? Time::FromDouble(m_uniform->GetValue(0.0, _jitterNs), Time::NS)
+                                : Time(0);
+    Time when = _nominalNext + jitter;
+    Time now = Simulator::Now();
+    _sendEvent = Simulator::Schedule(when > now ? when - now : Time(0),
+                                     &WorkloadApp::ScheduleNextSend, this);
 }
 
 void WorkloadApp::ScheduleNextSend() {
     // cout << "Node " << GetNodeIP(GetNode(), 1) << " WorkloadApp sending at: " << Simulator::Now().GetNanoSeconds() << endl;
     Send();
-    double nextEvent = NextInterval();
-    _sendEvent = Simulator::Schedule(Seconds(nextEvent), &WorkloadApp::ScheduleNextSend, this);
+    if (_arrivalProcess == "Periodic") {
+        _nominalNext += Seconds(1.0 / _rate);
+        ScheduleAtNominal();
+    }
+    else {
+        _sendEvent = Simulator::Schedule(Seconds(m_var->GetValue()), &WorkloadApp::ScheduleNextSend, this);
+    }
     // cout << "Node " << GetNodeIP(GetNode(), 1) << " WorkloadApp next event at: " << (Simulator::Now() + Seconds(nextEvent)).GetNanoSeconds() << " Event: " << _sendEvent.GetUid() << endl;
 }
 

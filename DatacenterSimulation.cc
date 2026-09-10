@@ -755,6 +755,7 @@ void run_DC_simulation(int argc, char* argv[]){
     int periodicDstHost = 3;                           // First receiver host within periodicDstRack
     int periodicDstHosts = 1;                          // Distinct receivers in that rack, one per sending rack (1 = one shared receiver)
     double periodicPhaseSpread = 0.0;                  // 0 = all senders fire together (one batch); 1 = phases spread evenly over the period (smooth)
+    double periodicJitterNs = 0.0;                     // Per-message dither in ns, to randomise which sender the switch serves first
     int nHosts = 6;                                   // Hosts per rack
     int nRacks = 4;                                    // Number of ToR racks
     int nAggSwitches = 2;                              // Number of aggregation switches
@@ -826,6 +827,7 @@ void run_DC_simulation(int argc, char* argv[]){
     cmd.AddValue("periodicDstHost", "First receiver host within periodicDstRack", periodicDstHost);
     cmd.AddValue("periodicDstHosts", "Distinct receivers in the destination rack, one per sending rack", periodicDstHosts);
     cmd.AddValue("periodicPhaseSpread", "0 = all periodic senders fire together, 1 = phases spread evenly over the period", periodicPhaseSpread);
+    cmd.AddValue("periodicJitterNs", "Per-message dither in ns applied around the periodic grid", periodicJitterNs);
     cmd.Parse(argc, argv);
 
     /*set default values*/
@@ -1195,7 +1197,6 @@ void run_DC_simulation(int argc, char* argv[]){
         }
         int distinctDsts = max(1, min(periodicDstHosts, nHosts));
         int sendersPerRack = min(periodicSenders, nHosts);
-        int totalSenders = (int) sendingRacks.size() * sendersPerRack;
         // `periodicPhaseSpread` is the burstiness knob. Sender i of the job starts at
         // phase spread*i/totalSenders of the period, so at 0 every sender fires at the same
         // instant and the receiver sees one totalSenders-packet batch, while at 1 the senders are
@@ -1207,11 +1208,14 @@ void run_DC_simulation(int argc, char* argv[]){
             int senderRack = sendingRacks[p];
             int dstHost = (periodicDstHost + (int) (p % (size_t) distinctDsts)) % nHosts;
             for (int j = 0; j < sendersPerRack; j++) {
-                int senderIndex = (int) p * sendersPerRack + j;
-                double phase = periodicPhaseSpread * ((double) senderIndex / (double) totalSenders);
+                // Phase is spread within each sending rack, not across the job: each receiver is
+                // fed by one rack, so this makes `periodicPhaseSpread` mean the same thing at the
+                // monitored receiver however many racks send. Spreading by global index would give
+                // rack 0 only the first 1/periodicSenderRacks of the range.
+                double phase = periodicPhaseSpread * ((double) j / (double) sendersPerRack);
                 vector<Ptr<Node>> dstNodes;
                 dstNodes.push_back(racks[periodicDstRack].Get(dstHost));
-                auto* dcTrafficGenerator = new DCWorkloadGenerator(racks[senderRack].Get(j), dstNodes, hostTrafficRate, poolSize, "scratch/ECNMC/DCWorkloads/" + traffic, "ns3::TcpSocketFactory", Time(Seconds(0)), stopTime - Seconds(0.00002), "Periodic", periodicMsgSize, phase);
+                auto* dcTrafficGenerator = new DCWorkloadGenerator(racks[senderRack].Get(j), dstNodes, hostTrafficRate, poolSize, "scratch/ECNMC/DCWorkloads/" + traffic, "ns3::TcpSocketFactory", Time(Seconds(0)), stopTime - Seconds(0.00002), "Periodic", periodicMsgSize, phase, periodicJitterNs);
                 // if this is the the traffic from R0H0, activate the passiveProbing
                 bool probeThisSender = (senderRack == 0 && j == 0);
                 dcTrafficGenerator->GenrateTraffic(pctPacedBack, probeThisSender && passiveProbe, Time(probeInterval), Seconds(stof(trafficStartTime)));
@@ -1475,6 +1479,20 @@ void run_DC_simulation(int argc, char* argv[]){
              << " from H" << periodicDstHost << " (" << racksPerDst << " sending rack(s) each)" << endl;
         cout << "  phase spread: " << periodicPhaseSpread << " (senders staggered by "
              << (periodicPhaseSpread * period * 1e9 / max(1, senders)) << " ns; 0 = one batch)" << endl;
+        // Without a dither, senders that fire at the same nanosecond are served in a fixed order
+        // by ns-3's deterministic tie-break, which pins the monitored flow at the head of every
+        // batch and makes its queuing delay identically zero -- measured at 0 ns for R0H0 against
+        // 246/427/590/719/843 ns for R0H1..R0H5. A dither well under one packet's serialisation
+        // time (120 ns for 1502 B at 100 Gbps) leaves the burst coincident but randomises the order.
+        double pktTxNs = 1502.0 * 8 * 1e9 / DataRate(hostToTorLinkRate).GetBitRate();
+        cout << "  per-message jitter: [0, " << periodicJitterNs << ") ns = "
+             << (100.0 * periodicJitterNs / pktTxNs) << "% of one packet's "
+             << pktTxNs << " ns serialisation" << endl;
+        if (periodicJitterNs <= 0 && periodicPhaseSpread <= 0 && senders > 1) {
+            cout << "  WARNING: senders fire at identical instants with no jitter -- the switch's "
+                    "tie-break order is fixed, so the monitored flow will sit at the same position "
+                    "in every batch and can read exactly zero queuing delay" << endl;
+        }
         cout << "  message size: " << periodicMsgSize << " B ("
              << (periodicMsgSize / 1448 + (periodicMsgSize % 1448 ? 1 : 0)) << " segments)" << endl;
         cout << "  period: " << period * 1e9 << " ns" << endl;
