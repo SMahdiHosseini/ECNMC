@@ -11,7 +11,7 @@ import subprocess
 import random
 import psutil
 # __ns3_path = os.popen('locate "ns-3.41" | grep /ns-3.41$').read().splitlines()[0]
-MAX_SIMULATION_THREADS = 9
+MAX_SIMULATION_THREADS = 30
 _PLOT_LOCK = threading.Lock()
 __ns3_path = "/media/experiments/ns-allinone-3.41/ns-3.41"
 # __ns3_path = '/Users/shossein/Documents/NAL/Flwo-Path_Consistency/ns-allinone-3.41/ns-3.41'
@@ -66,6 +66,16 @@ class ExperimentConfig:
         self.incastMessageSize = 10000
         self.incastFactor = 6
         self.incastperiod = "50us"
+        self.periodicTraffic = False
+        self.periodicSenderRacks = 1
+        self.periodicSenders = 6
+        self.periodicMsgSize = 16384
+        self.periodicPeriod = "50us"
+        self.periodicDstRack = 2
+        self.periodicDstHost = 3
+        self.periodicDstHosts = 1
+        self.periodicPhaseSpread = 0.0
+        self.periodicJitterNs = 0.0
 
     def read_config_file(self, config_file):
         config = configparser.ConfigParser()
@@ -110,6 +120,16 @@ class ExperimentConfig:
         self.incastMessageSize = config.getint('DCSim', 'incastMessageSize')
         self.incastFactor = config.getint('DCSim', 'incastFactor')
         self.incastperiod = config.get('DCSim', 'incastperiod')
+        self.periodicTraffic = config.getboolean('DCSim', 'periodicTraffic', fallback=False)
+        self.periodicSenderRacks = config.getint('DCSim', 'periodicSenderRacks', fallback=1)
+        self.periodicSenders = config.getint('DCSim', 'periodicSenders', fallback=6)
+        self.periodicMsgSize = config.getint('DCSim', 'periodicMsgSize', fallback=16384)
+        self.periodicPeriod = config.get('DCSim', 'periodicPeriod', fallback='50us')
+        self.periodicDstRack = config.getint('DCSim', 'periodicDstRack', fallback=2)
+        self.periodicDstHost = config.getint('DCSim', 'periodicDstHost', fallback=3)
+        self.periodicDstHosts = config.getint('DCSim', 'periodicDstHosts', fallback=1)
+        self.periodicPhaseSpread = config.getfloat('DCSim', 'periodicPhaseSpread', fallback=0.0)
+        self.periodicJitterNs = config.getfloat('DCSim', 'periodicJitterNs', fallback=0.0)
         self.switchTXMaxSize = config.get('Settings', 'switchTXMaxSize')
         self.MinTh = config.get('Settings', 'MinTh')
         self.MaxTh = config.get('Settings', 'MaxTh')
@@ -382,7 +402,17 @@ def run_forward_experiment(exp, singleQueue=False, loads=None):
                             '--probeInterval={} '.format(expConfig.probeInterval) +
                             '--incastMessageSize={} '.format(expConfig.incastMessageSize) +
                             '--incastFactor={} '.format(expConfig.incastFactor) +
-                            '--incastperiod={} '.format(expConfig.incastperiod)
+                            '--incastperiod={} '.format(expConfig.incastperiod) +
+                            '--periodicTraffic={} '.format(expConfig.periodicTraffic) +
+                            '--periodicSenderRacks={} '.format(expConfig.periodicSenderRacks) +
+                            '--periodicSenders={} '.format(expConfig.periodicSenders) +
+                            '--periodicMsgSize={} '.format(expConfig.periodicMsgSize) +
+                            '--periodicPeriod={} '.format(expConfig.periodicPeriod) +
+                            '--periodicDstRack={} '.format(expConfig.periodicDstRack) +
+                            '--periodicDstHost={} '.format(expConfig.periodicDstHost) +
+                            '--periodicDstHosts={} '.format(expConfig.periodicDstHosts) +
+                            '--periodicPhaseSpread={} '.format(expConfig.periodicPhaseSpread) +
+                            '--periodicJitterNs={} '.format(expConfig.periodicJitterNs)
                         )
                     output_file = '{}/scratch/ECNMC/Results/results_{}/result_{}.txt'.format(get_ns3_path(), staging_name, i)
                     memory_output_file = (
@@ -509,7 +539,17 @@ def run_reverse_experiment(exp, singleQueue=False, type=ReverseType.Delay,
                                     '--probeInterval={} '.format(expConfig.probeInterval) +
                                     '--incastMessageSize={} '.format(expConfig.incastMessageSize) +
                                     '--incastFactor={} '.format(expConfig.incastFactor) +
-                                    '--incastperiod={} '.format(expConfig.incastperiod)
+                                    '--incastperiod={} '.format(expConfig.incastperiod) +
+                                    '--periodicTraffic={} '.format(expConfig.periodicTraffic) +
+                                    '--periodicSenderRacks={} '.format(expConfig.periodicSenderRacks) +
+                                    '--periodicSenders={} '.format(expConfig.periodicSenders) +
+                                    '--periodicMsgSize={} '.format(expConfig.periodicMsgSize) +
+                                    '--periodicPeriod={} '.format(expConfig.periodicPeriod) +
+                                    '--periodicDstRack={} '.format(expConfig.periodicDstRack) +
+                                    '--periodicDstHost={} '.format(expConfig.periodicDstHost) +
+                                    '--periodicDstHosts={} '.format(expConfig.periodicDstHosts) +
+                                    '--periodicPhaseSpread={} '.format(expConfig.periodicPhaseSpread) +
+                                    '--periodicJitterNs={} '.format(expConfig.periodicJitterNs)
                                 )
                             output_file = '{}/scratch/ECNMC/Results/results_{}/result_{}.txt'.format(get_ns3_path(), staging_name, i)
                             memory_output_file = (
