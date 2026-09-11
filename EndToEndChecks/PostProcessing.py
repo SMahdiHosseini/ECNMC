@@ -750,14 +750,14 @@ def __main__():
     steadyEnd = convert_to_float(config.get('Settings', 'steadyEnd')) * 1e9
     # steadyEnd = 0.5 * 1e9
     experiments = int(config.get('Settings', 'experiments'))
-    experiments = 1
+    # experiments = 1
     serviceRateScales = [float(x) for x in config.get('Settings', 'serviceRateScales').split(',')]
     # serviceRateScales = [0.5]
     loads = [float(x) for x in config.get('Settings', 'load').split(',')]
-    loads = [0.5]
+    # loads = [0.5]
     traffics = config.get('Settings', 'traffic').split(',')
-    traffics = ["Google_AllRPC", "Google_SearchRPC", "Facebook_HadoopDist_All"]
-    traffics = ["Google_AllRPC"]
+    # traffics = ["Google_AllRPC", "Google_SearchRPC", "Facebook_HadoopDist_All"]
+    # traffics = ["Google_AllRPC"]
     errorRates = [float(x) for x in config.get('Settings', 'errorRate').split(',')]
     # errorRates = [0.1, 0.3, 0.5, 0.7, 0.9]
     # errorRates = [0.1]
@@ -1201,17 +1201,20 @@ def aggregate_emd_vs_flows_across_experiments(ns3_path, dir_name, traffic, rate,
                                                path=0, pass_threshold=0.9, emd_y_max=None, mean_diff_y_limit=None,
                                                subsampling_methods='find_samples_path',
                                                groundtruth_method='simultaneous',
-                                               all_flows_only=False):
+                                               all_flows_only=False, output_suffix=''):
     """Load every experiment's run_emd_vs_flows_experiment output for the same
     traffic/rate/load/steady-window (each under
     scratch/Results_<dir_name>/<traffic>/<rate>/<load>/<experiment>/<steady_tag>/<config_tag>/,
     discovered by scanning <load>/ for experiment subfolders), combine them via
     aggregate_emd_vs_flows_results, and save the aggregated plots/pickle/text under
-    scratch/ECNMC/Results/results_<dir_name>/<traffic>/<rate>/<load>/<steady_tag>/<config_tag>/
+    scratch/ECNMC/Results/results_<dir_name><output_suffix>/<traffic>/<rate>/<load>/<steady_tag>/<config_tag>/
     -- `<steady_tag>` = Utils.steady_window_tag(steadyStart, steadyEnd), `<config_tag>` =
     emd_vs_flows_file_tag(subsampling_methods, groundtruth_method, all_flows_only), both as
     their own folder levels (not filename infixes) so filenames stay short and a different
-    steady window or configuration for the same traffic/rate/load never collides.
+    steady window or configuration for the same traffic/rate/load never collides. `output_suffix`
+    (e.g. '_test') only changes where the aggregated OUTPUT is written -- the per-experiment
+    INPUT is always read from the un-suffixed scratch/Results_<dir_name>/ tree -- so a suffixed
+    call can be used to try out plotting changes without touching the existing output tree.
 
     `steadyStart`/`steadyEnd` (ns) and `subsampling_methods`/`groundtruth_method`/
     `all_flows_only` together select which run_emd_vs_flows_experiment output to look for and
@@ -1267,8 +1270,8 @@ def aggregate_emd_vs_flows_across_experiments(ns3_path, dir_name, traffic, rate,
     print("Aggregating {} rate={} load={} window={} tag={}: {} experiment(s) {}".format(
         traffic, rate, load, steady_tag, config_tag, aggregated['num_experiments'], aggregated['experiments']))
 
-    output_dir = '{}/scratch/ECNMC/Results/results_{}/{}/{}/{}/{}/{}/'.format(
-        ns3_path, dir_name, traffic, rate, load, steady_tag, config_tag)
+    output_dir = '{}/scratch/ECNMC/Results/results_{}{}/{}/{}/{}/{}/{}/'.format(
+        ns3_path, dir_name, output_suffix, traffic, rate, load, steady_tag, config_tag)
     os.makedirs(output_dir, exist_ok=True)
     file_prefix = '{}{}_path_{}'.format(output_dir, flow_name, path)
     run_desc = '{} experiment(s) x {} Poisson obs'.format(aggregated['num_experiments'], aggregated['num_poisson_observations'])
@@ -1345,7 +1348,7 @@ def aggregate_emd_vs_flows_across_traffics_and_loads(ns3_path, dir_name, traffic
                                                        flow_name='R0H0R2H3', path=0, pass_threshold=0.9,
                                                        subsampling_methods='find_samples_path',
                                                        groundtruth_method='simultaneous',
-                                                       all_flows_only=False):
+                                                       all_flows_only=False, output_suffix=''):
     """For a fixed `rate`, aggregate every traffic x load combination (each first
     aggregated across its own experiments via aggregate_emd_vs_flows_across_experiments,
     which also writes that combination's own per-traffic/load plots as a side effect) into
@@ -1380,8 +1383,14 @@ def aggregate_emd_vs_flows_across_traffics_and_loads(ns3_path, dir_name, traffic
     (see plot_pass_rate_vs_load_by_traffic) -- unlike the EMD plots above, this is the
     success rate, not the EMD distribution.
 
+    `output_suffix` (e.g. '_test') only changes where OUTPUT is written (both these cross-
+    traffic/load plots and, via aggregate_emd_vs_flows_across_experiments's own output_suffix,
+    that function's per-combination side-effect plots) -- every per-experiment INPUT is always
+    read from the un-suffixed scratch/Results_<dir_name>/ tree, so a suffixed call never touches
+    the existing results_<dir_name>/ output tree.
+
     Saved under
-    scratch/ECNMC/Results/results_<dir_name>/emd_vs_load_by_traffic/<steady_tag>/<config_tag>/<rate>/,
+    scratch/ECNMC/Results/results_<dir_name><output_suffix>/emd_vs_load_by_traffic/<steady_tag>/<config_tag>/<rate>/,
     where <steady_tag> = Utils.steady_window_tag(steadyStart, steadyEnd) and <config_tag> =
     emd_vs_flows_file_tag(subsampling_methods, groundtruth_method, all_flows_only) -- each its
     own folder level -- so different steady windows or subsampling/GT configurations for the
@@ -1409,6 +1418,7 @@ def aggregate_emd_vs_flows_across_traffics_and_loads(ns3_path, dir_name, traffic
                 flow_name=flow_name, path=path,
                 pass_threshold=pass_threshold, subsampling_methods=subsampling_methods,
                 groundtruth_method=groundtruth_method, all_flows_only=all_flows_only,
+                output_suffix=output_suffix,
             )
             if aggregated is not None:
                 results_by_traffic_load[(traffic, load)] = aggregated
@@ -1424,8 +1434,8 @@ def aggregate_emd_vs_flows_across_traffics_and_loads(ns3_path, dir_name, traffic
     # the same dir_name never collide and filenames don't need to spell either one out.
     steady_tag = steady_window_tag(steadyStart, steadyEnd)
     config_tag = emd_vs_flows_file_tag(subsampling_methods, groundtruth_method, all_flows_only)
-    rate_dir = '{}/scratch/ECNMC/Results/results_{}/emd_vs_load_by_traffic/{}/{}/{}/'.format(
-        ns3_path, dir_name, steady_tag, config_tag, rate)
+    rate_dir = '{}/scratch/ECNMC/Results/results_{}{}/emd_vs_load_by_traffic/{}/{}/{}/'.format(
+        ns3_path, dir_name, output_suffix, steady_tag, config_tag, rate)
     gt_desc = groundtruth_method_label(groundtruth_method)
 
     # Each comparison kind gets its own subfolder under rate_dir (see docstring), so a
@@ -1527,8 +1537,8 @@ def aggregate_emd_vs_flows_across_traffics_and_loads(ns3_path, dir_name, traffic
     # built above. A combination whose results predate burstiness metrics (see
     # backfill_burstiness_metrics) or all_flows_only having none of it just contributes no
     # point, exactly like a missing k does for the load plots.
-    burstiness_dir = '{}/scratch/ECNMC/Results/results_{}/emd_vs_burstiness_by_traffic/{}/{}/{}/'.format(
-        ns3_path, dir_name, steady_tag, config_tag, rate)
+    burstiness_dir = '{}/scratch/ECNMC/Results/results_{}{}/emd_vs_burstiness_by_traffic/{}/{}/{}/'.format(
+        ns3_path, dir_name, output_suffix, steady_tag, config_tag, rate)
     for burstiness_field in BURSTINESS_METRIC_LABELS:
         field_dir = '{}{}/'.format(burstiness_dir, burstiness_field)
         for series_specs, subfolder, kind_desc in plot_kinds:
