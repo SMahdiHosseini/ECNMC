@@ -5693,6 +5693,58 @@ def _load_plot_layout(n_traffics, loads, n_series=2):
     return offsets, box_width, span
 
 
+# Minimum comfortable rendered box width (inches, at the fig.savefig dpi=150 these plots use)
+# below which adjacent boxes' fixed-point-width borders start to visually merge -- the
+# "collide" complaint. _load_plot_figsize back-solves the figure width needed to keep every
+# box at least this wide given how many (traffic x series) slots share each load tick.
+_LOAD_PLOT_MIN_BOX_WIDTH_IN = 0.30
+
+
+def _load_plot_figsize(n_traffics, n_series, n_loads, height=15.0):
+    """Figure size for plot_emd_vs_load_by_traffic/plot_burstiness_vs_load_by_traffic: wide
+    enough that every box in the busiest tick's cluster (n_series * n_traffics boxes) stays
+    at least _LOAD_PLOT_MIN_BOX_WIDTH_IN wide, given _load_plot_layout's span/fill geometry
+    -- rather than a fixed width that looks fine with 2-3 traffics but packs boxes into
+    illegibility once there are 5+ traffics x 2-3 series per tick. Never smaller than the
+    original fixed 30in default."""
+    n_slots = max(n_series * n_traffics, 1)
+    n_loads = max(n_loads, 1)
+    tick_spacing_needed = (n_slots * _LOAD_PLOT_MIN_BOX_WIDTH_IN / _FAMILY_BOX_FILL) / _FAMILY_GROUP_SPAN
+    width = max(30.0, tick_spacing_needed * n_loads * 1.15)
+    return (width, height)
+
+
+# Below this fraction of a plot's data actually visible at the default cap, the cap is
+# widened rather than left to quietly hide most of the load sweep -- see _adaptive_view_cap.
+_MIN_VISIBLE_FRACTION = 0.5
+# ... but even then, only widened enough to show this fraction, not the full range (a single
+# extreme run could otherwise blow the axis back out to where everything else gets crushed).
+_TARGET_VISIBLE_FRACTION = 0.8
+
+
+def _adaptive_view_cap(values, default_cap, signed):
+    """The y-axis view limits for plot_emd_vs_load_by_traffic: `default_cap` (the usual
+    +/-100% or 500ns) unless fewer than _MIN_VISIBLE_FRACTION of `values` would actually
+    fall within it, in which case the cap is raised to whatever value brings
+    _TARGET_VISIBLE_FRACTION of the data into view (its 80th percentile) -- e.g. a
+    heavy-tailed traffic in the mix whose errors mostly exceed the default cap, rather than
+    silently rendering a plot where most of that traffic's boxes are invisibly clipped.
+    Never lowers the cap below `default_cap`. Returns (bottom, top, cap_was_widened)."""
+    finite = np.abs(np.asarray(values, dtype=float))
+    finite = finite[np.isfinite(finite)]
+    cap = default_cap
+    widened = False
+    if finite.size:
+        visible_fraction = float(np.mean(finite <= default_cap))
+        if visible_fraction < _MIN_VISIBLE_FRACTION:
+            widened_cap = float(np.percentile(finite, _TARGET_VISIBLE_FRACTION * 100))
+            if widened_cap > cap:
+                cap = widened_cap
+                widened = True
+    bottom = -cap if signed else 0.0
+    return bottom, cap, widened
+
+
 def plot_emd_vs_load_by_traffic(results_by_traffic_load, k, output_path, pass_threshold=0.9, title=None,
                                  series_specs=None, normalized=False, metric='emd'):
     """Cross-traffic, cross-load comparison at one fixed flow count `k`: x-axis is load,
@@ -5767,7 +5819,7 @@ def plot_emd_vs_load_by_traffic(results_by_traffic_load, k, output_path, pass_th
     n_series = max(len(series_specs), 1)
     offsets, box_width, span = _load_plot_layout(n_traffics, loads, n_series)
 
-    fig, axis = plt.subplots(figsize=(30, 15))
+    fig, axis = plt.subplots(figsize=_load_plot_figsize(n_traffics, n_series, len(loads)))
     legend_handles = [
         Patch(facecolor=pass_color, edgecolor='black', alpha=0.85,
               label='Consistency check passed (≥{:.0f}%)'.format(pass_threshold * 100)),
@@ -5840,27 +5892,33 @@ def plot_emd_vs_load_by_traffic(results_by_traffic_load, k, output_path, pass_th
         # plot is read against, unlike EMD where zero is just the axis floor.
         axis.axhline(0, color='black', linewidth=2, linestyle=':', zorder=1)
 
-    # Cap the y-axis view to a fixed, known scale so a rare extreme run doesn't wash out the
-    # rest of the load sweep -- same convention as plot_emd_vs_num_flows_boxplot's y_max.
-    # Relative quantities (normalized EMD, or a percentile error taken as a fraction of the
-    # ground truth's own p_q) are capped at +/-100%; absolute ones (raw EMD ns, or a
-    # percentile error in ns) at 500ns. Percentile errors are signed (ground truth - family)
-    # so their cap is symmetric; EMD is never negative, so only its top is ever clipped. The
-    # note only appears when data actually reaches beyond the cap, not merely because the
-    # fixed view differs from what autoscale would have chosen.
+    # Cap the y-axis view to a known scale so a rare extreme run doesn't wash out the rest of
+    # the load sweep -- same starting point as plot_emd_vs_num_flows_boxplot's y_max: relative
+    # quantities (normalized EMD, or a percentile error taken as a fraction of the ground
+    # truth's own p_q) default to +/-100%; absolute ones (raw EMD ns, or a percentile error in
+    # ns) default to 500ns. Percentile errors are signed (ground truth - family) so their cap
+    # is symmetric; EMD is never negative, so only its top is ever clipped. Unlike a fixed
+    # cap, this is data-driven: if fewer than half the plotted values would actually be
+    # visible at the default, the cap widens to bring 80% of them into view instead of
+    # silently clipping most of one traffic's boxes off the top of the plot (see
+    # _adaptive_view_cap) -- e.g. a heavy-tailed workload mixed in with others that comfortably
+    # fit the default. The note only appears when the (possibly widened) cap still clips
+    # something.
     is_relative = normalized or (isinstance(metric, tuple) and metric[0] == 'percentile_reldiff')
     signed = isinstance(metric, tuple)
-    cap = 1.0 if is_relative else 500.0
-    bottom = -cap if signed else 0.0
+    default_cap = 1.0 if is_relative else 500.0
+    bottom, cap, cap_widened = _adaptive_view_cap(all_plotted_values, default_cap, signed)
     flat_values = np.asarray(all_plotted_values, dtype=float)
     finite_values = flat_values[np.isfinite(flat_values)]
     # if finite_values.size and (np.max(finite_values) > cap or (signed and np.min(finite_values) < bottom)):
-    #     axis.text(0.995, 0.01,
-    #                'y-axis capped at {}{:g}{}; some boxes/whiskers extend beyond\n'
-    #                '(see the aggregated results for the full range)'.format(
-    #                    '+/-' if signed else '', cap * (100 if is_relative else 1), '%' if is_relative else 'ns'),
-    #                transform=axis.transAxes, ha='right', va='top', fontsize=14, style='italic',
-    #                bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+    #     note = 'y-axis capped at {}{:g}{}'.format(
+    #         '+/-' if signed else '', cap * (100 if is_relative else 1), '%' if is_relative else 'ns')
+    #     if cap_widened:
+    #         note += ' (widened from the usual {}{:g}{} -- most data exceeded that)'.format(
+    #             '+/-' if signed else '', default_cap * (100 if is_relative else 1), '%' if is_relative else 'ns')
+    #     note += '; some boxes/whiskers still extend beyond\n(see the aggregated results for the full range)'
+    #     axis.text(0.995, 0.01, note, transform=axis.transAxes, ha='right', va='top', fontsize=14,
+    #                style='italic', bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
     axis.set_ylim(bottom=bottom, top=cap)
 
     axis.set_xticks(loads)
@@ -5895,7 +5953,7 @@ def plot_burstiness_vs_load_by_traffic(results_by_traffic_load, k, burstiness_fi
     n_traffics = max(len(traffics), 1)
     offsets, box_width, span = _load_plot_layout(n_traffics, loads, n_series=1)
 
-    fig, axis = plt.subplots(figsize=(30, 15))
+    fig, axis = plt.subplots(figsize=_load_plot_figsize(n_traffics, 1, len(loads)))
     legend_handles = []
     any_data = False
     for ti, traffic in enumerate(traffics):
