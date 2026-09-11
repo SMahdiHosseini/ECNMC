@@ -3482,6 +3482,48 @@ def relative_percentile_diffs(absolute_diffs, groundtruth_percentiles):
              for q, diffs in absolute_diffs.items()}
 
 
+# percentile_avg_relative_error (below) reports mean absolute percentage error across a
+# dense, fixed percentile grid, independent of whatever `delay_percentiles` a run happens
+# to be configured with (that is a separate, sparse set used only for the tail-shape-error
+# reporting a few percentiles at a time -- percentile_diffs/relative_percentile_diffs).
+#
+# Note: a percentile-grid *EMD* estimate (mean |Q_ref(q) - Q_family(q)| over this same
+# grid, before the relative-error division below) was tried and deliberately removed --
+# Wasserstein-1 equals exactly this integral in the limit of infinite grid resolution
+# (Vallender 1974), but at any fixed finite resolution it is only an approximation of the
+# exact value normalize_emd_values(wasserstein_distance(...), mean) already gives for
+# free at the same O(n log n) cost. There is no real-data scenario in this pipeline where
+# the approximation is cheaper or more accurate than just using the real (rel)EMD, so
+# relEMD remains the metric of record; only the self-normalized relative-error form below
+# is kept as a distinct, additional metric.
+_EMD_PERCENTILE_GRID = tuple(range(1, 100))  # every integer percentile 1..99
+
+
+def _finite_1d(values):
+    values = np.asarray(values, dtype=float).reshape(-1)
+    return values[np.isfinite(values)]
+
+
+def percentile_avg_relative_error(reference_values, family_values):
+    """Mean absolute percentage error between `reference_values` and `family_values`,
+    averaged over a dense, fixed percentile grid (_EMD_PERCENTILE_GRID, 1st through
+    99th): the mean, over q = 1%..99%, of |Q_ref(q) - Q_family(q)| / Q_ref(q).
+    Self-normalized (each percentile scaled by its own reference value). Percentiles
+    where the reference value is <= 0 are excluded from the average (a relative error
+    there is undefined) rather than forcing the whole thing to NaN; the result is NaN
+    only if every percentile is excluded or either side is empty."""
+    reference_values = _finite_1d(reference_values)
+    family_values = _finite_1d(family_values)
+    if reference_values.size == 0 or family_values.size == 0:
+        return np.nan
+    ref_q = np.percentile(reference_values, _EMD_PERCENTILE_GRID)
+    fam_q = np.percentile(family_values, _EMD_PERCENTILE_GRID)
+    valid = ref_q > 0
+    if not np.any(valid):
+        return np.nan
+    return float(np.mean(np.abs(ref_q[valid] - fam_q[valid]) / ref_q[valid]))
+
+
 ORACLE_MIN_REQUIRED_KEY = 'min_required'
 # The ideal-Poisson-probe family run at the SAME rate as "all packets of the considered
 # flows" -- i.e. what a perfectly Poisson process would look like at the sample count/rate
@@ -3760,6 +3802,7 @@ def prepare_emd_vs_flows_data(
     num_flows = _flow_count_values(len(flow_order), flow_count_step, all_flows_only=all_flows_only)
     emd_all_packets, all_packet_sizes = [], []
     percentile_diff_all = {q: [] for q in delay_percentiles}
+    percentile_avg_relerror_all = []
     poisson_tests_all = {'ad_pass': [], 'ad_pvalue': [], 'chi_pass': [], 'chi_reject_fraction': []}
     burst_gap = burst_gap_threshold_ns(linkRates[0])
     burstiness_all_packets = {field: [] for field in BURSTINESS_METRIC_LABELS}
@@ -3776,6 +3819,7 @@ def prepare_emd_vs_flows_data(
             emd_all_packets.append(wasserstein_distance(groundtruth_values, all_values))
         else:
             emd_all_packets.append(np.nan)
+        percentile_avg_relerror_all.append(percentile_avg_relative_error(groundtruth_values, all_values))
         diffs = percentile_diffs(all_values, groundtruth_percentiles)
         for q in delay_percentiles:
             percentile_diff_all[q].append(diffs[q])
@@ -3799,6 +3843,10 @@ def prepare_emd_vs_flows_data(
         'percentile_diff_all_packets': percentile_diff_all,
         'percentile_reldiff_all_packets': relative_percentile_diffs(
             percentile_diff_all, groundtruth_percentiles),
+        # Mean absolute relative percentile error (see percentile_avg_relative_error):
+        # self-normalized, evaluated via a dense percentile grid independent of
+        # delay_percentiles above.
+        'percentile_avg_relerror_all_packets': percentile_avg_relerror_all,
         'poisson_tests_all_packets': poisson_tests_all,
         'run_chi_squared_test': run_chi_squared_test,
         'poisson_test_lags': poisson_test_lags,
@@ -4027,12 +4075,18 @@ def compute_emd_vs_num_tcp_flows_run(prepared, agg_stats, confidenceValue, min_s
     uniform_sample_sizes = {name: [] for name in subsampling_methods}
     sampled_percentile_diff = {q: {name: [] for name in subsampling_methods} for q in delay_percentiles}
     uniform_percentile_diff = {q: {name: [] for name in subsampling_methods} for q in delay_percentiles}
+    # Mean absolute relative percentile error (see percentile_avg_relative_error):
+    # self-normalized, evaluated via a dense, fixed percentile grid, independent of
+    # delay_percentiles/sampled_percentile_diff above.
+    sampled_percentile_avg_relerror = {name: [] for name in subsampling_methods}
+    uniform_percentile_avg_relerror = {name: [] for name in subsampling_methods}
     oracle_series = [ORACLE_MIN_REQUIRED_KEY] + list(subsampling_methods) + [ORACLE_ALL_PACKETS_RATE_KEY]
     oracle_emd = {key: [] for key in oracle_series}
     oracle_consistency = {key: [] for key in oracle_series}
     oracle_mean_diff = {key: [] for key in oracle_series}
     oracle_sample_sizes = {key: [] for key in oracle_series}
     oracle_percentile_diff = {q: {key: [] for key in oracle_series} for q in delay_percentiles}
+    oracle_percentile_avg_relerror = {key: [] for key in oracle_series}
     run_chi = prepared.get('run_chi_squared_test', True)
     test_lags = prepared.get('poisson_test_lags')
     steady_start = prepared.get('steady_start')
@@ -4076,6 +4130,8 @@ def compute_emd_vs_num_tcp_flows_run(prepared, agg_stats, confidenceValue, min_s
             sampled_diffs = percentile_diffs(sample_values, groundtruth_percentiles)
             for q in delay_percentiles:
                 sampled_percentile_diff[q][name].append(sampled_diffs[q])
+            sampled_percentile_avg_relerror[name].append(
+                percentile_avg_relative_error(groundtruth_values, sample_values))
 
             # Spend exactly this method's sample budget on a blind uniform subsample,
             # so the two differ only in *which* packets they pick, not how many.
@@ -4091,6 +4147,8 @@ def compute_emd_vs_num_tcp_flows_run(prepared, agg_stats, confidenceValue, min_s
             uniform_diffs = percentile_diffs(uniform_values, groundtruth_percentiles)
             for q in delay_percentiles:
                 uniform_percentile_diff[q][name].append(uniform_diffs[q])
+            uniform_percentile_avg_relerror[name].append(
+                percentile_avg_relative_error(groundtruth_values, uniform_values))
 
             uniform_tests = poisson_process_tests(
                 uniform_rows['SentTime'].values, steady_start, steady_end,
@@ -4120,6 +4178,8 @@ def compute_emd_vs_num_tcp_flows_run(prepared, agg_stats, confidenceValue, min_s
             oracle_diffs = percentile_diffs(oracle_values, groundtruth_percentiles)
             for q in delay_percentiles:
                 oracle_percentile_diff[q][key].append(oracle_diffs[q])
+            oracle_percentile_avg_relerror[key].append(
+                percentile_avg_relative_error(groundtruth_values, oracle_values))
 
     return {
         'num_flows': num_flows_list,
@@ -4136,12 +4196,15 @@ def compute_emd_vs_num_tcp_flows_run(prepared, agg_stats, confidenceValue, min_s
         'uniform_sample_sizes': uniform_sample_sizes,
         'sampled_percentile_diff': sampled_percentile_diff,
         'uniform_percentile_diff': uniform_percentile_diff,
+        'sampled_percentile_avg_relerror': sampled_percentile_avg_relerror,
+        'uniform_percentile_avg_relerror': uniform_percentile_avg_relerror,
         'oracle_series': oracle_series,
         'oracle_emd': oracle_emd,
         'oracle_consistency': oracle_consistency,
         'oracle_mean_diff': oracle_mean_diff,
         'oracle_sample_sizes': oracle_sample_sizes,
         'oracle_percentile_diff': oracle_percentile_diff,
+        'oracle_percentile_avg_relerror': oracle_percentile_avg_relerror,
         'uniform_test_split': uniform_test_split,
     }
 
@@ -4344,6 +4407,7 @@ def upgrade_emd_vs_flows_results_schema(results):
     if ('subsampling_methods' in results and 'uniform_series' in results
             and 'delay_percentiles' in results and 'oracle_series' in results
             and 'poisson_test_series' in results
+            and 'percentile_avg_relerror_all_packets' in results
             and isinstance(results.get('emd_sampled_packets_by_run'), dict)):
         return results
 
@@ -4391,6 +4455,7 @@ def upgrade_emd_vs_flows_results_schema(results):
         upgraded['sample_sizes_oracle_by_run'] = {}
         upgraded['percentile_diff_oracle_by_run'] = {}
         upgraded['percentile_reldiff_oracle_by_run'] = {}
+        upgraded['percentile_avg_relerror_oracle_by_run'] = {}
     if 'delay_percentiles' not in upgraded:
         upgraded['delay_percentiles'] = []
         upgraded['groundtruth_percentiles'] = {}
@@ -4402,6 +4467,26 @@ def upgrade_emd_vs_flows_results_schema(results):
         upgraded['percentile_reldiff_uniform_by_run'] = {}
         upgraded['percentile_diff_oracle_by_run'] = {}
         upgraded['percentile_reldiff_oracle_by_run'] = {}
+    # percentile_avg_relerror_* (percentile_avg_relative_error) postdates these pickles
+    # entirely and, unlike the normalized-EMD backfill below, cannot be recovered from
+    # anything already stored: it is computed from each run's raw retained sample
+    # *values*, which are discarded after each run rather than persisted (only the final
+    # EMD/percentile-diff-at-tracked-q survive). So an old result simply carries NaN/empty
+    # placeholders here and every such table/plot is skipped for it rather than faked --
+    # getting real values means rerunning run_emd_vs_flows_experiment for that
+    # combination. Shaped so they are safe to index into directly (see the oracle_series/
+    # delay_percentiles branches above for why bare {} is fine there but not here): a
+    # plain per-k NaN list for all_packets, and a per-method/key empty-per-run-list-per-k
+    # dict for sampled/uniform/oracle, so aggregating this experiment alongside others
+    # that do have real values never index/key-errors into it.
+    if 'percentile_avg_relerror_all_packets' not in upgraded:
+        upgraded['percentile_avg_relerror_all_packets'] = [float('nan')] * n_k
+        upgraded['percentile_avg_relerror_sampled_by_run'] = {
+            m: [[] for _ in range(n_k)] for m in upgraded['subsampling_methods']}
+        upgraded['percentile_avg_relerror_uniform_by_run'] = {
+            s: [[] for _ in range(n_k)] for s in upgraded['uniform_series']}
+        upgraded['percentile_avg_relerror_oracle_by_run'] = {
+            key: [[] for _ in range(n_k)] for key in upgraded['oracle_series']}
     # Burstiness metrics postdate these pickles. Unlike the percentiles/oracle probe above,
     # they ARE cheaply recoverable without redoing the run (they only need the same raw
     # packet CSV, not a fresh multi-run Poisson sweep) -- see backfill_burstiness_metrics --
@@ -4500,6 +4585,8 @@ def aggregate_emd_vs_flows_results(results_list):
             q: [[v] for v in per_k] for q, per_k in result['percentile_diff_all_packets'].items()}
         result['percentile_reldiff_all_packets_by_experiment'] = {
             q: [[v] for v in per_k] for q, per_k in result['percentile_reldiff_all_packets'].items()}
+        result['percentile_avg_relerror_all_packets_by_experiment'] = [
+            [v] for v in result['percentile_avg_relerror_all_packets']]
         result['num_experiments'] = 1
         result['experiments'] = experiments
         result['emd_all_packets_by_experiment'] = [[v] for v in result['emd_all_packets']]
@@ -4540,9 +4627,11 @@ def aggregate_emd_vs_flows_results(results_list):
     run_chi = all(r.get('run_chi_squared_test', False) for r in results_list)
 
     emd_all_by_experiment, emd_all_by_experiment_norm, mean_diff_all = [], [], []
+    pctrelerr_all_by_experiment = []
     pass_all_count, pass_all_total = [], []
     emd_sampled_by_run = {m: [] for m in methods}
     emd_sampled_by_run_norm = {m: [] for m in methods}
+    pctrelerr_sampled_by_run = {m: [] for m in methods}
     mean_diff_sampled = {m: [] for m in methods}
     pass_sampled_count = {m: [] for m in methods}
     pass_sampled_total = {m: [] for m in methods}
@@ -4556,6 +4645,7 @@ def aggregate_emd_vs_flows_results(results_list):
     preldiff_uniform = {q: {s: [] for s in uniform_series} for q in percentiles}
     emd_oracle_by_run = {key: [] for key in oracle_series}
     emd_oracle_by_run_norm = {key: [] for key in oracle_series}
+    pctrelerr_oracle_by_run = {key: [] for key in oracle_series}
     mean_diff_oracle = {key: [] for key in oracle_series}
     pass_oracle_count = {key: [] for key in oracle_series}
     pass_oracle_total = {key: [] for key in oracle_series}
@@ -4568,15 +4658,18 @@ def aggregate_emd_vs_flows_results(results_list):
     preldiff_oracle = {q: {key: [] for key in oracle_series} for q in percentiles}
     emd_uniform_by_run = {s: [] for s in uniform_series}
     emd_uniform_by_run_norm = {s: [] for s in uniform_series}
+    pctrelerr_uniform_by_run = {s: [] for s in uniform_series}
     mean_diff_uniform = {s: [] for s in uniform_series}
     pass_uniform_count = {s: [] for s in uniform_series}
     pass_uniform_total = {s: [] for s in uniform_series}
 
     for k in all_k:
         emd_all_vals, emd_all_vals_norm, mean_diff_all_vals = [], [], []
+        pctrelerr_all_vals = []
         pass_all_c = pass_all_t = 0
         samp_emd_vals = {m: [] for m in methods}
         samp_emd_vals_norm = {m: [] for m in methods}
+        samp_pctrelerr_vals = {m: [] for m in methods}
         samp_diff_vals = {m: [] for m in methods}
         samp_pass_c = {m: 0 for m in methods}
         samp_pass_t = {m: 0 for m in methods}
@@ -4584,6 +4677,7 @@ def aggregate_emd_vs_flows_results(results_list):
         uniform_size_vals = {s: [] for s in uniform_series}
         uniform_emd_vals = {s: [] for s in uniform_series}
         uniform_emd_vals_norm = {s: [] for s in uniform_series}
+        uniform_pctrelerr_vals = {s: [] for s in uniform_series}
         uniform_diff_vals = {s: [] for s in uniform_series}
         uniform_pass_c = {s: 0 for s in uniform_series}
         uniform_pass_t = {s: 0 for s in uniform_series}
@@ -4595,6 +4689,7 @@ def aggregate_emd_vs_flows_results(results_list):
         preldiff_uni_vals = {q: {s: [] for s in uniform_series} for q in percentiles}
         oracle_emd_vals = {key: [] for key in oracle_series}
         oracle_emd_vals_norm = {key: [] for key in oracle_series}
+        oracle_pctrelerr_vals = {key: [] for key in oracle_series}
         oracle_diff_vals = {key: [] for key in oracle_series}
         oracle_pass_c = {key: 0 for key in oracle_series}
         oracle_pass_t = {key: 0 for key in oracle_series}
@@ -4612,6 +4707,7 @@ def aggregate_emd_vs_flows_results(results_list):
 
             emd_all_vals.append(r['emd_all_packets'][i])
             emd_all_vals_norm.append(r['emd_all_packets_normalized'][i])
+            pctrelerr_all_vals.append(r['percentile_avg_relerror_all_packets'][i])
             mean_diff_all_vals.extend(r['mean_diff_all_packets_by_run'][i])
             pass_all_c += round(r['pass_rate_all_packets'][i] * num_runs)
             pass_all_t += num_runs
@@ -4628,6 +4724,7 @@ def aggregate_emd_vs_flows_results(results_list):
                 sampled_vals = r['emd_sampled_packets_by_run'][m][i]
                 samp_emd_vals[m].extend(sampled_vals)
                 samp_emd_vals_norm[m].extend(r['emd_sampled_packets_by_run_normalized'][m][i])
+                samp_pctrelerr_vals[m].extend(r['percentile_avg_relerror_sampled_by_run'][m][i])
                 samp_diff_vals[m].extend(r['mean_diff_sampled_by_run'][m][i])
                 samp_size_vals[m].extend(r['sample_sizes_sampled_by_run'][m][i])
                 n_samp = len(sampled_vals)
@@ -4640,6 +4737,7 @@ def aggregate_emd_vs_flows_results(results_list):
             for s in r['uniform_series']:
                 uniform_emd_vals[s].extend(r['emd_uniform_packets_by_run'][s][i])
                 uniform_emd_vals_norm[s].extend(r['emd_uniform_packets_by_run_normalized'][s][i])
+                uniform_pctrelerr_vals[s].extend(r['percentile_avg_relerror_uniform_by_run'][s][i])
                 uniform_diff_vals[s].extend(r['mean_diff_uniform_packets_by_run'][s][i])
                 uniform_pass_c[s] += round(r['pass_rate_uniform'][s][i] * num_runs)
                 uniform_pass_t[s] += num_runs
@@ -4657,6 +4755,7 @@ def aggregate_emd_vs_flows_results(results_list):
             for key in r['oracle_series']:
                 oracle_emd_vals[key].extend(r['emd_oracle_by_run'][key][i])
                 oracle_emd_vals_norm[key].extend(r['emd_oracle_by_run_normalized'][key][i])
+                oracle_pctrelerr_vals[key].extend(r['percentile_avg_relerror_oracle_by_run'][key][i])
                 oracle_diff_vals[key].extend(r['mean_diff_oracle_by_run'][key][i])
                 oracle_size_vals[key].extend(r['sample_sizes_oracle_by_run'][key][i])
                 oracle_pass_c[key] += round(r['pass_rate_oracle'][key][i] * num_runs)
@@ -4667,6 +4766,7 @@ def aggregate_emd_vs_flows_results(results_list):
 
         emd_all_by_experiment.append(emd_all_vals)
         emd_all_by_experiment_norm.append(emd_all_vals_norm)
+        pctrelerr_all_by_experiment.append(pctrelerr_all_vals)
         mean_diff_all.append(mean_diff_all_vals)
         pass_all_count.append(pass_all_c)
         pass_all_total.append(pass_all_t)
@@ -4687,6 +4787,7 @@ def aggregate_emd_vs_flows_results(results_list):
         for m in methods:
             emd_sampled_by_run[m].append(samp_emd_vals[m])
             emd_sampled_by_run_norm[m].append(samp_emd_vals_norm[m])
+            pctrelerr_sampled_by_run[m].append(samp_pctrelerr_vals[m])
             mean_diff_sampled[m].append(samp_diff_vals[m])
             pass_sampled_count[m].append(samp_pass_c[m])
             pass_sampled_total[m].append(samp_pass_t[m])
@@ -4695,6 +4796,7 @@ def aggregate_emd_vs_flows_results(results_list):
         for s in uniform_series:
             emd_uniform_by_run[s].append(uniform_emd_vals[s])
             emd_uniform_by_run_norm[s].append(uniform_emd_vals_norm[s])
+            pctrelerr_uniform_by_run[s].append(uniform_pctrelerr_vals[s])
             mean_diff_uniform[s].append(uniform_diff_vals[s])
             pass_uniform_count[s].append(uniform_pass_c[s])
             pass_uniform_total[s].append(uniform_pass_t[s])
@@ -4709,6 +4811,7 @@ def aggregate_emd_vs_flows_results(results_list):
         for key in oracle_series:
             emd_oracle_by_run[key].append(oracle_emd_vals[key])
             emd_oracle_by_run_norm[key].append(oracle_emd_vals_norm[key])
+            pctrelerr_oracle_by_run[key].append(oracle_pctrelerr_vals[key])
             mean_diff_oracle[key].append(oracle_diff_vals[key])
             pass_oracle_count[key].append(oracle_pass_c[key])
             pass_oracle_total[key].append(oracle_pass_t[key])
@@ -4784,6 +4887,18 @@ def aggregate_emd_vs_flows_results(results_list):
         'percentile_reldiff_uniform_by_run': preldiff_uniform,
         'percentile_diff_oracle_by_run': pdiff_oracle,
         'percentile_reldiff_oracle_by_run': preldiff_oracle,
+        # Mean absolute relative percentile error (see percentile_avg_relative_error).
+        # Pooled the same way as the normalized EMD/relative percentile errors above: each
+        # experiment's own already-computed values are concatenated (all_packets: one
+        # value per experiment; sampled/uniform/oracle: concatenated across runs and
+        # experiments), never re-derived from pooled raw values, since each experiment has
+        # its own ground truth and normalizer.
+        'percentile_avg_relerror_all_packets': [
+            float(np.mean(v)) if len(v) else np.nan for v in pctrelerr_all_by_experiment],
+        'percentile_avg_relerror_all_packets_by_experiment': pctrelerr_all_by_experiment,
+        'percentile_avg_relerror_sampled_by_run': pctrelerr_sampled_by_run,
+        'percentile_avg_relerror_uniform_by_run': pctrelerr_uniform_by_run,
+        'percentile_avg_relerror_oracle_by_run': pctrelerr_oracle_by_run,
         'poisson_test_series': poisson_test_series,
         'run_chi_squared_test': run_chi,
         # All-packets is one verdict per k per experiment. Aggregated, each k therefore
@@ -4976,12 +5091,17 @@ def compute_emd_vs_num_tcp_flows_multi_run(
     per_k_sample_sizes_uniform = {m: [[] for _ in num_flows] for m in subsampling_methods}
     per_k_pdiff_sampled = _empty_percentile_structure(delay_percentiles, subsampling_methods, len(num_flows))
     per_k_pdiff_uniform = _empty_percentile_structure(delay_percentiles, subsampling_methods, len(num_flows))
+    # Mean absolute relative percentile error (see percentile_avg_relative_error), pooled
+    # across runs the same way as the raw EMD.
+    per_k_pctrelerr_sampled = {m: [[] for _ in num_flows] for m in subsampling_methods}
+    per_k_pctrelerr_uniform = {m: [[] for _ in num_flows] for m in subsampling_methods}
     oracle_series = [ORACLE_MIN_REQUIRED_KEY] + list(subsampling_methods) + [ORACLE_ALL_PACKETS_RATE_KEY]
     per_k_emd_oracle = {key: [[] for _ in num_flows] for key in oracle_series}
     per_k_pass_oracle = {key: [0] * len(num_flows) for key in oracle_series}
     per_k_mean_diff_oracle = {key: [[] for _ in num_flows] for key in oracle_series}
     per_k_sample_sizes_oracle = {key: [[] for _ in num_flows] for key in oracle_series}
     per_k_pdiff_oracle = _empty_percentile_structure(delay_percentiles, oracle_series, len(num_flows))
+    per_k_pctrelerr_oracle = {key: [[] for _ in num_flows] for key in oracle_series}
     # Aligned per-run records for the Poisson-ness split: value and verdict appended
     # together, so index j of every list below belongs to the same run.
     split_fields = ('emd', 'emd_normalized', 'mean_diff', 'ad_pass', 'chi_pass')
@@ -5032,6 +5152,13 @@ def compute_emd_vs_num_tcp_flows_multi_run(
                     if np.isfinite(uniform_pdiff):
                         per_k_pdiff_uniform[q][m][i].append(uniform_pdiff)
 
+                sampled_relerr = run_result['sampled_percentile_avg_relerror'][m][i]
+                if np.isfinite(sampled_relerr):
+                    per_k_pctrelerr_sampled[m][i].append(sampled_relerr)
+                uniform_relerr = run_result['uniform_percentile_avg_relerror'][m][i]
+                if np.isfinite(uniform_relerr):
+                    per_k_pctrelerr_uniform[m][i].append(uniform_relerr)
+
             for key in oracle_series:
                 if np.isfinite(run_result['oracle_emd'][key][i]):
                     per_k_emd_oracle[key][i].append(run_result['oracle_emd'][key][i])
@@ -5045,6 +5172,9 @@ def compute_emd_vs_num_tcp_flows_multi_run(
                     oracle_pdiff = run_result['oracle_percentile_diff'][q][key][i]
                     if np.isfinite(oracle_pdiff):
                         per_k_pdiff_oracle[q][key][i].append(oracle_pdiff)
+                oracle_relerr = run_result['oracle_percentile_avg_relerror'][key][i]
+                if np.isfinite(oracle_relerr):
+                    per_k_pctrelerr_oracle[key][i].append(oracle_relerr)
 
     return {
         'flow_name': flow_name,
@@ -5079,6 +5209,13 @@ def compute_emd_vs_num_tcp_flows_multi_run(
         'percentile_diff_oracle_by_run': per_k_pdiff_oracle,
         'percentile_reldiff_oracle_by_run': relative_percentile_diffs(
             per_k_pdiff_oracle, groundtruth_percentiles),
+        # Mean absolute relative percentile error (see percentile_avg_relative_error):
+        # self-normalized already, evaluated via a dense percentile grid independent of
+        # delay_percentiles.
+        'percentile_avg_relerror_all_packets': prepared['percentile_avg_relerror_all_packets'],
+        'percentile_avg_relerror_sampled_by_run': per_k_pctrelerr_sampled,
+        'percentile_avg_relerror_uniform_by_run': per_k_pctrelerr_uniform,
+        'percentile_avg_relerror_oracle_by_run': per_k_pctrelerr_oracle,
         'poisson_test_series': ['all_packets'] + [('uniform', m) for m in subsampling_methods],
         'run_chi_squared_test': run_chi_squared_test,
         'poisson_tests_all_packets': prepared['poisson_tests_all_packets'],
@@ -5471,6 +5608,19 @@ def _metric_result_keys(metric, normalized):
                 '{}_uniform_by_run'.format(name),
                 '{}_oracle_by_run'.format(name),
                 label)
+    if metric == 'percentile_avg_relerror':
+        # Mean absolute percentage error over a dense, fixed percentile grid (see
+        # percentile_avg_relative_error) -- self-normalized already, so `normalized` does
+        # not apply (there is only one stored series). Carries no separate q dimension
+        # (_metric_percentile returns None for it, so _load_plot_series_values's `_at`
+        # skips the q-indexing step) -- unlike ('percentile_diff'|'percentile_reldiff', q)
+        # above, which are about one specific, sparsely-tracked percentile.
+        return ('percentile_avg_relerror_all_packets',
+                'percentile_avg_relerror_all_packets_by_experiment',
+                'percentile_avg_relerror_sampled_by_run',
+                'percentile_avg_relerror_uniform_by_run',
+                'percentile_avg_relerror_oracle_by_run',
+                "Mean absolute relative percentile error (avg over dense percentile grid)")
     raise ValueError("Unknown metric: {!r}".format(metric))
 
 
@@ -6034,7 +6184,7 @@ def plot_pass_rate_vs_load_by_traffic(results_by_traffic_load, k, output_path, s
 
 
 def plot_emd_vs_num_flows_boxplot(results, output_path, title="EMD vs number of TCP flows", pass_threshold=0.9,
-                                   y_max=None, normalized=False):
+                                   y_max=None, normalized=False, metric='emd'):
     """Plot results from compute_emd_vs_num_tcp_flows_multi_run: at each
     number of considered TCP flows, the all-packet CDF is the same fixed set
     of packets on every run, so its EMD-to-ground-truth is a single value --
@@ -6065,19 +6215,29 @@ def plot_emd_vs_num_flows_boxplot(results, output_path, title="EMD vs number of 
     Each all-packets position is also annotated with its burstiness (IDC at one RTT, mean
     burst duration/inter-burst gap -- see burstiness_metrics), rotated vertically above the
     point/box (_annotate_all_packets_burstiness), when results['burstiness_all_packets']
-    has it (absent for pre-burstiness-metrics results -- see backfill_burstiness_metrics)."""
+    has it (absent for pre-burstiness-metrics results -- see backfill_burstiness_metrics).
+
+    `metric` selects which quantity to plot: 'emd' (the default, real Wasserstein-1,
+    supports `normalized`) or 'percentile_avg_relerror' (percentile_avg_relative_error,
+    mean absolute relative percentile error over a dense percentile grid -- already
+    self-normalized, so `normalized` does not apply -- see _metric_result_keys). Unlike
+    the raw ('percentile_diff', q)/('percentile_reldiff', q) plots
+    (plot_percentile_diff_vs_num_flows), both metrics here keep the green/red
+    consistency-check coloring, since both measure the same kind of whole-distribution
+    agreement the real EMD does."""
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     results = upgrade_emd_vs_flows_results_schema(results)
-    suffix = '_normalized' if normalized else ''
+    all_key, all_by_exp_key, sampled_key, uniform_key, oracle_key, metric_label = _metric_result_keys(
+        metric, normalized)
     num_flows = results['num_flows']
     methods = results['subsampling_methods']
-    emd_all = np.asarray(results['emd_all_packets' + suffix], dtype=float)
+    emd_all = np.asarray(results[all_key], dtype=float)
     pass_rate_all = np.asarray(results['pass_rate_all_packets'], dtype=float)
     uniform_series = results.get('uniform_series', [])
     oracle_series = results.get('oracle_series', [])
-    emd_all_by_experiment = results.get('emd_all_packets_by_experiment' + suffix)
+    emd_all_by_experiment = results.get(all_by_exp_key)
     all_packets_is_boxplot = bool(emd_all_by_experiment) and results.get('num_experiments', 1) > 1
 
     pass_color, fail_color = 'tab:green', 'tab:red'
@@ -6089,12 +6249,12 @@ def plot_emd_vs_num_flows_boxplot(results, output_path, title="EMD vs number of 
     legend_handles = _draw_all_packets_series(
         axis, num_flows, emd_all, emd_all_by_experiment, pass_rate_all, offset_all, box_width,
         pass_threshold, pass_color, fail_color, results['num_runs'],
-        results.get('num_experiments', 1), 'EMD',
+        results.get('num_experiments', 1), metric_label,
         burstiness_by_k=results.get('burstiness_all_packets'))
 
     # Poisson-adaptive subsamples: each differs every run -- one boxplot family per
     # method, so several algorithms run together are compared on the same axis.
-    emd_sampled_by_run = results['emd_sampled_packets_by_run' + suffix]
+    emd_sampled_by_run = results[sampled_key]
     for i, method in enumerate(methods):
         style = family_border_style('sampled', i)
         values_by_k = emd_sampled_by_run[method]
@@ -6102,15 +6262,15 @@ def plot_emd_vs_num_flows_boxplot(results, output_path, title="EMD vs number of 
                              offsets_poisson[method], box_width, pass_threshold, pass_color, fail_color, style)
         missing_sampled_k = [k for k, values in zip(num_flows, values_by_k) if len(values) == 0]
         if missing_sampled_k:
-            print("No {} EMD values for {} flow-count(s), skipped: {}".format(
-                method, len(missing_sampled_k), missing_sampled_k))
+            print("No {} {} values for {} flow-count(s), skipped: {}".format(
+                method, metric_label, len(missing_sampled_k), missing_sampled_k))
         legend_handles.append(Patch(facecolor='white', edgecolor=style['edge_color'], linewidth=4.5,
                                      linestyle=style['edge_style'],
                                      label='Poisson-adaptive subsample, {} (boxplot)'.format(method)))
 
     # Uniform families: same idea, one boxplot family each -- for current results one
     # per Poisson-adaptive method, drawing that method's own sample count.
-    emd_uniform_by_run = results.get('emd_uniform_packets_by_run' + suffix, {})
+    emd_uniform_by_run = results.get(uniform_key, {})
     pass_rate_uniform = results.get('pass_rate_uniform', {})
     for i, key in enumerate(uniform_series):
         style = family_border_style('uniform', len(methods) + i)
@@ -6119,15 +6279,15 @@ def plot_emd_vs_num_flows_boxplot(results, output_path, title="EMD vs number of 
                              offsets_uniform[key], box_width, pass_threshold, pass_color, fail_color, style)
         missing_k = [k for k, values in zip(num_flows, values_by_k) if len(values) == 0]
         if missing_k:
-            print("No {} EMD values for {} flow-count(s), skipped: {}".format(
-                _uniform_series_label(key), len(missing_k), missing_k))
+            print("No {} {} values for {} flow-count(s), skipped: {}".format(
+                _uniform_series_label(key), metric_label, len(missing_k), missing_k))
         legend_handles.append(Patch(facecolor='white', edgecolor=style['edge_color'], linewidth=4.5,
                                      linestyle=style['edge_style'],
                                      label='{} (boxplot)'.format(_uniform_series_label(key))))
 
     # Ideal Poisson probes: the ceiling, drawn last so it reads as the reference the real
     # families are being judged against.
-    emd_oracle_by_run = results.get('emd_oracle_by_run' + suffix, {})
+    emd_oracle_by_run = results.get(oracle_key, {})
     pass_rate_oracle = results.get('pass_rate_oracle', {})
     for i, key in enumerate(oracle_series):
         style = family_border_style('oracle', len(methods) + len(uniform_series) + i)
@@ -6136,16 +6296,15 @@ def plot_emd_vs_num_flows_boxplot(results, output_path, title="EMD vs number of 
                              offsets_oracle[key], box_width, pass_threshold, pass_color, fail_color, style)
         missing_k = [k for k, values in zip(num_flows, values_by_k) if len(values) == 0]
         if missing_k:
-            print("No {} EMD values for {} flow-count(s), skipped: {}".format(
-                _oracle_series_label(key), len(missing_k), missing_k))
+            print("No {} {} values for {} flow-count(s), skipped: {}".format(
+                _oracle_series_label(key), metric_label, len(missing_k), missing_k))
         legend_handles.append(Patch(facecolor='white', edgecolor=style['edge_color'], linewidth=4.5,
                                      linestyle=style['edge_style'],
                                      label='{} (boxplot)'.format(_oracle_series_label(key))))
 
     axis.set_title(title, fontsize=34)
     axis.set_xlabel('Number of TCP flows considered')
-    axis.set_ylabel("EMD relative to mean queuing delay" if normalized
-                     else "EMD to reconstructed network delay CDF (ns)")
+    axis.set_ylabel(metric_label)
     axis.set_xticks(num_flows)
     axis.set_xlim(min(num_flows) - 0.6, max(num_flows) + 0.6)
     axis.grid(True, alpha=0.35, axis='y')
@@ -6921,18 +7080,21 @@ def save_emd_vs_flows_results_text(results, output_path):
                     "{:.0%}".format(sum(both_known) / len(both_known)) if both_known else "n/a",
                 ))
 
-    if percentiles:
-        # Short column tags keep one row per flow count readable with every family side by
-        # side, which is the comparison this section exists for; the legend maps them back.
-        families = [('all', 'all_packets', 'all packets of considered flows')]
-        for j, method in enumerate(methods, start=1):
-            families.append(('P{}'.format(j), ('sampled', method),
-                              'Poisson-adaptive subsample, {}'.format(method)))
-        for j, key in enumerate(uniform_series, start=1):
-            families.append(('U{}'.format(j), ('uniform', key), _uniform_series_label(key)))
-        for j, key in enumerate(oracle_series, start=1):
-            families.append(('I{}'.format(j), ('oracle', key), _oracle_series_label(key)))
+    # Short column tags keep one row per flow count readable with every family side by
+    # side; used by both the sparse-percentile-error table below (when delay_percentiles
+    # is non-empty) and the dense-percentile-grid EMD stand-ins after it (which need no
+    # such guard, since they're independent of delay_percentiles). The legend maps them
+    # back to full family names.
+    families = [('all', 'all_packets', 'all packets of considered flows')]
+    for j, method in enumerate(methods, start=1):
+        families.append(('P{}'.format(j), ('sampled', method),
+                          'Poisson-adaptive subsample, {}'.format(method)))
+    for j, key in enumerate(uniform_series, start=1):
+        families.append(('U{}'.format(j), ('uniform', key), _uniform_series_label(key)))
+    for j, key in enumerate(oracle_series, start=1):
+        families.append(('I{}'.format(j), ('oracle', key), _oracle_series_label(key)))
 
+    if percentiles:
         lines.append("")
         lines.append("=" * 70)
         lines.append("Percentile (tail-shape) error: ground-truth p_q  -  family p_q")
@@ -6962,6 +7124,41 @@ def save_emd_vs_flows_results_text(results, output_path):
                             cell = (fmt + " +/- " + fmt).format(np.mean(values), np.std(values))
                         row += " | {:>18}".format(cell)
                     lines.append(row)
+
+    if results.get('percentile_avg_relerror_all_packets'):
+        lines.append("")
+        lines.append("=" * 70)
+        lines.append("Mean absolute relative percentile error (dense percentile grid)")
+        lines.append("=" * 70)
+        lines.append("  * For each of a dense, fixed set of percentiles (p1..p99, independent of")
+        lines.append("    delay_percentiles above), |ground-truth p_q - family p_q| / ground-truth")
+        lines.append("    p_q, averaged over that whole grid -- see percentile_avg_relative_error.")
+        lines.append("    A percentile-based EMD analog (average |diff| over the same grid,")
+        lines.append("    without the relative-to-its-own-percentile scaling) was considered and")
+        lines.append("    deliberately dropped: it only approximates the real EMD/relEMD above at")
+        lines.append("    finite grid resolution, at the same O(n log n) cost as computing the")
+        lines.append("    exact value directly, so relEMD remains the metric of record.")
+        for kind, normalized, label, fmt in (
+                ('percentile_avg_relerror', False, 'mean absolute relative percentile error', "{:.1%}"),):
+            lines.append("")
+            lines.append("{}:".format(label))
+            header = "{:>3}".format("k") + "".join(" | {:>18}".format(tag) for tag, _, _ in families)
+            lines.append(header)
+            lines.append("-" * len(header))
+            for i, k in enumerate(results['num_flows']):
+                row = "{:>3}".format(k)
+                for _tag, key, _label in families:
+                    values, _ = _load_plot_series_values(results, i, key, normalized=normalized, metric=kind)
+                    values = np.asarray(values, dtype=float).reshape(-1)
+                    values = values[np.isfinite(values)]
+                    if values.size == 0:
+                        cell = "n/a"
+                    elif values.size == 1:
+                        cell = fmt.format(values[0])
+                    else:
+                        cell = (fmt + " +/- " + fmt).format(np.mean(values), np.std(values))
+                    row += " | {:>18}".format(cell)
+                lines.append(row)
 
     with open(output_path, 'w') as f:
         f.write("\n".join(lines) + "\n")
@@ -9771,14 +9968,24 @@ def calc_epsilon_loss_2(confidenceValue, segement_statistics):
 def calc_error(confidenceValue, segement_statistics):
     return (confidenceValue * segement_statistics['DelayStd']) / np.sqrt(segement_statistics['sampleSize'])
 
+# Hard floor on the minimum required e2e sample size: below this, the consistency check's
+# bound is so loose it passes almost by construction rather than by evidence, so we never
+# target fewer samples than this regardless of what the CV-based formula below computes.
+MINIMUM_E2E_SAMPLE_SIZE = 100
+
 def calc_min_e2e_samples(confidenceValue, maxError, samples_paths_aggregated_statistics, metric='Delay'):
     if samples_paths_aggregated_statistics['MaxEpsilon' + metric] >= maxError:
         print(f"Warning: MaxEpsilon{metric} is greater than or equal to maxError. Cannot achieve the desired confidence level with the current data.")
         return None
     if samples_paths_aggregated_statistics['' + metric + 'Mean'] == 0:
-        print(f"Warning: Mean {metric} is zero. Cannot calculate the required sample size. Picking the default of 1000 samples.")
-        return 100
-    return int(((confidenceValue * samples_paths_aggregated_statistics['e2e' + metric + 'Std']) / ((maxError - samples_paths_aggregated_statistics['MaxEpsilon' + metric]) * samples_paths_aggregated_statistics['' + metric + 'Mean'])) ** 2)
+        print(f"Warning: Mean {metric} is zero. Cannot calculate the required sample size. Picking the default of {MINIMUM_E2E_SAMPLE_SIZE} samples.")
+        return MINIMUM_E2E_SAMPLE_SIZE
+    computed = int(((confidenceValue * samples_paths_aggregated_statistics['e2e' + metric + 'Std']) / ((maxError - samples_paths_aggregated_statistics['MaxEpsilon' + metric]) * samples_paths_aggregated_statistics['' + metric + 'Mean'])) ** 2)
+    if computed < MINIMUM_E2E_SAMPLE_SIZE:
+        print(f"Warning: computed minimum required {metric} sample size ({computed}) is below the floor of "
+              f"{MINIMUM_E2E_SAMPLE_SIZE}; using {MINIMUM_E2E_SAMPLE_SIZE} instead.")
+        return MINIMUM_E2E_SAMPLE_SIZE
+    return computed
 
 def calc_min_e2e_samples_prob(confidenceValue, maxError, samples_paths_aggregated_statistics, number_of_segments, metric='SuccessProb'):
     mean_key = metric + 'Mean'

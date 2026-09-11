@@ -750,16 +750,14 @@ def __main__():
     steadyEnd = convert_to_float(config.get('Settings', 'steadyEnd')) * 1e9
     # steadyEnd = 0.5 * 1e9
     experiments = int(config.get('Settings', 'experiments'))
-    experiments = 30
     experiments = 1
     serviceRateScales = [float(x) for x in config.get('Settings', 'serviceRateScales').split(',')]
     # serviceRateScales = [0.5]
     loads = [float(x) for x in config.get('Settings', 'load').split(',')]
-    loads = [0.5, 0.6, 0.7, 0.8, 0.95]
     loads = [0.5]
     traffics = config.get('Settings', 'traffic').split(',')
     traffics = ["Google_AllRPC", "Google_SearchRPC", "Facebook_HadoopDist_All"]
-    traffics = ["Facebook_HadoopDist_All"]
+    traffics = ["Google_AllRPC"]
     errorRates = [float(x) for x in config.get('Settings', 'errorRate').split(',')]
     # errorRates = [0.1, 0.3, 0.5, 0.7, 0.9]
     # errorRates = [0.1]
@@ -933,6 +931,20 @@ def run_emd_vs_flows_experiment(rate, steadyStart, steadyEnd, confidenceValue, r
         results, file_prefix + '_delay_mean_diff_boxplot.png', pass_threshold=pass_threshold,
         title='Switch vs. packet mean delay difference ({}): {}, path {}'.format(run_desc, flow_name, path),
         y_limit=mean_diff_y_limit,
+    )
+    # Mean absolute relative percentile error (percentile_avg_relative_error): evaluated on
+    # a dense percentile grid independent of delay_percentiles. Same visual treatment as the
+    # real EMD (pass/fail coloring, family styles, burstiness annotations), since it measures
+    # the same kind of whole-distribution agreement. (A percentile-grid EMD *estimate* was
+    # also tried and dropped -- at any finite grid resolution it only approximates the real
+    # EMD/relEMD above at the same O(n log n) cost as computing them directly, so relEMD
+    # remains the metric of record and only this self-normalized relative-error metric is
+    # kept as a distinct addition.)
+    plot_emd_vs_num_flows_boxplot(
+        results, file_prefix + '_percentile_avg_relerror_boxplot.png', pass_threshold=pass_threshold,
+        title='Mean absolute relative percentile error vs number of TCP flows ({}): {}, path {}\n{}'.format(
+            run_desc, flow_name, path, gt_desc),
+        metric='percentile_avg_relerror',
     )
     for q in results['delay_percentiles']:
         plot_percentile_diff_vs_num_flows(
@@ -1278,6 +1290,13 @@ def aggregate_emd_vs_flows_across_experiments(ns3_path, dir_name, traffic, rate,
         title='Switch vs. packet mean delay difference, aggregated ({}): {}, path {}'.format(run_desc, flow_name, path),
         y_limit=mean_diff_y_limit,
     )
+    if aggregated.get('percentile_avg_relerror_all_packets'):
+        plot_emd_vs_num_flows_boxplot(
+            aggregated, file_prefix + '_percentile_avg_relerror_boxplot.png', pass_threshold=pass_threshold,
+            title='Mean absolute relative percentile error, aggregated ({}): {}, path {}\n{}'.format(
+                run_desc, flow_name, path, gt_desc),
+            metric='percentile_avg_relerror',
+        )
     for q in aggregated['delay_percentiles']:
         plot_percentile_diff_vs_num_flows(
             aggregated, q, '{}_p{}_diff_boxplot.png'.format(file_prefix, q), relative=False,
