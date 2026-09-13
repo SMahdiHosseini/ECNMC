@@ -741,6 +741,14 @@ def __main__():
                          "Poisson-adaptive method and every rate-matched uniform baseline. The EMD is a "
                          "single number for the whole distribution and can hide a misplaced tail, which "
                          "is the part delay SLOs are written against. Default p90 and p99.")
+    parser.add_argument("--output-suffix", dest="output_suffix", default='', metavar="SUFFIX",
+                    help="Appended to the <config_tag> output folder with --emd-vs-flows (e.g. "
+                         "'_test' writes <config_tag>_test/ instead of <config_tag>/) and, with "
+                         "--aggregate-emd-vs-flows, both looked for as that same input folder AND "
+                         "appended to the aggregated results_<dir> output tree -- so a non-default "
+                         "value tries out a computation or plotting change on a self-contained test "
+                         "copy, without touching the existing output. Default '' leaves every path "
+                         "exactly as before.")
 
     args = parser.parse_args()
     config = configparser.ConfigParser()
@@ -778,6 +786,7 @@ def __main__():
                             subsampling_methods=args.subsampling_methods,
                             groundtruth_method=groundtruth_method,
                             all_flows_only=args.all_flows_only,
+                            output_suffix=args.output_suffix,
                         )
                 continue
             for traffic in traffics:
@@ -803,6 +812,7 @@ def __main__():
                                         all_flows_only=args.all_flows_only,
                                         delay_percentiles=args.delay_percentiles,
                                         run_chi_squared_test=args.run_chi_squared_test,
+                                        output_suffix=args.output_suffix,
                                     )
                             print("Traffic {} Rate {} {} {} EMD-vs-flows done".format(traffic, rate, load, experiments))
                         else:
@@ -825,7 +835,7 @@ def __main__():
                     print("Rate {} done".format(rate))
                 print("Traffic {} done".format(traffic))
 
-def run_emd_vs_flows_experiment(rate, steadyStart, steadyEnd, confidenceValue, results_folder, config, experiment=0, ns3_path=__ns3_path, load=None, flow_name='R0H0R2H3', queue_names=None, path=0, delay_cdf_sample_interval_ns=90, num_runs=100, num_poisson_observations=9000, pass_threshold=0.9, num_workers=1, emd_y_max=None, mean_diff_y_limit=None, flow_count_step=1, all_flows_only=False, subsampling_methods='find_samples_path', groundtruth_method='simultaneous', delay_percentiles=DEFAULT_DELAY_PERCENTILES, run_chi_squared_test=True):
+def run_emd_vs_flows_experiment(rate, steadyStart, steadyEnd, confidenceValue, results_folder, config, experiment=0, ns3_path=__ns3_path, load=None, flow_name='R0H0R2H3', queue_names=None, path=0, delay_cdf_sample_interval_ns=90, num_runs=100, num_poisson_observations=9000, pass_threshold=0.9, num_workers=1, emd_y_max=None, mean_diff_y_limit=None, flow_count_step=1, all_flows_only=False, subsampling_methods='find_samples_path', groundtruth_method='simultaneous', delay_percentiles=DEFAULT_DELAY_PERCENTILES, run_chi_squared_test=True, output_suffix=''):
     """Reconstruct the network queuing delay CDF once (ground truth), then repeat `num_runs` times: draw
     `num_poisson_observations` fresh Poisson-process observation instants at the path's switches, derive the
     per-segment aggregated delay statistics from them, and grow the set of considered TCP flows of `flow_name`
@@ -841,7 +851,12 @@ def run_emd_vs_flows_experiment(rate, steadyStart, steadyEnd, confidenceValue, r
     emd_vs_flows_file_tag(subsampling_methods, groundtruth_method, all_flows_only) -- both
     folder levels, not filename infixes, so filenames stay short and re-analyzing the same raw
     experiment over a different steady window or config never collides with or overwrites an
-    earlier one):
+    earlier one). `output_suffix` (e.g. '_test') appends to the `<config_tag>` folder name only
+    (`<config_tag><output_suffix>/`) -- the raw simulation input this reads (under
+    `<results_folder>/<rate>/<load>/<experiment>/`) is untouched, so a suffixed call is a safe
+    way to try out a computation change on real data without overwriting the existing
+    `<config_tag>/` output; aggregate_emd_vs_flows_across_experiments takes the same
+    `output_suffix` to find it again:
       - `<flow_name>_path_<path>_emd_vs_num_flows_boxplot.png`: EMD distribution
         across runs, one boxplot family per subsampling method, plus a `..._normalized.png`
         twin of the same plot in units of the mean ground-truth delay.
@@ -904,10 +919,10 @@ def run_emd_vs_flows_experiment(rate, steadyStart, steadyEnd, confidenceValue, r
     # Steady window and (subsampling/GT/all-flows) config each get their own folder level
     # instead of a filename infix -- keeps filenames short and lets the same raw experiment be
     # re-analyzed over a different window, or with a different config, without collision.
-    output_dir = '{}/scratch/{}/{}/{}/{}/{}/{}/'.format(
+    output_dir = '{}/scratch/{}/{}/{}/{}/{}/{}{}/'.format(
         ns3_path, results_folder, rate, load, experiment,
         steady_window_tag(steadyStart, steadyEnd),
-        emd_vs_flows_file_tag(subsampling_methods, groundtruth_method, all_flows_only))
+        emd_vs_flows_file_tag(subsampling_methods, groundtruth_method, all_flows_only), output_suffix)
     os.makedirs(output_dir, exist_ok=True)
     file_prefix = '{}{}_path_{}'.format(output_dir, flow_name, path)
     run_desc = '{} runs x {} Poisson obs'.format(num_runs, num_poisson_observations)
@@ -1212,9 +1227,13 @@ def aggregate_emd_vs_flows_across_experiments(ns3_path, dir_name, traffic, rate,
     emd_vs_flows_file_tag(subsampling_methods, groundtruth_method, all_flows_only), both as
     their own folder levels (not filename infixes) so filenames stay short and a different
     steady window or configuration for the same traffic/rate/load never collides. `output_suffix`
-    (e.g. '_test') only changes where the aggregated OUTPUT is written -- the per-experiment
-    INPUT is always read from the un-suffixed scratch/Results_<dir_name>/ tree -- so a suffixed
-    call can be used to try out plotting changes without touching the existing output tree.
+    (e.g. '_test') is the same suffix run_emd_vs_flows_experiment's own `output_suffix` appends to
+    its `<config_tag>` output folder: passing it here makes this look for per-experiment input
+    under `<config_tag><output_suffix>/` instead of `<config_tag>/`, and also write the aggregated
+    OUTPUT under `results_<dir_name><output_suffix>/` instead of `results_<dir_name>/` -- so a
+    suffixed call reads and writes an entirely self-contained test copy, start to finish, without
+    touching any existing `<config_tag>/` input or `results_<dir_name>/` output. The default ''
+    leaves both paths exactly as before.
 
     `steadyStart`/`steadyEnd` (ns) and `subsampling_methods`/`groundtruth_method`/
     `all_flows_only` together select which run_emd_vs_flows_experiment output to look for and
@@ -1223,15 +1242,18 @@ def aggregate_emd_vs_flows_across_experiments(ns3_path, dir_name, traffic, rate,
     Falls back to the pre-2026-09-09 flat path (`<experiment>/<flow_name>_path_<path>_<config_tag>_...`,
     no steady-window folder) for any experiment not found at the current nested path, so results
     computed before that restructuring are still picked up without having to re-run
-    run_emd_vs_flows_experiment on them; prints a note when this happens.
+    run_emd_vs_flows_experiment on them; prints a note when this happens. Skipped entirely when
+    `output_suffix` is set, since a legacy run predates output_suffix and can only ever be
+    production data, never the suffixed test data being looked for.
 
     Returns the aggregated results dict, or None if no experiment's results pickle was found
     (e.g. run_emd_vs_flows_experiment hasn't been run yet for this traffic/rate/load/window/configuration).
     """
     steady_tag = steady_window_tag(steadyStart, steadyEnd)
     config_tag = emd_vs_flows_file_tag(subsampling_methods, groundtruth_method, all_flows_only)
+    search_config_tag = config_tag + output_suffix
     per_experiment_base = '{}/scratch/Results_{}/{}/{}/{}'.format(ns3_path, dir_name, traffic, rate, load)
-    file_suffix = '{}/{}/{}_path_{}_emd_vs_num_flows_results.pkl'.format(steady_tag, config_tag, flow_name, path)
+    file_suffix = '{}/{}/{}_path_{}_emd_vs_num_flows_results.pkl'.format(steady_tag, search_config_tag, flow_name, path)
     # Pre-2026-09-09 layout: no <steady_tag>/<config_tag>/ folder nesting, config_tag was a
     # filename infix instead. Fall back to it so results computed before that restructuring
     # are still discoverable without having to re-run run_emd_vs_flows_experiment on them --
@@ -1246,7 +1268,7 @@ def aggregate_emd_vs_flows_across_experiments(ns3_path, dir_name, traffic, rate,
             pkl_path = '{}/{}/{}'.format(per_experiment_base, entry, file_suffix)
             if not os.path.isfile(pkl_path):
                 legacy_path = '{}/{}/{}'.format(per_experiment_base, entry, legacy_file_suffix)
-                if os.path.isfile(legacy_path):
+                if not output_suffix and os.path.isfile(legacy_path):
                     pkl_path = legacy_path
                     legacy_hits += 1
                 else:
@@ -1263,7 +1285,7 @@ def aggregate_emd_vs_flows_across_experiments(ns3_path, dir_name, traffic, rate,
 
     if not results_list:
         print("No experiment results found for {} rate={} load={} window={} tag={} under {}".format(
-            traffic, rate, load, steady_tag, config_tag, per_experiment_base))
+            traffic, rate, load, steady_tag, search_config_tag, per_experiment_base))
         return None
 
     aggregated = aggregate_emd_vs_flows_results(results_list)
@@ -1383,11 +1405,15 @@ def aggregate_emd_vs_flows_across_traffics_and_loads(ns3_path, dir_name, traffic
     (see plot_pass_rate_vs_load_by_traffic) -- unlike the EMD plots above, this is the
     success rate, not the EMD distribution.
 
-    `output_suffix` (e.g. '_test') only changes where OUTPUT is written (both these cross-
-    traffic/load plots and, via aggregate_emd_vs_flows_across_experiments's own output_suffix,
-    that function's per-combination side-effect plots) -- every per-experiment INPUT is always
-    read from the un-suffixed scratch/Results_<dir_name>/ tree, so a suffixed call never touches
-    the existing results_<dir_name>/ output tree.
+    `output_suffix` (e.g. '_test') is forwarded to aggregate_emd_vs_flows_across_experiments for
+    every (traffic, load) combination: it looks for per-experiment input under
+    `<config_tag><output_suffix>/` (the same folder run_emd_vs_flows_experiment's own
+    `output_suffix` writes to) instead of `<config_tag>/`, and writes every OUTPUT below --
+    both these cross-traffic/load plots and that function's own per-combination plots --
+    under `results_<dir_name><output_suffix>/` instead of `results_<dir_name>/`. The default ''
+    leaves both the input and output paths exactly as before, so a suffixed call is a
+    self-contained test copy, start to finish, that never touches the existing
+    `<config_tag>/` input or `results_<dir_name>/` output tree.
 
     Saved under
     scratch/ECNMC/Results/results_<dir_name><output_suffix>/emd_vs_load_by_traffic/<steady_tag>/<config_tag>/<rate>/,
