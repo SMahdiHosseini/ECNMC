@@ -657,9 +657,21 @@ def __main__():
                     dest="emd_vs_flows",
                     help="Run the EMD-vs-number-of-flows analysis (run_emd_vs_flows_experiment) "
                          "for each traffic/rate/load/experiment instead of the standard "
-                         "analyze_all_experiments sweep. Only used in the 'forward' branch.")
+                         "analyze_all_experiments sweep. In the 'forward' branch this runs once per "
+                         "traffic/rate/load/experiment for --flow-name; in any other ('reverse') "
+                         "branch it additionally sweeps tbfFlowRedirectFraction (the config's "
+                         "'D_<x>' folder level -- see Parameters.config's tbfFlowRedirectFraction, "
+                         "not differentiationDelay) and runs both --flow-name and "
+                         "--compare-flow-name, since the reverse experiment is about comparing a "
+                         "TBF-differentiated flow against its undifferentiated control.")
     parser.add_argument("--flow-name", dest="flow_name", default="R0H0R2H3",
-                    help="TCP flow to analyze when --emd-vs-flows is set")
+                    help="TCP flow to analyze when --emd-vs-flows is set. In a non-'forward' "
+                         "branch, this is the first of the two flows compared -- by default the "
+                         "one going through the TBF shaper.")
+    parser.add_argument("--compare-flow-name", dest="compare_flow_name", default="R0H1R2H3",
+                    help="Second TCP flow to analyze and compare --flow-name against, in a "
+                         "non-'forward' branch only (e.g. the reverse experiment's undifferentiated "
+                         "control flow on the same path). Ignored in the 'forward' branch.")
     parser.add_argument("--path", dest="path", type=int, default=0,
                     help="Path index to analyze when --emd-vs-flows is set")
     parser.add_argument("--num-runs", dest="num_runs", type=int, default=10,
@@ -688,7 +700,10 @@ def __main__():
                          "plots (EMD vs load, one boxplot family per traffic, one plot per flow-count k) "
                          "under scratch/ECNMC/Results/results_<dir>/emd_vs_load_by_traffic_<methods><gt>/<rate>/ "
                          "(tagged with the subsampling method(s) and ground-truth method used). Takes "
-                         "precedence over --emd-vs-flows. Only used in the 'forward' branch.")
+                         "precedence over --emd-vs-flows. In a non-'forward' branch this also builds, "
+                         "per traffic/load, the --flow-name vs --compare-flow-name comparison plots "
+                         "(see aggregate_emd_vs_flows_compare_flows) alongside each flow's own "
+                         "aggregation, once per tbfFlowRedirectFraction.")
     parser.add_argument("--subsampling-method", dest="subsampling_methods", nargs='+',
                     default=["find_samples_path"], metavar="METHOD",
                     choices=list(POISSON_SUBSAMPLING_METHODS.keys()),
@@ -821,6 +836,73 @@ def __main__():
                             print("Traffic {} Rate {} {} {} done".format(traffic, rate, load, experiments))
                     print("Traffic {} Rate {} done".format(traffic, rate))
                 print("Traffic {} done".format(traffic))
+        elif args.emd_vs_flows or args.aggregate_emd_vs_flows:
+            # TBF-differentiation reverse pipeline (see project_ecnmc_reverse_differentiation
+            # memory): the 'D_<x>' sweep folder is actually tbfFlowRedirectFraction, not
+            # differentiationDelay (which stays 0.0 in Parameters.config) -- read it from its
+            # real config field, rather than reusing the (always-just-[0.0]) differentiationDelays
+            # list the older analyze_all_experiments branch below still uses as-is.
+            tbf_fractions = [float(x) for x in config.get('Settings', 'tbfFlowRedirectFraction').split(',')]
+            flow_names = [args.flow_name, args.compare_flow_name]
+            window_end = start + int((steadyEnd - steadyStart) / numOfSteadyParts)
+            if args.aggregate_emd_vs_flows:
+                for rate in serviceRateScales:
+                    for fraction in tbf_fractions:
+                        for errorRate in errorRates:
+                            for groundtruth_method in args.groundtruth_methods:
+                                for flow_name in flow_names:
+                                    aggregate_emd_vs_flows_across_traffics_and_loads(
+                                        __ns3_path, args.dir, traffics, rate, loads, start, window_end,
+                                        flow_name=flow_name, path=args.path,
+                                        subsampling_methods=args.subsampling_methods,
+                                        groundtruth_method=groundtruth_method,
+                                        all_flows_only=args.all_flows_only,
+                                        output_suffix=args.output_suffix,
+                                        differentiationDelay=fraction, errorRate=errorRate,
+                                    )
+                                for traffic in traffics:
+                                    for load in loads:
+                                        aggregate_emd_vs_flows_compare_flows(
+                                            __ns3_path, args.dir, traffic, rate, load, start, window_end,
+                                            flow_names, path=args.path,
+                                            subsampling_methods=args.subsampling_methods,
+                                            groundtruth_method=groundtruth_method,
+                                            all_flows_only=args.all_flows_only,
+                                            output_suffix=args.output_suffix,
+                                            differentiationDelay=fraction, errorRate=errorRate,
+                                        )
+                continue
+            for traffic in traffics:
+                for rate in serviceRateScales:
+                    for load in loads:
+                        for fraction in tbf_fractions:
+                            for errorRate in errorRates:
+                                for groundtruth_method in args.groundtruth_methods:
+                                    for flow_name in flow_names:
+                                        for experiment in range(experiments):
+                                            print("Running EMD-vs-flows analysis for traffic {} rate: {} load: {} "
+                                                  "D: {} f: {} flow: {} experiment {} (subsampling: {}, ground "
+                                                  "truth: {})".format(
+                                                      traffic, rate, load, fraction, errorRate, flow_name,
+                                                      experiment, ", ".join(args.subsampling_methods),
+                                                      groundtruth_method))
+                                            run_emd_vs_flows_experiment(
+                                                rate, start, window_end, confidenceValue,
+                                                'Results_' + args.dir + "/" + traffic, config,
+                                                experiment=experiment, ns3_path=__ns3_path, load=load,
+                                                flow_name=flow_name, path=args.path, num_runs=args.num_runs,
+                                                num_poisson_observations=args.num_poisson_observations,
+                                                num_workers=args.num_workers,
+                                                delay_cdf_sample_interval_ns=args.delay_cdf_sample_interval_ns,
+                                                flow_count_step=args.flow_count_step,
+                                                subsampling_methods=args.subsampling_methods,
+                                                groundtruth_method=groundtruth_method,
+                                                all_flows_only=args.all_flows_only,
+                                                delay_percentiles=args.delay_percentiles,
+                                                run_chi_squared_test=args.run_chi_squared_test,
+                                                output_suffix=args.output_suffix,
+                                                differentiationDelay=fraction, errorRate=errorRate,
+                                            )
         else:
             for traffic in traffics:
                 for rate in serviceRateScales:
@@ -835,7 +917,7 @@ def __main__():
                     print("Rate {} done".format(rate))
                 print("Traffic {} done".format(traffic))
 
-def run_emd_vs_flows_experiment(rate, steadyStart, steadyEnd, confidenceValue, results_folder, config, experiment=0, ns3_path=__ns3_path, load=None, flow_name='R0H0R2H3', queue_names=None, path=0, delay_cdf_sample_interval_ns=90, num_runs=100, num_poisson_observations=9000, pass_threshold=0.9, num_workers=1, emd_y_max=None, mean_diff_y_limit=None, flow_count_step=1, all_flows_only=False, subsampling_methods='find_samples_path', groundtruth_method='simultaneous', delay_percentiles=DEFAULT_DELAY_PERCENTILES, run_chi_squared_test=True, output_suffix=''):
+def run_emd_vs_flows_experiment(rate, steadyStart, steadyEnd, confidenceValue, results_folder, config, experiment=0, ns3_path=__ns3_path, load=None, flow_name='R0H0R2H3', queue_names=None, path=0, delay_cdf_sample_interval_ns=90, num_runs=100, num_poisson_observations=9000, pass_threshold=0.9, num_workers=1, emd_y_max=None, mean_diff_y_limit=None, flow_count_step=1, all_flows_only=False, subsampling_methods='find_samples_path', groundtruth_method='simultaneous', delay_percentiles=DEFAULT_DELAY_PERCENTILES, run_chi_squared_test=True, output_suffix='', differentiationDelay=None, errorRate=None):
     """Reconstruct the network queuing delay CDF once (ground truth), then repeat `num_runs` times: draw
     `num_poisson_observations` fresh Poisson-process observation instants at the path's switches, derive the
     per-segment aggregated delay statistics from them, and grow the set of considered TCP flows of `flow_name`
@@ -875,6 +957,16 @@ def run_emd_vs_flows_experiment(rate, steadyStart, steadyEnd, confidenceValue, r
       - `<flow_name>_path_<path>_delay_cdf_one_run.png`: the ground-truth delay CDF
         against every method's actual delay CDF from one concrete Poisson realization (not an EMD summary
         across runs).
+
+    Pass `differentiationDelay`/`errorRate` for the reverse (TBF-differentiation) experiments
+    (dir_name 'reverse_delay'): both the raw input this reads and every output path above gain
+    a `D_<differentiationDelay>/f_<errorRate>/` folder level, inserted right after `<load>`,
+    mirroring the existing analyze_all_experiments/analyze_single_experiment convention (see
+    Utils.prepare_emd_vs_flows_data). Despite the parameter name, the `D_` folder there is
+    actually keyed by whatever exp.py substitutes for that sweep -- for reverse_delay it is
+    tbfFlowRedirectFraction, not literally 'differentiationDelay' (see
+    project_ecnmc_reverse_differentiation); the name is kept only to match that existing
+    folder-naming convention.
       - `<flow_name>_path_<path>_emd_vs_num_flows_results.pkl`: the full underlying
         results dict (raw and normalized EMDs both).
       - `<flow_name>_path_<path>_emd_vs_num_flows_results.txt`: a human-readable
@@ -914,15 +1006,21 @@ def run_emd_vs_flows_experiment(rate, steadyStart, steadyEnd, confidenceValue, r
         num_workers=num_workers, flow_count_step=flow_count_step, all_flows_only=all_flows_only,
         subsampling_methods=subsampling_methods, groundtruth_method=groundtruth_method,
         delay_percentiles=delay_percentiles, run_chi_squared_test=run_chi_squared_test,
+        differentiationDelay=differentiationDelay, errorRate=errorRate,
     )
 
     # Steady window and (subsampling/GT/all-flows) config each get their own folder level
     # instead of a filename infix -- keeps filenames short and lets the same raw experiment be
     # re-analyzed over a different window, or with a different config, without collision.
-    output_dir = '{}/scratch/{}/{}/{}/{}/{}/{}{}/'.format(
-        ns3_path, results_folder, rate, load, experiment,
-        steady_window_tag(steadyStart, steadyEnd),
-        emd_vs_flows_file_tag(subsampling_methods, groundtruth_method, all_flows_only), output_suffix)
+    config_tag = emd_vs_flows_file_tag(subsampling_methods, groundtruth_method, all_flows_only)
+    if differentiationDelay is not None and errorRate is not None:
+        output_dir = '{}/scratch/{}/{}/{}/D_{}/f_{}/{}/{}/{}{}/'.format(
+            ns3_path, results_folder, rate, load, differentiationDelay, errorRate, experiment,
+            steady_window_tag(steadyStart, steadyEnd), config_tag, output_suffix)
+    else:
+        output_dir = '{}/scratch/{}/{}/{}/{}/{}/{}{}/'.format(
+            ns3_path, results_folder, rate, load, experiment,
+            steady_window_tag(steadyStart, steadyEnd), config_tag, output_suffix)
     os.makedirs(output_dir, exist_ok=True)
     file_prefix = '{}{}_path_{}'.format(output_dir, flow_name, path)
     run_desc = '{} runs x {} Poisson obs'.format(num_runs, num_poisson_observations)
@@ -1216,7 +1314,8 @@ def aggregate_emd_vs_flows_across_experiments(ns3_path, dir_name, traffic, rate,
                                                path=0, pass_threshold=0.9, emd_y_max=None, mean_diff_y_limit=None,
                                                subsampling_methods='find_samples_path',
                                                groundtruth_method='simultaneous',
-                                               all_flows_only=False, output_suffix=''):
+                                               all_flows_only=False, output_suffix='',
+                                               differentiationDelay=None, errorRate=None):
     """Load every experiment's run_emd_vs_flows_experiment output for the same
     traffic/rate/load/steady-window (each under
     scratch/Results_<dir_name>/<traffic>/<rate>/<load>/<experiment>/<steady_tag>/<config_tag>/,
@@ -1246,19 +1345,32 @@ def aggregate_emd_vs_flows_across_experiments(ns3_path, dir_name, traffic, rate,
     `output_suffix` is set, since a legacy run predates output_suffix and can only ever be
     production data, never the suffixed test data being looked for.
 
+    Pass `differentiationDelay`/`errorRate` for the reverse (TBF-differentiation) experiments:
+    both the per-experiment INPUT search path and the aggregated OUTPUT path gain a
+    `D_<differentiationDelay>/f_<errorRate>/` folder level right after `<load>`, matching what
+    run_emd_vs_flows_experiment's own `differentiationDelay`/`errorRate` wrote (see that
+    function's docstring for the naming caveat). The legacy flat-path fallback below never
+    applies here (a reverse run never had one), so it is skipped entirely in that case.
+
     Returns the aggregated results dict, or None if no experiment's results pickle was found
     (e.g. run_emd_vs_flows_experiment hasn't been run yet for this traffic/rate/load/window/configuration).
     """
     steady_tag = steady_window_tag(steadyStart, steadyEnd)
     config_tag = emd_vs_flows_file_tag(subsampling_methods, groundtruth_method, all_flows_only)
     search_config_tag = config_tag + output_suffix
-    per_experiment_base = '{}/scratch/Results_{}/{}/{}/{}'.format(ns3_path, dir_name, traffic, rate, load)
+    is_reverse = differentiationDelay is not None and errorRate is not None
+    if is_reverse:
+        per_experiment_base = '{}/scratch/Results_{}/{}/{}/{}/D_{}/f_{}'.format(
+            ns3_path, dir_name, traffic, rate, load, differentiationDelay, errorRate)
+    else:
+        per_experiment_base = '{}/scratch/Results_{}/{}/{}/{}'.format(ns3_path, dir_name, traffic, rate, load)
     file_suffix = '{}/{}/{}_path_{}_emd_vs_num_flows_results.pkl'.format(steady_tag, search_config_tag, flow_name, path)
     # Pre-2026-09-09 layout: no <steady_tag>/<config_tag>/ folder nesting, config_tag was a
     # filename infix instead. Fall back to it so results computed before that restructuring
     # are still discoverable without having to re-run run_emd_vs_flows_experiment on them --
     # there is no ambiguity in doing so, since a legacy run predates steady-window tagging
-    # entirely (it only ever wrote one, whatever steadyStart/steadyEnd its config used).
+    # entirely (it only ever wrote one, whatever steadyStart/steadyEnd its config used). Never
+    # applies to a reverse (D_/f_) lookup, which predates this pipeline entirely.
     legacy_file_suffix = '{}_path_{}_{}_emd_vs_num_flows_results.pkl'.format(flow_name, path, config_tag)
 
     results_list = []
@@ -1268,7 +1380,7 @@ def aggregate_emd_vs_flows_across_experiments(ns3_path, dir_name, traffic, rate,
             pkl_path = '{}/{}/{}'.format(per_experiment_base, entry, file_suffix)
             if not os.path.isfile(pkl_path):
                 legacy_path = '{}/{}/{}'.format(per_experiment_base, entry, legacy_file_suffix)
-                if not output_suffix and os.path.isfile(legacy_path):
+                if not output_suffix and not is_reverse and os.path.isfile(legacy_path):
                     pkl_path = legacy_path
                     legacy_hits += 1
                 else:
@@ -1292,8 +1404,13 @@ def aggregate_emd_vs_flows_across_experiments(ns3_path, dir_name, traffic, rate,
     print("Aggregating {} rate={} load={} window={} tag={}: {} experiment(s) {}".format(
         traffic, rate, load, steady_tag, config_tag, aggregated['num_experiments'], aggregated['experiments']))
 
-    output_dir = '{}/scratch/ECNMC/Results/results_{}{}/{}/{}/{}/{}/{}/'.format(
-        ns3_path, dir_name, output_suffix, traffic, rate, load, steady_tag, config_tag)
+    if is_reverse:
+        output_dir = '{}/scratch/ECNMC/Results/results_{}{}/{}/{}/{}/D_{}/f_{}/{}/{}/'.format(
+            ns3_path, dir_name, output_suffix, traffic, rate, load, differentiationDelay, errorRate,
+            steady_tag, config_tag)
+    else:
+        output_dir = '{}/scratch/ECNMC/Results/results_{}{}/{}/{}/{}/{}/{}/'.format(
+            ns3_path, dir_name, output_suffix, traffic, rate, load, steady_tag, config_tag)
     os.makedirs(output_dir, exist_ok=True)
     file_prefix = '{}{}_path_{}'.format(output_dir, flow_name, path)
     run_desc = '{} experiment(s) x {} Poisson obs'.format(aggregated['num_experiments'], aggregated['num_poisson_observations'])
@@ -1365,12 +1482,109 @@ def aggregate_emd_vs_flows_across_experiments(ns3_path, dir_name, traffic, rate,
     return aggregated
 
 
+def aggregate_emd_vs_flows_compare_flows(ns3_path, dir_name, traffic, rate, load, steadyStart, steadyEnd,
+                                          flow_names, path=0, pass_threshold=0.9,
+                                          subsampling_methods='find_samples_path',
+                                          groundtruth_method='simultaneous',
+                                          all_flows_only=False, output_suffix='',
+                                          differentiationDelay=None, errorRate=None):
+    """Aggregate each of `flow_names` (e.g. ['R0H0R2H3', 'R0H1R2H3']) independently via
+    aggregate_emd_vs_flows_across_experiments -- which also writes each flow's own
+    per-combination plots as a side effect, same as any other call to it -- then build one
+    comparison plot per plotted quantity putting every flow's EMD-family boxes side by side
+    at each flow count (see Utils.plot_emd_vs_num_flows_boxplot_by_flow): raw and normalized
+    EMD, the mean absolute relative percentile error, and each percentile in
+    `delay_percentiles` (both absolute and relative signed error). This is the two-e2e-flow
+    counterpart of run_emd_vs_flows_experiment/aggregate_emd_vs_flows_across_experiments's own
+    single-flow plots -- built for the reverse (TBF-differentiation) experiments, where
+    R0H0R2H3 (through the shaper) and R0H1R2H3 (an undifferentiated control on the same path)
+    are both worth comparing directly, not just each against its own ground truth separately.
+
+    Pass `differentiationDelay`/`errorRate` for the reverse experiments, forwarded to every
+    flow's aggregate_emd_vs_flows_across_experiments call and used to place the comparison
+    plots alongside that fraction's own per-flow output (see below).
+
+    Saved under
+    scratch/ECNMC/Results/results_<dir_name><output_suffix>/<traffic>/<rate>/<load>/
+    [D_<differentiationDelay>/f_<errorRate>/]<steady_tag>/<config_tag>/flow_comparison/,
+    one level below where each individual flow's own aggregated output lands (same
+    <steady_tag>/<config_tag> convention as aggregate_emd_vs_flows_across_experiments).
+
+    Returns {flow_name: aggregated_results}, or None if no flow had any results to aggregate.
+    """
+    subsampling_methods = normalize_subsampling_methods(subsampling_methods)
+    results_by_flow = {}
+    for flow_name in flow_names:
+        aggregated = aggregate_emd_vs_flows_across_experiments(
+            ns3_path, dir_name, traffic, rate, load, steadyStart, steadyEnd,
+            flow_name=flow_name, path=path, pass_threshold=pass_threshold,
+            subsampling_methods=subsampling_methods, groundtruth_method=groundtruth_method,
+            all_flows_only=all_flows_only, output_suffix=output_suffix,
+            differentiationDelay=differentiationDelay, errorRate=errorRate,
+        )
+        if aggregated is not None:
+            results_by_flow[flow_name] = aggregated
+
+    if not results_by_flow:
+        print("No aggregated results available for any of {} to build flow-comparison plots".format(flow_names))
+        return None
+
+    steady_tag = steady_window_tag(steadyStart, steadyEnd)
+    config_tag = emd_vs_flows_file_tag(subsampling_methods, groundtruth_method, all_flows_only)
+    if differentiationDelay is not None and errorRate is not None:
+        base_dir = '{}/scratch/ECNMC/Results/results_{}{}/{}/{}/{}/D_{}/f_{}/{}/{}/'.format(
+            ns3_path, dir_name, output_suffix, traffic, rate, load, differentiationDelay, errorRate,
+            steady_tag, config_tag)
+    else:
+        base_dir = '{}/scratch/ECNMC/Results/results_{}{}/{}/{}/{}/{}/{}/'.format(
+            ns3_path, dir_name, output_suffix, traffic, rate, load, steady_tag, config_tag)
+    output_dir = base_dir + 'flow_comparison/'
+    os.makedirs(output_dir, exist_ok=True)
+    file_prefix = '{}path_{}'.format(output_dir, path)
+    flow_desc = ' vs. '.join(flow_names)
+    gt_desc = groundtruth_method_label(groundtruth_method)
+
+    plot_emd_vs_num_flows_boxplot_by_flow(
+        results_by_flow, file_prefix + '_emd_vs_num_flows_boxplot.png', pass_threshold=pass_threshold,
+        title='EMD vs number of TCP flows, {}\n{}'.format(flow_desc, gt_desc),
+    )
+    plot_emd_vs_num_flows_boxplot_by_flow(
+        results_by_flow, file_prefix + '_emd_vs_num_flows_boxplot_normalized.png', pass_threshold=pass_threshold,
+        title='EMD relative to mean queuing delay vs number of TCP flows, {}\n{}'.format(flow_desc, gt_desc),
+        normalized=True,
+    )
+    if any(r.get('percentile_avg_relerror_all_packets') for r in results_by_flow.values()):
+        plot_emd_vs_num_flows_boxplot_by_flow(
+            results_by_flow, file_prefix + '_percentile_avg_relerror_boxplot.png', pass_threshold=pass_threshold,
+            title='Mean absolute relative percentile error vs number of TCP flows, {}\n{}'.format(
+                flow_desc, gt_desc),
+            metric='percentile_avg_relerror',
+        )
+    percentiles = sorted(set().union(*(set(r.get('delay_percentiles') or []) for r in results_by_flow.values())))
+    for q in percentiles:
+        plot_emd_vs_num_flows_boxplot_by_flow(
+            results_by_flow, '{}_p{}_diff_boxplot.png'.format(file_prefix, q), pass_threshold=pass_threshold,
+            title='p{} error (ground truth - family) vs number of TCP flows, {}\n{}'.format(
+                q, flow_desc, gt_desc),
+            metric=('percentile_diff', q),
+        )
+        plot_emd_vs_num_flows_boxplot_by_flow(
+            results_by_flow, '{}_p{}_reldiff_boxplot.png'.format(file_prefix, q), pass_threshold=pass_threshold,
+            title='Relative p{} error (ground truth - family) vs number of TCP flows, {}\n{}'.format(
+                q, flow_desc, gt_desc),
+            metric=('percentile_reldiff', q),
+        )
+    print("Saved flow-comparison plots ({}) to {}".format(flow_desc, output_dir))
+    return results_by_flow
+
+
 def aggregate_emd_vs_flows_across_traffics_and_loads(ns3_path, dir_name, traffics, rate, loads,
                                                        steadyStart, steadyEnd,
                                                        flow_name='R0H0R2H3', path=0, pass_threshold=0.9,
                                                        subsampling_methods='find_samples_path',
                                                        groundtruth_method='simultaneous',
-                                                       all_flows_only=False, output_suffix=''):
+                                                       all_flows_only=False, output_suffix='',
+                                                       differentiationDelay=None, errorRate=None):
     """For a fixed `rate`, aggregate every traffic x load combination (each first
     aggregated across its own experiments via aggregate_emd_vs_flows_across_experiments,
     which also writes that combination's own per-traffic/load plots as a side effect) into
@@ -1432,10 +1646,18 @@ def aggregate_emd_vs_flows_across_traffics_and_loads(ns3_path, dir_name, traffic
     Utils.plot_emd_vs_burstiness_by_traffic), under a sibling tree
     `emd_vs_burstiness_by_traffic/<steady_tag>/<config_tag>/<rate>/<burstiness_field>/<same subfolders>/`.
 
+    Pass `differentiationDelay`/`errorRate` for the reverse (TBF-differentiation) experiments:
+    forwarded to aggregate_emd_vs_flows_across_experiments for every (traffic, load)
+    combination (so it reads/writes that fraction's own `D_<differentiationDelay>/f_<errorRate>/`
+    folder), and this function's own `rate_dir`/`burstiness_dir` gain the same folder level
+    (inserted right after `<rate>`) -- so the whole cross-traffic/load comparison is built and
+    saved per fraction, never mixing fractions together.
+
     Returns the {(traffic, load): aggregated_results} dict used to build the plots, or None
     if no traffic/load combination had any experiment results to aggregate.
     """
     subsampling_methods = normalize_subsampling_methods(subsampling_methods)
+    is_reverse = differentiationDelay is not None and errorRate is not None
     results_by_traffic_load = {}
     for traffic in traffics:
         for load in loads:
@@ -1445,6 +1667,7 @@ def aggregate_emd_vs_flows_across_traffics_and_loads(ns3_path, dir_name, traffic
                 pass_threshold=pass_threshold, subsampling_methods=subsampling_methods,
                 groundtruth_method=groundtruth_method, all_flows_only=all_flows_only,
                 output_suffix=output_suffix,
+                differentiationDelay=differentiationDelay, errorRate=errorRate,
             )
             if aggregated is not None:
                 results_by_traffic_load[(traffic, load)] = aggregated
@@ -1460,8 +1683,12 @@ def aggregate_emd_vs_flows_across_traffics_and_loads(ns3_path, dir_name, traffic
     # the same dir_name never collide and filenames don't need to spell either one out.
     steady_tag = steady_window_tag(steadyStart, steadyEnd)
     config_tag = emd_vs_flows_file_tag(subsampling_methods, groundtruth_method, all_flows_only)
-    rate_dir = '{}/scratch/ECNMC/Results/results_{}{}/emd_vs_load_by_traffic/{}/{}/{}/'.format(
-        ns3_path, dir_name, output_suffix, steady_tag, config_tag, rate)
+    if is_reverse:
+        rate_dir = '{}/scratch/ECNMC/Results/results_{}{}/emd_vs_load_by_traffic/{}/{}/{}/D_{}/f_{}/'.format(
+            ns3_path, dir_name, output_suffix, steady_tag, config_tag, rate, differentiationDelay, errorRate)
+    else:
+        rate_dir = '{}/scratch/ECNMC/Results/results_{}{}/emd_vs_load_by_traffic/{}/{}/{}/'.format(
+            ns3_path, dir_name, output_suffix, steady_tag, config_tag, rate)
     gt_desc = groundtruth_method_label(groundtruth_method)
 
     # Each comparison kind gets its own subfolder under rate_dir (see docstring), so a
@@ -1563,8 +1790,12 @@ def aggregate_emd_vs_flows_across_traffics_and_loads(ns3_path, dir_name, traffic
     # built above. A combination whose results predate burstiness metrics (see
     # backfill_burstiness_metrics) or all_flows_only having none of it just contributes no
     # point, exactly like a missing k does for the load plots.
-    burstiness_dir = '{}/scratch/ECNMC/Results/results_{}{}/emd_vs_burstiness_by_traffic/{}/{}/{}/'.format(
-        ns3_path, dir_name, output_suffix, steady_tag, config_tag, rate)
+    if is_reverse:
+        burstiness_dir = '{}/scratch/ECNMC/Results/results_{}{}/emd_vs_burstiness_by_traffic/{}/{}/{}/D_{}/f_{}/'.format(
+            ns3_path, dir_name, output_suffix, steady_tag, config_tag, rate, differentiationDelay, errorRate)
+    else:
+        burstiness_dir = '{}/scratch/ECNMC/Results/results_{}{}/emd_vs_burstiness_by_traffic/{}/{}/{}/'.format(
+            ns3_path, dir_name, output_suffix, steady_tag, config_tag, rate)
     for burstiness_field in BURSTINESS_METRIC_LABELS:
         field_dir = '{}{}/'.format(burstiness_dir, burstiness_field)
         for series_specs, subfolder, kind_desc in plot_kinds:

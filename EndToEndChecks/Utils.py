@@ -3725,6 +3725,8 @@ def prepare_emd_vs_flows_data(
     delay_percentiles=DEFAULT_DELAY_PERCENTILES,
     run_chi_squared_test=True,
     poisson_test_lags=None,
+    differentiationDelay=None,
+    errorRate=None,
 ):
     """Load and preprocess everything that stays fixed across repeated runs
     of the flow-count EMD sweep: the flow's received packets on `path`,
@@ -3765,8 +3767,22 @@ def prepare_emd_vs_flows_data(
     error at each of them (percentile_diffs / relative_percentile_diffs) -- the
     tail-shape counterpart to the EMD, which a single distance number can hide.
     Like the all-packet EMD these are the same fixed packet set every run, so
-    they are computed once here."""
-    dir_prefix = '{}/scratch/{}/{}/{}/{}/'.format(ns3_path, results_folder, rate, load, experiment)
+    they are computed once here.
+
+    Pass `differentiationDelay`/`errorRate` for the reverse (TBF-differentiation)
+    experiments, whose raw per-experiment data sits one level deeper, under
+    `D_<differentiationDelay>/f_<errorRate>/` (mirroring analyze_single_experiment /
+    calculate_offline_computations_DC's own convention -- see Utils.py's
+    calculate_offline_computations_DC). Note the `D_` folder there is actually named for
+    whatever sweep parameter exp.py substitutes in (e.g. tbfFlowRedirectFraction for
+    reverse_delay, not literally 'differentiationDelay'); the parameter is still called
+    `differentiationDelay` here only to match that folder-naming convention already used
+    throughout the rest of this file."""
+    if differentiationDelay is not None and errorRate is not None:
+        dir_prefix = '{}/scratch/{}/{}/{}/D_{}/f_{}/{}/'.format(
+            ns3_path, results_folder, rate, load, differentiationDelay, errorRate, experiment)
+    else:
+        dir_prefix = '{}/scratch/{}/{}/{}/{}/'.format(ns3_path, results_folder, rate, load, experiment)
     file_path = dir_prefix + '{}_EndToEnd_packets.csv'.format(flow_name)
 
     preload_queue_traces(dir_prefix, queue_names)
@@ -4517,6 +4533,13 @@ def upgrade_emd_vs_flows_results_schema(results):
     return upgraded
 
 
+# The one and only 'num_flows' entry an all_flows_only result is pooled onto by
+# aggregate_emd_vs_flows_results (see there) -- never a real flow count (always >=1), so
+# plotting code can check for it unambiguously and label that tick 'all packets' instead of
+# showing this sentinel as if it meant something.
+ALL_FLOWS_ONLY_K = -1
+
+
 def aggregate_emd_vs_flows_results(results_list):
     """Combine per-experiment results (each a dict returned by
     compute_emd_vs_num_tcp_flows_multi_run / loaded from a
@@ -4578,6 +4601,18 @@ def aggregate_emd_vs_flows_results(results_list):
             "Refusing to aggregate experiments computed against different ground truths: {}. "
             "EMDs measured against different ground-truth constructions are not comparable.".format(
                 sorted(groundtruth_methods_seen)))
+
+    # An all_flows_only experiment's own num_flows is just whatever total TCP flow count
+    # that particular (randomly-seeded) experiment happened to receive on the path --
+    # incidental per-experiment noise, not a swept independent variable. Pooling by the
+    # literal value the way a real flow-count sweep is pooled would fragment what should be
+    # one point into several near-identical ones (e.g. 22, 23, 24 flows) purely because
+    # different experiments landed on slightly different counts. Remap every experiment onto
+    # the one shared ALL_FLOWS_ONLY_K sentinel first so they all pool into a single bucket
+    # below; plotting code recognizes the sentinel and labels that tick 'all packets'
+    # instead.
+    if all(r.get('all_flows_only', False) for r in results_list):
+        results_list = [dict(r, num_flows=[ALL_FLOWS_ONLY_K]) for r in results_list]
 
     if len(results_list) == 1:
         result = dict(results_list[0])
@@ -4862,7 +4897,11 @@ def aggregate_emd_vs_flows_results(results_list):
         'num_poisson_observations': results_list[0]['num_poisson_observations'],
         'uniform_series': list(uniform_series),
         'oracle_series': list(oracle_series),
-        'total_flows': max(all_k),
+        # Each experiment's own stored total_flows (not max(all_k), which is the
+        # ALL_FLOWS_ONLY_K sentinel once results_list has been pooled onto it above) -- the
+        # two agree for a real flow-count sweep anyway, since every experiment's own num_flows
+        # tops out at its own total_flows.
+        'total_flows': max(r.get('total_flows', 0) for r in results_list),
         'num_flows': all_k,
         'groundtruth_values': groundtruth_values,
         'groundtruth_mean': float(np.mean(groundtruth_values)) if groundtruth_values.size else np.nan,
@@ -4964,6 +5003,8 @@ def compute_emd_vs_num_tcp_flows_multi_run(
     delay_percentiles=DEFAULT_DELAY_PERCENTILES,
     run_chi_squared_test=True,
     poisson_test_lags=None,
+    differentiationDelay=None,
+    errorRate=None,
 ):
     """Repeat the flow-count EMD sweep `num_runs` times. Each run draws its
     own Poisson-process realization of `num_poisson_observations` switch
@@ -5054,6 +5095,7 @@ def compute_emd_vs_num_tcp_flows_multi_run(
         flow_count_step=flow_count_step, all_flows_only=all_flows_only,
         groundtruth_method=groundtruth_method, delay_percentiles=delay_percentiles,
         run_chi_squared_test=run_chi_squared_test, poisson_test_lags=poisson_test_lags,
+        differentiationDelay=differentiationDelay, errorRate=errorRate,
     )
     dir_prefix = prepared['dir_prefix']
     num_flows = prepared['num_flows']
@@ -5307,17 +5349,26 @@ def _draw_boxplot_family(axis, num_flows, values_by_k, pass_rate_by_k, position_
 
     Pass `fill_color` to fill every box with that one colour instead, for quantities the
     consistency check says nothing about -- it tests the *mean*, so colouring e.g. a
-    percentile-error box by it would imply a verdict the check never made."""
+    percentile-error box by it would imply a verdict the check never made.
+
+    Returns {k: whisker-top y-value} for every k that got a box drawn here -- the actual
+    rendered top of that box's whisker, which can sit well below the raw data's true max
+    since showfliers=False hides anything beyond it as an outlier. A caller anchoring
+    something above the box (e.g. _annotate_all_packets_burstiness) should use this rather
+    than the raw max, which can land outside the axes' own autoscaled view and simply never
+    render."""
     positions, data, colors = [], [], []
+    plotted_k = []
     for k, values, pass_rate in zip(num_flows, values_by_k, pass_rate_by_k):
         if len(values) == 0:
             continue
         positions.append(k + position_offset)
         data.append(values)
+        plotted_k.append(k)
         colors.append(fill_color if fill_color is not None
                        else (pass_color if pass_rate >= pass_threshold else fail_color))
     if not data:
-        return
+        return {}
     bp = axis.boxplot(data, positions=positions, widths=box_width, patch_artist=True,
                        showfliers=False, manage_ticks=False, zorder=2)
     for patch, color in zip(bp['boxes'], colors):
@@ -5334,14 +5385,28 @@ def _draw_boxplot_family(axis, num_flows, values_by_k, pass_rate_by_k, position_
     for median in bp['medians']:
         median.set_color('black')
         median.set_linewidth(2.5)
+    # bp['caps'] alternates (bottom, top) per box, in the same order as `plotted_k`.
+    return {k: bp['caps'][2 * i + 1].get_ydata()[0] for i, k in enumerate(plotted_k)}
 
 
 def _annotate_all_packets_burstiness(axis, num_flows, offset, y_by_k, burstiness_by_k):
-    """Small rotated text label above each all-packets position on a flow-count plot,
-    showing its burstiness (see burstiness_metrics): IDC at one RTT and mean burst
+    """Small horizontal text label right above each all-packets position on a flow-count
+    plot, showing its burstiness (see burstiness_metrics): IDC at one RTT and mean burst
     duration/inter-burst gap. `y_by_k` is the y-value to anchor each label above (the
     all-packets point itself, or the top of its box once aggregated across experiments) --
-    a k with no finite anchor or no burstiness data is simply skipped."""
+    a k with no finite anchor or no burstiness data is simply skipped.
+
+    Horizontal, not rotated: a rotated multi-line block's *width* (the longest line, easily
+    100+ points at this font size) becomes its on-screen *height*, needlessly inflating
+    whatever margin fig.tight_layout() reserves above the axes for it.
+
+    Deliberately does NOT pass `annotation_clip=False`: that flag makes fig.tight_layout()
+    treat the annotation as able to render anywhere, unbounded, and it responds by reserving
+    a huge margin (observed: the axes shrinking to under half the figure height) just in
+    case -- even though `xy` here is always the plotted data's own max, so it is always
+    inside the axes' own view already and never needs clipping protection in the first
+    place. Dropping the flag (the default already keeps it visible) fixes that outsized
+    margin with no change to which labels actually get drawn."""
     if not burstiness_by_k:
         return
     idc = burstiness_by_k.get('idc_1rtt', [])
@@ -5359,9 +5424,9 @@ def _annotate_all_packets_burstiness(axis, num_flows, offset, y_by_k, burstiness
             parts.append('burst_gap={:.3g}ns'.format(gap[i]))
         if not parts:
             continue
-        axis.annotate('\n'.join(parts), xy=(k + offset, y_by_k[i]), xytext=(0, 6),
+        axis.annotate('\n'.join(parts), xy=(k + offset, y_by_k[i]), xytext=(0, 4),
                        textcoords='offset points', ha='center', va='bottom',
-                       fontsize=7, color='0.25', rotation=90, annotation_clip=False, zorder=4)
+                       fontsize=7, color='0.25', zorder=4)
 
 
 def _draw_all_packets_series(axis, num_flows, scalar_by_k, by_experiment, pass_rate_by_k, offset,
@@ -5384,13 +5449,17 @@ def _draw_all_packets_series(axis, num_flows, scalar_by_k, by_experiment, pass_r
     if fill_color is not None:
         pass_color = fail_color = fill_color
     if is_boxplot:
-        _draw_boxplot_family(axis, num_flows, by_experiment, pass_rate_by_k, offset, box_width,
-                             pass_threshold, pass_color, fail_color, _ALL_PACKETS_STYLE,
-                             fill_color=fill_color)
+        whisker_top_by_k = _draw_boxplot_family(
+            axis, num_flows, by_experiment, pass_rate_by_k, offset, box_width,
+            pass_threshold, pass_color, fail_color, _ALL_PACKETS_STYLE, fill_color=fill_color)
         missing = [k for k, values in zip(num_flows, by_experiment) if len(values) == 0]
         handles = [Patch(facecolor='white', edgecolor=_ALL_PACKETS_STYLE['edge_color'], linewidth=4.5,
                           label='All packets of considered flows (boxplot across experiments)')]
-        y_by_k = [max((v for v in values if np.isfinite(v)), default=np.nan) for values in by_experiment]
+        # The rendered whisker top, not the raw max -- showfliers=False hides anything
+        # beyond it as an outlier, and anchoring to a value the box itself doesn't reach can
+        # land outside the axes' own autoscaled view, silently dropping the annotation (see
+        # _draw_boxplot_family).
+        y_by_k = [whisker_top_by_k.get(k, np.nan) for k in num_flows]
     else:
         values = np.asarray(scalar_by_k, dtype=float)
         x = np.asarray(num_flows, dtype=float) + offset
@@ -5631,6 +5700,33 @@ def _metric_percentile(metric):
     return None
 
 
+def _metric_is_relative(metric, normalized):
+    """Whether a plotted (metric, normalized) combination is a fraction/ratio (view-capped at
+    +/-100% by default) rather than an absolute ns quantity (capped at 500ns): normalized EMD,
+    a relative percentile error, or percentile_avg_relative_error's mean relative percentile
+    error -- itself already self-normalized regardless of `normalized`, see
+    _metric_result_keys. Shared by plot_emd_vs_load_by_traffic, plot_emd_vs_burstiness_by_traffic
+    and plot_emd_vs_num_flows_boxplot_by_flow so a metric added to one is classified the same
+    way everywhere, rather than each copy risking its own default-cap misclassification."""
+    return (normalized or metric == 'percentile_avg_relerror'
+            or (isinstance(metric, tuple) and metric[0] == 'percentile_reldiff'))
+
+
+def _set_flow_count_xaxis(axis, num_flows):
+    """x-axis ticks/limits for a flow-count plot (plot_emd_vs_num_flows_boxplot and its
+    percentile/mean-diff/Poisson-split siblings). A pooled all_flows_only result collapses
+    every experiment onto the single ALL_FLOWS_ONLY_K sentinel (see
+    aggregate_emd_vs_flows_results) rather than each experiment's own incidental total flow
+    count, so render that one tick as text ('all packets') instead of the sentinel number,
+    with fixed padding around it since there is no neighboring tick to space against."""
+    axis.set_xticks(num_flows)
+    if list(num_flows) == [ALL_FLOWS_ONLY_K]:
+        axis.set_xticklabels(['all packets'])
+        axis.set_xlim(ALL_FLOWS_ONLY_K - 0.6, ALL_FLOWS_ONLY_K + 0.6)
+    else:
+        axis.set_xlim(min(num_flows) - 0.6, max(num_flows) + 0.6)
+
+
 def _load_plot_series_values(r, i, series_key, normalized=False, metric='emd'):
     """Return (values, pass_rate) for one series spec's `key` at flow-count index `i` of an
     aggregated/single results dict `r` (see plot_emd_vs_load_by_traffic). `series_key` is
@@ -5722,15 +5818,30 @@ _MIN_VISIBLE_FRACTION = 0.5
 _TARGET_VISIBLE_FRACTION = 0.8
 
 
-def _adaptive_view_cap(values, default_cap, signed):
-    """The y-axis view limits for plot_emd_vs_load_by_traffic: `default_cap` (the usual
-    +/-100% or 500ns) unless fewer than _MIN_VISIBLE_FRACTION of `values` would actually
-    fall within it, in which case the cap is raised to whatever value brings
-    _TARGET_VISIBLE_FRACTION of the data into view (its 80th percentile) -- e.g. a
-    heavy-tailed traffic in the mix whose errors mostly exceed the default cap, rather than
-    silently rendering a plot where most of that traffic's boxes are invisibly clipped.
+def _adaptive_view_cap(values_by_series, default_cap, signed):
+    """The y-axis view limits for plot_emd_vs_load_by_traffic / plot_emd_vs_num_flows_boxplot_by_flow:
+    `default_cap` (the usual +/-100% or 500ns) unless fewer than _MIN_VISIBLE_FRACTION of
+    *the whole plot's* pooled values would actually fall within it, in which case the cap is
+    raised to whatever value brings _TARGET_VISIBLE_FRACTION of that pooled data into view
+    (its 80th percentile) -- e.g. a heavy-tailed traffic in the mix whose errors mostly
+    exceed the default cap, rather than silently rendering a plot where most of that
+    traffic's boxes are invisibly clipped.
+
+    Pooled across every box on the plot deliberately (not decided per box): letting a single
+    outlier-heavy box's own 80th percentile set the cap would stretch the shared axis out to
+    cover it and crush every other, better-behaved box into a sliver at the bottom -- worse
+    for the plot as a whole than that one box occasionally reading as clipped at the cap.
+    `values_by_series` is still a list of per-box value arrays (see the call sites), pooled
+    here by concatenation -- so a box backed by many raw points (e.g. per-run values pooled
+    across every run of every experiment) does carry proportionally more weight in the
+    pooled visible_fraction than one backed by few (e.g. one experiment-level value per
+    experiment). A box that is both low-n and genuinely extreme can therefore still end up
+    clipped at the cap with nothing on the plot flagging it -- accepted here as the smaller
+    problem next to blowing out the shared axis for every other box on its behalf.
+
     Never lowers the cap below `default_cap`. Returns (bottom, top, cap_was_widened)."""
-    finite = np.abs(np.asarray(values, dtype=float))
+    finite = (np.concatenate([np.abs(np.asarray(values, dtype=float)) for values in values_by_series])
+              if values_by_series else np.array([]))
     finite = finite[np.isfinite(finite)]
     cap = default_cap
     widened = False
@@ -5838,6 +5949,7 @@ def plot_emd_vs_load_by_traffic(results_by_traffic_load, k, output_path, pass_th
         for si, series_spec in enumerate(series_specs):
             style = dict(edge_color=color, edge_style=series_spec['edge_style'])
             values_by_load, pass_rate_by_load = [], []
+            burstiness_by_load = {}
             for load in loads:
                 r = results_by_traffic_load.get((traffic, load))
                 if r is None or not r['num_flows'] or (not use_max_k and k not in r['num_flows']):
@@ -5849,22 +5961,27 @@ def plot_emd_vs_load_by_traffic(results_by_traffic_load, k, output_path, pass_th
                                                              normalized=normalized, metric=metric)
                 values_by_load.append(values)
                 pass_rate_by_load.append(pass_rate)
-                all_plotted_values.extend(values)
+                all_plotted_values.append(values)
                 if series_spec['key'] == 'all_packets' and len(values):
                     burstiness = (r.get('burstiness_all_packets') or {})
-                    burstiness_annotations.append((
-                        load + offsets[n_series * ti + si], max(values),
-                        {field: [vals[i] if i < len(vals) else float('nan')]
-                         for field, vals in burstiness.items()}))
+                    burstiness_by_load[load] = {field: [vals[i] if i < len(vals) else float('nan')]
+                                                 for field, vals in burstiness.items()}
 
             if any(len(v) for v in values_by_load):
                 any_data = True
-            _draw_boxplot_family(axis, loads, values_by_load, pass_rate_by_load,
-                                 offsets[n_series * ti + si], box_width, pass_threshold, pass_color,
-                                 fail_color, style, edge_width=series_spec.get('edge_width', 4.5))
-
-    for x, y, burstiness in burstiness_annotations:
-        _annotate_all_packets_burstiness(axis, [x], 0.0, [y], burstiness)
+            # Anchor each burstiness label at the box's actual rendered whisker top (returned
+            # here), not the raw max computed above -- showfliers=False can hide the true max
+            # as an outlier beyond that whisker, and anchoring there instead lands outside the
+            # axes' own autoscaled view, silently dropping the annotation (see
+            # _draw_boxplot_family / _draw_all_packets_series).
+            whisker_top_by_load = _draw_boxplot_family(
+                axis, loads, values_by_load, pass_rate_by_load, offsets[n_series * ti + si],
+                box_width, pass_threshold, pass_color, fail_color, style,
+                edge_width=series_spec.get('edge_width', 4.5))
+            for load, burstiness in burstiness_by_load.items():
+                if load in whisker_top_by_load:
+                    burstiness_annotations.append((
+                        load + offsets[n_series * ti + si], whisker_top_by_load[load], burstiness))
 
     for series_spec in series_specs:
         legend_handles.append(Line2D([0], [0], color='black', linestyle=series_spec['edge_style'],
@@ -5898,33 +6015,178 @@ def plot_emd_vs_load_by_traffic(results_by_traffic_load, k, output_path, pass_th
     # truth's own p_q) default to +/-100%; absolute ones (raw EMD ns, or a percentile error in
     # ns) default to 500ns. Percentile errors are signed (ground truth - family) so their cap
     # is symmetric; EMD is never negative, so only its top is ever clipped. Unlike a fixed
-    # cap, this is data-driven: if fewer than half the plotted values would actually be
-    # visible at the default, the cap widens to bring 80% of them into view instead of
-    # silently clipping most of one traffic's boxes off the top of the plot (see
-    # _adaptive_view_cap) -- e.g. a heavy-tailed workload mixed in with others that comfortably
-    # fit the default. The note only appears when the (possibly widened) cap still clips
-    # something.
-    is_relative = normalized or (isinstance(metric, tuple) and metric[0] == 'percentile_reldiff')
+    # cap, this is data-driven per box (see _adaptive_view_cap): if fewer than half a given
+    # box's own values would actually be visible at the default, the cap widens to bring 80%
+    # of THAT box into view -- e.g. a heavy-tailed workload mixed in with others that
+    # comfortably fit the default.
+    is_relative = _metric_is_relative(metric, normalized)
     signed = isinstance(metric, tuple)
     default_cap = 1.0 if is_relative else 500.0
     bottom, cap, cap_widened = _adaptive_view_cap(all_plotted_values, default_cap, signed)
-    flat_values = np.asarray(all_plotted_values, dtype=float)
-    finite_values = flat_values[np.isfinite(flat_values)]
-    # if finite_values.size and (np.max(finite_values) > cap or (signed and np.min(finite_values) < bottom)):
-    #     note = 'y-axis capped at {}{:g}{}'.format(
-    #         '+/-' if signed else '', cap * (100 if is_relative else 1), '%' if is_relative else 'ns')
-    #     if cap_widened:
-    #         note += ' (widened from the usual {}{:g}{} -- most data exceeded that)'.format(
-    #             '+/-' if signed else '', default_cap * (100 if is_relative else 1), '%' if is_relative else 'ns')
-    #     note += '; some boxes/whiskers still extend beyond\n(see the aggregated results for the full range)'
-    #     axis.text(0.995, 0.01, note, transform=axis.transAxes, ha='right', va='top', fontsize=14,
-    #                style='italic', bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
     axis.set_ylim(bottom=bottom, top=cap)
+
+    # Drawn only now that the view is capped: a burstiness label anchored above its box's own
+    # whisker top can still land above `cap` (a box can legitimately be taller than the capped
+    # view), and annotate() clips to the axes' CURRENT limits at draw/save time regardless of
+    # when it was called -- so anchoring before
+    # this point can silently drop a label the same way an uncapped raw max did before.
+    for x, y, burstiness in burstiness_annotations:
+        _annotate_all_packets_burstiness(axis, [x], 0.0, [min(max(y, bottom), cap)], burstiness)
 
     axis.set_xticks(loads)
     if loads:
         pad = max(np.min(np.diff(loads)) * 0.6, span / 2 + box_width) if len(loads) > 1 else max(span / 2, 0.05)
         axis.set_xlim(min(loads) - pad, max(loads) + pad)
+    axis.grid(True, alpha=0.35, axis='y')
+    axis.legend(handles=legend_handles, fontsize=16, loc='best', ncol=2)
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=150)
+    plt.close(fig)
+    return output_path
+
+
+def plot_emd_vs_num_flows_boxplot_by_flow(results_by_flow, output_path, pass_threshold=0.9, title=None,
+                                           series_specs=None, normalized=False, metric='emd'):
+    """Multi-flow comparison at every flow count k: x-axis is the number of TCP flows
+    considered, y-axis is the EMD (or other `metric`) to the reconstructed ground-truth
+    delay CDF -- the same quantity plot_emd_vs_num_flows_boxplot draws for one flow, but
+    with several named e2e flows drawn side by side instead of one (e.g. the reverse
+    experiment's TBF-differentiated flow R0H0R2H3 against its undifferentiated control
+    R0H1R2H3), one box-group per flow per k (len(series_specs) x len(results_by_flow)
+    boxes at each k tick).
+
+    Structurally this is plot_emd_vs_load_by_traffic with the x-axis swapped from load to
+    flow count and the group axis swapped from traffic to (e2e) flow name -- same
+    conventions apply: colour identifies the flow (_TRAFFIC_COLORS, reused here for
+    "which named flow" rather than "which traffic"), the border identifies the series
+    (one of the 4 canonical linestyles per _load_series_spec/_STYLE_ORDER, since colour is
+    already spent on the flow), and fill is only ever the pass/fail colour.
+
+    `series_specs` is a list of {'key', 'edge_style', 'label'} dicts (see
+    _load_plot_series_values for valid `key`s); defaults to
+    all_packets_vs_sampled_load_plot_series over whichever Poisson-adaptive methods the
+    results actually contain. `metric`/`normalized` select the plotted quantity exactly as
+    in plot_emd_vs_load_by_traffic: EMD raw/normalized, 'percentile_avg_relerror', or
+    ('percentile_diff'|'percentile_reldiff', q) for one percentile's signed/relative error.
+
+    `results_by_flow` is a dict {flow_name: results} where each `results` is what
+    aggregate_emd_vs_flows_results (or a single run_emd_vs_flows_experiment call) produced
+    for that flow. The k axis is the union of every flow's own num_flows; a flow missing a
+    given k, or with no data there for a given series, is simply left without a box there."""
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    results_by_flow = {flow: upgrade_emd_vs_flows_results_schema(r) for flow, r in results_by_flow.items()}
+    if not series_specs:
+        methods = []
+        for r in results_by_flow.values():
+            for name in r['subsampling_methods']:
+                if name not in methods:
+                    methods.append(name)
+        series_specs = all_packets_vs_sampled_load_plot_series(methods or ['find_samples_path'])
+
+    flows = sorted(results_by_flow)
+    all_k = sorted(set().union(*(set(r['num_flows']) for r in results_by_flow.values())))
+    pass_color, fail_color = 'tab:green', 'tab:red'
+
+    n_flows = max(len(flows), 1)
+    n_series = max(len(series_specs), 1)
+    offsets, box_width, span = _load_plot_layout(n_flows, all_k, n_series)
+
+    fig, axis = plt.subplots(figsize=_load_plot_figsize(n_flows, n_series, len(all_k)))
+    legend_handles = [
+        Patch(facecolor=pass_color, edgecolor='black', alpha=0.85,
+              label='Consistency check passed (>={:.0f}%)'.format(pass_threshold * 100)),
+        Patch(facecolor=fail_color, edgecolor='black', alpha=0.85,
+              label='Consistency check failed (<{:.0f}%)'.format(pass_threshold * 100)),
+    ]
+
+    any_data = False
+    all_plotted_values = []
+    burstiness_annotations = []
+    for fi, flow in enumerate(flows):
+        color = _TRAFFIC_COLORS[fi % len(_TRAFFIC_COLORS)]
+        legend_handles.append(Patch(facecolor='white', edgecolor=color, linewidth=4.5, label=flow))
+        r = results_by_flow[flow]
+        for si, series_spec in enumerate(series_specs):
+            style = dict(edge_color=color, edge_style=series_spec['edge_style'])
+            values_by_k, pass_rate_by_k = [], []
+            burstiness_by_tick = {}
+            for k in all_k:
+                if k not in r['num_flows']:
+                    values_by_k.append([])
+                    pass_rate_by_k.append(0.0)
+                    continue
+                i = r['num_flows'].index(k)
+                values, pass_rate = _load_plot_series_values(r, i, series_spec['key'],
+                                                             normalized=normalized, metric=metric)
+                values_by_k.append(values)
+                pass_rate_by_k.append(pass_rate)
+                all_plotted_values.append(values)
+                if series_spec['key'] == 'all_packets' and len(values):
+                    burstiness = (r.get('burstiness_all_packets') or {})
+                    burstiness_by_tick[k] = {field: [vals[i] if i < len(vals) else float('nan')]
+                                              for field, vals in burstiness.items()}
+
+            if any(len(v) for v in values_by_k):
+                any_data = True
+            # Anchor each burstiness label at the box's actual rendered whisker top (returned
+            # here), not the raw max computed above -- see the identical fix in
+            # plot_emd_vs_load_by_traffic / _draw_all_packets_series.
+            whisker_top_by_tick = _draw_boxplot_family(
+                axis, all_k, values_by_k, pass_rate_by_k, offsets[n_series * fi + si],
+                box_width, pass_threshold, pass_color, fail_color, style,
+                edge_width=series_spec.get('edge_width', 4.5))
+            for k, burstiness in burstiness_by_tick.items():
+                if k in whisker_top_by_tick:
+                    burstiness_annotations.append((
+                        k + offsets[n_series * fi + si], whisker_top_by_tick[k], burstiness))
+
+    for series_spec in series_specs:
+        legend_handles.append(Line2D([0], [0], color='black', linestyle=series_spec['edge_style'],
+                                      linewidth=series_spec.get('edge_width', 3),
+                                      label='{} (border)'.format(series_spec['label'])))
+
+    if not any_data:
+        print("plot_emd_vs_num_flows_boxplot_by_flow: no data, writing empty plot")
+
+    series_names = ' vs. '.join(s['label'] for s in series_specs)
+    flow_names_desc = ' vs. '.join(flows)
+    y_label = _metric_result_keys(metric, normalized)[-1]
+    quantity_percentile = _metric_percentile(metric)
+    if quantity_percentile is not None:
+        quantity_name = 'p{} error{}'.format(quantity_percentile,
+                                              ' (relative)' if metric[0].endswith('reldiff') else ' (ns)')
+    else:
+        quantity_name = 'EMD relative to mean queuing delay' if normalized else 'EMD'
+    default_title = '{} vs number of TCP flows, {} ({})'.format(quantity_name, flow_names_desc, series_names)
+    axis.set_title(title or default_title, fontsize=34)
+    axis.set_xlabel('Number of TCP flows considered')
+    axis.set_ylabel(y_label)
+    if quantity_percentile is not None:
+        # Zero is "the family's tail matches the ground truth's" -- the reference the whole
+        # plot is read against, unlike EMD where zero is just the axis floor.
+        axis.axhline(0, color='black', linewidth=2, linestyle=':', zorder=1)
+
+    # Same adaptive view cap as plot_emd_vs_load_by_traffic -- see _adaptive_view_cap.
+    is_relative = _metric_is_relative(metric, normalized)
+    signed = isinstance(metric, tuple)
+    default_cap = 1.0 if is_relative else 500.0
+    bottom, cap, cap_widened = _adaptive_view_cap(all_plotted_values, default_cap, signed)
+    axis.set_ylim(bottom=bottom, top=cap)
+
+    # Drawn only now that the view is capped -- see the identical comment in
+    # plot_emd_vs_load_by_traffic for why (a whisker top can still exceed a deliberately
+    # capped view, and annotate() clips to the axes' CURRENT limits at draw/save time).
+    for x, y, burstiness in burstiness_annotations:
+        _annotate_all_packets_burstiness(axis, [x], 0.0, [min(max(y, bottom), cap)], burstiness)
+
+    axis.set_xticks(all_k)
+    if all_k == [ALL_FLOWS_ONLY_K]:
+        axis.set_xticklabels(['all packets'])
+        axis.set_xlim(ALL_FLOWS_ONLY_K - max(span / 2, 0.5), ALL_FLOWS_ONLY_K + max(span / 2, 0.5))
+    elif all_k:
+        pad = max(np.min(np.diff(all_k)) * 0.6, span / 2 + box_width) if len(all_k) > 1 else max(span / 2, 0.5)
+        axis.set_xlim(min(all_k) - pad, max(all_k) + pad)
     axis.grid(True, alpha=0.35, axis='y')
     axis.legend(handles=legend_handles, fontsize=16, loc='best', ncol=2)
     fig.tight_layout()
@@ -6137,7 +6399,7 @@ def plot_emd_vs_burstiness_by_traffic(results_by_traffic_load, k, burstiness_fie
     # Same fixed-scale y-axis capping as plot_emd_vs_load_by_traffic (see there for the
     # rationale) -- kept silent (no "capped at..." annotation) to match that plot's current
     # convention.
-    is_relative = normalized or (isinstance(metric, tuple) and metric[0] == 'percentile_reldiff')
+    is_relative = _metric_is_relative(metric, normalized)
     signed = isinstance(metric, tuple)
     cap = 1.0 if is_relative else 500.0
     bottom = -cap if signed else 0.0
@@ -6271,7 +6533,7 @@ def plot_emd_vs_num_flows_boxplot(results, output_path, title="EMD vs number of 
     -- the view that stays comparable across offered loads.
 
     Each all-packets position is also annotated with its burstiness (IDC at one RTT, mean
-    burst duration/inter-burst gap -- see burstiness_metrics), rotated vertically above the
+    burst duration/inter-burst gap -- see burstiness_metrics), just above the
     point/box (_annotate_all_packets_burstiness), when results['burstiness_all_packets']
     has it (absent for pre-burstiness-metrics results -- see backfill_burstiness_metrics).
 
@@ -6363,8 +6625,7 @@ def plot_emd_vs_num_flows_boxplot(results, output_path, title="EMD vs number of 
     axis.set_title(title, fontsize=34)
     axis.set_xlabel('Number of TCP flows considered')
     axis.set_ylabel(metric_label)
-    axis.set_xticks(num_flows)
-    axis.set_xlim(min(num_flows) - 0.6, max(num_flows) + 0.6)
+    _set_flow_count_xaxis(axis, num_flows)
     axis.grid(True, alpha=0.35, axis='y')
     if y_max is not None:
         all_packets_values = ([np.asarray(v, dtype=float) for v in emd_all_by_experiment] if all_packets_is_boxplot
@@ -6449,8 +6710,7 @@ def plot_burstiness_vs_num_flows(results, burstiness_field, output_path, title=N
     axis.set_title(title or '{} vs number of TCP flows'.format(y_label), fontsize=34)
     axis.set_xlabel('Number of TCP flows considered')
     axis.set_ylabel(y_label)
-    axis.set_xticks(num_flows)
-    axis.set_xlim(min(num_flows) - 0.6, max(num_flows) + 0.6)
+    _set_flow_count_xaxis(axis, num_flows)
     axis.grid(True, alpha=0.35, axis='y')
     fig.tight_layout()
     fig.savefig(output_path, dpi=150)
@@ -6557,8 +6817,7 @@ def plot_mean_diff_vs_num_flows(results, output_path, title="Switch vs. packet m
     axis.set_title(title, fontsize=34)
     axis.set_xlabel('Number of TCP flows considered')
     axis.set_ylabel("Switch samples mean delay - packet mean delay (ns)")
-    axis.set_xticks(num_flows)
-    axis.set_xlim(min(num_flows) - 0.6, max(num_flows) + 0.6)
+    _set_flow_count_xaxis(axis, num_flows)
     axis.grid(True, alpha=0.35, axis='y')
     if y_limit is not None:
         all_values = np.concatenate([np.asarray(v, dtype=float) for v in diff_all_by_run]
@@ -6676,8 +6935,7 @@ def plot_percentile_diff_vs_num_flows(results, percentile, output_path, relative
         y_label, gt_note), fontsize=34)
     axis.set_xlabel('Number of TCP flows considered')
     axis.set_ylabel(y_label)
-    axis.set_xticks(num_flows)
-    axis.set_xlim(min(num_flows) - 0.6, max(num_flows) + 0.6)
+    _set_flow_count_xaxis(axis, num_flows)
     axis.grid(True, alpha=0.35, axis='y')
     if relative:
         axis.yaxis.set_major_formatter(PercentFormatter(xmax=1.0))
@@ -6831,8 +7089,7 @@ def plot_poisson_test_split_vs_num_flows(results, output_path, test_name='ad', q
                     fontsize=34)
     axis.set_xlabel('Number of TCP flows considered')
     axis.set_ylabel(y_label)
-    axis.set_xticks(num_flows)
-    axis.set_xlim(min(num_flows) - 0.6, max(num_flows) + 0.6)
+    _set_flow_count_xaxis(axis, num_flows)
     axis.grid(True, alpha=0.35, axis='y')
     if quantity == 'emd_normalized' and y_max is not None:
         axis.set_ylim(bottom=0, top=y_max)
@@ -6890,6 +7147,10 @@ def save_emd_vs_flows_results_text(results, output_path):
     uniform_series = results.get('uniform_series', [])
     oracle_series = results.get('oracle_series', [])
     num_experiments = results.get('num_experiments', 1)
+    # Display-only: a pooled all_flows_only result's 'k' is the ALL_FLOWS_ONLY_K sentinel
+    # (see aggregate_emd_vs_flows_results), not a real flow count -- show 'all' instead of
+    # that sentinel number in every per-k table below.
+    num_flows_display = ['all' if k == ALL_FLOWS_ONLY_K else k for k in results['num_flows']]
     emd_all_by_experiment = results.get('emd_all_packets_by_experiment')
     emd_all_by_experiment_norm = results.get('emd_all_packets_by_experiment_normalized')
     all_packets_is_aggregated = bool(emd_all_by_experiment) and num_experiments > 1
@@ -7008,7 +7269,7 @@ def save_emd_vs_flows_results_text(results, output_path):
         "IDC(1RTT)", "burst_dur[ns]", "burst_gap[ns]")
     lines.append(header)
     lines.append("-" * len(header))
-    for i, k in enumerate(results['num_flows']):
+    for i, k in enumerate(num_flows_display):
         if all_packets_is_aggregated:
             emd_all_str = _stat(emd_all_by_experiment[i])
             emd_all_norm_str = _stat(emd_all_by_experiment_norm[i], fmt="{:.4f}")
@@ -7040,7 +7301,7 @@ def save_emd_vs_flows_results_text(results, output_path):
             "k", "n_samp", "EMD [ns]", "relEMD", "pass", "mean_diff [ns]", "n_pkts")
         lines.append(header)
         lines.append("-" * len(header))
-        for i, k in enumerate(results['num_flows']):
+        for i, k in enumerate(num_flows_display):
             lines.append("{:>3} | {:>6} | {:>24} | {:>24} | {:>8.0%} | {:>24} | {:>20}".format(
                 k, len(emd_sampled_by_run[method][i]),
                 _stat(emd_sampled_by_run[method][i]),
@@ -7067,7 +7328,7 @@ def save_emd_vs_flows_results_text(results, output_path):
             "k", "n_runs", "EMD [ns]", "relEMD", "pass", "mean_diff [ns]", "n_pkts")
         lines.append(header)
         lines.append("-" * len(header))
-        for i, k in enumerate(results['num_flows']):
+        for i, k in enumerate(num_flows_display):
             lines.append("{:>3} | {:>6} | {:>24} | {:>24} | {:>8.0%} | {:>24} | {:>20}".format(
                 k, len(emd_oracle_by_run[key][i]),
                 _stat(emd_oracle_by_run[key][i]),
@@ -7083,7 +7344,7 @@ def save_emd_vs_flows_results_text(results, output_path):
             "k", "n_samp", "EMD [ns]", "relEMD", "pass", "mean_diff [ns]", "n_pkts")
         lines.append(header)
         lines.append("-" * len(header))
-        for i, k in enumerate(results['num_flows']):
+        for i, k in enumerate(num_flows_display):
             lines.append("{:>3} | {:>6} | {:>24} | {:>24} | {:>8.0%} | {:>24} | {:>20}".format(
                 k, len(emd_uniform_by_run[key][i]),
                 _stat(emd_uniform_by_run[key][i]),
@@ -7128,7 +7389,7 @@ def save_emd_vs_flows_results_text(results, output_path):
             header = "{:>3} | {:>6} | {:>14} | {:>18}".format("k", "n", "pass(AD)", "pass(AD + chi2)")
             lines.append(header)
             lines.append("-" * len(header))
-            for i, k in enumerate(results['num_flows']):
+            for i, k in enumerate(num_flows_display):
                 ad_flags, both_flags = get(i)
                 ad_known = [f for f in ad_flags if f is not None]
                 both_known = [f for f in both_flags if f is not None]
@@ -7168,7 +7429,7 @@ def save_emd_vs_flows_results_text(results, output_path):
                 header = "{:>3}".format("k") + "".join(" | {:>18}".format(tag) for tag, _, _ in families)
                 lines.append(header)
                 lines.append("-" * len(header))
-                for i, k in enumerate(results['num_flows']):
+                for i, k in enumerate(num_flows_display):
                     row = "{:>3}".format(k)
                     for _tag, key, _label in families:
                         values, _ = _load_plot_series_values(results, i, key, metric=(kind, q))
@@ -7203,7 +7464,7 @@ def save_emd_vs_flows_results_text(results, output_path):
             header = "{:>3}".format("k") + "".join(" | {:>18}".format(tag) for tag, _, _ in families)
             lines.append(header)
             lines.append("-" * len(header))
-            for i, k in enumerate(results['num_flows']):
+            for i, k in enumerate(num_flows_display):
                 row = "{:>3}".format(k)
                 for _tag, key, _label in families:
                     values, _ = _load_plot_series_values(results, i, key, normalized=normalized, metric=kind)
