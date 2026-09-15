@@ -31,7 +31,16 @@ successProb_timeAvg_vars = ['event']
 # successProb_timeAvg_vars = ['probability']
 nonMarkingProb_timeAvg_vars = ['event']
 min_sample_size = 30
-DelayConsistencyGaurantee = 0.40 # we can tolerate up to 40% difference between the end-to-end delay and the sum of per-segment delays, with 95% confidence
+# The relative error the consistency check guarantees: we tolerate up to this much
+# difference between the end-to-end delay and the sum of per-segment delays, with 95%
+# confidence. It sets the minimum e2e sample size every check needs
+# (Utils.calc_min_e2e_samples), so it changes what a run produces, not just how strictly the
+# result is judged -- which is why it is part of the output path
+# (Utils.delay_consistency_guarantee_tag). Override per run with
+# --delay-consistency-guarantee rather than editing this line; __main__ assigns the parsed
+# value back here so the non-EMD analysis paths below pick it up too. Kept at the historical
+# 0.40 so an un-flagged run reproduces the results already on disk.
+DelayConsistencyGaurantee = DEFAULT_DELAY_CONSISTENCY_GUARANTEE
 
 def check_MaxEpsilon_ineq_delay(endToEnd_statistics, samples_paths_aggregated_statistics):
     if abs(endToEnd_statistics - samples_paths_aggregated_statistics['DelayMean']) / samples_paths_aggregated_statistics['DelayMean'] <= samples_paths_aggregated_statistics['MaxEpsilonDelay']:
@@ -714,7 +723,21 @@ def __main__():
                          "per-run switch statistics, so the algorithms are compared with no extra run-to-run "
                          "noise between them, and each becomes its own plotted family. Always part of the "
                          "output filename tag (several joined with '+') so different configurations' outputs "
-                         "for the same traffic/rate/load/experiment don't collide.")
+                         "for the same traffic/rate/load/experiment don't collide. "
+                         "The '..._growing_window' variants (one per base sampler) restrict sampling to "
+                         "the *shortest prefix* of the steady window that can supply the minimum required "
+                         "sample size (Utils.calc_min_e2e_samples, driven by DelayConsistencyGaurantee): "
+                         "they try [steadyStart, steadyStart+5ms], grow by 5ms "
+                         "(--growing-window-step-ms) whenever that fails, stop at the first window that "
+                         "yields a valid Poisson subsample of exactly that many samples, and skip the "
+                         "consistency check entirely if no window up to steadyEnd does. Each candidate "
+                         "window is evaluated entirely within itself: its own switch-side Poisson "
+                         "statistics (redrawn at the same probing RATE, so a shorter window gets "
+                         "proportionally fewer observations and therefore demands more e2e samples), its "
+                         "own rebuilt ground truth, and its own rate-matched uniform baseline and "
+                         "ideal-Poisson-probe ceiling -- no quantity in the comparison ever comes from a "
+                         "different window. The monitoring window each run needed is recorded per run "
+                         "('window_duration_sampled_by_run') and reported in the results text summary.")
     parser.add_argument("--groundtruth-method", dest="groundtruth_methods", nargs='+',
                     default=["simultaneous"], metavar="METHOD",
                     choices=list(GROUNDTRUTH_METHODS.keys()),
@@ -756,6 +779,30 @@ def __main__():
                          "Poisson-adaptive method and every rate-matched uniform baseline. The EMD is a "
                          "single number for the whole distribution and can hide a misplaced tail, which "
                          "is the part delay SLOs are written against. Default p90 and p99.")
+    parser.add_argument("--delay-consistency-guarantee", dest="delay_consistency_guarantee", type=float,
+                    default=DEFAULT_DELAY_CONSISTENCY_GUARANTEE, metavar="FRACTION",
+                    help="The relative error the consistency check guarantees: the largest tolerated "
+                         "difference between the end-to-end delay and the sum of per-segment delays, at "
+                         "95%% confidence (default %(default)s). This is not just a pass/fail threshold -- "
+                         "it sets the minimum e2e sample size every check needs "
+                         "(Utils.calc_min_e2e_samples), so it changes the samples drawn, the window a "
+                         "growing-window method settles on, and every EMD in the result. It is therefore "
+                         "part of the output path as a '_g<percent>' tag (e.g. 0.2 -> '_g20'), except at "
+                         "the historical %(default)s which stays untagged so existing results keep their "
+                         "paths. With --aggregate-emd-vs-flows it selects which guarantee's results to "
+                         "read. Tighter is not always reachable: at 0.2 the required sample size is ~5.5x "
+                         "the 0.4 one, which find_samples_path cannot Poissonize (see the "
+                         "NOTHING CERTIFIED banner in the results text file).")
+    parser.add_argument("--growing-window-step-ms", dest="growing_window_step_ms", type=float,
+                    default=GROWING_WINDOW_STEP_NS / 1e6, metavar="MS",
+                    help="Step by which the growing-window subsampling methods extend their "
+                         "monitoring window (default 5ms). Only used by "
+                         "--subsampling-method find_samples_path_growing_window / "
+                         "find_samples_path_intensity_growing_window: they try "
+                         "[steadyStart, steadyStart+step], then +2*step, and so on, and stop at the "
+                         "first window whose own switch-side statistics and packets can supply the "
+                         "minimum required sample size. A smaller step answers 'how long must we "
+                         "watch?' more precisely, at the cost of more candidate windows to evaluate.")
     parser.add_argument("--output-suffix", dest="output_suffix", default='', metavar="SUFFIX",
                     help="Appended to the <config_tag> output folder with --emd-vs-flows (e.g. "
                          "'_test' writes <config_tag>_test/ instead of <config_tag>/) and, with "
@@ -766,6 +813,12 @@ def __main__():
                          "exactly as before.")
 
     args = parser.parse_args()
+    # The non-EMD analysis paths (analyze_single_experiment) read the module-level constant
+    # directly, so bind the parsed value there once rather than threading it through every
+    # signature in this file; the EMD-vs-flows path is passed it explicitly as well, since
+    # it also needs it for the output tag.
+    global DelayConsistencyGaurantee
+    DelayConsistencyGaurantee = args.delay_consistency_guarantee
     config = configparser.ConfigParser()
     config.read('../Results/results_{}/Parameters.config'.format(args.dir))
     steadyStart = convert_to_float(config.get('Settings', 'steadyStart')) * 1e9
@@ -773,14 +826,15 @@ def __main__():
     steadyEnd = convert_to_float(config.get('Settings', 'steadyEnd')) * 1e9
     # steadyEnd = 0.5 * 1e9
     experiments = int(config.get('Settings', 'experiments'))
-    # experiments = 1
+    experiments = 1
     serviceRateScales = [float(x) for x in config.get('Settings', 'serviceRateScales').split(',')]
     # serviceRateScales = [0.5]
     loads = [float(x) for x in config.get('Settings', 'load').split(',')]
     loads = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.95]
+    loads = [0.8]
     traffics = config.get('Settings', 'traffic').split(',')
     traffics = ["Google_AllRPC", "Fabricated_Heavy_Head", "Fabricated_Heavy_Middle", "Google_SearchRPC", "Facebook_HadoopDist_All"]
-    # traffics = ["Google_AllRPC"]
+    traffics = ["Google_AllRPC"]
     errorRates = [float(x) for x in config.get('Settings', 'errorRate').split(',')]
     # errorRates = [0.1, 0.3, 0.5, 0.7, 0.9]
     # errorRates = [0.1]
@@ -801,6 +855,7 @@ def __main__():
                             subsampling_methods=args.subsampling_methods,
                             groundtruth_method=groundtruth_method,
                             all_flows_only=args.all_flows_only,
+                            delay_consistency_guarantee=args.delay_consistency_guarantee,
                             output_suffix=args.output_suffix,
                         )
                 continue
@@ -827,6 +882,8 @@ def __main__():
                                         all_flows_only=args.all_flows_only,
                                         delay_percentiles=args.delay_percentiles,
                                         run_chi_squared_test=args.run_chi_squared_test,
+                                        growing_window_step_ns=args.growing_window_step_ms * 1e6,
+                                        delay_consistency_guarantee=args.delay_consistency_guarantee,
                                         output_suffix=args.output_suffix,
                                     )
                             print("Traffic {} Rate {} {} {} EMD-vs-flows done".format(traffic, rate, load, experiments))
@@ -857,6 +914,7 @@ def __main__():
                                         subsampling_methods=args.subsampling_methods,
                                         groundtruth_method=groundtruth_method,
                                         all_flows_only=args.all_flows_only,
+                                        delay_consistency_guarantee=args.delay_consistency_guarantee,
                                         output_suffix=args.output_suffix,
                                         differentiationDelay=fraction, errorRate=errorRate,
                                     )
@@ -868,6 +926,7 @@ def __main__():
                                             subsampling_methods=args.subsampling_methods,
                                             groundtruth_method=groundtruth_method,
                                             all_flows_only=args.all_flows_only,
+                                            delay_consistency_guarantee=args.delay_consistency_guarantee,
                                             output_suffix=args.output_suffix,
                                             differentiationDelay=fraction, errorRate=errorRate,
                                         )
@@ -877,6 +936,7 @@ def __main__():
                                     subsampling_methods=args.subsampling_methods,
                                     groundtruth_method=groundtruth_method,
                                     all_flows_only=args.all_flows_only,
+                                    delay_consistency_guarantee=args.delay_consistency_guarantee,
                                     output_suffix=args.output_suffix,
                                     differentiationDelay=fraction, errorRate=errorRate,
                                 )
@@ -909,6 +969,8 @@ def __main__():
                                                 all_flows_only=args.all_flows_only,
                                                 delay_percentiles=args.delay_percentiles,
                                                 run_chi_squared_test=args.run_chi_squared_test,
+                                                growing_window_step_ns=args.growing_window_step_ms * 1e6,
+                                                delay_consistency_guarantee=args.delay_consistency_guarantee,
                                                 output_suffix=args.output_suffix,
                                                 differentiationDelay=fraction, errorRate=errorRate,
                                             )
@@ -926,7 +988,7 @@ def __main__():
                     print("Rate {} done".format(rate))
                 print("Traffic {} done".format(traffic))
 
-def run_emd_vs_flows_experiment(rate, steadyStart, steadyEnd, confidenceValue, results_folder, config, experiment=0, ns3_path=__ns3_path, load=None, flow_name='R0H0R2H3', queue_names=None, path=0, delay_cdf_sample_interval_ns=90, num_runs=100, num_poisson_observations=9000, pass_threshold=0.9, num_workers=1, emd_y_max=None, mean_diff_y_limit=None, flow_count_step=1, all_flows_only=False, subsampling_methods='find_samples_path', groundtruth_method='simultaneous', delay_percentiles=DEFAULT_DELAY_PERCENTILES, run_chi_squared_test=True, output_suffix='', differentiationDelay=None, errorRate=None):
+def run_emd_vs_flows_experiment(rate, steadyStart, steadyEnd, confidenceValue, results_folder, config, experiment=0, ns3_path=__ns3_path, load=None, flow_name='R0H0R2H3', queue_names=None, path=0, delay_cdf_sample_interval_ns=90, num_runs=100, num_poisson_observations=9000, pass_threshold=0.9, num_workers=1, emd_y_max=None, mean_diff_y_limit=None, flow_count_step=1, all_flows_only=False, subsampling_methods='find_samples_path', groundtruth_method='simultaneous', delay_percentiles=DEFAULT_DELAY_PERCENTILES, run_chi_squared_test=True, growing_window_step_ns=GROWING_WINDOW_STEP_NS, delay_consistency_guarantee=None, output_suffix='', differentiationDelay=None, errorRate=None):
     """Reconstruct the network queuing delay CDF once (ground truth), then repeat `num_runs` times: draw
     `num_poisson_observations` fresh Poisson-process observation instants at the path's switches, derive the
     per-segment aggregated delay statistics from them, and grow the set of considered TCP flows of `flow_name`
@@ -1001,6 +1063,16 @@ def run_emd_vs_flows_experiment(rate, steadyStart, steadyEnd, confidenceValue, r
     if queue_names is None:
         queue_names = ["T0A0", "A0T2", "T2H3"]
     subsampling_methods = normalize_subsampling_methods(subsampling_methods)
+    # A growing-window method analyzes everything inside the window its search settles on,
+    # so it cannot share a run with another method (see Utils.growing_window_method_in);
+    # checked here so a CLI typo fails immediately rather than after loading the traces.
+    growing_window_method_in(subsampling_methods)
+    # Resolved once: the same value feeds the computation and the output tag, so a caller
+    # passing the argument explicitly can never end up with a path that claims one guarantee
+    # and numbers computed at another. None means "whatever the module-level default is",
+    # which __main__ has already bound to --delay-consistency-guarantee.
+    if delay_consistency_guarantee is None:
+        delay_consistency_guarantee = DelayConsistencyGaurantee
     hostToTorLinkRate = convert_to_float(config.get('Settings', 'hostToTorLinkRate')) * 1e-3
     torToAggLinkRate = convert_to_float(config.get('Settings', 'torToAggLinkRate')) * rate * 1e-3
     linkDelay = convert_to_float(config.get('Settings', 'hostToTorLinkDelay')) * 1e6
@@ -1009,19 +1081,22 @@ def run_emd_vs_flows_experiment(rate, steadyStart, steadyEnd, confidenceValue, r
 
     results = compute_emd_vs_num_tcp_flows_multi_run(
         ns3_path, results_folder, rate, load, experiment, flow_name, queue_names, linkDelays, linkRates,
-        steadyStart, steadyEnd, confidenceValue, DelayConsistencyGaurantee,
+        steadyStart, steadyEnd, confidenceValue, delay_consistency_guarantee,
         num_runs=num_runs, num_poisson_observations=num_poisson_observations,
         min_sample_size=min_sample_size, delay_cdf_sample_interval_ns=delay_cdf_sample_interval_ns, path=path,
         num_workers=num_workers, flow_count_step=flow_count_step, all_flows_only=all_flows_only,
         subsampling_methods=subsampling_methods, groundtruth_method=groundtruth_method,
         delay_percentiles=delay_percentiles, run_chi_squared_test=run_chi_squared_test,
+        growing_window_step_ns=growing_window_step_ns,
         differentiationDelay=differentiationDelay, errorRate=errorRate,
     )
 
     # Steady window and (subsampling/GT/all-flows) config each get their own folder level
     # instead of a filename infix -- keeps filenames short and lets the same raw experiment be
     # re-analyzed over a different window, or with a different config, without collision.
-    config_tag = emd_vs_flows_file_tag(subsampling_methods, groundtruth_method, all_flows_only)
+    config_tag = emd_vs_flows_file_tag(subsampling_methods, groundtruth_method, all_flows_only,
+                                        delay_consistency_guarantee if delay_consistency_guarantee is not None
+                                        else DelayConsistencyGaurantee)
     if differentiationDelay is not None and errorRate is not None:
         output_dir = '{}/scratch/{}/{}/{}/D_{}/f_{}/{}/{}/{}{}/'.format(
             ns3_path, results_folder, rate, load, differentiationDelay, errorRate, experiment,
@@ -1053,6 +1128,29 @@ def run_emd_vs_flows_experiment(rate, steadyStart, steadyEnd, confidenceValue, r
         results, file_prefix + '_delay_mean_diff_boxplot.png', pass_threshold=pass_threshold,
         title='Switch vs. packet mean delay difference ({}): {}, path {}'.format(run_desc, flow_name, path),
         y_limit=mean_diff_y_limit,
+    )
+    # How many packets each family had, and (for the growing-window methods) how long they
+    # had to watch to get them -- the two quantities behind every EMD above.
+    plot_sample_sizes_vs_num_flows(
+        results, file_prefix + '_sample_size_boxplot.png',
+        title='Sample size vs number of TCP flows ({}): {}, path {}'.format(run_desc, flow_name, path),
+    )
+    plot_monitor_window_vs_num_flows(
+        results, file_prefix + '_monitor_window_boxplot.png', pass_threshold=pass_threshold,
+        title='Monitoring window needed vs number of TCP flows ({}): {}, path {}'.format(
+            run_desc, flow_name, path),
+    )
+    # The consistency check's own threshold at each family's sample size, against the
+    # guarantee the run was configured with -- relative (the direct check that the promised
+    # guarantee is the delivered one) and in ns (what mean_diff is tested against).
+    plot_error_bound_vs_num_flows(
+        results, file_prefix + '_error_bound_boxplot.png',
+        title='Consistency-check error bound ({}): {}, path {}'.format(run_desc, flow_name, path),
+    )
+    plot_error_bound_vs_num_flows(
+        results, file_prefix + '_error_bound_ns_boxplot.png', relative=False,
+        title='Consistency-check error bound in ns ({}): {}, path {}'.format(
+            run_desc, flow_name, path),
     )
     # Mean absolute relative percentile error (percentile_avg_relative_error): evaluated on
     # a dense percentile grid independent of delay_percentiles. Same visual treatment as the
@@ -1107,7 +1205,8 @@ def backfill_burstiness_metrics(rate, steadyStart, steadyEnd, dir_name, traffic,
                                  path=0, delay_cdf_sample_interval_ns=90, flow_count_step=1,
                                  all_flows_only=False, subsampling_methods='find_samples_path',
                                  groundtruth_method='simultaneous', delay_percentiles=DEFAULT_DELAY_PERCENTILES,
-                                 run_chi_squared_test=True, pass_threshold=0.9, emd_y_max=None):
+                                 run_chi_squared_test=True, pass_threshold=0.9, emd_y_max=None,
+                                 delay_consistency_guarantee=None):
     """Add burst_gap_threshold_ns / burstiness_all_packets (IDC at one RTT, mean burst
     duration/inter-burst gap -- see Utils.burstiness_metrics) to an ALREADY-COMPUTED
     run_emd_vs_flows_experiment pickle, in place, WITHOUT redoing the 100-run Poisson sweep.
@@ -1134,7 +1233,9 @@ def backfill_burstiness_metrics(rate, steadyStart, steadyEnd, dir_name, traffic,
 
     results_folder = 'Results_' + dir_name + '/' + traffic
     steady_tag = steady_window_tag(steadyStart, steadyEnd)
-    config_tag = emd_vs_flows_file_tag(subsampling_methods, groundtruth_method, all_flows_only)
+    config_tag = emd_vs_flows_file_tag(subsampling_methods, groundtruth_method, all_flows_only,
+                                        delay_consistency_guarantee if delay_consistency_guarantee is not None
+                                        else DelayConsistencyGaurantee)
     pkl_path, file_prefix = resolve_emd_vs_flows_pickle_path(
         ns3_path, results_folder, rate, load, experiment, steady_tag, config_tag, flow_name, path)
     if pkl_path is None:
@@ -1189,7 +1290,8 @@ def backfill_all_packets_rate_oracle(rate, steadyStart, steadyEnd, dir_name, tra
                                       path=0, delay_cdf_sample_interval_ns=90, flow_count_step=1,
                                       all_flows_only=False, subsampling_methods='find_samples_path',
                                       groundtruth_method='simultaneous', delay_percentiles=DEFAULT_DELAY_PERCENTILES,
-                                      run_chi_squared_test=True, pass_threshold=0.9, emd_y_max=None):
+                                      run_chi_squared_test=True, pass_threshold=0.9, emd_y_max=None,
+                                      delay_consistency_guarantee=None):
     """Add the ideal-Poisson-probe-at-all-packets-rate oracle family
     (Utils.ORACLE_ALL_PACKETS_RATE_KEY) to an ALREADY-COMPUTED run_emd_vs_flows_experiment
     pickle, in place, WITHOUT redoing the full 100-run sweep.
@@ -1217,7 +1319,9 @@ def backfill_all_packets_rate_oracle(rate, steadyStart, steadyEnd, dir_name, tra
 
     results_folder = 'Results_' + dir_name + '/' + traffic
     steady_tag = steady_window_tag(steadyStart, steadyEnd)
-    config_tag = emd_vs_flows_file_tag(subsampling_methods, groundtruth_method, all_flows_only)
+    config_tag = emd_vs_flows_file_tag(subsampling_methods, groundtruth_method, all_flows_only,
+                                        delay_consistency_guarantee if delay_consistency_guarantee is not None
+                                        else DelayConsistencyGaurantee)
     pkl_path, file_prefix = resolve_emd_vs_flows_pickle_path(
         ns3_path, results_folder, rate, load, experiment, steady_tag, config_tag, flow_name, path)
     if pkl_path is None:
@@ -1257,7 +1361,9 @@ def backfill_all_packets_rate_oracle(rate, steadyStart, steadyEnd, dir_name, tra
     for _ in range(num_runs):
         agg_stats = compute_poisson_agg_stats(
             prepared['dir_prefix'], queue_names, linkDelays, linkRates, steadyStart, steadyEnd,
-            num_poisson_observations, confidenceValue, DelayConsistencyGaurantee,
+            num_poisson_observations, confidenceValue,
+            delay_consistency_guarantee if delay_consistency_guarantee is not None
+            else DelayConsistencyGaurantee,
         )
         min_samples = agg_stats.get('MinimumE2ESampleSizeDelay', 0)
         for i in range(num_k):
@@ -1323,7 +1429,8 @@ def aggregate_emd_vs_flows_across_experiments(ns3_path, dir_name, traffic, rate,
                                                path=0, pass_threshold=0.9, emd_y_max=None, mean_diff_y_limit=None,
                                                subsampling_methods='find_samples_path',
                                                groundtruth_method='simultaneous',
-                                               all_flows_only=False, output_suffix='',
+                                               all_flows_only=False, delay_consistency_guarantee=None,
+                                               output_suffix='',
                                                differentiationDelay=None, errorRate=None):
     """Load every experiment's run_emd_vs_flows_experiment output for the same
     traffic/rate/load/steady-window (each under
@@ -1365,7 +1472,9 @@ def aggregate_emd_vs_flows_across_experiments(ns3_path, dir_name, traffic, rate,
     (e.g. run_emd_vs_flows_experiment hasn't been run yet for this traffic/rate/load/window/configuration).
     """
     steady_tag = steady_window_tag(steadyStart, steadyEnd)
-    config_tag = emd_vs_flows_file_tag(subsampling_methods, groundtruth_method, all_flows_only)
+    config_tag = emd_vs_flows_file_tag(subsampling_methods, groundtruth_method, all_flows_only,
+                                        delay_consistency_guarantee if delay_consistency_guarantee is not None
+                                        else DelayConsistencyGaurantee)
     search_config_tag = config_tag + output_suffix
     is_reverse = differentiationDelay is not None and errorRate is not None
     if is_reverse:
@@ -1441,6 +1550,26 @@ def aggregate_emd_vs_flows_across_experiments(ns3_path, dir_name, traffic, rate,
         title='Switch vs. packet mean delay difference, aggregated ({}): {}, path {}'.format(run_desc, flow_name, path),
         y_limit=mean_diff_y_limit,
     )
+    plot_sample_sizes_vs_num_flows(
+        aggregated, file_prefix + '_sample_size_boxplot.png',
+        title='Sample size vs number of TCP flows, aggregated ({}): {}, path {}'.format(
+            run_desc, flow_name, path),
+    )
+    plot_monitor_window_vs_num_flows(
+        aggregated, file_prefix + '_monitor_window_boxplot.png', pass_threshold=pass_threshold,
+        title='Monitoring window needed vs number of TCP flows, aggregated ({}): {}, path {}'.format(
+            run_desc, flow_name, path),
+    )
+    plot_error_bound_vs_num_flows(
+        aggregated, file_prefix + '_error_bound_boxplot.png',
+        title='Consistency-check error bound, aggregated ({}): {}, path {}'.format(
+            run_desc, flow_name, path),
+    )
+    plot_error_bound_vs_num_flows(
+        aggregated, file_prefix + '_error_bound_ns_boxplot.png', relative=False,
+        title='Consistency-check error bound in ns, aggregated ({}): {}, path {}'.format(
+            run_desc, flow_name, path),
+    )
     if aggregated.get('percentile_avg_relerror_all_packets'):
         plot_emd_vs_num_flows_boxplot(
             aggregated, file_prefix + '_percentile_avg_relerror_boxplot.png', pass_threshold=pass_threshold,
@@ -1495,7 +1624,8 @@ def aggregate_emd_vs_flows_compare_flows(ns3_path, dir_name, traffic, rate, load
                                           flow_names, path=0, pass_threshold=0.9,
                                           subsampling_methods='find_samples_path',
                                           groundtruth_method='simultaneous',
-                                          all_flows_only=False, output_suffix='',
+                                          all_flows_only=False, delay_consistency_guarantee=None,
+                                          output_suffix='',
                                           differentiationDelay=None, errorRate=None):
     """Aggregate each of `flow_names` (e.g. ['R0H0R2H3', 'R0H1R2H3']) independently via
     aggregate_emd_vs_flows_across_experiments -- which also writes each flow's own
@@ -1539,7 +1669,9 @@ def aggregate_emd_vs_flows_compare_flows(ns3_path, dir_name, traffic, rate, load
         return None
 
     steady_tag = steady_window_tag(steadyStart, steadyEnd)
-    config_tag = emd_vs_flows_file_tag(subsampling_methods, groundtruth_method, all_flows_only)
+    config_tag = emd_vs_flows_file_tag(subsampling_methods, groundtruth_method, all_flows_only,
+                                        delay_consistency_guarantee if delay_consistency_guarantee is not None
+                                        else DelayConsistencyGaurantee)
     if differentiationDelay is not None and errorRate is not None:
         base_dir = '{}/scratch/ECNMC/Results/results_{}{}/{}/{}/{}/D_{}/f_{}/{}/{}/'.format(
             ns3_path, dir_name, output_suffix, traffic, rate, load, differentiationDelay, errorRate,
@@ -1590,7 +1722,8 @@ def aggregate_emd_vs_flows_compare_flows(ns3_path, dir_name, traffic, rate, load
 def aggregate_emd_vs_flows_compare_flows_across_traffics_and_loads(
         ns3_path, dir_name, traffics, rate, loads, steadyStart, steadyEnd, flow_names,
         path=0, pass_threshold=0.9, subsampling_methods='find_samples_path',
-        groundtruth_method='simultaneous', all_flows_only=False, output_suffix='',
+        groundtruth_method='simultaneous', all_flows_only=False,
+        delay_consistency_guarantee=None, output_suffix='',
         differentiationDelay=None, errorRate=None):
     """The cross-traffic/load counterpart of aggregate_emd_vs_flows_compare_flows: for each
     traffic, aggregate every one of `flow_names` (e.g. ['R0H0R2H3', 'R0H1R2H3']) across every
@@ -1630,7 +1763,9 @@ def aggregate_emd_vs_flows_compare_flows_across_traffics_and_loads(
     """
     subsampling_methods = normalize_subsampling_methods(subsampling_methods)
     steady_tag = steady_window_tag(steadyStart, steadyEnd)
-    config_tag = emd_vs_flows_file_tag(subsampling_methods, groundtruth_method, all_flows_only)
+    config_tag = emd_vs_flows_file_tag(subsampling_methods, groundtruth_method, all_flows_only,
+                                        delay_consistency_guarantee if delay_consistency_guarantee is not None
+                                        else DelayConsistencyGaurantee)
     if differentiationDelay is not None and errorRate is not None:
         rate_dir = '{}/scratch/ECNMC/Results/results_{}{}/emd_vs_load_by_traffic/{}/{}/{}/D_{}/f_{}/'.format(
             ns3_path, dir_name, output_suffix, steady_tag, config_tag, rate, differentiationDelay, errorRate)
@@ -1713,7 +1848,8 @@ def aggregate_emd_vs_flows_across_traffics_and_loads(ns3_path, dir_name, traffic
                                                        flow_name='R0H0R2H3', path=0, pass_threshold=0.9,
                                                        subsampling_methods='find_samples_path',
                                                        groundtruth_method='simultaneous',
-                                                       all_flows_only=False, output_suffix='',
+                                                       all_flows_only=False,
+                                                       delay_consistency_guarantee=None, output_suffix='',
                                                        differentiationDelay=None, errorRate=None):
     """For a fixed `rate`, aggregate every traffic x load combination (each first
     aggregated across its own experiments via aggregate_emd_vs_flows_across_experiments,
@@ -1812,7 +1948,9 @@ def aggregate_emd_vs_flows_across_traffics_and_loads(ns3_path, dir_name, traffic
     # convention as aggregate_emd_vs_flows_across_experiments, so different windows/configs for
     # the same dir_name never collide and filenames don't need to spell either one out.
     steady_tag = steady_window_tag(steadyStart, steadyEnd)
-    config_tag = emd_vs_flows_file_tag(subsampling_methods, groundtruth_method, all_flows_only)
+    config_tag = emd_vs_flows_file_tag(subsampling_methods, groundtruth_method, all_flows_only,
+                                        delay_consistency_guarantee if delay_consistency_guarantee is not None
+                                        else DelayConsistencyGaurantee)
     if is_reverse:
         rate_dir = '{}/scratch/ECNMC/Results/results_{}{}/emd_vs_load_by_traffic/{}/{}/{}/D_{}/f_{}/'.format(
             ns3_path, dir_name, output_suffix, steady_tag, config_tag, rate, differentiationDelay, errorRate)

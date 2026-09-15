@@ -18,12 +18,14 @@ from scipy.stats import bernoulli, ks_2samp
 from scipy.stats import wasserstein_distance
 from math import factorial, exp
 import csv
-from collections import defaultdict
+from collections import defaultdict, OrderedDict
 from colorama import Fore, Back, Style
 import pprint
 from functools import lru_cache
 from pathlib import Path
 import re
+import contextlib
+import io
 
 estimation_gain = 0.0625
 init_alpha = 1
@@ -1260,6 +1262,227 @@ def find_samples_path_intensity(
         return np.array([], dtype=float), subSamplingError
 
     return np.sort(best_samples), subSamplingError
+
+
+# Step by which the growing-window subsampling methods grow the monitoring window they draw
+# their subsample from: they first try [steadyStart, steadyStart + 5ms], then
+# [steadyStart, steadyStart + 10ms], and so on. 5 ms is a few RTTs at this DC's scale, so
+# each step adds a meaningful amount of new traffic without making the first (cheapest,
+# most interesting) candidate window so long that the early-stopping has nothing to win.
+GROWING_WINDOW_STEP_NS = 5e6
+
+# Floor on the switch-side Poisson observation count of a candidate window (see
+# windowed_poisson_agg_stats): the observation count scales with the window's length to
+# keep the probing RATE fixed, and a very short window would otherwise be handed a
+# handful of observations whose mean/std are meaningless.
+MIN_WINDOWED_POISSON_OBSERVATIONS = 100
+
+
+def _trim_to_minimum_samples(samples, minimum_number_of_samples):
+    """Cut an already-validated subsample down to exactly `minimum_number_of_samples`
+    points by dropping its tail -- i.e. stop monitoring at the n-th retained sample rather
+    than at the end of the candidate window, which is what "the minimum required number of
+    samples, and not more than that" means once a window that can deliver them is found.
+
+    Dropping the *tail* (rather than a random subset) is what keeps the result a valid
+    Poisson sample: the first n points of a Poisson process are still a Poisson process
+    observed up to its n-th arrival, and that stopping rule depends only on the arrival
+    instants, never on the queue state those instants sample -- so PASTA still applies and
+    the retained gaps are still i.i.d. exponential. A random subset, by contrast, would
+    have non-exponential (Erlang-mixture) gaps.
+
+    The trimmed set is nonetheless re-run through the same Anderson-Darling exponentiality
+    test the base sampler validated the untrimmed set with, and the untrimmed set is kept
+    if the trimmed one fails it: fewer points is a weaker test, but a set our own
+    Poisson-ness criterion rejects should never be handed to the estimator just because it
+    happens to have the requested size.
+    """
+    samples = np.asarray(samples)
+    if minimum_number_of_samples <= 0 or len(samples) <= minimum_number_of_samples:
+        return samples
+    trimmed = np.sort(samples)[:minimum_number_of_samples]
+    if len(trimmed) < 5:
+        return trimmed
+    if anderson(np.diff(trimmed), 'expon', method='interpolate').pvalue > 0.05:
+        return trimmed
+    return samples
+
+
+def _growing_window_result(samples, error, window_end=None, agg_stats=None, min_samples=None,
+                            windows_tried=0):
+    """One growing-window search outcome (see _growing_window_search). `window_end` is the
+    end of the window the samples were actually drawn from -- None when the search never
+    got to try a window -- and `agg_stats`/`min_samples` are the switch-side statistics of
+    that same window, so a caller can run the consistency check against statistics measured
+    over exactly the interval the samples came from."""
+    return {'samples': samples, 'error': error, 'window_end': window_end,
+            'agg_stats': agg_stats, 'min_samples': min_samples, 'windows_tried': windows_tried}
+
+
+def _growing_window_search(base_method, time, MinimumNumberOfSamples=0,
+                            step_ns=GROWING_WINDOW_STEP_NS, steadyStart=None, steadyEnd=None,
+                            trim_to_minimum=True, window_stats=None, base_wants_window=False):
+    """Run `base_method` (any POISSON_SUBSAMPLING_METHODS-style callable) not on the whole
+    monitoring window at once, but on the *shortest prefix of it that suffices*: try
+    [steadyStart, steadyStart + step_ns], then [steadyStart, steadyStart + 2*step_ns], and
+    so on, stopping at the first candidate window from which a valid subsample of the
+    minimum required number of samples can be drawn. If no window up to steadyEnd yields
+    one, the result carries empty samples and the last failure reason -- the caller then
+    simply does no consistency check at that flow count (the same contract the base methods
+    already have).
+
+    Why this exists, next to calling the base method on the full window: the minimum sample
+    size the consistency check needs (calc_min_e2e_samples, driven by
+    DelayConsistencyGaurantee) is a *budget*, and spending more than it on a longer
+    observation window buys no extra guarantee -- it only makes the answer arrive later.
+    Sampling the full steady window always collects however many samples that window
+    happens to allow; this collects the minimum required number and stops, so the result
+    answers "how long must we watch this flow before we can certify it?" rather than
+    "what do we learn from watching all of it?".
+
+    `window_stats`, when given, is called as window_stats(window_end) for each candidate
+    window and must return that window's own (agg_stats, min_samples) -- the switch-side
+    per-segment statistics measured over [steadyStart, window_end] and the minimum e2e
+    sample size they demand. This is what keeps the whole procedure inside one window: the
+    required sample count for a candidate window is derived from switch statistics measured
+    over that same candidate window, not from the full steady period. A window whose
+    statistics cannot support the guarantee at all (min_samples None, i.e.
+    calc_min_e2e_samples found MaxEpsilonDelay already at or above the tolerated error --
+    the expected case for a short window, whose switch-side epsilon is larger because the
+    probe collected proportionally fewer observations) is simply skipped in favour of the
+    next, longer one. Without `window_stats` the search falls back to the caller-supplied
+    MinimumNumberOfSamples for every window, which is what a bare
+    (time, MinimumNumberOfSamples=...) call of a growing-window method does.
+
+    Two properties worth noting:
+
+    - It is a strict refinement of the whole-window behaviour, not a different algorithm.
+      The last candidate window is [steadyStart, steadyEnd] itself, so anything the base
+      method could find over the full window this can still find; it just prefers an
+      earlier, shorter window when one works. With no sample target at all (no
+      `window_stats` and MinimumNumberOfSamples <= 0) there is nothing to stop early on and
+      this degenerates to exactly one whole-window call.
+    - The window grows from a *fixed* start rather than sliding, so no packet that has
+      already arrived is ever discarded, and the candidate window boundaries are identical
+      across flow counts and runs (they come from steadyStart and step_ns alone), which is
+      what makes the retained sample sizes and monitoring durations comparable across them.
+
+    The bin width the base sampler needs (find_delta_for_empty_prob) is recomputed inside
+    each candidate window rather than taken once from the full window, since a window's own
+    arrivals are all that a deployment stopping there would actually have seen. Set
+    `base_wants_window` for a base method that takes steadyStart/steadyEnd itself (e.g.
+    find_samples_path_intensity, whose independence test needs the observation interval) so
+    it, too, sees the candidate window rather than the full steady period.
+
+    Candidate windows that hold fewer packets than their own target, or that added no new
+    packet over the previously tried candidate at the same target, are skipped without
+    calling the base method: neither can do better than what was already tried, and
+    skipping them avoids that call's dominant cost (the per-window
+    find_delta_for_empty_prob search).
+    """
+    subSamplingError = SubSamplingError.NoError
+    time = np.sort(np.asarray(time, dtype=float))
+
+    try:
+        minimum_number_of_samples = max(0, int(np.ceil(float(MinimumNumberOfSamples))))
+    except (TypeError, ValueError):
+        minimum_number_of_samples = 0
+
+    if len(time) == 0 or not step_ns or step_ns <= 0 or (
+            window_stats is None and minimum_number_of_samples <= 0):
+        samples, err = base_method(time, MinimumNumberOfSamples=MinimumNumberOfSamples)
+        return _growing_window_result(samples, err, min_samples=minimum_number_of_samples or None)
+
+    start = float(steadyStart) if steadyStart is not None else float(time[0])
+    end = float(steadyEnd) if steadyEnd is not None else float(time[-1])
+    if end <= start:
+        samples, err = base_method(time, MinimumNumberOfSamples=MinimumNumberOfSamples)
+        return _growing_window_result(samples, err, min_samples=minimum_number_of_samples or None)
+
+    num_steps = max(1, int(np.ceil((end - start) / float(step_ns))))
+    window_ends = np.minimum(start + float(step_ns) * np.arange(1, num_steps + 1), end)
+    # How many packets each candidate window [start, window_end] holds. `time` is sorted,
+    # so one searchsorted gives every candidate's packet count at once.
+    counts = np.searchsorted(time, window_ends, side='right')
+
+    last_error = SubSamplingError.NotEnoughPackets + "+" + subSamplingError.value
+    previous_attempt = None
+    windows_tried = 0
+    for count, window_end in zip(counts, window_ends):
+        if window_stats is not None:
+            window_agg_stats, window_min_samples = window_stats(float(window_end))
+            if window_min_samples is None:
+                # This window's own switch statistics cannot support the guarantee, so no
+                # number of e2e samples drawn inside it would certify anything.
+                last_error = SubSamplingError.NotEnoughSamples + "+" + subSamplingError.value
+                continue
+            target = max(0, int(np.ceil(float(window_min_samples))))
+        else:
+            window_agg_stats, target = None, minimum_number_of_samples
+        if target <= 0 or count < target or (count, target) == previous_attempt:
+            continue
+        previous_attempt = (count, target)
+        windows_tried += 1
+        base_kwargs = {'steadyStart': start, 'steadyEnd': float(window_end)} if base_wants_window else {}
+        # A failing candidate window is the expected case here, not an anomaly, and each
+        # one is loud (find_samples_path prints on every failure). Keep that chatter out of
+        # the log -- the one line below reports the outcome of the whole search instead.
+        with contextlib.redirect_stdout(io.StringIO()):
+            samples, err = base_method(time[:count], MinimumNumberOfSamples=target, **base_kwargs)
+        if err == SubSamplingError.NoError and len(samples) >= target:
+            if trim_to_minimum:
+                samples = _trim_to_minimum_samples(samples, target)
+            return _growing_window_result(samples, err, window_end=float(window_end),
+                                           agg_stats=window_agg_stats, min_samples=target,
+                                           windows_tried=windows_tried)
+        last_error = err
+
+    print("Growing-window subsampling found no valid subsample in any window from {:g} ns up "
+          "to {:g} ns ({} candidate window(s) actually tried, {:g} ns step); last error: "
+          "{}".format(start, end, windows_tried, step_ns, last_error))
+    return _growing_window_result(np.array([], dtype=float), last_error, windows_tried=windows_tried)
+
+
+def find_samples_path_growing_window(time, MinimumNumberOfSamples=0,
+                                      step_ns=GROWING_WINDOW_STEP_NS, steadyStart=None,
+                                      steadyEnd=None, trim_to_minimum=True, window_stats=None):
+    """find_samples_path, but drawing its subsample from the shortest prefix of the
+    monitoring window that can supply the minimum required number of samples instead of
+    from the whole window: try [steadyStart, steadyStart + step_ns], grow by step_ns
+    (default GROWING_WINDOW_STEP_NS = 5 ms) whenever that fails, and stop at the first
+    window that yields a valid Poisson subsample of the required size -- or, if no window
+    up to steadyEnd does, return no samples so the caller skips the consistency check. See
+    _growing_window_search for the rationale and the exact search; everything about how
+    packets are picked *within* a candidate window (window division, one uniform pick per
+    non-empty bin, Bernoulli thinning to the target rate, Anderson-Darling validation of
+    the retained gaps) is find_samples_path unchanged.
+
+    `steadyStart`/`steadyEnd` anchor the candidate windows; without them the first and last
+    packet of `time` stand in. Callers inside the EMD-vs-flows pipeline go through
+    find_samples_growing_window_with_stats instead of calling this directly, so that each
+    candidate window's switch-side statistics -- and hence its required sample size -- are
+    measured over that same window (see call_subsampling_method)."""
+    found = _growing_window_search(
+        find_samples_path, time, MinimumNumberOfSamples=MinimumNumberOfSamples,
+        step_ns=step_ns, steadyStart=steadyStart, steadyEnd=steadyEnd,
+        trim_to_minimum=trim_to_minimum, window_stats=window_stats)
+    return found['samples'], found['error']
+
+
+def find_samples_path_intensity_growing_window(time, MinimumNumberOfSamples=0,
+                                                step_ns=GROWING_WINDOW_STEP_NS, steadyStart=None,
+                                                steadyEnd=None, trim_to_minimum=True,
+                                                window_stats=None):
+    """find_samples_path_intensity under the same shortest-sufficient-window search as
+    find_samples_path_growing_window (see _growing_window_search). The candidate window is
+    passed into the base method as its steadyStart/steadyEnd, so its multi-lag independence
+    test (chi_squared_test) is evaluated over the interval the samples were actually drawn
+    from rather than over the full steady period."""
+    found = _growing_window_search(
+        find_samples_path_intensity, time, MinimumNumberOfSamples=MinimumNumberOfSamples,
+        step_ns=step_ns, steadyStart=steadyStart, steadyEnd=steadyEnd,
+        trim_to_minimum=trim_to_minimum, window_stats=window_stats, base_wants_window=True)
+    return found['samples'], found['error']
 
 
 def e2e_poisson_sampling(time, values, delay=False, sizes=None):
@@ -3136,6 +3359,51 @@ def _delay_consistency_check(values, agg_stats, confidenceValue, min_sample_size
     return bool(abs(sample_mean - agg_stats['DelayMean']) <= epsilon_bound)
 
 
+def delay_consistency_error_bound(agg_stats, sample_size, confidenceValue):
+    """The consistency check's own error bound at a given e2e sample size, as
+    (absolute_ns, relative_to_switch_mean).
+
+    This is exactly the threshold _delay_consistency_check compares |switch mean - packet
+    mean| against, pulled out so it can be reported rather than only applied:
+
+        absolute = DelayMean * MaxEpsilonDelay + eta * e2eDelayStd / sqrt(n)
+        relative = absolute / DelayMean
+                 = MaxEpsilonDelay + eta * e2eDelayStd / (sqrt(n) * DelayMean)
+
+    The first term is the switch side's own sampling error (MaxEpsilonDelay, the largest
+    per-segment relative epsilon), the second the e2e side's at n samples.
+
+    Worth reporting because of how the required sample size is chosen: calc_min_e2e_samples
+    solves the second term down to exactly (maxError - MaxEpsilonDelay), so a family holding
+    **exactly** the minimum required number of samples has a relative bound of exactly
+    `maxError` -- the DelayConsistencyGaurantee the run was configured with. Plotting this
+    against that guarantee is therefore the direct check that the guarantee the numbers
+    claim is the one actually delivered. Two known, benign departures from landing exactly
+    on it:
+
+    - calc_min_e2e_samples truncates its n to an integer, and flooring n loosens the bound
+      by the fraction of a sample thrown away: at most ~1/(2n) of the e2e term, so a hair
+      *above* the guarantee. Observed on real runs at n~110: 0.4001-0.4012 against a 0.40
+      guarantee, i.e. within 0.3%.
+    - when the formula asks for fewer samples than MINIMUM_E2E_SAMPLE_SIZE, that floor
+      forces more, and the bound comes out materially *tighter* than the guarantee (e.g.
+      0.30 instead of 0.40 where the formula wanted 51 samples and the floor gave 100).
+
+    Anything else below the line means that family simply retained more than the minimum;
+    anything materially above it means the check ran at a looser bound than the run claims,
+    which should not happen.
+
+    Returns (nan, nan) when there is nothing to bound (no samples, or no statistics because
+    the run certified no window)."""
+    if agg_stats is None or not sample_size or sample_size <= 0:
+        return np.nan, np.nan
+    switch_mean = agg_stats.get('DelayMean', np.nan)
+    absolute = (switch_mean * agg_stats.get('MaxEpsilonDelay', np.nan)
+                 + confidenceValue * agg_stats.get('e2eDelayStd', np.nan) / np.sqrt(sample_size))
+    relative = absolute / switch_mean if switch_mean else np.nan
+    return float(absolute), float(relative)
+
+
 def sample_uniform_count(subset_sorted_by_time, target_count):
     """Systematic uniform packet sampling of `subset_sorted_by_time` (which must
     already be sorted by SentTime) returning **exactly** `target_count` rows --
@@ -3849,6 +4117,9 @@ def prepare_emd_vs_flows_data(
         'flow_order': flow_order,
         'num_flows': num_flows,
         'groundtruth_method': groundtruth_method,
+        # Kept so a growing-window method can rebuild the same ground-truth construction
+        # over its own shorter window at the same resolution (see windowed_groundtruth).
+        'delay_cdf_sample_interval_ns': delay_cdf_sample_interval_ns,
         'groundtruth_values': groundtruth_values,
         'groundtruth_mean': float(np.mean(groundtruth_values)) if len(groundtruth_values) else np.nan,
         'groundtruth_std': float(np.std(groundtruth_values)) if len(groundtruth_values) else np.nan,
@@ -3919,8 +4190,57 @@ def normalize_emd_values(values, groundtruth_mean):
 POISSON_SUBSAMPLING_METHODS = {
     'find_samples_path': find_samples_path,
     'find_samples_path_intensity': find_samples_path_intensity,
+    'find_samples_path_growing_window': find_samples_path_growing_window,
+    'find_samples_path_intensity_growing_window': find_samples_path_intensity_growing_window,
 }
 
+# The methods that look for the shortest sufficient prefix of the steady window instead of
+# sampling all of it (see _growing_window_search), mapped to the base sampler each one
+# wraps. Membership here is what makes the EMD-vs-flows pipeline evaluate a method's whole
+# comparison -- ground truth, switch-side statistics, rate-matched uniform baseline and
+# ideal Poisson probe -- over the window that method actually stopped at, instead of over
+# the full steady period (see compute_emd_vs_num_tcp_flows_run).
+GROWING_WINDOW_SUBSAMPLING_METHODS = {
+    'find_samples_path_growing_window': ('find_samples_path', False),
+    'find_samples_path_intensity_growing_window': ('find_samples_path_intensity', True),
+}
+
+# The subset of POISSON_SUBSAMPLING_METHODS whose behaviour depends on the analysis window
+# itself, not only on the packet timestamps handed to them, and which therefore get
+# steadyStart/steadyEnd passed (see call_subsampling_method). Deliberately a whitelist
+# rather than "pass it to anything that accepts the keyword": find_samples_path_intensity
+# also takes steadyStart/steadyEnd and has always run with its own time[0]/time[-1]
+# defaults, so signature-sniffing would silently change what already-published results for
+# that method mean.
+STEADY_WINDOW_AWARE_SUBSAMPLING_METHODS = frozenset(GROWING_WINDOW_SUBSAMPLING_METHODS)
+
+
+def growing_window_method_in(subsampling_methods):
+    """The single growing-window method a run is analyzing, or None for an ordinary
+    whole-steady-window run.
+
+    A growing-window method must be the ONLY method in its run, and this is where that is
+    enforced. The reason is the whole point of the mode: such a run reports nothing over the
+    full steady window -- every family (all packets, the subsample, its rate-matched uniform
+    baseline, every ideal Poisson probe) is evaluated over the window the search settled on,
+    because comparing quantities measured over different windows is exactly the error this
+    mode exists to avoid. Two growing-window methods stop at two different windows, so one
+    run could not host both without reporting something over a window that some family in it
+    never saw; and pairing a growing-window method with a whole-window one has the same
+    problem in sharper form. Compare them by running the same experiment once per method --
+    the packets, the traces and the ground-truth construction are identical inputs, and each
+    method's output already lands under its own `<config_tag>` folder."""
+    growing = [name for name in subsampling_methods if name in GROWING_WINDOW_SUBSAMPLING_METHODS]
+    if not growing:
+        return None
+    if len(subsampling_methods) > 1:
+        raise ValueError(
+            "A growing-window subsampling method must be the only method in a run, got {}. "
+            "Such a run reports every quantity over the window its search settled on, and "
+            "two methods settle on two different windows -- so nothing in the run could be "
+            "compared like for like. Run each method separately (same inputs, separate "
+            "output folders) and compare the results.".format(list(subsampling_methods)))
+    return growing[0]
 
 def _resolve_subsampling_method(subsampling_method):
     """Look up a Poisson-adaptive subsampling callable by name (a key of
@@ -3932,6 +4252,163 @@ def _resolve_subsampling_method(subsampling_method):
     except KeyError:
         raise ValueError("Unknown subsampling_method {!r}; choose one of {}".format(
             subsampling_method, list(POISSON_SUBSAMPLING_METHODS)))
+
+
+def call_subsampling_method(subsampling_method, times, min_samples, steady_start=None,
+                             steady_end=None):
+    """Draw one Poisson-adaptive subsample of `times` with the named method, targeting
+    `min_samples` samples. Every method shares the (time, MinimumNumberOfSamples=...)
+    contract and returns (samples, subSamplingError); the only extra thing passed here is
+    the analysis window, and only to the methods listed in
+    STEADY_WINDOW_AWARE_SUBSAMPLING_METHODS -- the growing-window methods need it because
+    their candidate windows are anchored at steadyStart, and anchoring them at the flow's
+    own first packet instead would move the window boundaries with the flow count.
+
+    This is the whole-steady-window entry point, so a growing-window method reached through
+    it derives its sample target from the `min_samples` it is handed. Inside the
+    EMD-vs-flows pipeline use find_samples_growing_window_with_stats instead, which gives
+    each candidate window its own switch-side statistics and its own target."""
+    method = _resolve_subsampling_method(subsampling_method)
+    if subsampling_method in STEADY_WINDOW_AWARE_SUBSAMPLING_METHODS:
+        return method(times, MinimumNumberOfSamples=min_samples,
+                      steadyStart=steady_start, steadyEnd=steady_end)
+    return method(times, MinimumNumberOfSamples=min_samples)
+
+
+def growing_window_context(prepared, confidenceValue, DelayConsistencyGaurantee,
+                            num_poisson_observations, step_ns=GROWING_WINDOW_STEP_NS):
+    """Everything a growing-window method needs to evaluate a candidate window end-to-end
+    inside one window: where the raw traces are, which ground truth to rebuild, and at what
+    rate the switch-side Poisson probe observes. Built once per run (see
+    _run_one_poisson_run) and handed to find_samples_growing_window_with_stats /
+    windowed_groundtruth.
+
+    `observation_rate_per_ns` is the key quantity: the switch-side probe keeps its RATE
+    fixed at num_poisson_observations / (steadyEnd - steadyStart), so a candidate window of
+    length L is given about rate*L observations rather than the full run's count. A probe
+    does not observe faster because we chose to watch a shorter window, and pretending
+    otherwise would hand a 5 ms window the accuracy of a 90 ms one -- which is precisely
+    the cost of stopping early that this whole mode exists to measure."""
+    duration = float(prepared['steady_end']) - float(prepared['steady_start'])
+    return {
+        'dir_prefix': prepared['dir_prefix'],
+        'queue_names': list(prepared['queue_names']),
+        'link_delays': list(prepared['link_delays']),
+        'link_rates': list(prepared['link_rates']),
+        'steady_start': float(prepared['steady_start']),
+        'steady_end': float(prepared['steady_end']),
+        'groundtruth_method': prepared['groundtruth_method'],
+        'delay_cdf_sample_interval_ns': prepared.get('delay_cdf_sample_interval_ns', 10),
+        'delay_percentiles': tuple(prepared.get('delay_percentiles') or ()),
+        'observation_rate_per_ns': (num_poisson_observations / duration) if duration > 0 else 0.0,
+        'confidence_value': confidenceValue,
+        'delay_consistency_guarantee': DelayConsistencyGaurantee,
+        'step_ns': step_ns,
+    }
+
+
+def windowed_poisson_agg_stats(window_ctx, window_end):
+    """The switch-side Poisson realization over [steadyStart, window_end] and the
+    per-segment aggregated delay statistics it yields (compute_poisson_agg_stats), with the
+    observation count scaled to the window's length so the probing rate matches the full
+    run's (see growing_window_context). Returns (agg_stats, min_samples), where
+    `min_samples` is None when this window's statistics cannot support the consistency
+    guarantee at all -- calc_min_e2e_samples' own verdict, which for a short window is the
+    normal outcome rather than an error.
+
+    Memoized inside `window_ctx`, which lives for exactly one run (see
+    _run_one_poisson_run), for both correctness and cost: a run has ONE switch-side probe,
+    so observing a given window must yield the same statistics no matter which flow count's
+    subsample is being evaluated -- exactly as the full-window agg_stats is drawn once per
+    run and shared across every k. Redrawing per flow count would also make the search the
+    dominant cost of a flow-count sweep."""
+    cache = window_ctx.setdefault('agg_stats_cache', {})
+    cached = cache.get(float(window_end))
+    if cached is not None:
+        return cached
+    num_obs = int(round(window_ctx['observation_rate_per_ns'] * (window_end - window_ctx['steady_start'])))
+    num_obs = max(num_obs, MIN_WINDOWED_POISSON_OBSERVATIONS)
+    with contextlib.redirect_stdout(io.StringIO()):
+        # calc_min_e2e_samples prints a warning whenever a window cannot support the
+        # guarantee; here that is the expected outcome for the early candidates, reported
+        # once by the search itself rather than once per window per run per flow count.
+        agg_stats = compute_poisson_agg_stats(
+            window_ctx['dir_prefix'], window_ctx['queue_names'], window_ctx['link_delays'],
+            window_ctx['link_rates'], window_ctx['steady_start'], window_end, num_obs,
+            window_ctx['confidence_value'], window_ctx['delay_consistency_guarantee'])
+    agg_stats['num_poisson_observations'] = num_obs
+    cache[float(window_end)] = (agg_stats, agg_stats.get('MinimumE2ESampleSizeDelay'))
+    return cache[float(window_end)]
+
+
+# Ground truths rebuilt over a sub-window are keyed by that window and reused: a window end
+# can only take one of the (few) candidate values GROWING_WINDOW_STEP_NS allows, while the
+# reconstruction itself is the single most expensive step in this pipeline, and it is the
+# same for every run and flow count that stopped at the same window. Capped and evicted
+# oldest-first so a long multi-traffic/load sweep in one process cannot accumulate every
+# window of every experiment (each entry is up to ~1M delay samples).
+_WINDOWED_GROUNDTRUTH_CACHE = OrderedDict()
+_WINDOWED_GROUNDTRUTH_CACHE_MAX = 24
+
+
+def windowed_groundtruth(window_ctx, window_end):
+    """The ground-truth reconstructed path-delay CDF over [steadyStart, window_end] --
+    the same construction (GROUNDTRUTH_METHODS) and the same sampling interval
+    prepare_emd_vs_flows_data used for the full steady window, just restricted to the
+    window a growing-window method actually stopped at. Returns
+    (values, percentiles, mean).
+
+    This exists because a consistency check or an EMD must never mix windows: a subsample
+    drawn from the first 5 ms of the steady period compared against a ground truth averaged
+    over all 90 ms measures how much the network changed between them, not how well the
+    subsample recovered the delay distribution it was drawn from. The nominal steady window
+    is measurably non-stationary in these experiments (the mean queuing delay of its first
+    5 ms runs several times that of its last 5 ms), so this is a first-order effect, not a
+    refinement."""
+    key = (window_ctx['groundtruth_method'], window_ctx['dir_prefix'],
+           tuple(window_ctx['queue_names']), window_ctx['steady_start'], float(window_end),
+           float(window_ctx['delay_cdf_sample_interval_ns']), window_ctx['delay_percentiles'])
+    entry = _WINDOWED_GROUNDTRUTH_CACHE.get(key)
+    if entry is None:
+        construct = _resolve_groundtruth_method(window_ctx['groundtruth_method'])
+        values = construct(
+            window_ctx['queue_names'], window_ctx['dir_prefix'], window_ctx['steady_start'],
+            float(window_end), window_ctx['link_delays'], window_ctx['link_rates'],
+            sample_interval_ns=window_ctx['delay_cdf_sample_interval_ns'])
+        entry = (values,
+                 compute_delay_percentiles(values, window_ctx['delay_percentiles']),
+                 float(np.mean(values)) if len(values) else np.nan)
+        _WINDOWED_GROUNDTRUTH_CACHE[key] = entry
+        while len(_WINDOWED_GROUNDTRUTH_CACHE) > _WINDOWED_GROUNDTRUTH_CACHE_MAX:
+            _WINDOWED_GROUNDTRUTH_CACHE.popitem(last=False)
+    else:
+        _WINDOWED_GROUNDTRUTH_CACHE.move_to_end(key)
+    return entry
+
+
+def find_samples_growing_window_with_stats(subsampling_method, times, window_ctx,
+                                            trim_to_minimum=True):
+    """Run one growing-window subsampling method over `times`, giving every candidate
+    window its own switch-side statistics (windowed_poisson_agg_stats) and therefore its
+    own required sample size, and return the full outcome dict (see
+    _growing_window_result): the samples, the error, the window they came from, and that
+    window's agg_stats/min_samples -- so the caller can do the consistency check and the
+    EMD against statistics measured over exactly that window.
+
+    This is the pipeline entry point for the growing-window methods; the plain
+    (time, MinimumNumberOfSamples=...) callables in POISSON_SUBSAMPLING_METHODS remain
+    available for a direct call with a caller-chosen target."""
+    try:
+        base_name, base_wants_window = GROWING_WINDOW_SUBSAMPLING_METHODS[subsampling_method]
+    except KeyError:
+        raise ValueError("{!r} is not a growing-window subsampling method; choose one of {}".format(
+            subsampling_method, list(GROWING_WINDOW_SUBSAMPLING_METHODS)))
+    return _growing_window_search(
+        _resolve_subsampling_method(base_name), times,
+        step_ns=window_ctx.get('step_ns', GROWING_WINDOW_STEP_NS),
+        steadyStart=window_ctx['steady_start'], steadyEnd=window_ctx['steady_end'],
+        trim_to_minimum=trim_to_minimum, base_wants_window=base_wants_window,
+        window_stats=lambda window_end: windowed_poisson_agg_stats(window_ctx, window_end))
 
 
 def normalize_subsampling_methods(subsampling_methods):
@@ -3962,22 +4439,51 @@ def subsampling_methods_tag(subsampling_methods):
     return '+'.join(normalize_subsampling_methods(subsampling_methods))
 
 
+# The relative-error guarantee (DelayConsistencyGaurantee) every EMD-vs-flows result
+# computed before 2026-09-15 was produced at, and the value the guarantee tag treats as
+# "no tag" so those results keep the paths they already have. Also the default of
+# PostProcessing's --delay-consistency-guarantee.
+DEFAULT_DELAY_CONSISTENCY_GUARANTEE = 0.40
+
+
+def delay_consistency_guarantee_tag(delay_consistency_guarantee):
+    """Filename/folder tag identifying the relative-error guarantee a set of EMD-vs-flows
+    outputs was computed at, as an already-prefixed '_g<percent>' fragment ('_g20' for 0.20,
+    '_g7.5' for 0.075) -- or '' for DEFAULT_DELAY_CONSISTENCY_GUARANTEE, so every result
+    computed at the historical 0.40 keeps the path it already has (the same
+    backwards-compatibility convention groundtruth_method_tag uses for 'simultaneous').
+
+    This belongs in the path because the guarantee changes what a run *is*, not just how
+    strictly it is judged: it sets the minimum sample size the subsampler must reach
+    (calc_min_e2e_samples), so the samples, the monitoring window a growing-window method
+    settles on, the error bound and every EMD in the result are all specific to it. Two
+    guarantees' outputs for the same traffic/rate/load/experiment would otherwise overwrite
+    each other."""
+    if delay_consistency_guarantee is None or delay_consistency_guarantee == DEFAULT_DELAY_CONSISTENCY_GUARANTEE:
+        return ''
+    return '_g{:g}'.format(float(delay_consistency_guarantee) * 100)
+
+
 def emd_vs_flows_file_tag(subsampling_methods, groundtruth_method='simultaneous',
-                           all_flows_only=False):
+                           all_flows_only=False, delay_consistency_guarantee=None):
     """The full tag that identifies one EMD-vs-flows configuration in every
     output filename: which subsampling algorithm(s) were compared, which
-    ground truth they were compared against, and whether the run swept flow
-    counts or evaluated only all-flows. Kept deliberately backwards
+    ground truth they were compared against, whether the run swept flow
+    counts or evaluated only all-flows, and which relative-error guarantee it
+    was computed at. Kept deliberately backwards
     compatible -- a single subsampling method against the original
-    'simultaneous' ground truth, swept, reproduces the pre-existing '<method>'
+    'simultaneous' ground truth, swept, at the historical
+    DEFAULT_DELAY_CONSISTENCY_GUARANTEE, reproduces the pre-existing '<method>'
     tag exactly, so already-computed results stay discoverable.
 
     The all-flows-only tag matters because such a run's results cover a single
     k while a swept run covers many; without it the two would overwrite each
-    other's pickles for the same traffic/rate/load/experiment."""
+    other's pickles for the same traffic/rate/load/experiment. The guarantee
+    tag matters for the same reason -- see delay_consistency_guarantee_tag."""
     return (subsampling_methods_tag(subsampling_methods)
             + groundtruth_method_tag(groundtruth_method)
-            + ('_allflows' if all_flows_only else ''))
+            + ('_allflows' if all_flows_only else '')
+            + delay_consistency_guarantee_tag(delay_consistency_guarantee))
 
 
 def steady_window_tag(steadyStart, steadyEnd):
@@ -4014,7 +4520,7 @@ def resolve_emd_vs_flows_pickle_path(ns3_path, results_folder, rate, load, exper
 
 
 def compute_emd_vs_num_tcp_flows_run(prepared, agg_stats, confidenceValue, min_sample_size=30,
-                                      subsampling_methods='find_samples_path'):
+                                      subsampling_methods='find_samples_path', window_ctx=None):
     """Run one realization of the flow-count EMD sweep against a given
     per-run `agg_stats` (see compute_poisson_agg_stats): grow the set of
     considered TCP flows one at a time and, for each size, compare the
@@ -4044,53 +4550,126 @@ def compute_emd_vs_num_tcp_flows_run(prepared, agg_stats, confidenceValue, min_s
         is finite-sample noise. They are the ceiling any real Poissonization
         scheme is trying to reach.
 
-    "All packets of the first k flows" is the same fixed set on every run --
-    its EMD (prepared['emd_all_packets']) is computed once in
-    prepare_emd_vs_flows_data rather than here. Only its delay-consistency
-    check is redone per run, since that depends on the per-run agg_stats.
+    **Windowed runs.** If `subsampling_methods` is a growing-window method
+    (necessarily the run's only method, see growing_window_method_in) and
+    `window_ctx` is given (growing_window_context), the method first searches
+    for the shortest prefix [steadyStart, W] of the steady window whose own
+    switch-side statistics and packets can supply the samples the consistency
+    check needs (_growing_window_search). That window then becomes the
+    analysis window for **everything this run reports at that flow count**:
 
-    Also computes the signed difference between the switch samples' mean
-    delay (agg_stats['DelayMean']) and the packet-side mean delay -- the
-    quantity the consistency check itself thresholds (up to the epsilon
-    bound) -- for the all-packet mean and for every subsampling method.
+      - the switch-side statistics are the ones drawn over [steadyStart, W] at
+        the run's probing rate (windowed_poisson_agg_stats), so the
+        consistency bound, the required sample size and the
+        switch-vs-packet mean difference all come from the same interval;
+      - the ground-truth CDF and its percentiles are rebuilt over
+        [steadyStart, W] (windowed_groundtruth), so every EMD, relative EMD
+        and percentile error is measured against the delay distribution that
+        actually held while the samples were collected;
+      - the all-packets family is the packets in [steadyStart, W] -- not the
+        whole steady window -- and so are the rate-matched uniform baseline and
+        every ideal Poisson probe, including the minimum-required-budget probe
+        and the all-packets-rate probe;
+      - nothing is reported over [steadyStart, steadyEnd] unless the search
+        itself reached steadyEnd. A run whose search found no usable window at
+        all reports nothing at that flow count (every family NaN/None): it
+        never certified anything, so there is no window to report in.
+
+    Mixing windows is what this avoids: the nominal steady period is
+    measurably non-stationary here, so comparing an early-window subsample
+    against a full-window reference would report how much the network changed
+    rather than how well the subsample recovered its own window's
+    distribution.
+
+    In a windowed run the all-packets family therefore varies from run to run
+    (each run's window differs) and is computed here; in an ordinary run it is
+    the same fixed packet set every run and its EMD, percentile errors,
+    Poisson-ness tests and burstiness come precomputed from
+    prepare_emd_vs_flows_data, with only the consistency check redone per run.
+    'all_packets_windowed' in the returned dict says which of the two it was.
+
+    Every family's monitoring duration is recorded per run
+    ('sampled_window_duration') -- for a growing-window method it is the
+    answer to "how long did we have to watch?", and for every other method it
+    is the full steady window.
 
     Returns a dict with, for each k=1..N considered flows:
       - 'consistency_pass_all_packets' / 'mean_diff_all_packets': the
         consistency check and signed mean difference applied to the mean of
-        all packets of the first k flows; None/NaN when there are no packets.
-      - 'sampled_emd' / 'sampled_consistency' / 'sampled_mean_diff' /
-        'sampled_sample_sizes': each a dict keyed by subsampling-method name,
-        holding that method's per-k list; NaN/None/0 at a k where that method
-        found no valid subsample (e.g. too few packets/windows).
-      - 'uniform_emd' / 'uniform_consistency' / 'uniform_mean_diff' /
-        'uniform_sample_sizes': the same, keyed by the method name whose
-        sample count each uniform family matches.
+        the all-packets family (in-window in a windowed run); None/NaN when
+        there are no packets.
+      - 'emd_all_packets' / 'emd_all_packets_normalized' / 'all_packet_size' /
+        'percentile_diff_all_packets' / 'percentile_reldiff_all_packets' /
+        'percentile_avg_relerror_all_packets' / 'poisson_tests_all_packets' /
+        'burstiness_all_packets': the all-packets family's own per-run values,
+        filled only in a windowed run (NaN/None otherwise, where
+        prepare_emd_vs_flows_data's fixed per-k values stand instead).
+      - 'sampled_emd' / 'sampled_emd_normalized' / 'sampled_consistency' /
+        'sampled_mean_diff' / 'sampled_sample_sizes' /
+        'sampled_window_duration': each a dict keyed by subsampling-method
+        name, holding that method's per-k list; NaN/None/0 at a k where that
+        method found no valid subsample (e.g. too few packets/windows).
+      - 'uniform_emd' / 'uniform_emd_normalized' / 'uniform_consistency' /
+        'uniform_mean_diff' / 'uniform_sample_sizes': the same, keyed by the
+        method name whose sample count each uniform family matches.
       - 'sampled_percentile_diff' / 'uniform_percentile_diff': signed absolute
         `ground_truth_percentile - family_percentile` (ns) at every percentile
         in prepared['delay_percentiles'], as {q: {name: per-k list}} -- the
         tail-shape error the EMD can hide. NaN where that family had no values.
+        '..._percentile_reldiff' are the same as a fraction of that family's
+        own ground-truth percentile.
     """
     full_df = prepared['full_df']
     groundtruth_values = prepared['groundtruth_values']
+    groundtruth_mean = prepared.get('groundtruth_mean')
+    if groundtruth_mean is None:
+        groundtruth_mean = float(np.mean(groundtruth_values)) if len(groundtruth_values) else np.nan
     min_samples = agg_stats.get('MinimumE2ESampleSizeDelay', 0)
-    switch_mean = agg_stats['DelayMean']
     subsampling_methods = normalize_subsampling_methods(subsampling_methods)
-    find_samples_by_method = {name: _resolve_subsampling_method(name) for name in subsampling_methods}
+    windowed_method = growing_window_method_in(subsampling_methods) if window_ctx is not None else None
     delay_percentiles = tuple(prepared.get('delay_percentiles') or ())
     groundtruth_percentiles = prepared.get('groundtruth_percentiles', {})
+    run_chi = prepared.get('run_chi_squared_test', True)
+    test_lags = prepared.get('poisson_test_lags')
+    steady_start = prepared.get('steady_start')
+    steady_end = prepared.get('steady_end')
+    burst_gap = prepared.get('burst_gap_threshold_ns')
 
     num_flows_list = []
     consistency_all_list, mean_diff_all_list = [], []
+    # All-packets quantities that only a windowed run computes per run (an ordinary run's
+    # are fixed per flow count and already in `prepared`).
+    emd_all_list, emd_all_norm_list, size_all_list = [], [], []
+    # The consistency check's own threshold at each family's sample size, per run: relative
+    # to the switch-side mean (directly comparable to DelayConsistencyGaurantee) and in ns
+    # (directly comparable to mean_diff). See delay_consistency_error_bound.
+    bound_all_list, bound_ns_all_list = [], []
+    pdiff_all = {q: [] for q in delay_percentiles}
+    preldiff_all = {q: [] for q in delay_percentiles}
+    pctrelerr_all_list = []
+    tests_all = {'ad_pass': [], 'ad_pvalue': [], 'chi_pass': [], 'chi_reject_fraction': []}
+    burstiness_all = {field: [] for field in BURSTINESS_METRIC_LABELS}
     sampled_emd = {name: [] for name in subsampling_methods}
+    sampled_emd_norm = {name: [] for name in subsampling_methods}
     sampled_consistency = {name: [] for name in subsampling_methods}
     sampled_mean_diff = {name: [] for name in subsampling_methods}
     sampled_sample_sizes = {name: [] for name in subsampling_methods}
+    sampled_error_bound = {name: [] for name in subsampling_methods}
+    sampled_error_bound_ns = {name: [] for name in subsampling_methods}
+    # Length of the monitoring window each method's samples actually came from: the whole
+    # point of the growing-window methods, and the full steady window for everything else.
+    sampled_window_duration = {name: [] for name in subsampling_methods}
     uniform_emd = {name: [] for name in subsampling_methods}
+    uniform_emd_norm = {name: [] for name in subsampling_methods}
     uniform_consistency = {name: [] for name in subsampling_methods}
     uniform_mean_diff = {name: [] for name in subsampling_methods}
     uniform_sample_sizes = {name: [] for name in subsampling_methods}
+    uniform_error_bound = {name: [] for name in subsampling_methods}
+    uniform_error_bound_ns = {name: [] for name in subsampling_methods}
     sampled_percentile_diff = {q: {name: [] for name in subsampling_methods} for q in delay_percentiles}
+    sampled_percentile_reldiff = {q: {name: [] for name in subsampling_methods} for q in delay_percentiles}
     uniform_percentile_diff = {q: {name: [] for name in subsampling_methods} for q in delay_percentiles}
+    uniform_percentile_reldiff = {q: {name: [] for name in subsampling_methods} for q in delay_percentiles}
     # Mean absolute relative percentile error (see percentile_avg_relative_error):
     # self-normalized, evaluated via a dense, fixed percentile grid, independent of
     # delay_percentiles/sampled_percentile_diff above.
@@ -4098,15 +4677,15 @@ def compute_emd_vs_num_tcp_flows_run(prepared, agg_stats, confidenceValue, min_s
     uniform_percentile_avg_relerror = {name: [] for name in subsampling_methods}
     oracle_series = [ORACLE_MIN_REQUIRED_KEY] + list(subsampling_methods) + [ORACLE_ALL_PACKETS_RATE_KEY]
     oracle_emd = {key: [] for key in oracle_series}
+    oracle_emd_norm = {key: [] for key in oracle_series}
     oracle_consistency = {key: [] for key in oracle_series}
     oracle_mean_diff = {key: [] for key in oracle_series}
     oracle_sample_sizes = {key: [] for key in oracle_series}
+    oracle_error_bound = {key: [] for key in oracle_series}
+    oracle_error_bound_ns = {key: [] for key in oracle_series}
     oracle_percentile_diff = {q: {key: [] for key in oracle_series} for q in delay_percentiles}
+    oracle_percentile_reldiff = {q: {key: [] for key in oracle_series} for q in delay_percentiles}
     oracle_percentile_avg_relerror = {key: [] for key in oracle_series}
-    run_chi = prepared.get('run_chi_squared_test', True)
-    test_lags = prepared.get('poisson_test_lags')
-    steady_start = prepared.get('steady_start')
-    steady_end = prepared.get('steady_end')
     # Per-run Poisson-ness of each uniform subset's own instants, kept strictly in lockstep
     # with that family's EMD/mean-diff so the plots can split runs by test outcome without
     # any risk of pairing a value with another run's verdict.
@@ -4114,112 +4693,269 @@ def compute_emd_vs_num_tcp_flows_run(prepared, agg_stats, confidenceValue, min_s
                                   'ad_pass': [], 'chi_pass': []}
                            for name in subsampling_methods}
 
+    def _reldiff(absolute_diff, reference_percentiles, q):
+        """One percentile's error as a fraction of the reference percentile it was measured
+        against -- the per-family counterpart of relative_percentile_diffs, computed here
+        because a windowed family's reference is its own window's ground truth, not the
+        full window's."""
+        return scale_nested_values(absolute_diff, reference_percentiles.get(q))
+
     for k in prepared['num_flows']:
         subset = full_df[full_df['FlowRank'] <= k]
-        all_values = subset['Delay'].values
         num_flows_list.append(k)
-        if len(all_values):
-            consistency_all_list.append(_delay_consistency_check(all_values, agg_stats, confidenceValue, min_sample_size))
-            mean_diff_all_list.append(switch_mean - np.mean(all_values))
+        times = subset['SentTime'].values
+
+        # ------------------------------------------------------------------ analysis window
+        # In a windowed run the search runs FIRST: the window it settles on is what every
+        # family below -- all packets included -- is then evaluated over.
+        found = None
+        if windowed_method is not None:
+            found = find_samples_growing_window_with_stats(windowed_method, times, window_ctx)
+            certified = found['window_end'] is not None
+            window_end = found['window_end'] if certified else None
+            run_agg_stats = found['agg_stats'] if certified else None
+            run_min_samples = found['min_samples'] if certified else None
+            if certified:
+                run_subset = subset[subset['SentTime'] <= window_end]
+                run_gt_values, run_gt_percentiles, run_gt_mean = windowed_groundtruth(
+                    window_ctx, float(window_end))
+            else:
+                # No window could supply the samples the check needs, so this run certified
+                # nothing at this flow count and has no window to report anything in. The
+                # percentile reference is still keyed by every tracked percentile (all NaN)
+                # rather than left empty: percentile_diffs returns a dict keyed by whatever
+                # its reference holds, and every caller below indexes it by q.
+                run_subset = subset.iloc[0:0]
+                run_gt_values, run_gt_mean = np.array([]), np.nan
+                run_gt_percentiles = {q: np.nan for q in delay_percentiles}
+        else:
+            certified = True
+            window_end = steady_end
+            run_agg_stats, run_min_samples, run_subset = agg_stats, min_samples, subset
+            run_gt_values, run_gt_percentiles, run_gt_mean = (
+                groundtruth_values, groundtruth_percentiles, groundtruth_mean)
+
+        all_values = run_subset['Delay'].values
+
+        # ------------------------------------------------------------------- all packets
+        if len(all_values) and run_agg_stats is not None:
+            consistency_all_list.append(_delay_consistency_check(
+                all_values, run_agg_stats, confidenceValue, min_sample_size))
+            mean_diff_all_list.append(run_agg_stats['DelayMean'] - np.mean(all_values))
         else:
             consistency_all_list.append(None)
             mean_diff_all_list.append(np.nan)
+        bound_ns, bound_rel = delay_consistency_error_bound(
+            run_agg_stats, len(all_values), confidenceValue)
+        bound_all_list.append(bound_rel)
+        bound_ns_all_list.append(bound_ns)
+        if windowed_method is not None:
+            # Only a windowed run computes these here: the all-packets family is a different
+            # packet set every run because every run's window differs. An ordinary run's
+            # fixed per-flow-count values come from prepare_emd_vs_flows_data instead.
+            emd_all = (wasserstein_distance(run_gt_values, all_values)
+                        if len(all_values) and len(run_gt_values) else np.nan)
+            emd_all_list.append(emd_all)
+            emd_all_norm_list.append(normalize_emd_values(emd_all, run_gt_mean))
+            size_all_list.append(len(all_values))
+            all_diffs = percentile_diffs(all_values, run_gt_percentiles)
+            for q in delay_percentiles:
+                pdiff_all[q].append(all_diffs[q])
+                preldiff_all[q].append(_reldiff(all_diffs[q], run_gt_percentiles, q))
+            pctrelerr_all_list.append(percentile_avg_relative_error(run_gt_values, all_values))
+            all_tests = poisson_process_tests(
+                run_subset['SentTime'].values, steady_start, window_end,
+                lags=test_lags, run_chi_squared=run_chi)
+            for field in tests_all:
+                tests_all[field].append(all_tests[field])
+            all_burst = burstiness_metrics(run_subset['SentTime'].values, burst_gap)
+            for field in burstiness_all:
+                burstiness_all[field].append(all_burst[field])
 
-        times = subset['SentTime'].values
+        # --------------------------------------------------------- Poisson-adaptive families
+        # Per-method evaluation context, reused by the ideal-Poisson-probe loop below so a
+        # method's probe is built over the same window and compared against the same ground
+        # truth as the method itself.
+        method_ctx = {}
         for name in subsampling_methods:
-            samples_times, sub_err = find_samples_by_method[name](times, MinimumNumberOfSamples=min_samples)
-            if sub_err != SubSamplingError.NoError or len(samples_times) == 0:
+            if name == windowed_method:
+                samples_times, sub_err = found['samples'], found['error']
+            else:
+                samples_times, sub_err = call_subsampling_method(
+                    name, times, min_samples, steady_start, steady_end)
+            # A run that produced no subsample has no monitoring duration to report: the
+            # column means "the window these samples came from" and there are none.
+            search_failed = sub_err != SubSamplingError.NoError or len(samples_times) == 0
+            if search_failed or window_end is None or steady_start is None:
+                sampled_window_duration[name].append(np.nan)
+            else:
+                sampled_window_duration[name].append(float(window_end) - float(steady_start))
+            method_ctx[name] = {'window_end': window_end, 'agg_stats': run_agg_stats,
+                                 'gt_values': run_gt_values, 'gt_percentiles': run_gt_percentiles,
+                                 'gt_mean': run_gt_mean}
+
+            if search_failed or run_agg_stats is None:
                 sampled_emd[name].append(np.nan)
+                sampled_emd_norm[name].append(np.nan)
                 sampled_consistency[name].append(None)
                 sampled_sample_sizes[name].append(0)
                 sampled_mean_diff[name].append(np.nan)
                 sampled_size = 0
                 sample_values = np.array([])
             else:
-                sample_values = subset[subset['SentTime'].isin(samples_times)]['Delay'].values
+                sample_values = run_subset[run_subset['SentTime'].isin(samples_times)]['Delay'].values
                 emd, consistency_pass, mean_diff, sampled_size = _evaluate_delay_family(
-                    sample_values, groundtruth_values, agg_stats, confidenceValue, min_sample_size)
+                    sample_values, run_gt_values, run_agg_stats, confidenceValue, min_sample_size)
                 sampled_emd[name].append(emd)
+                sampled_emd_norm[name].append(normalize_emd_values(emd, run_gt_mean))
                 sampled_consistency[name].append(consistency_pass)
                 sampled_sample_sizes[name].append(sampled_size)
                 sampled_mean_diff[name].append(mean_diff)
-            sampled_diffs = percentile_diffs(sample_values, groundtruth_percentiles)
+            bound_ns, bound_rel = delay_consistency_error_bound(
+                run_agg_stats, sampled_size, confidenceValue)
+            sampled_error_bound[name].append(bound_rel)
+            sampled_error_bound_ns[name].append(bound_ns)
+            sampled_diffs = percentile_diffs(sample_values, run_gt_percentiles)
             for q in delay_percentiles:
                 sampled_percentile_diff[q][name].append(sampled_diffs[q])
+                sampled_percentile_reldiff[q][name].append(
+                    _reldiff(sampled_diffs[q], run_gt_percentiles, q))
             sampled_percentile_avg_relerror[name].append(
-                percentile_avg_relative_error(groundtruth_values, sample_values))
+                percentile_avg_relative_error(run_gt_values, sample_values))
 
             # Spend exactly this method's sample budget on a blind uniform subsample,
-            # so the two differ only in *which* packets they pick, not how many.
-            target_count = matched_uniform_target_count(sampled_size, min_samples)
-            uniform_rows = sample_uniform_count(subset, target_count)
-            uniform_values = uniform_rows['Delay'].values
-            emd, consistency_pass, mean_diff, uniform_size = _evaluate_delay_family(
-                uniform_values, groundtruth_values, agg_stats, confidenceValue, min_sample_size)
-            uniform_emd[name].append(emd)
-            uniform_consistency[name].append(consistency_pass if uniform_size else None)
-            uniform_mean_diff[name].append(mean_diff)
-            uniform_sample_sizes[name].append(uniform_size)
-            uniform_diffs = percentile_diffs(uniform_values, groundtruth_percentiles)
+            # so the two differ only in *which* packets they pick, not how many. With no
+            # certified window there is nothing to draw from and no reference to score
+            # against, so the baseline is skipped along with the method itself.
+            if not certified:
+                uniform_emd[name].append(np.nan)
+                uniform_emd_norm[name].append(np.nan)
+                uniform_consistency[name].append(None)
+                uniform_mean_diff[name].append(np.nan)
+                uniform_sample_sizes[name].append(0)
+                uniform_values = np.array([])
+                uniform_rows = run_subset
+                emd = np.nan
+                mean_diff = np.nan
+            else:
+                target_count = matched_uniform_target_count(sampled_size, run_min_samples)
+                uniform_rows = sample_uniform_count(run_subset, target_count)
+                uniform_values = uniform_rows['Delay'].values
+                emd, consistency_pass, mean_diff, uniform_size = _evaluate_delay_family(
+                    uniform_values, run_gt_values, run_agg_stats, confidenceValue, min_sample_size)
+                uniform_emd[name].append(emd)
+                uniform_emd_norm[name].append(normalize_emd_values(emd, run_gt_mean))
+                uniform_consistency[name].append(consistency_pass if uniform_size else None)
+                uniform_mean_diff[name].append(mean_diff)
+                uniform_sample_sizes[name].append(uniform_size)
+            bound_ns, bound_rel = delay_consistency_error_bound(
+                run_agg_stats, len(uniform_values), confidenceValue)
+            uniform_error_bound[name].append(bound_rel)
+            uniform_error_bound_ns[name].append(bound_ns)
+            uniform_diffs = percentile_diffs(uniform_values, run_gt_percentiles)
             for q in delay_percentiles:
                 uniform_percentile_diff[q][name].append(uniform_diffs[q])
+                uniform_percentile_reldiff[q][name].append(
+                    _reldiff(uniform_diffs[q], run_gt_percentiles, q))
             uniform_percentile_avg_relerror[name].append(
-                percentile_avg_relative_error(groundtruth_values, uniform_values))
+                percentile_avg_relative_error(run_gt_values, uniform_values))
 
             uniform_tests = poisson_process_tests(
-                uniform_rows['SentTime'].values, steady_start, steady_end,
+                uniform_rows['SentTime'].values, steady_start, window_end,
                 lags=test_lags, run_chi_squared=run_chi)
             uniform_test_split[name]['emd'].append(emd)
+            uniform_test_split[name]['emd_normalized'].append(normalize_emd_values(emd, run_gt_mean))
             uniform_test_split[name]['mean_diff'].append(mean_diff)
             uniform_test_split[name]['ad_pass'].append(uniform_tests['ad_pass'])
             uniform_test_split[name]['chi_pass'].append(uniform_tests['chi_pass'])
 
-        # The ideal-Poisson-probe ceiling: same construction as the ground truth, at the
-        # sample budget each real method actually achieved (plus the bare minimum budget,
-        # plus all packets' own count/rate with no subsampling at all).
+        # ------------------------------------------------------------- ideal Poisson probes
+        # The ceiling: same construction as the ground truth, at the sample budget each real
+        # method actually achieved (plus the bare minimum budget, plus all packets' own
+        # count/rate with no subsampling at all) -- all of it inside the run's window, and
+        # scored against that window's ground truth and statistics.
         targets = oracle_target_counts(
-            {name: sampled_sample_sizes[name][-1] for name in subsampling_methods}, min_samples,
-            all_packets_size=len(all_values))
+            {name: sampled_sample_sizes[name][-1] for name in subsampling_methods},
+            run_min_samples, all_packets_size=len(all_values))
         for key in oracle_series:
-            oracle_values = construct_oracle_poisson_delays(
-                prepared['groundtruth_method'], prepared['queue_names'], prepared['dir_prefix'],
-                prepared['steady_start'], prepared['steady_end'], prepared['link_delays'],
-                prepared['link_rates'], targets[key])
-            emd, consistency_pass, mean_diff, oracle_size = _evaluate_delay_family(
-                oracle_values, groundtruth_values, agg_stats, confidenceValue, min_sample_size)
-            oracle_emd[key].append(emd)
-            oracle_consistency[key].append(consistency_pass if oracle_size else None)
-            oracle_mean_diff[key].append(mean_diff)
-            oracle_sample_sizes[key].append(oracle_size)
-            oracle_diffs = percentile_diffs(oracle_values, groundtruth_percentiles)
+            if not certified:
+                oracle_emd[key].append(np.nan)
+                oracle_emd_norm[key].append(np.nan)
+                oracle_consistency[key].append(None)
+                oracle_mean_diff[key].append(np.nan)
+                oracle_sample_sizes[key].append(0)
+                oracle_values = np.array([])
+            else:
+                oracle_values = construct_oracle_poisson_delays(
+                    prepared['groundtruth_method'], prepared['queue_names'], prepared['dir_prefix'],
+                    steady_start, window_end, prepared['link_delays'],
+                    prepared['link_rates'], targets[key])
+                emd, consistency_pass, mean_diff, oracle_size = _evaluate_delay_family(
+                    oracle_values, run_gt_values, run_agg_stats, confidenceValue, min_sample_size)
+                oracle_emd[key].append(emd)
+                oracle_emd_norm[key].append(normalize_emd_values(emd, run_gt_mean))
+                oracle_consistency[key].append(consistency_pass if oracle_size else None)
+                oracle_mean_diff[key].append(mean_diff)
+                oracle_sample_sizes[key].append(oracle_size)
+            bound_ns, bound_rel = delay_consistency_error_bound(
+                run_agg_stats, len(oracle_values), confidenceValue)
+            oracle_error_bound[key].append(bound_rel)
+            oracle_error_bound_ns[key].append(bound_ns)
+            oracle_diffs = percentile_diffs(oracle_values, run_gt_percentiles)
             for q in delay_percentiles:
                 oracle_percentile_diff[q][key].append(oracle_diffs[q])
+                oracle_percentile_reldiff[q][key].append(
+                    _reldiff(oracle_diffs[q], run_gt_percentiles, q))
             oracle_percentile_avg_relerror[key].append(
-                percentile_avg_relative_error(groundtruth_values, oracle_values))
+                percentile_avg_relative_error(run_gt_values, oracle_values))
 
     return {
         'num_flows': num_flows_list,
         'subsampling_methods': subsampling_methods,
+        'all_packets_windowed': windowed_method is not None,
         'consistency_pass_all_packets': consistency_all_list,
         'mean_diff_all_packets': mean_diff_all_list,
+        'emd_all_packets': emd_all_list,
+        'emd_all_packets_normalized': emd_all_norm_list,
+        'all_packet_size': size_all_list,
+        'error_bound_all_packets': bound_all_list,
+        'error_bound_ns_all_packets': bound_ns_all_list,
+        'percentile_diff_all_packets': pdiff_all,
+        'percentile_reldiff_all_packets': preldiff_all,
+        'percentile_avg_relerror_all_packets': pctrelerr_all_list,
+        'poisson_tests_all_packets': tests_all,
+        'burstiness_all_packets': burstiness_all,
         'sampled_emd': sampled_emd,
+        'sampled_emd_normalized': sampled_emd_norm,
         'sampled_consistency': sampled_consistency,
         'sampled_mean_diff': sampled_mean_diff,
         'sampled_sample_sizes': sampled_sample_sizes,
+        'sampled_error_bound': sampled_error_bound,
+        'sampled_error_bound_ns': sampled_error_bound_ns,
+        'sampled_window_duration': sampled_window_duration,
         'uniform_emd': uniform_emd,
+        'uniform_emd_normalized': uniform_emd_norm,
         'uniform_consistency': uniform_consistency,
         'uniform_mean_diff': uniform_mean_diff,
         'uniform_sample_sizes': uniform_sample_sizes,
+        'uniform_error_bound': uniform_error_bound,
+        'uniform_error_bound_ns': uniform_error_bound_ns,
         'sampled_percentile_diff': sampled_percentile_diff,
+        'sampled_percentile_reldiff': sampled_percentile_reldiff,
         'uniform_percentile_diff': uniform_percentile_diff,
+        'uniform_percentile_reldiff': uniform_percentile_reldiff,
         'sampled_percentile_avg_relerror': sampled_percentile_avg_relerror,
         'uniform_percentile_avg_relerror': uniform_percentile_avg_relerror,
         'oracle_series': oracle_series,
         'oracle_emd': oracle_emd,
+        'oracle_emd_normalized': oracle_emd_norm,
         'oracle_consistency': oracle_consistency,
         'oracle_mean_diff': oracle_mean_diff,
         'oracle_sample_sizes': oracle_sample_sizes,
+        'oracle_error_bound': oracle_error_bound,
+        'oracle_error_bound_ns': oracle_error_bound_ns,
         'oracle_percentile_diff': oracle_percentile_diff,
+        'oracle_percentile_reldiff': oracle_percentile_reldiff,
         'oracle_percentile_avg_relerror': oracle_percentile_avg_relerror,
         'uniform_test_split': uniform_test_split,
     }
@@ -4227,18 +4963,23 @@ def compute_emd_vs_num_tcp_flows_run(prepared, agg_stats, confidenceValue, min_s
 
 def _run_one_poisson_run(prepared, dir_prefix, queue_names, linkDelays, linkRates, steadyStart, steadyEnd,
                           num_poisson_observations, confidenceValue, DelayConsistencyGaurantee, min_sample_size,
-                          subsampling_methods):
+                          subsampling_methods, step_ns=GROWING_WINDOW_STEP_NS):
     agg_stats = compute_poisson_agg_stats(
         dir_prefix, queue_names, linkDelays, linkRates, steadyStart, steadyEnd,
         num_poisson_observations, confidenceValue, DelayConsistencyGaurantee,
     )
+    # Built per run, not once: a growing-window method redraws its candidate windows' own
+    # switch-side statistics every run, exactly as agg_stats above is redrawn.
+    window_ctx = growing_window_context(prepared, confidenceValue, DelayConsistencyGaurantee,
+                                         num_poisson_observations, step_ns=step_ns)
     return compute_emd_vs_num_tcp_flows_run(prepared, agg_stats, confidenceValue, min_sample_size,
-                                             subsampling_methods)
+                                             subsampling_methods, window_ctx=window_ctx)
 
 
 def _poisson_run_worker(return_dict, run_indices, prepared, dir_prefix, queue_names, linkDelays, linkRates,
                          steadyStart, steadyEnd, num_poisson_observations, confidenceValue,
-                         DelayConsistencyGaurantee, min_sample_size, subsampling_methods):
+                         DelayConsistencyGaurantee, min_sample_size, subsampling_methods,
+                         step_ns=GROWING_WINDOW_STEP_NS):
     # A forked worker inherits the parent's numpy random state verbatim, so without
     # reseeding here every worker would draw the exact same "independent" runs.
     np.random.seed()
@@ -4246,18 +4987,18 @@ def _poisson_run_worker(return_dict, run_indices, prepared, dir_prefix, queue_na
         return_dict[idx] = _run_one_poisson_run(
             prepared, dir_prefix, queue_names, linkDelays, linkRates, steadyStart, steadyEnd,
             num_poisson_observations, confidenceValue, DelayConsistencyGaurantee, min_sample_size,
-            subsampling_methods,
+            subsampling_methods, step_ns=step_ns,
         )
 
 
 def _run_poisson_runs(prepared, dir_prefix, queue_names, linkDelays, linkRates, steadyStart, steadyEnd,
                        num_poisson_observations, confidenceValue, DelayConsistencyGaurantee, min_sample_size,
-                       num_runs, num_workers, subsampling_methods):
+                       num_runs, num_workers, subsampling_methods, step_ns=GROWING_WINDOW_STEP_NS):
     if num_workers is None or num_workers <= 1:
         return [
             _run_one_poisson_run(prepared, dir_prefix, queue_names, linkDelays, linkRates, steadyStart, steadyEnd,
                                   num_poisson_observations, confidenceValue, DelayConsistencyGaurantee, min_sample_size,
-                                  subsampling_methods)
+                                  subsampling_methods, step_ns=step_ns)
             for _ in range(num_runs)
         ]
 
@@ -4272,17 +5013,26 @@ def _run_poisson_runs(prepared, dir_prefix, queue_names, linkDelays, linkRates, 
             target=_poisson_run_worker,
             args=(return_dict, run_indices, prepared, dir_prefix, queue_names, linkDelays, linkRates,
                   steadyStart, steadyEnd, num_poisson_observations, confidenceValue,
-                  DelayConsistencyGaurantee, min_sample_size, subsampling_methods),
+                  DelayConsistencyGaurantee, min_sample_size, subsampling_methods, step_ns),
         )
         processes.append(p)
         p.start()
     for p in processes:
         p.join()
+    missing = [i for i in range(num_runs) if i not in return_dict]
+    if missing:
+        # A worker that raised leaves its runs absent from the shared dict; indexing it
+        # blindly used to surface as a bare KeyError from the manager, which says nothing
+        # about the real failure (the child's traceback is printed above, on its own stderr).
+        raise RuntimeError(
+            "{} of {} Poisson runs produced no result -- a worker process died (its "
+            "traceback is printed above, before this error). Missing run indices: {}{}".format(
+                len(missing), num_runs, missing[:10], '...' if len(missing) > 10 else ''))
     return [return_dict[i] for i in range(num_runs)]
 
 
 def _collect_one_run_delay_cdfs(prepared, agg_stats, min_sample_size,
-                                 subsampling_methods='find_samples_path'):
+                                 subsampling_methods='find_samples_path', window_ctx=None):
     """For a single concrete Poisson-process realization (`agg_stats`, as
     produced by one call to compute_poisson_agg_stats), collect the raw
     per-packet delay values -- not just their EMD summary -- for every
@@ -4300,29 +5050,50 @@ def _collect_one_run_delay_cdfs(prepared, agg_stats, min_sample_size,
     """
     full_df = prepared['full_df']
     subset = full_df[full_df['FlowRank'] <= len(prepared['flow_order'])]
-    all_values = subset['Delay'].values
-
     times = subset['SentTime'].values
     min_samples = agg_stats.get('MinimumE2ESampleSizeDelay', 0)
     subsampling_methods = normalize_subsampling_methods(subsampling_methods)
 
     poisson_values, uniform_values = {}, {}
+    # The window each method's values came from, and (for a growing-window method, whose
+    # window is a prefix of the steady period) that window's own ground truth -- so the CDF
+    # plot can show a windowed family next to the reference it was actually scored against
+    # rather than only next to the full-window one.
+    window_ends, groundtruth_by_method = {}, {}
     for name in subsampling_methods:
-        samples_times, sub_err = _resolve_subsampling_method(name)(times, MinimumNumberOfSamples=min_samples)
+        windowed = window_ctx is not None and name in GROWING_WINDOW_SUBSAMPLING_METHODS
+        if windowed:
+            found = find_samples_growing_window_with_stats(name, times, window_ctx)
+            samples_times, sub_err = found['samples'], found['error']
+            window_end = found['window_end'] if found['window_end'] is not None else prepared['steady_end']
+            fam_subset = subset[subset['SentTime'] <= window_end]
+            fam_min_samples = found['min_samples'] if found['min_samples'] is not None else min_samples
+            groundtruth_by_method[name] = windowed_groundtruth(window_ctx, float(window_end))[0]
+        else:
+            samples_times, sub_err = call_subsampling_method(
+                name, times, min_samples, prepared['steady_start'], prepared['steady_end'])
+            window_end, fam_subset, fam_min_samples = prepared['steady_end'], subset, min_samples
+        window_ends[name] = window_end
         if sub_err != SubSamplingError.NoError or len(samples_times) == 0:
             poisson_values[name] = np.array([])
         else:
-            poisson_values[name] = subset[subset['SentTime'].isin(samples_times)]['Delay'].values
-        target_count = matched_uniform_target_count(len(poisson_values[name]), min_samples)
-        uniform_values[name] = sample_uniform_count(subset, target_count)['Delay'].values
+            poisson_values[name] = fam_subset[fam_subset['SentTime'].isin(samples_times)]['Delay'].values
+        target_count = matched_uniform_target_count(len(poisson_values[name]), fam_min_samples)
+        uniform_values[name] = sample_uniform_count(fam_subset, target_count)['Delay'].values
+
+    # In a windowed run the all-packets curve is the packets inside the run's window, the
+    # same set every other family here was drawn from and scored against.
+    windowed_method = growing_window_method_in(subsampling_methods) if window_ctx is not None else None
+    all_packets_end = window_ends.get(windowed_method, prepared['steady_end'])
+    all_values = subset[subset['SentTime'] <= all_packets_end]['Delay'].values
 
     targets = oracle_target_counts({name: len(poisson_values[name]) for name in subsampling_methods},
                                     min_samples, all_packets_size=len(all_values))
     oracle_values = {
         key: construct_oracle_poisson_delays(
             prepared['groundtruth_method'], prepared['queue_names'], prepared['dir_prefix'],
-            prepared['steady_start'], prepared['steady_end'], prepared['link_delays'],
-            prepared['link_rates'], target)
+            prepared['steady_start'], window_ends.get(key, prepared['steady_end']),
+            prepared['link_delays'], prepared['link_rates'], target)
         for key, target in targets.items()}
 
     return {
@@ -4330,6 +5101,11 @@ def _collect_one_run_delay_cdfs(prepared, agg_stats, min_sample_size,
         'poisson_subsample_by_method': poisson_values,
         'uniform': uniform_values,
         'oracle': oracle_values,
+        'window_end_by_method': window_ends,
+        # The ground truth this realization's families were scored against: the run's own
+        # window in a windowed run (empty otherwise, where the result's full-window
+        # 'groundtruth_values' is already the right reference).
+        'groundtruth_by_method': groundtruth_by_method,
     }
 
 
@@ -4377,7 +5153,12 @@ def plot_one_run_delay_cdfs(results, output_path, title="Delay CDF comparison (o
     poisson_by_method = _one_run_poisson_subsamples(one_run)
     methods = [m for m in results['subsampling_methods'] if m in poisson_by_method] or list(poisson_by_method)
 
-    palette = ['C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'C9']
+    # Long enough that a run comparing several methods (each bringing a uniform baseline, an
+    # ideal probe and, for a growing-window method, its own window's ground truth) does not
+    # start reusing colours: three methods already need 14 series.
+    palette = ['C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'C9', 'navy', 'darkorange',
+                'darkgreen', 'crimson', 'purple', 'saddlebrown', 'teal', 'magenta',
+                'olive', 'dimgray']
     extra_series = []
     # The first Poisson-adaptive method fills plot_delay_distribution_cdfs' fixed
     # "subsampled" slot; any further method is just another extra series, exactly
@@ -4397,6 +5178,17 @@ def plot_one_run_delay_cdfs(results, output_path, title="Delay CDF comparison (o
                               palette[j % len(palette)]))
 
     first_method = methods[0] if methods else None
+    # In a windowed run every curve here -- the ground truth included -- covers the window
+    # that realization's search settled on, so say which window that was rather than letting
+    # the reader assume the full steady period.
+    gt_label = groundtruth_method_label(results.get('groundtruth_method', 'simultaneous'))
+    window_method = results.get('analysis_window_method')
+    window_end = (one_run.get('window_end_by_method') or {}).get(window_method)
+    steady_start = results.get('steady_start')
+    if window_method and window_end is not None and steady_start is not None:
+        gt_label += ', {:.3g} ms window'.format((float(window_end) - float(steady_start)) / 1e6)
+        title += '\nall series over this run\'s {:.3g} ms window'.format(
+            (float(window_end) - float(steady_start)) / 1e6)
     return plot_delay_distribution_cdfs(
         results['groundtruth_values'],
         one_run['all_packets'],
@@ -4405,7 +5197,7 @@ def plot_one_run_delay_cdfs(results, output_path, title="Delay CDF comparison (o
         title=title,
         extra_series=extra_series,
         subsampled_label='Poisson-adaptive subsample ({})'.format(first_method),
-        groundtruth_label=groundtruth_method_label(results.get('groundtruth_method', 'simultaneous')),
+        groundtruth_label=gt_label,
     )
 
 
@@ -4424,6 +5216,8 @@ def upgrade_emd_vs_flows_results_schema(results):
             and 'delay_percentiles' in results and 'oracle_series' in results
             and 'poisson_test_series' in results
             and 'percentile_avg_relerror_all_packets' in results
+            and 'window_duration_sampled_by_run' in results and 'all_packet_sizes' in results
+            and 'error_bound_sampled_by_run' in results
             and isinstance(results.get('emd_sampled_packets_by_run'), dict)):
         return results
 
@@ -4513,6 +5307,25 @@ def upgrade_emd_vs_flows_results_schema(results):
         upgraded['burstiness_all_packets'] = {field: [float('nan')] * n_k for field in BURSTINESS_METRIC_LABELS}
     upgraded.setdefault('burstiness_all_packets_by_experiment',
                          {field: [[] for _ in range(n_k)] for field in BURSTINESS_METRIC_LABELS})
+    # The all-packets packet count per k and the per-run monitoring-window durations both
+    # postdate these pickles. Neither can be recovered from what was stored, so an old
+    # result carries NaN/empty placeholders and the sample-size plot's all-packets reference
+    # (and the monitoring-window plot entirely) is skipped for it rather than faked.
+    upgraded.setdefault('all_packet_sizes', [float('nan')] * n_k)
+    upgraded.setdefault('window_duration_sampled_by_run',
+                         {m: [[] for _ in range(n_k)] for m in upgraded['subsampling_methods']})
+    # Consistency-check error bounds (delay_consistency_error_bound) postdate these pickles
+    # too. They are derivable in principle (bound = f(agg_stats, n)) but the per-run
+    # agg_stats were never stored, so an old result carries empty placeholders and the
+    # error-bound plot/columns are skipped for it rather than faked.
+    for prefix in ('error_bound_', 'error_bound_ns_'):
+        upgraded.setdefault(prefix + 'all_packets_by_run', [[] for _ in range(n_k)])
+        upgraded.setdefault(prefix + 'sampled_by_run',
+                             {m: [[] for _ in range(n_k)] for m in upgraded['subsampling_methods']})
+        upgraded.setdefault(prefix + 'uniform_by_run',
+                             {s: [[] for _ in range(n_k)] for s in upgraded['uniform_series']})
+        upgraded.setdefault(prefix + 'oracle_by_run',
+                             {key: [[] for _ in range(n_k)] for key in upgraded['oracle_series']})
     if 'groundtruth_mean' not in upgraded:
         gt = np.asarray(upgraded.get('groundtruth_values', []), dtype=float)
         upgraded['groundtruth_mean'] = float(np.mean(gt)) if gt.size else np.nan
@@ -4616,20 +5429,27 @@ def aggregate_emd_vs_flows_results(results_list):
 
     if len(results_list) == 1:
         result = dict(results_list[0])
-        result['percentile_diff_all_packets_by_experiment'] = {
-            q: [[v] for v in per_k] for q, per_k in result['percentile_diff_all_packets'].items()}
-        result['percentile_reldiff_all_packets_by_experiment'] = {
-            q: [[v] for v in per_k] for q, per_k in result['percentile_reldiff_all_packets'].items()}
-        result['percentile_avg_relerror_all_packets_by_experiment'] = [
-            [v] for v in result['percentile_avg_relerror_all_packets']]
         result['num_experiments'] = 1
         result['experiments'] = experiments
-        result['emd_all_packets_by_experiment'] = [[v] for v in result['emd_all_packets']]
-        result['emd_all_packets_by_experiment_normalized'] = [
-            [v] for v in result['emd_all_packets_normalized']]
-        result['burstiness_all_packets_by_experiment'] = {
-            field: [([v] if v == v else []) for v in per_k]
-            for field, per_k in (result.get('burstiness_all_packets') or {}).items()}
+        # A single experiment's all-packets value at each k becomes a one-entry spread, so
+        # every consumer can read the '..._by_experiment' shape uniformly. A WINDOWED result
+        # already carries a real per-run spread in exactly these keys (each run measured the
+        # family inside its own window), so those are left untouched -- collapsing them to
+        # the per-k mean here would throw away the very variation they exist to show.
+        if not result.get('all_packets_windowed'):
+            result['percentile_diff_all_packets_by_experiment'] = {
+                q: [[v] for v in per_k] for q, per_k in result['percentile_diff_all_packets'].items()}
+            result['percentile_reldiff_all_packets_by_experiment'] = {
+                q: [[v] for v in per_k] for q, per_k in result['percentile_reldiff_all_packets'].items()}
+            result['percentile_avg_relerror_all_packets_by_experiment'] = [
+                [v] for v in result['percentile_avg_relerror_all_packets']]
+            result['emd_all_packets_by_experiment'] = [[v] for v in result['emd_all_packets']]
+            result['emd_all_packets_by_experiment_normalized'] = [
+                [v] for v in result['emd_all_packets_normalized']]
+            result['all_packet_sizes_by_experiment'] = [[v] for v in result.get('all_packet_sizes') or []]
+            result['burstiness_all_packets_by_experiment'] = {
+                field: [([v] if v == v else []) for v in per_k]
+                for field, per_k in (result.get('burstiness_all_packets') or {}).items()}
         return result
 
     all_k = sorted(set().union(*(set(r['num_flows']) for r in results_list)))
@@ -4662,6 +5482,7 @@ def aggregate_emd_vs_flows_results(results_list):
     run_chi = all(r.get('run_chi_squared_test', False) for r in results_list)
 
     emd_all_by_experiment, emd_all_by_experiment_norm, mean_diff_all = [], [], []
+    all_packet_sizes_by_experiment = []
     pctrelerr_all_by_experiment = []
     pass_all_count, pass_all_total = [], []
     emd_sampled_by_run = {m: [] for m in methods}
@@ -4671,6 +5492,14 @@ def aggregate_emd_vs_flows_results(results_list):
     pass_sampled_count = {m: [] for m in methods}
     pass_sampled_total = {m: [] for m in methods}
     sample_sizes_sampled = {m: [] for m in methods}
+    window_durations_sampled = {m: [] for m in methods}
+    bound_all, bound_ns_all = [], []
+    bounds_sampled = {m: [] for m in methods}
+    bounds_ns_sampled = {m: [] for m in methods}
+    bounds_uniform = {s: [] for s in uniform_series}
+    bounds_ns_uniform = {s: [] for s in uniform_series}
+    bounds_oracle = {key: [] for key in oracle_series}
+    bounds_ns_oracle = {key: [] for key in oracle_series}
     sample_sizes_uniform = {s: [] for s in uniform_series}
     pdiff_all = {q: [] for q in percentiles}
     preldiff_all = {q: [] for q in percentiles}
@@ -4700,6 +5529,7 @@ def aggregate_emd_vs_flows_results(results_list):
 
     for k in all_k:
         emd_all_vals, emd_all_vals_norm, mean_diff_all_vals = [], [], []
+        all_packet_size_vals = []
         pctrelerr_all_vals = []
         pass_all_c = pass_all_t = 0
         samp_emd_vals = {m: [] for m in methods}
@@ -4709,6 +5539,14 @@ def aggregate_emd_vs_flows_results(results_list):
         samp_pass_c = {m: 0 for m in methods}
         samp_pass_t = {m: 0 for m in methods}
         samp_size_vals = {m: [] for m in methods}
+        samp_window_vals = {m: [] for m in methods}
+        bound_all_vals, bound_ns_all_vals = [], []
+        samp_bound_vals = {m: [] for m in methods}
+        samp_bound_ns_vals = {m: [] for m in methods}
+        uniform_bound_vals = {s: [] for s in uniform_series}
+        uniform_bound_ns_vals = {s: [] for s in uniform_series}
+        oracle_bound_vals = {key: [] for key in oracle_series}
+        oracle_bound_ns_vals = {key: [] for key in oracle_series}
         uniform_size_vals = {s: [] for s in uniform_series}
         uniform_emd_vals = {s: [] for s in uniform_series}
         uniform_emd_vals_norm = {s: [] for s in uniform_series}
@@ -4740,20 +5578,58 @@ def aggregate_emd_vs_flows_results(results_list):
             i = r['num_flows'].index(k)
             num_runs = r['num_runs']
 
-            emd_all_vals.append(r['emd_all_packets'][i])
-            emd_all_vals_norm.append(r['emd_all_packets_normalized'][i])
-            pctrelerr_all_vals.append(r['percentile_avg_relerror_all_packets'][i])
+            # An ordinary experiment contributes ONE all-packets value per k (there the
+            # family is a fixed packet set); a windowed one contributes its per-run spread,
+            # since every run measured the family inside its own window. This pools
+            # whichever of the two the experiment has, so a mixed-mode or mixed-vintage
+            # aggregation still puts every value that exists into the same box.
+            windowed_all = bool(r.get('all_packets_windowed'))
+
+            def _all_packets(scalar_key, spread_key, index=i, result=r, windowed=windowed_all):
+                spread = result.get(spread_key)
+                if windowed and spread is not None:
+                    return list(spread[index]) if index < len(spread) else []
+                per_k = result.get(scalar_key) or []
+                return [per_k[index]] if index < len(per_k) else []
+
+            emd_all_contribution = _all_packets('emd_all_packets', 'emd_all_packets_by_experiment')
+            emd_all_vals.extend(emd_all_contribution)
+            emd_all_vals_norm.extend(_all_packets(
+                'emd_all_packets_normalized', 'emd_all_packets_by_experiment_normalized'))
+            all_packet_size_vals.extend(_all_packets(
+                'all_packet_sizes', 'all_packet_sizes_by_experiment'))
+            pctrelerr_all_vals.extend(_all_packets(
+                'percentile_avg_relerror_all_packets',
+                'percentile_avg_relerror_all_packets_by_experiment'))
             mean_diff_all_vals.extend(r['mean_diff_all_packets_by_run'][i])
-            pass_all_c += round(r['pass_rate_all_packets'][i] * num_runs)
-            pass_all_t += num_runs
+            bound_all_vals.extend((r.get('error_bound_all_packets_by_run') or [[]] * len(r['num_flows']))[i])
+            bound_ns_all_vals.extend((r.get('error_bound_ns_all_packets_by_run') or [[]] * len(r['num_flows']))[i])
+            # A windowed experiment's all-packets pass rate is out of the runs that
+            # certified a window (the ones that produced a value), not all num_runs -- the
+            # same denominator convention pass_rate_sampled has always used.
+            all_packets_total = len(emd_all_contribution) if windowed_all else num_runs
+            pass_all_c += round(r['pass_rate_all_packets'][i] * all_packets_total)
+            pass_all_t += all_packets_total
 
             for q in percentiles:
-                pdiff_all_vals[q].append(r['percentile_diff_all_packets'][q][i])
-                preldiff_all_vals[q].append(r['percentile_reldiff_all_packets'][q][i])
+                if windowed_all:
+                    pdiff_spread = (r.get('percentile_diff_all_packets_by_experiment') or {}).get(q)
+                    preldiff_spread = (r.get('percentile_reldiff_all_packets_by_experiment') or {}).get(q)
+                    pdiff_all_vals[q].extend(pdiff_spread[i] if pdiff_spread else [])
+                    preldiff_all_vals[q].extend(preldiff_spread[i] if preldiff_spread else [])
+                else:
+                    pdiff_all_vals[q].append(r['percentile_diff_all_packets'][q][i])
+                    preldiff_all_vals[q].append(r['percentile_reldiff_all_packets'][q][i])
 
             if 'all_packets' in poisson_test_series:
                 for field in tests_all_fields:
-                    tests_all_vals[field].append(r['poisson_tests_all_packets'][field][i])
+                    verdicts = r['poisson_tests_all_packets'][field][i]
+                    # A windowed experiment stores one verdict per run here; an ordinary one
+                    # a single verdict for the whole experiment.
+                    if isinstance(verdicts, (list, tuple, np.ndarray)):
+                        tests_all_vals[field].extend(verdicts)
+                    else:
+                        tests_all_vals[field].append(verdicts)
 
             for m in r['subsampling_methods']:
                 sampled_vals = r['emd_sampled_packets_by_run'][m][i]
@@ -4762,6 +5638,14 @@ def aggregate_emd_vs_flows_results(results_list):
                 samp_pctrelerr_vals[m].extend(r['percentile_avg_relerror_sampled_by_run'][m][i])
                 samp_diff_vals[m].extend(r['mean_diff_sampled_by_run'][m][i])
                 samp_size_vals[m].extend(r['sample_sizes_sampled_by_run'][m][i])
+                # Absent from pickles written before monitoring windows were recorded; such
+                # an experiment simply contributes no duration rather than a made-up one.
+                samp_window_vals[m].extend(
+                    (r.get('window_duration_sampled_by_run') or {}).get(m, [[]] * len(r['num_flows']))[i])
+                samp_bound_vals[m].extend(
+                    (r.get('error_bound_sampled_by_run') or {}).get(m, [[]] * len(r['num_flows']))[i])
+                samp_bound_ns_vals[m].extend(
+                    (r.get('error_bound_ns_sampled_by_run') or {}).get(m, [[]] * len(r['num_flows']))[i])
                 n_samp = len(sampled_vals)
                 samp_pass_c[m] += round(r['pass_rate_sampled'][m][i] * n_samp)
                 samp_pass_t[m] += n_samp
@@ -4777,6 +5661,10 @@ def aggregate_emd_vs_flows_results(results_list):
                 uniform_pass_c[s] += round(r['pass_rate_uniform'][s][i] * num_runs)
                 uniform_pass_t[s] += num_runs
                 uniform_size_vals[s].extend(r['sample_sizes_uniform_by_run'][s][i])
+                uniform_bound_vals[s].extend(
+                    (r.get('error_bound_uniform_by_run') or {}).get(s, [[]] * len(r['num_flows']))[i])
+                uniform_bound_ns_vals[s].extend(
+                    (r.get('error_bound_ns_uniform_by_run') or {}).get(s, [[]] * len(r['num_flows']))[i])
                 for q in percentiles:
                     pdiff_uni_vals[q][s].extend(r['percentile_diff_uniform_by_run'][q][s][i])
                     preldiff_uni_vals[q][s].extend(r['percentile_reldiff_uniform_by_run'][q][s][i])
@@ -4793,6 +5681,10 @@ def aggregate_emd_vs_flows_results(results_list):
                 oracle_pctrelerr_vals[key].extend(r['percentile_avg_relerror_oracle_by_run'][key][i])
                 oracle_diff_vals[key].extend(r['mean_diff_oracle_by_run'][key][i])
                 oracle_size_vals[key].extend(r['sample_sizes_oracle_by_run'][key][i])
+                oracle_bound_vals[key].extend(
+                    (r.get('error_bound_oracle_by_run') or {}).get(key, [[]] * len(r['num_flows']))[i])
+                oracle_bound_ns_vals[key].extend(
+                    (r.get('error_bound_ns_oracle_by_run') or {}).get(key, [[]] * len(r['num_flows']))[i])
                 oracle_pass_c[key] += round(r['pass_rate_oracle'][key][i] * num_runs)
                 oracle_pass_t[key] += num_runs
                 for q in percentiles:
@@ -4801,8 +5693,11 @@ def aggregate_emd_vs_flows_results(results_list):
 
         emd_all_by_experiment.append(emd_all_vals)
         emd_all_by_experiment_norm.append(emd_all_vals_norm)
+        all_packet_sizes_by_experiment.append(all_packet_size_vals)
         pctrelerr_all_by_experiment.append(pctrelerr_all_vals)
         mean_diff_all.append(mean_diff_all_vals)
+        bound_all.append(bound_all_vals)
+        bound_ns_all.append(bound_ns_all_vals)
         pass_all_count.append(pass_all_c)
         pass_all_total.append(pass_all_t)
 
@@ -4827,6 +5722,9 @@ def aggregate_emd_vs_flows_results(results_list):
             pass_sampled_count[m].append(samp_pass_c[m])
             pass_sampled_total[m].append(samp_pass_t[m])
             sample_sizes_sampled[m].append(samp_size_vals[m])
+            window_durations_sampled[m].append(samp_window_vals[m])
+            bounds_sampled[m].append(samp_bound_vals[m])
+            bounds_ns_sampled[m].append(samp_bound_ns_vals[m])
 
         for s in uniform_series:
             emd_uniform_by_run[s].append(uniform_emd_vals[s])
@@ -4836,6 +5734,8 @@ def aggregate_emd_vs_flows_results(results_list):
             pass_uniform_count[s].append(uniform_pass_c[s])
             pass_uniform_total[s].append(uniform_pass_t[s])
             sample_sizes_uniform[s].append(uniform_size_vals[s])
+            bounds_uniform[s].append(uniform_bound_vals[s])
+            bounds_ns_uniform[s].append(uniform_bound_ns_vals[s])
 
         for m in methods:
             for field in split_fields:
@@ -4851,6 +5751,8 @@ def aggregate_emd_vs_flows_results(results_list):
             pass_oracle_count[key].append(oracle_pass_c[key])
             pass_oracle_total[key].append(oracle_pass_t[key])
             sample_sizes_oracle[key].append(oracle_size_vals[key])
+            bounds_oracle[key].append(oracle_bound_vals[key])
+            bounds_ns_oracle[key].append(oracle_bound_ns_vals[key])
 
     groundtruth_values = np.concatenate(
         [np.asarray(r['groundtruth_values'], dtype=float) for r in results_list])
@@ -4875,8 +5777,14 @@ def aggregate_emd_vs_flows_results(results_list):
             vals = []
             for r in results_list:
                 if k in r['num_flows']:
-                    v = (r.get('burstiness_all_packets') or {}).get(field, [])
                     idx = r['num_flows'].index(k)
+                    spread = (r.get('burstiness_all_packets_by_experiment') or {}).get(field)
+                    if r.get('all_packets_windowed') and spread is not None:
+                        # Windowed run: one value per run, each measured over that run's
+                        # own window (see compute_emd_vs_num_tcp_flows_multi_run).
+                        vals.extend([v for v in (spread[idx] if idx < len(spread) else []) if v == v])
+                        continue
+                    v = (r.get('burstiness_all_packets') or {}).get(field, [])
                     if idx < len(v) and v[idx] == v[idx]:
                         vals.append(v[idx])
             per_k_values.append(vals)
@@ -4951,6 +5859,14 @@ def aggregate_emd_vs_flows_results(results_list):
         'emd_all_packets_normalized': [float(np.mean(v)) for v in emd_all_by_experiment_norm],
         'emd_all_packets_by_experiment': emd_all_by_experiment,
         'emd_all_packets_by_experiment_normalized': emd_all_by_experiment_norm,
+        # Carried through so a reader (and any further aggregation) knows these values were
+        # measured over each run's own growing window, not the full steady period.
+        'all_packets_windowed': any(r.get('all_packets_windowed') for r in results_list),
+        'analysis_window_method': next((r.get('analysis_window_method') for r in results_list
+                                         if r.get('analysis_window_method')), None),
+        'all_packet_sizes': [float(np.mean(v)) if len(v) else np.nan
+                              for v in all_packet_sizes_by_experiment],
+        'all_packet_sizes_by_experiment': all_packet_sizes_by_experiment,
         'emd_sampled_packets_by_run': emd_sampled_by_run,
         'emd_sampled_packets_by_run_normalized': emd_sampled_by_run_norm,
         'pass_rate_all_packets': [_rate(c, t) for c, t in zip(pass_all_count, pass_all_total)],
@@ -4959,6 +5875,23 @@ def aggregate_emd_vs_flows_results(results_list):
         'mean_diff_all_packets_by_run': mean_diff_all,
         'mean_diff_sampled_by_run': mean_diff_sampled,
         'sample_sizes_sampled_by_run': sample_sizes_sampled,
+        'window_duration_sampled_by_run': window_durations_sampled,
+        'error_bound_all_packets_by_run': bound_all,
+        'error_bound_ns_all_packets_by_run': bound_ns_all,
+        'error_bound_sampled_by_run': bounds_sampled,
+        'error_bound_ns_sampled_by_run': bounds_ns_sampled,
+        'error_bound_uniform_by_run': bounds_uniform,
+        'error_bound_ns_uniform_by_run': bounds_ns_uniform,
+        'error_bound_oracle_by_run': bounds_oracle,
+        'error_bound_ns_oracle_by_run': bounds_ns_oracle,
+        # Every experiment in an aggregation was run against the same configured guarantee
+        # (it is a constant of the pipeline, not a per-experiment choice); the first one
+        # that recorded it stands for all.
+        'delay_consistency_guarantee': next((r.get('delay_consistency_guarantee') for r in results_list
+                                              if r.get('delay_consistency_guarantee')), None),
+        'steady_start': results_list[0].get('steady_start'),
+        'steady_end': results_list[0].get('steady_end'),
+        'growing_window_step_ns': results_list[0].get('growing_window_step_ns'),
         'sample_sizes_uniform_by_run': sample_sizes_uniform,
         'emd_uniform_packets_by_run': emd_uniform_by_run,
         'emd_uniform_packets_by_run_normalized': emd_uniform_by_run_norm,
@@ -4991,7 +5924,7 @@ def compute_emd_vs_num_tcp_flows_multi_run(
     DelayConsistencyGaurantee,
     num_runs=100,
     num_poisson_observations=9000,
-    min_sample_size=30,
+    min_sample_size=100,
     delay_cdf_sample_interval_ns=10,
     path=0,
     max_num_flows=None,
@@ -5003,6 +5936,7 @@ def compute_emd_vs_num_tcp_flows_multi_run(
     delay_percentiles=DEFAULT_DELAY_PERCENTILES,
     run_chi_squared_test=True,
     poisson_test_lags=None,
+    growing_window_step_ns=GROWING_WINDOW_STEP_NS,
     differentiationDelay=None,
     errorRate=None,
 ):
@@ -5088,6 +6022,9 @@ def compute_emd_vs_num_tcp_flows_multi_run(
     tail -- which is the part delay SLOs are written against.
     """
     subsampling_methods = normalize_subsampling_methods(subsampling_methods)
+    # Fail before any data is loaded if the method combination cannot be analyzed in one
+    # run (a growing-window method must be alone -- see growing_window_method_in).
+    growing_window_method_in(subsampling_methods)
     prepared = prepare_emd_vs_flows_data(
         ns3_path, results_folder, rate, load, experiment, flow_name, queue_names,
         linkDelays, linkRates, steadyStart, steadyEnd, path=path,
@@ -5111,38 +6048,77 @@ def compute_emd_vs_num_tcp_flows_multi_run(
         dir_prefix, queue_names, linkDelays, linkRates, steadyStart, steadyEnd,
         num_poisson_observations, confidenceValue, DelayConsistencyGaurantee,
     )
+    one_run_window_ctx = growing_window_context(
+        prepared, confidenceValue, DelayConsistencyGaurantee, num_poisson_observations,
+        step_ns=growing_window_step_ns)
     one_run_delay_cdfs = _collect_one_run_delay_cdfs(prepared, one_run_agg_stats, min_sample_size,
-                                                      subsampling_methods)
+                                                      subsampling_methods,
+                                                      window_ctx=one_run_window_ctx)
 
     run_results = _run_poisson_runs(
         prepared, dir_prefix, queue_names, linkDelays, linkRates, steadyStart, steadyEnd,
         num_poisson_observations, confidenceValue, DelayConsistencyGaurantee, min_sample_size,
-        num_runs, num_workers, subsampling_methods,
+        num_runs, num_workers, subsampling_methods, step_ns=growing_window_step_ns,
     )
 
+    windowed_method = growing_window_method_in(subsampling_methods)
     per_k_pass_all = [0] * len(num_flows)
     per_k_mean_diff_all = [[] for _ in num_flows]
+    # In a windowed run the all-packets family is a different packet set every run (each
+    # run's window differs), so like every other family it becomes a per-run distribution
+    # rather than one fixed value per flow count.
+    per_k_emd_all = [[] for _ in num_flows]
+    per_k_emd_all_norm = [[] for _ in num_flows]
+    per_k_size_all = [[] for _ in num_flows]
+    per_k_pdiff_all = {q: [[] for _ in num_flows] for q in delay_percentiles}
+    per_k_preldiff_all = {q: [[] for _ in num_flows] for q in delay_percentiles}
+    per_k_pctrelerr_all = [[] for _ in num_flows]
+    # The consistency check's own threshold at each family's sample size, per run (see
+    # delay_consistency_error_bound): relative to the switch mean, and in ns.
+    per_k_bound_all = [[] for _ in num_flows]
+    per_k_bound_ns_all = [[] for _ in num_flows]
+    per_k_tests_all = {field: [[] for _ in num_flows]
+                        for field in ('ad_pass', 'ad_pvalue', 'chi_pass', 'chi_reject_fraction')}
+    per_k_burstiness_all = {field: [[] for _ in num_flows] for field in BURSTINESS_METRIC_LABELS}
     per_k_emd_sampled = {m: [[] for _ in num_flows] for m in subsampling_methods}
+    # Normalized EMDs are pooled from each run rather than derived here by dividing the
+    # pooled raw values: a growing-window family's normalizer is the mean ground-truth
+    # delay of the window *that run* stopped at, which only the run itself knows. For every
+    # other family the run divides by the full-window mean, exactly as before.
+    per_k_emd_sampled_norm = {m: [[] for _ in num_flows] for m in subsampling_methods}
     per_k_pass_sampled = {m: [0] * len(num_flows) for m in subsampling_methods}
     per_k_mean_diff_sampled = {m: [[] for _ in num_flows] for m in subsampling_methods}
     per_k_sample_sizes_sampled = {m: [[] for _ in num_flows] for m in subsampling_methods}
+    # How long a monitoring window each method's samples actually came from, per run (ns).
+    per_k_window_duration_sampled = {m: [[] for _ in num_flows] for m in subsampling_methods}
+    per_k_bound_sampled = {m: [[] for _ in num_flows] for m in subsampling_methods}
+    per_k_bound_ns_sampled = {m: [[] for _ in num_flows] for m in subsampling_methods}
+    per_k_bound_uniform = {m: [[] for _ in num_flows] for m in subsampling_methods}
+    per_k_bound_ns_uniform = {m: [[] for _ in num_flows] for m in subsampling_methods}
     # One rate-matched uniform family per Poisson-adaptive method, keyed by that method.
     per_k_emd_uniform = {m: [[] for _ in num_flows] for m in subsampling_methods}
+    per_k_emd_uniform_norm = {m: [[] for _ in num_flows] for m in subsampling_methods}
     per_k_pass_uniform = {m: [0] * len(num_flows) for m in subsampling_methods}
     per_k_mean_diff_uniform = {m: [[] for _ in num_flows] for m in subsampling_methods}
     per_k_sample_sizes_uniform = {m: [[] for _ in num_flows] for m in subsampling_methods}
     per_k_pdiff_sampled = _empty_percentile_structure(delay_percentiles, subsampling_methods, len(num_flows))
+    per_k_preldiff_sampled = _empty_percentile_structure(delay_percentiles, subsampling_methods, len(num_flows))
     per_k_pdiff_uniform = _empty_percentile_structure(delay_percentiles, subsampling_methods, len(num_flows))
+    per_k_preldiff_uniform = _empty_percentile_structure(delay_percentiles, subsampling_methods, len(num_flows))
     # Mean absolute relative percentile error (see percentile_avg_relative_error), pooled
     # across runs the same way as the raw EMD.
     per_k_pctrelerr_sampled = {m: [[] for _ in num_flows] for m in subsampling_methods}
     per_k_pctrelerr_uniform = {m: [[] for _ in num_flows] for m in subsampling_methods}
     oracle_series = [ORACLE_MIN_REQUIRED_KEY] + list(subsampling_methods) + [ORACLE_ALL_PACKETS_RATE_KEY]
     per_k_emd_oracle = {key: [[] for _ in num_flows] for key in oracle_series}
+    per_k_emd_oracle_norm = {key: [[] for _ in num_flows] for key in oracle_series}
     per_k_pass_oracle = {key: [0] * len(num_flows) for key in oracle_series}
     per_k_mean_diff_oracle = {key: [[] for _ in num_flows] for key in oracle_series}
     per_k_sample_sizes_oracle = {key: [[] for _ in num_flows] for key in oracle_series}
+    per_k_bound_oracle = {key: [[] for _ in num_flows] for key in oracle_series}
+    per_k_bound_ns_oracle = {key: [[] for _ in num_flows] for key in oracle_series}
     per_k_pdiff_oracle = _empty_percentile_structure(delay_percentiles, oracle_series, len(num_flows))
+    per_k_preldiff_oracle = _empty_percentile_structure(delay_percentiles, oracle_series, len(num_flows))
     per_k_pctrelerr_oracle = {key: [[] for _ in num_flows] for key in oracle_series}
     # Aligned per-run records for the Poisson-ness split: value and verdict appended
     # together, so index j of every list below belongs to the same run.
@@ -5156,19 +6132,58 @@ def compute_emd_vs_num_tcp_flows_multi_run(
                 per_k_pass_all[i] += 1
             if np.isfinite(run_result['mean_diff_all_packets'][i]):
                 per_k_mean_diff_all[i].append(run_result['mean_diff_all_packets'][i])
+            bound_all_value = run_result['error_bound_all_packets'][i]
+            if np.isfinite(bound_all_value):
+                per_k_bound_all[i].append(bound_all_value)
+                per_k_bound_ns_all[i].append(run_result['error_bound_ns_all_packets'][i])
+            if windowed_method is not None:
+                emd_all_value = run_result['emd_all_packets'][i]
+                if np.isfinite(emd_all_value):
+                    per_k_emd_all[i].append(emd_all_value)
+                    per_k_emd_all_norm[i].append(run_result['emd_all_packets_normalized'][i])
+                if run_result['all_packet_size'][i]:
+                    per_k_size_all[i].append(run_result['all_packet_size'][i])
+                for q in delay_percentiles:
+                    all_pdiff = run_result['percentile_diff_all_packets'][q][i]
+                    if np.isfinite(all_pdiff):
+                        per_k_pdiff_all[q][i].append(all_pdiff)
+                        per_k_preldiff_all[q][i].append(
+                            run_result['percentile_reldiff_all_packets'][q][i])
+                all_relerr = run_result['percentile_avg_relerror_all_packets'][i]
+                if np.isfinite(all_relerr):
+                    per_k_pctrelerr_all[i].append(all_relerr)
+                for field in per_k_tests_all:
+                    per_k_tests_all[field][i].append(run_result['poisson_tests_all_packets'][field][i])
+                for field in per_k_burstiness_all:
+                    burst_value = run_result['burstiness_all_packets'][field][i]
+                    if burst_value == burst_value:
+                        per_k_burstiness_all[field][i].append(burst_value)
 
             for m in subsampling_methods:
                 if np.isfinite(run_result['sampled_emd'][m][i]):
                     per_k_emd_sampled[m][i].append(run_result['sampled_emd'][m][i])
+                    per_k_emd_sampled_norm[m][i].append(run_result['sampled_emd_normalized'][m][i])
                 if run_result['sampled_consistency'][m][i] is True:
                     per_k_pass_sampled[m][i] += 1
                 if np.isfinite(run_result['sampled_mean_diff'][m][i]):
                     per_k_mean_diff_sampled[m][i].append(run_result['sampled_mean_diff'][m][i])
                 if run_result['sampled_sample_sizes'][m][i]:
                     per_k_sample_sizes_sampled[m][i].append(run_result['sampled_sample_sizes'][m][i])
+                window_duration = run_result['sampled_window_duration'][m][i]
+                if window_duration is not None and np.isfinite(window_duration):
+                    per_k_window_duration_sampled[m][i].append(window_duration)
+                sampled_bound = run_result['sampled_error_bound'][m][i]
+                if np.isfinite(sampled_bound):
+                    per_k_bound_sampled[m][i].append(sampled_bound)
+                    per_k_bound_ns_sampled[m][i].append(run_result['sampled_error_bound_ns'][m][i])
+                uniform_bound = run_result['uniform_error_bound'][m][i]
+                if np.isfinite(uniform_bound):
+                    per_k_bound_uniform[m][i].append(uniform_bound)
+                    per_k_bound_ns_uniform[m][i].append(run_result['uniform_error_bound_ns'][m][i])
 
                 if np.isfinite(run_result['uniform_emd'][m][i]):
                     per_k_emd_uniform[m][i].append(run_result['uniform_emd'][m][i])
+                    per_k_emd_uniform_norm[m][i].append(run_result['uniform_emd_normalized'][m][i])
                 if run_result['uniform_consistency'][m][i] is True:
                     per_k_pass_uniform[m][i] += 1
                 if np.isfinite(run_result['uniform_mean_diff'][m][i]):
@@ -5180,8 +6195,7 @@ def compute_emd_vs_num_tcp_flows_multi_run(
                 emd_value = split['emd'][i]
                 if np.isfinite(emd_value):
                     per_k_uniform_split[m]['emd'][i].append(emd_value)
-                    per_k_uniform_split[m]['emd_normalized'][i].append(
-                        normalize_emd_values(emd_value, groundtruth_mean))
+                    per_k_uniform_split[m]['emd_normalized'][i].append(split['emd_normalized'][i])
                     per_k_uniform_split[m]['mean_diff'][i].append(split['mean_diff'][i])
                     per_k_uniform_split[m]['ad_pass'][i].append(split['ad_pass'][i])
                     per_k_uniform_split[m]['chi_pass'][i].append(split['chi_pass'][i])
@@ -5190,9 +6204,13 @@ def compute_emd_vs_num_tcp_flows_multi_run(
                     sampled_pdiff = run_result['sampled_percentile_diff'][q][m][i]
                     if np.isfinite(sampled_pdiff):
                         per_k_pdiff_sampled[q][m][i].append(sampled_pdiff)
+                        per_k_preldiff_sampled[q][m][i].append(
+                            run_result['sampled_percentile_reldiff'][q][m][i])
                     uniform_pdiff = run_result['uniform_percentile_diff'][q][m][i]
                     if np.isfinite(uniform_pdiff):
                         per_k_pdiff_uniform[q][m][i].append(uniform_pdiff)
+                        per_k_preldiff_uniform[q][m][i].append(
+                            run_result['uniform_percentile_reldiff'][q][m][i])
 
                 sampled_relerr = run_result['sampled_percentile_avg_relerror'][m][i]
                 if np.isfinite(sampled_relerr):
@@ -5204,24 +6222,113 @@ def compute_emd_vs_num_tcp_flows_multi_run(
             for key in oracle_series:
                 if np.isfinite(run_result['oracle_emd'][key][i]):
                     per_k_emd_oracle[key][i].append(run_result['oracle_emd'][key][i])
+                    per_k_emd_oracle_norm[key][i].append(run_result['oracle_emd_normalized'][key][i])
                 if run_result['oracle_consistency'][key][i] is True:
                     per_k_pass_oracle[key][i] += 1
                 if np.isfinite(run_result['oracle_mean_diff'][key][i]):
                     per_k_mean_diff_oracle[key][i].append(run_result['oracle_mean_diff'][key][i])
                 if run_result['oracle_sample_sizes'][key][i]:
                     per_k_sample_sizes_oracle[key][i].append(run_result['oracle_sample_sizes'][key][i])
+                oracle_bound = run_result['oracle_error_bound'][key][i]
+                if np.isfinite(oracle_bound):
+                    per_k_bound_oracle[key][i].append(oracle_bound)
+                    per_k_bound_ns_oracle[key][i].append(run_result['oracle_error_bound_ns'][key][i])
                 for q in delay_percentiles:
                     oracle_pdiff = run_result['oracle_percentile_diff'][q][key][i]
                     if np.isfinite(oracle_pdiff):
                         per_k_pdiff_oracle[q][key][i].append(oracle_pdiff)
+                        per_k_preldiff_oracle[q][key][i].append(
+                            run_result['oracle_percentile_reldiff'][q][key][i])
                 oracle_relerr = run_result['oracle_percentile_avg_relerror'][key][i]
                 if np.isfinite(oracle_relerr):
                     per_k_pctrelerr_oracle[key][i].append(oracle_relerr)
+
+    def _mean_or_nan(values):
+        return float(np.mean(values)) if len(values) else np.nan
+
+    if windowed_method is None:
+        # Ordinary run: the all-packets family is the same fixed packet set every run, so
+        # prepare_emd_vs_flows_data's per-flow-count values stand as they always have.
+        all_packets_results = {
+            'emd_all_packets': prepared['emd_all_packets'],
+            'emd_all_packets_normalized': normalize_emd_values(prepared['emd_all_packets'], groundtruth_mean),
+            'all_packet_sizes': prepared['all_packet_sizes'],
+            'percentile_diff_all_packets': prepared['percentile_diff_all_packets'],
+            'percentile_reldiff_all_packets': prepared['percentile_reldiff_all_packets'],
+            'percentile_avg_relerror_all_packets': prepared['percentile_avg_relerror_all_packets'],
+            'poisson_tests_all_packets': prepared['poisson_tests_all_packets'],
+            'burstiness_all_packets': prepared['burstiness_all_packets'],
+            'pass_rate_all_packets': [c / num_runs for c in per_k_pass_all],
+        }
+    else:
+        # Windowed run: every quantity here was measured over the window that run's search
+        # settled on -- never over the full steady period (unless the search reached it).
+        # The scalar keys keep their shape (now the mean across runs) so every existing
+        # reader still works, and the '..._by_experiment' keys carry the per-run values
+        # behind them, which is the same "set of values pooled behind this point" role they
+        # play in an aggregated result -- so the plots box them and the cross-experiment
+        # aggregation concatenates them, both with no special casing.
+        all_packets_results = {
+            'emd_all_packets': [_mean_or_nan(v) for v in per_k_emd_all],
+            'emd_all_packets_by_experiment': per_k_emd_all,
+            'emd_all_packets_normalized': [_mean_or_nan(v) for v in per_k_emd_all_norm],
+            'emd_all_packets_by_experiment_normalized': per_k_emd_all_norm,
+            'all_packet_sizes': [_mean_or_nan(v) for v in per_k_size_all],
+            'all_packet_sizes_by_experiment': per_k_size_all,
+            'percentile_diff_all_packets': {q: [_mean_or_nan(v) for v in per_k_pdiff_all[q]]
+                                             for q in delay_percentiles},
+            'percentile_diff_all_packets_by_experiment': per_k_pdiff_all,
+            'percentile_reldiff_all_packets': {q: [_mean_or_nan(v) for v in per_k_preldiff_all[q]]
+                                                for q in delay_percentiles},
+            'percentile_reldiff_all_packets_by_experiment': per_k_preldiff_all,
+            'percentile_avg_relerror_all_packets': [_mean_or_nan(v) for v in per_k_pctrelerr_all],
+            'percentile_avg_relerror_all_packets_by_experiment': per_k_pctrelerr_all,
+            # Per-run verdict lists -- the same shape an aggregated result's all-packets
+            # tests take, which plot_poisson_test_split_vs_num_flows already understands.
+            'poisson_tests_all_packets': per_k_tests_all,
+            'burstiness_all_packets': {field: [_mean_or_nan(v) for v in per_k_burstiness_all[field]]
+                                        for field in per_k_burstiness_all},
+            'burstiness_all_packets_by_experiment': per_k_burstiness_all,
+            # Denominator is the runs that actually certified a window (and so produced an
+            # all-packets value at all), matching the convention pass_rate_sampled uses: a
+            # run that found no usable window neither passed nor failed the check.
+            'pass_rate_all_packets': [(c / len(v)) if len(v) else 0.0
+                                       for c, v in zip(per_k_pass_all, per_k_emd_all)],
+        }
+
+    # With no certified window a run reports nothing at all, so the uniform and probe
+    # families' denominators follow the same "runs that produced a value" rule as the
+    # Poisson-adaptive families. In an ordinary run every run always produces one, which is
+    # why num_runs has always been the denominator there.
+    def _family_pass_rates(counts_by_key, values_by_key):
+        if windowed_method is None:
+            return {key: [c / num_runs for c in counts] for key, counts in counts_by_key.items()}
+        return {key: [(c / len(v)) if len(v) else 0.0
+                       for c, v in zip(counts_by_key[key], values_by_key[key])]
+                 for key in counts_by_key}
+
+    # A windowed run has no single ground truth: each run reconstructed one over its own
+    # window. What is reported here is the window ground truth of the one concrete
+    # realization plot_one_run_delay_cdfs draws, so the printed summary stats and the
+    # plotted reference curve are the same object -- never the full steady window's, which
+    # no family in a windowed run was ever compared against.
+    reported_gt_values = prepared['groundtruth_values']
+    if windowed_method is not None:
+        one_run_gt = (one_run_delay_cdfs.get('groundtruth_by_method') or {}).get(windowed_method)
+        if one_run_gt is not None and len(one_run_gt):
+            reported_gt_values = one_run_gt
+    reported_gt_values = np.asarray(reported_gt_values)
+    reported_gt_mean = float(np.mean(reported_gt_values)) if len(reported_gt_values) else np.nan
+    reported_gt_std = float(np.std(reported_gt_values)) if len(reported_gt_values) else np.nan
 
     return {
         'flow_name': flow_name,
         'path': path,
         'subsampling_methods': subsampling_methods,
+        # Which method's growing window defined the analysis window every quantity in this
+        # result was measured over, or None for an ordinary whole-steady-window run.
+        'analysis_window_method': windowed_method,
+        'all_packets_windowed': windowed_method is not None,
         # Kept for anything that only ever knew about one method (older readers,
         # text-summary headers); the full list lives in 'subsampling_methods'.
         'subsampling_method': subsampling_methods[0],
@@ -5233,40 +6340,33 @@ def compute_emd_vs_num_tcp_flows_multi_run(
         'oracle_series': oracle_series,
         'total_flows': len(prepared['flow_order']),
         'num_flows': num_flows,
-        'groundtruth_values': prepared['groundtruth_values'],
-        'groundtruth_mean': groundtruth_mean,
-        'groundtruth_std': prepared['groundtruth_std'],
+        'groundtruth_values': reported_gt_values,
+        'groundtruth_mean': reported_gt_mean,
+        'groundtruth_std': reported_gt_std,
         'delay_percentiles': list(delay_percentiles),
-        'groundtruth_percentiles': groundtruth_percentiles,
+        'groundtruth_percentiles': (compute_delay_percentiles(reported_gt_values, delay_percentiles)
+                                     if windowed_method is not None else groundtruth_percentiles),
         'burst_gap_threshold_ns': prepared['burst_gap_threshold_ns'],
-        'burstiness_all_packets': prepared['burstiness_all_packets'],
-        'percentile_diff_all_packets': prepared['percentile_diff_all_packets'],
-        'percentile_reldiff_all_packets': prepared['percentile_reldiff_all_packets'],
         'percentile_diff_sampled_by_run': per_k_pdiff_sampled,
-        'percentile_reldiff_sampled_by_run': relative_percentile_diffs(
-            per_k_pdiff_sampled, groundtruth_percentiles),
+        # Relative percentile errors come from the runs themselves, each divided by the
+        # ground-truth percentile of the window that family was scored in (identical to
+        # dividing by the full-window percentile for every non-growing-window family).
+        'percentile_reldiff_sampled_by_run': per_k_preldiff_sampled,
         'percentile_diff_uniform_by_run': per_k_pdiff_uniform,
-        'percentile_reldiff_uniform_by_run': relative_percentile_diffs(
-            per_k_pdiff_uniform, groundtruth_percentiles),
+        'percentile_reldiff_uniform_by_run': per_k_preldiff_uniform,
         'percentile_diff_oracle_by_run': per_k_pdiff_oracle,
-        'percentile_reldiff_oracle_by_run': relative_percentile_diffs(
-            per_k_pdiff_oracle, groundtruth_percentiles),
+        'percentile_reldiff_oracle_by_run': per_k_preldiff_oracle,
         # Mean absolute relative percentile error (see percentile_avg_relative_error):
         # self-normalized already, evaluated via a dense percentile grid independent of
         # delay_percentiles.
-        'percentile_avg_relerror_all_packets': prepared['percentile_avg_relerror_all_packets'],
         'percentile_avg_relerror_sampled_by_run': per_k_pctrelerr_sampled,
         'percentile_avg_relerror_uniform_by_run': per_k_pctrelerr_uniform,
         'percentile_avg_relerror_oracle_by_run': per_k_pctrelerr_oracle,
         'poisson_test_series': ['all_packets'] + [('uniform', m) for m in subsampling_methods],
         'run_chi_squared_test': run_chi_squared_test,
-        'poisson_tests_all_packets': prepared['poisson_tests_all_packets'],
         'uniform_test_split_by_run': per_k_uniform_split,
-        'emd_all_packets': prepared['emd_all_packets'],
-        'emd_all_packets_normalized': normalize_emd_values(prepared['emd_all_packets'], groundtruth_mean),
         'emd_sampled_packets_by_run': per_k_emd_sampled,
-        'emd_sampled_packets_by_run_normalized': normalize_emd_values(per_k_emd_sampled, groundtruth_mean),
-        'pass_rate_all_packets': [c / num_runs for c in per_k_pass_all],
+        'emd_sampled_packets_by_run_normalized': per_k_emd_sampled_norm,
         # Denominator is the number of runs that actually found a valid Poisson-adaptive
         # subsample at this k (len(per_k_emd_sampled[m][i])), not num_runs -- a run that
         # found no subsample at all didn't pass or fail the check, so it shouldn't count
@@ -5278,16 +6378,42 @@ def compute_emd_vs_num_tcp_flows_multi_run(
         'mean_diff_sampled_by_run': per_k_mean_diff_sampled,
         'sample_sizes_sampled_by_run': per_k_sample_sizes_sampled,
         'sample_sizes_uniform_by_run': per_k_sample_sizes_uniform,
+        # Per-run length (ns) of the monitoring window each method's samples came from: the
+        # growing-window methods' headline result ("how long did we have to watch?"), and
+        # the full steady window for every method that samples all of it.
+        'window_duration_sampled_by_run': per_k_window_duration_sampled,
+        # The consistency check's own threshold at each family's realized sample size, per
+        # run (delay_consistency_error_bound): relative to the switch-side mean -- which a
+        # family holding exactly the minimum required samples puts at exactly
+        # DelayConsistencyGaurantee -- and the same bound in ns, the figure |mean_diff| is
+        # actually tested against.
+        'error_bound_all_packets_by_run': per_k_bound_all,
+        'error_bound_ns_all_packets_by_run': per_k_bound_ns_all,
+        'error_bound_sampled_by_run': per_k_bound_sampled,
+        'error_bound_ns_sampled_by_run': per_k_bound_ns_sampled,
+        'error_bound_uniform_by_run': per_k_bound_uniform,
+        'error_bound_ns_uniform_by_run': per_k_bound_ns_uniform,
+        'error_bound_oracle_by_run': per_k_bound_oracle,
+        'error_bound_ns_oracle_by_run': per_k_bound_ns_oracle,
+        # The relative error the run was configured to guarantee -- what the relative
+        # bounds above are to be read against.
+        'delay_consistency_guarantee': DelayConsistencyGaurantee,
+        'steady_start': steadyStart,
+        'steady_end': steadyEnd,
+        'growing_window_step_ns': growing_window_step_ns,
         'emd_uniform_packets_by_run': per_k_emd_uniform,
-        'emd_uniform_packets_by_run_normalized': normalize_emd_values(per_k_emd_uniform, groundtruth_mean),
-        'pass_rate_uniform': {m: [c / num_runs for c in counts] for m, counts in per_k_pass_uniform.items()},
+        'emd_uniform_packets_by_run_normalized': per_k_emd_uniform_norm,
+        'pass_rate_uniform': _family_pass_rates(per_k_pass_uniform, per_k_emd_uniform),
         'mean_diff_uniform_packets_by_run': per_k_mean_diff_uniform,
         'emd_oracle_by_run': per_k_emd_oracle,
-        'emd_oracle_by_run_normalized': normalize_emd_values(per_k_emd_oracle, groundtruth_mean),
-        'pass_rate_oracle': {key: [c / num_runs for c in counts] for key, counts in per_k_pass_oracle.items()},
+        'emd_oracle_by_run_normalized': per_k_emd_oracle_norm,
+        'pass_rate_oracle': _family_pass_rates(per_k_pass_oracle, per_k_emd_oracle),
         'mean_diff_oracle_by_run': per_k_mean_diff_oracle,
         'sample_sizes_oracle_by_run': per_k_sample_sizes_oracle,
         'one_run_delay_cdfs': one_run_delay_cdfs,
+        # The all-packets family: full-window and fixed per flow count in an ordinary run,
+        # per-run and inside each run's own window in a windowed one (see above).
+        **all_packets_results,
     }
 
 
@@ -5313,8 +6439,13 @@ _FAMILY_EDGE_STYLE_BY_KIND = {
 
 # One distinct colour per comparison family, assigned in draw order across all kinds so no
 # two families on a plot ever share one.
+# Long enough for a run comparing three Poisson-adaptive methods: every method brings its
+# own sampled box, its rate-matched uniform box and its ideal-probe box, so three methods
+# plus all-packets and the two method-independent probes already need 12 colours.
 _FAMILY_COLORS = ['navy', 'darkorange', 'purple', 'teal', 'crimson',
-                   'olive', 'saddlebrown', 'magenta', 'dimgray', 'darkgreen']
+                   'olive', 'saddlebrown', 'magenta', 'dimgray', 'darkgreen',
+                   'deepskyblue', 'gold', 'indigo', 'mediumseagreen', 'tomato',
+                   'slateblue', 'darkkhaki', 'hotpink']
 
 # Geometry of one x-tick's cluster of boxes. `_FAMILY_GROUP_SPAN` is how much of the gap to
 # the neighbouring tick the whole cluster may occupy; `_FAMILY_BOX_FILL` is how much of each
@@ -5429,9 +6560,21 @@ def _annotate_all_packets_burstiness(axis, num_flows, offset, y_by_k, burstiness
                        fontsize=7, color='0.25', zorder=4)
 
 
+def _all_packets_spread_label(results):
+    """What an all-packets boxplot's spread is taken over: 'runs' in a windowed result (the
+    family was measured inside each run's own growing window, so it varies run to run) and
+    'experiments' otherwise (there it is a fixed packet set within one experiment, and only
+    differs between them). Purely for the legend, so a reader is never told a box spans
+    experiments when it actually spans runs."""
+    if results.get('all_packets_windowed'):
+        return 'runs' + (' and experiments' if results.get('num_experiments', 1) > 1 else '')
+    return 'experiments'
+
+
 def _draw_all_packets_series(axis, num_flows, scalar_by_k, by_experiment, pass_rate_by_k, offset,
                               box_width, pass_threshold, pass_color, fail_color, num_runs,
-                              num_experiments, quantity_name, fill_color=None, burstiness_by_k=None):
+                              num_experiments, quantity_name, fill_color=None, burstiness_by_k=None,
+                              spread_label='experiments'):
     """Render the all-packets comparison family and return its legend handles.
 
     All packets of the first k flows is the same fixed set of packets on every run, so
@@ -5445,7 +6588,13 @@ def _draw_all_packets_series(axis, num_flows, scalar_by_k, by_experiment, pass_r
     each all-packets position with its IDC(1RTT)/burst-duration/inter-burst-gap (see
     _annotate_all_packets_burstiness) -- omitted (None) wherever that would just clutter a
     plot that isn't about the all-packets family specifically."""
-    is_boxplot = bool(by_experiment) and num_experiments > 1
+    # A spread with more than one value per k means the quantity is not fixed within this
+    # result, whether that is because several experiments contributed (num_experiments > 1)
+    # or because a windowed run measured the all-packets family in a different window every
+    # run (see compute_emd_vs_num_tcp_flows_run) -- either way it is a distribution and
+    # belongs in a boxplot rather than as a single dot.
+    is_boxplot = bool(by_experiment) and (num_experiments > 1
+                                           or any(len(values) > 1 for values in by_experiment))
     if fill_color is not None:
         pass_color = fail_color = fill_color
     if is_boxplot:
@@ -5454,7 +6603,7 @@ def _draw_all_packets_series(axis, num_flows, scalar_by_k, by_experiment, pass_r
             pass_threshold, pass_color, fail_color, _ALL_PACKETS_STYLE, fill_color=fill_color)
         missing = [k for k, values in zip(num_flows, by_experiment) if len(values) == 0]
         handles = [Patch(facecolor='white', edgecolor=_ALL_PACKETS_STYLE['edge_color'], linewidth=4.5,
-                          label='All packets of considered flows (boxplot across experiments)')]
+                          label='All packets of considered flows (boxplot across {})'.format(spread_label))]
         # The rendered whisker top, not the raw max -- showfliers=False hides anything
         # beyond it as an outlier, and anchoring to a value the box itself doesn't reach can
         # land outside the axes' own autoscaled view, silently dropping the annotation (see
@@ -6583,7 +7732,8 @@ def plot_emd_vs_num_flows_boxplot(results, output_path, title="EMD vs number of 
         axis, num_flows, emd_all, emd_all_by_experiment, pass_rate_all, offset_all, box_width,
         pass_threshold, pass_color, fail_color, results['num_runs'],
         results.get('num_experiments', 1), metric_label,
-        burstiness_by_k=results.get('burstiness_all_packets'))
+        burstiness_by_k=results.get('burstiness_all_packets'),
+        spread_label=_all_packets_spread_label(results))
 
     # Poisson-adaptive subsamples: each differs every run -- one boxplot family per
     # method, so several algorithms run together are compared on the same axis.
@@ -6850,6 +8000,326 @@ def plot_mean_diff_vs_num_flows(results, output_path, title="Switch vs. packet m
     return output_path
 
 
+
+def plot_sample_sizes_vs_num_flows(results, output_path, title="Sample size vs number of TCP flows",
+                                    log_y=True):
+    """Plot how many packets each comparison family actually had at every flow count:
+    boxplots (across runs) of the retained sample size for each Poisson-adaptive
+    subsampling method, each rate-matched uniform family and each ideal Poisson probe,
+    next to the un-subsampled all-packets count (dots on a line for one experiment, a
+    boxplot once aggregated across experiments -- each experiment receives its own number
+    of packets).
+
+    This is the visual form of the text summary's 'n_pkts' columns, and it is worth a plot
+    of its own for two reasons. First, it is the direct check that the comparison is
+    rate-matched: a method's box and its paired uniform family's box must coincide exactly
+    (sample_uniform_count spends precisely the count the method retained), so any visible
+    gap between the two means the pairing broke. Second, against the all-packets reference
+    it shows the subsampling ratio the whole approach buys -- three orders of magnitude on
+    these runs -- which is why `log_y` is on by default.
+
+    Unlike the EMD and mean-difference plots, the boxes here are filled one neutral colour
+    rather than pass/fail green/red: a sample size is an input the consistency check
+    consumes, not something the check renders a verdict on, and colouring it by the verdict
+    would read as "this sample size passed" (see _draw_boxplot_family's fill_color). The
+    families are told apart by border colour and dash exactly as everywhere else
+    (family_border_style)."""
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    results = upgrade_emd_vs_flows_results_schema(results)
+    num_flows = results['num_flows']
+    methods = results['subsampling_methods']
+    uniform_series = results.get('uniform_series', [])
+    oracle_series = results.get('oracle_series', [])
+    num_experiments = results.get('num_experiments', 1)
+    fill_color = '0.85'
+    offset_all, offsets_poisson, offsets_uniform, offsets_oracle, box_width = _subsample_family_layout(
+        methods, uniform_series, oracle_series)
+
+    fig, axis = plt.subplots(figsize=(30, 15))
+
+    legend_handles = _draw_all_packets_series(
+        axis, num_flows, results.get('all_packet_sizes') or [np.nan] * len(num_flows),
+        results.get('all_packet_sizes_by_experiment'), results['pass_rate_all_packets'],
+        offset_all, box_width, 1.0, fill_color, fill_color, results['num_runs'],
+        num_experiments, 'sample size', fill_color=fill_color,
+        spread_label=_all_packets_spread_label(results))
+
+    for kind, series, offsets, values_by_key, labeller in (
+            ('sampled', methods, offsets_poisson, results.get('sample_sizes_sampled_by_run', {}),
+             lambda key: 'Poisson-adaptive subsample, {}'.format(key)),
+            ('uniform', uniform_series, offsets_uniform, results.get('sample_sizes_uniform_by_run', {}),
+             _uniform_series_label),
+            ('oracle', oracle_series, offsets_oracle, results.get('sample_sizes_oracle_by_run', {}),
+             _oracle_series_label)):
+        for i, key in enumerate(series):
+            color_index = {'sampled': 0, 'uniform': len(methods),
+                            'oracle': len(methods) + len(uniform_series)}[kind] + i
+            style = family_border_style(kind, color_index)
+            values_by_k = values_by_key.get(key, [[]] * len(num_flows))
+            missing_k = [k for k, values in zip(num_flows, values_by_k) if len(values) == 0]
+            if missing_k:
+                print("No {} sample-size values for {} flow-count(s), skipped: {}".format(
+                    labeller(key), len(missing_k), missing_k))
+            _draw_boxplot_family(axis, num_flows, values_by_k, [1.0] * len(num_flows),
+                                 offsets[key], box_width, 1.0, fill_color, fill_color, style,
+                                 fill_color=fill_color)
+            legend_handles.append(Patch(facecolor=fill_color, edgecolor=style['edge_color'],
+                                         linewidth=4.5, linestyle=style['edge_style'],
+                                         label=labeller(key)))
+
+    axis.set_title(title, fontsize=34)
+    axis.set_xlabel('Number of TCP flows considered')
+    axis.set_ylabel('Packets in the family (sample size)')
+    if log_y:
+        axis.set_yscale('log')
+    _set_flow_count_xaxis(axis, num_flows)
+    axis.grid(True, alpha=0.35, axis='y', which='both')
+    axis.legend(handles=legend_handles, fontsize=18, loc='best')
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=150)
+    plt.close(fig)
+    return output_path
+
+
+def plot_error_bound_vs_num_flows(results, output_path,
+                                   title="Consistency-check error bound vs number of TCP flows",
+                                   relative=True):
+    """Plot the consistency check's own error bound -- the threshold it compares
+    |switch mean - packet mean| against -- at every family's realized sample size, per run
+    (results['error_bound_*_by_run'], see delay_consistency_error_bound). `relative=True`
+    plots it as a fraction of the switch-side mean delay, with a dashed reference line at
+    the run's DelayConsistencyGaurantee; `relative=False` plots the same bound in ns, the
+    figure the mean difference is literally tested against.
+
+    What to read off the relative plot: the required sample size is *defined* as the n that
+    brings the bound down to exactly the guarantee (calc_min_e2e_samples), so a family
+    holding exactly that many samples lands on the reference line -- to within the fraction
+    of a sample lost when n is floored to an integer, which nudges it a few tenths of a
+    percent above (observed 0.4001-0.4012 against a 0.40 guarantee). A box
+    below the line means that family ended up with more samples than the minimum, either
+    because the sampler retained more or because MINIMUM_E2E_SAMPLE_SIZE's floor forced
+    more than the formula asked for (which on these runs is the common case, and puts the
+    bound materially below the guarantee); it is then claiming a tighter guarantee than
+    configured, which is safe. Nothing should sit *materially* above the line: that would
+    mean a check ran at a looser bound than the run claims to guarantee.
+
+    Boxes are filled one neutral colour rather than pass/fail green/red: the bound is the
+    check's threshold, not its outcome, and colouring a threshold by the verdict it
+    produced would conflate the two (see _draw_boxplot_family's fill_color). Families are
+    told apart by border colour and dash as everywhere else (family_border_style)."""
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    results = upgrade_emd_vs_flows_results_schema(results)
+    num_flows = results['num_flows']
+    methods = results['subsampling_methods']
+    uniform_series = results.get('uniform_series', [])
+    oracle_series = results.get('oracle_series', [])
+    num_experiments = results.get('num_experiments', 1)
+    prefix = 'error_bound_' if relative else 'error_bound_ns_'
+    fill_color = '0.85'
+    offset_all, offsets_poisson, offsets_uniform, offsets_oracle, box_width = _subsample_family_layout(
+        methods, uniform_series, oracle_series)
+
+    all_by_run = results.get(prefix + 'all_packets_by_run') or []
+    families = [(kind, series, offsets, results.get(prefix + key + '_by_run') or {}, labeller)
+                 for kind, series, offsets, key, labeller in (
+                     ('sampled', methods, offsets_poisson, 'sampled',
+                      lambda key: 'Poisson-adaptive subsample, {}'.format(key)),
+                     ('uniform', uniform_series, offsets_uniform, 'uniform', _uniform_series_label),
+                     ('oracle', oracle_series, offsets_oracle, 'oracle', _oracle_series_label))]
+    if not any(len(v) for v in all_by_run) and not any(
+            any(len(v) for v in values.get(key, [])) for _, series, _, values, _ in families
+            for key in series):
+        if results.get('analysis_window_method'):
+            reason = ("no run certified a window at any flow count, so no check ever ran -- "
+                      "the guarantee ({}) is out of reach for this experiment, see the "
+                      "results text file".format(
+                          "{:.0%}".format(results['delay_consistency_guarantee'])
+                          if results.get('delay_consistency_guarantee') else 'configured'))
+        else:
+            reason = "these results predate error-bound recording"
+        print("plot_error_bound_vs_num_flows: nothing to plot ({}), skipping {}".format(
+            reason, output_path))
+        return None
+
+    fig, axis = plt.subplots(figsize=(30, 15))
+
+    guarantee = results.get('delay_consistency_guarantee')
+    legend_handles = []
+    if relative and guarantee:
+        axis.axhline(guarantee, color='black', linewidth=3, linestyle='--', zorder=1)
+        legend_handles.append(Line2D([0], [0], color='black', linewidth=3, linestyle='--',
+                                      label='Guaranteed relative error (DelayConsistencyGaurantee '
+                                            '= {:.0%}) -- exactly where the minimum required '
+                                            'sample size lands'.format(guarantee)))
+
+    legend_handles += _draw_all_packets_series(
+        axis, num_flows, [float(np.mean(v)) if len(v) else np.nan for v in all_by_run],
+        all_by_run, results['pass_rate_all_packets'], offset_all, box_width, 1.0,
+        fill_color, fill_color, results['num_runs'], num_experiments, 'error bound',
+        fill_color=fill_color, spread_label=_all_packets_spread_label(results))
+
+    for kind, series, offsets, values_by_key, labeller in families:
+        for i, key in enumerate(series):
+            color_index = {'sampled': 0, 'uniform': len(methods),
+                            'oracle': len(methods) + len(uniform_series)}[kind] + i
+            style = family_border_style(kind, color_index)
+            values_by_k = values_by_key.get(key, [[]] * len(num_flows))
+            missing_k = [k for k, values in zip(num_flows, values_by_k) if len(values) == 0]
+            if missing_k:
+                print("No {} error bound for {} flow-count(s), skipped: {}".format(
+                    labeller(key), len(missing_k), missing_k))
+            _draw_boxplot_family(axis, num_flows, values_by_k, [1.0] * len(num_flows),
+                                 offsets[key], box_width, 1.0, fill_color, fill_color, style,
+                                 fill_color=fill_color)
+            legend_handles.append(Patch(facecolor=fill_color, edgecolor=style['edge_color'],
+                                         linewidth=4.5, linestyle=style['edge_style'],
+                                         label=labeller(key)))
+
+    axis.set_title(title, fontsize=34)
+    axis.set_xlabel('Number of TCP flows considered')
+    # Kept short: a longer label overflows the left edge of this figure size rather than
+    # getting room reserved for it, and the title already says what the quantity is.
+    axis.set_ylabel('Error bound' + (' (of switch mean delay)' if relative else ' (ns)'))
+    axis.set_ylim(bottom=0)
+    if relative:
+        axis.yaxis.set_major_formatter(PercentFormatter(xmax=1))
+    _set_flow_count_xaxis(axis, num_flows)
+    axis.grid(True, alpha=0.35, axis='y')
+    axis.legend(handles=legend_handles, fontsize=18, loc='best')
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=150)
+    plt.close(fig)
+    return output_path
+
+def plot_monitor_window_vs_num_flows(results, output_path,
+                                      title="Monitoring window needed vs number of TCP flows",
+                                      pass_threshold=0.9):
+    """Plot how long each Poisson-adaptive subsampling method had to watch the flow before
+    it could draw the samples the consistency check needs: boxplots (across runs) of the
+    monitoring-window length (results['window_duration_sampled_by_run'], in ms) at every
+    flow count, with a dashed reference line at the full steady window every run had
+    available.
+
+    This is the growing-window methods' headline result (see _growing_window_search): their
+    window is the shortest prefix of the steady period whose own switch-side statistics and
+    packets could supply the required samples, so a box well below the reference line is
+    the actual answer to "how long must we watch this flow to certify it?". A method that
+    samples the whole steady window instead sits exactly on the line by construction, which
+    is what makes the comparison legible -- the same plot shows both kinds without
+    special-casing either.
+
+    Only the Poisson-adaptive families appear: a rate-matched uniform family and an ideal
+    probe inherit their method's window rather than choosing one, and the all-packets
+    family is the whole steady window by definition, so neither would contribute anything
+    the reference line does not already show.
+
+    Boxes are coloured by the consistency-check pass rate (green/red, like the EMD and
+    mean-difference plots) rather than filled neutrally: here the verdict belongs with the
+    quantity -- the claim being made is "this much monitoring was enough (or not)" -- and a
+    window whose samples then failed the check is exactly the case a reader must not
+    mistake for a cheap success. Runs that found no valid subsample at all contribute no
+    value (they never settled on a window), so a box's n matches that method's 'n_samp' in
+    the text summary."""
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    results = upgrade_emd_vs_flows_results_schema(results)
+    num_flows = results['num_flows']
+    methods = results['subsampling_methods']
+    windows_by_method = results.get('window_duration_sampled_by_run', {})
+    pass_color, fail_color = 'tab:green', 'tab:red'
+    # Only the Poisson-adaptive families are drawn, so the layout is asked for exactly those
+    # (no uniform/oracle offsets to reserve space for).
+    offset_all, offsets_poisson, _, _, box_width = _subsample_family_layout(methods, [], [])
+
+    fig, axis = plt.subplots(figsize=(30, 15))
+
+    steady_start, steady_end = results.get('steady_start'), results.get('steady_end')
+    legend_handles = []
+    if steady_start is not None and steady_end is not None:
+        full_window_ms = (float(steady_end) - float(steady_start)) / 1e6
+        axis.axhline(full_window_ms, color='black', linewidth=3, linestyle='--', zorder=1)
+        legend_handles.append(Line2D([0], [0], color='black', linewidth=3, linestyle='--',
+                                      label='Full steady window available ({:.3g} ms)'.format(full_window_ms)))
+    step_ns = results.get('growing_window_step_ns')
+    if step_ns:
+        legend_handles.append(Line2D([0], [0], color='none',
+                                      label='Growing-window step: {:.3g} ms'.format(step_ns / 1e6)))
+    legend_handles += [
+        Patch(facecolor=pass_color, edgecolor='black', alpha=0.85,
+              label='Consistency check passed (>={:.0f}% of the runs that found a subsample)'.format(
+                  pass_threshold * 100)),
+        Patch(facecolor=fail_color, edgecolor='black', alpha=0.85,
+              label='Consistency check failed (<{:.0f}% of those runs)'.format(pass_threshold * 100)),
+    ]
+
+    drew_any = False
+    for i, method in enumerate(methods):
+        style = family_border_style('sampled', i)
+        values_by_k = [np.asarray(values, dtype=float) / 1e6
+                        for values in windows_by_method.get(method, [[]] * len(num_flows))]
+        missing_k = [k for k, values in zip(num_flows, values_by_k) if len(values) == 0]
+        if missing_k:
+            print("No {} monitoring-window values for {} flow-count(s), skipped: {}".format(
+                method, len(missing_k), missing_k))
+        if any(len(values) for values in values_by_k):
+            drew_any = True
+        whisker_tops = _draw_boxplot_family(
+            axis, num_flows, values_by_k, results['pass_rate_sampled'][method],
+            offsets_poisson[method], box_width, pass_threshold, pass_color, fail_color, style)
+        # The y axis starts at 0 and is scaled by the full window on purpose (a box's height
+        # off the floor IS the fraction of the available monitoring time it needed), which
+        # leaves a method that stops after a few ms as a sliver. Label each box with its
+        # median so the cheap cases stay readable without rescaling away the comparison.
+        for k, values in zip(num_flows, values_by_k):
+            if not len(values):
+                continue
+            axis.annotate('{:.3g} ms'.format(float(np.median(values))),
+                           xy=(k + offsets_poisson[method], whisker_tops.get(k, np.median(values))),
+                           xytext=(0, 6), textcoords='offset points', ha='center', va='bottom',
+                           fontsize=13, color=style['edge_color'], zorder=4)
+        legend_handles.append(Patch(facecolor='white', edgecolor=style['edge_color'], linewidth=4.5,
+                                     linestyle=style['edge_style'],
+                                     label='Poisson-adaptive subsample, {}'.format(method)))
+
+    if not drew_any:
+        # Two quite different reasons land here, and saying the wrong one sends a reader
+        # hunting for a schema problem when the run simply never certified anything: a
+        # result predating window recording carries no durations at all
+        # (upgrade_emd_vs_flows_results_schema fills empty placeholders), while a current
+        # result with no durations means no run ever found a usable window. Either way an
+        # empty axes would read as "no monitoring was needed", so nothing is written.
+        if any(len(v) for v in (results.get('window_duration_sampled_by_run') or {}).get(
+                methods[0] if methods else None, []) or []):
+            reason = "unexpected: durations exist but none were plotted"
+        elif results.get('analysis_window_method'):
+            reason = ("no run certified a window at any flow count -- the guarantee "
+                      "({}) is out of reach for this experiment, see the results text file"
+                      .format("{:.0%}".format(results['delay_consistency_guarantee'])
+                               if results.get('delay_consistency_guarantee') else 'configured'))
+        else:
+            reason = "these results predate monitoring-window recording"
+        print("plot_monitor_window_vs_num_flows: nothing to plot ({}), skipping {}".format(
+            reason, output_path))
+        plt.close(fig)
+        return None
+
+    axis.set_title(title, fontsize=34)
+    axis.set_xlabel('Number of TCP flows considered')
+    axis.set_ylabel('Monitoring window needed (ms)')
+    axis.set_ylim(bottom=0)
+    _set_flow_count_xaxis(axis, num_flows)
+    axis.grid(True, alpha=0.35, axis='y')
+    axis.legend(handles=legend_handles, fontsize=18, loc='best')
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=150)
+    plt.close(fig)
+    return output_path
+
 _PERCENTILE_FAMILY_FILLS = ['0.85', 'lightsteelblue', 'navajowhite', 'thistle',
                              'lightseagreen', 'lightcoral', 'khaki']
 
@@ -6904,7 +8374,8 @@ def plot_percentile_diff_vs_num_flows(results, percentile, output_path, relative
         (results.get(all_by_exp_key) or {}).get(percentile),
         results['pass_rate_all_packets'], offset_all, box_width, pass_threshold,
         None, None, results['num_runs'], results.get('num_experiments', 1),
-        'p{} error'.format(percentile), fill_color=next(fills))
+        'p{} error'.format(percentile), fill_color=next(fills),
+        spread_label=_all_packets_spread_label(results))
 
     for i, method in enumerate(methods):
         style = family_border_style('sampled', i)
@@ -7166,7 +8637,8 @@ def save_emd_vs_flows_results_text(results, output_path):
     num_flows_display = ['all' if k == ALL_FLOWS_ONLY_K else k for k in results['num_flows']]
     emd_all_by_experiment = results.get('emd_all_packets_by_experiment')
     emd_all_by_experiment_norm = results.get('emd_all_packets_by_experiment_normalized')
-    all_packets_is_aggregated = bool(emd_all_by_experiment) and num_experiments > 1
+    all_packets_is_aggregated = bool(emd_all_by_experiment) and (
+        num_experiments > 1 or any(len(v) > 1 for v in emd_all_by_experiment))
     gt = np.asarray(results.get('groundtruth_values', []), dtype=float)
     gt_mean = results.get('groundtruth_mean', np.nan)
     lines = []
@@ -7189,16 +8661,51 @@ def save_emd_vs_flows_results_text(results, output_path):
     lines.append("Ideal Poisson probes: {}".format(
         ", ".join(_oracle_series_label(key) for key in oracle_series) or "none"))
     lines.append("Total TCP flows considered (max k): {}".format(results['total_flows']))
+    window_method = results.get('analysis_window_method')
+    if window_method:
+        certified_runs = sum(len(v) for v in (results.get('window_duration_sampled_by_run') or {}).get(
+            window_method, []) or [])
+        if certified_runs == 0:
+            guarantee = results.get('delay_consistency_guarantee')
+            lines.append("!! NOTHING CERTIFIED: no run found a window, at any flow count, whose own")
+            lines.append("   switch-side statistics and packets could supply the samples the consistency")
+            lines.append("   check needs at the configured guarantee{}. Every family below is therefore".format(
+                " of {:.0%}".format(guarantee) if guarantee else ""))
+            lines.append("   empty (n/a) and no plot was written. This is a feasibility result, not a")
+            lines.append("   failure of the sampler: a tighter guarantee needs a smaller switch-side")
+            lines.append("   epsilon (more Poisson observations per run) or more e2e samples than the")
+            lines.append("   window can yield. Raise the guarantee, raise --num-poisson-observations, or")
+            lines.append("   check the per-window arithmetic with Utils.windowed_poisson_agg_stats.")
+            lines.append("")
+        lines.append("Analysis window: PER RUN, the growing window {} settled on (see the".format(window_method))
+        lines.append("  monitor_window column below). Every quantity in this file -- including the")
+        lines.append("  all-packets family, the uniform baselines and the ideal probes -- was measured")
+        lines.append("  over [steadyStart, window_end] of its own run. Nothing here is computed over the")
+        lines.append("  full steady window unless a run's search reached steadyEnd, and a run that found")
+        lines.append("  no usable window reports nothing at all (it certified nothing), which is why every")
+        lines.append("  family's pass rate is out of the runs that produced a value.")
+    else:
+        lines.append("Analysis window: the full steady window, identical for every run and family.")
     lines.append("")
-    lines.append("Ground-truth reconstructed delay samples: {}".format(gt.size))
+    if window_method:
+        lines.append("Ground-truth reconstructed delay samples (of ONE run's window -- every run rebuilt")
+        lines.append("  its own over the window it settled on; this is the realization the delay-CDF plot")
+        lines.append("  draws): {}".format(gt.size))
+    else:
+        lines.append("Ground-truth reconstructed delay samples: {}".format(gt.size))
     if gt.size:
         lines.append("  mean={:.2f} ns, std={:.2f} ns, min={:.2f} ns, max={:.2f} ns".format(
             np.mean(gt), np.std(gt), np.min(gt), np.max(gt)))
         p5, p25, p50, p75, p95 = np.percentile(gt, [5, 25, 50, 75, 95])
         lines.append("  percentiles (5/25/50/75/95) ns: {:.2f}, {:.2f}, {:.2f}, {:.2f}, {:.2f}".format(
             p5, p25, p50, p75, p95))
-    lines.append("EMD normalizer (mean ground-truth path delay): {:.2f} ns".format(gt_mean)
-                  if np.isfinite(gt_mean) else "EMD normalizer (mean ground-truth path delay): n/a")
+    if window_method:
+        lines.append("EMD normalizer: each value was divided by the mean ground-truth delay of ITS OWN run's"
+                      " window{}".format(" (this realization's: {:.2f} ns)".format(gt_mean)
+                                          if np.isfinite(gt_mean) else ""))
+    else:
+        lines.append("EMD normalizer (mean ground-truth path delay): {:.2f} ns".format(gt_mean)
+                      if np.isfinite(gt_mean) else "EMD normalizer (mean ground-truth path delay): n/a")
     burst_gap = results.get('burst_gap_threshold_ns', np.nan)
     lines.append("Burst gap threshold (1 MSS={}B transmission time at the sender's own link rate): {:.2f} ns".format(
         MSS_BYTES, burst_gap) if np.isfinite(burst_gap)
@@ -7206,8 +8713,9 @@ def save_emd_vs_flows_results_text(results, output_path):
     gt_percentiles = results.get('groundtruth_percentiles') or {}
     percentiles = list(results.get('delay_percentiles') or [])
     if percentiles:
-        lines.append("Ground-truth percentiles: {}".format(", ".join(
-            "p{}={:.2f} ns".format(q, gt_percentiles.get(q, np.nan)) for q in percentiles)))
+        lines.append("Ground-truth percentiles{}: {}".format(
+            " (of that one run's window; each run's percentile errors use its own)" if window_method else "",
+            ", ".join("p{}={:.2f} ns".format(q, gt_percentiles.get(q, np.nan)) for q in percentiles)))
         if num_experiments > 1:
             # Same caveat the normalizer above carries: these are of the pooled ground-truth
             # samples, whereas each experiment's relative errors were divided by its *own*
@@ -7218,7 +8726,12 @@ def save_emd_vs_flows_results_text(results, output_path):
                           " percentiles as the reference)")
     lines.append("")
     lines.append("Notes:")
-    if all_packets_is_aggregated:
+    if window_method:
+        lines.append("  * EMD(all) and mean_diff(all): all packets of the first k flows *inside that run's")
+        lines.append("    window*, so unlike an ordinary run this is a different packet set every run, with")
+        lines.append("    its own ground truth -- reported as mean +/- std across runs{}.".format(
+            " and experiments" if num_experiments > 1 else ""))
+    elif all_packets_is_aggregated:
         lines.append("  * EMD(all): all packets of the first k flows, one value per experiment (each experiment")
         lines.append("    reconstructs its own ground truth), reported as mean +/- std across experiments.")
         lines.append("    mean_diff(all) still varies run *and* experiment to experiment.")
@@ -7249,6 +8762,21 @@ def save_emd_vs_flows_results_text(results, output_path):
     lines.append("  * relEMD = EMD relative to mean queuing delay (EMD / mean ground-truth path delay) --")
     lines.append("    dimensionless, and unlike the raw ns figure it stays comparable across offered loads")
     lines.append("    (raw EMD grows with the delay level).")
+    lines.append("  * monitor_window: length of the window the method's samples were actually drawn from,")
+    lines.append("    per run. For a growing-window method (see Utils._growing_window_search) this is the")
+    lines.append("    result: the shortest prefix of the steady period, in {:g} ms steps, that could supply".format(
+        (results.get('growing_window_step_ns') or GROWING_WINDOW_STEP_NS) / 1e6))
+    lines.append("    the minimum required samples. For every other method it is the full steady window.")
+    if any(m in GROWING_WINDOW_SUBSAMPLING_METHODS for m in methods):
+        lines.append("  * A growing-window method's whole comparison is computed INSIDE that window: the")
+        lines.append("    ground truth is rebuilt over it (so its EMD/relEMD/percentile errors are measured")
+        lines.append("    against the delay distribution that held while the samples were collected, and")
+        lines.append("    relEMD/relative percentile errors are divided by that window's own reference), the")
+        lines.append("    switch-side Poisson probe is redrawn over it at the same probing RATE (so a shorter")
+        lines.append("    window gets proportionally fewer observations, a larger epsilon and hence a larger")
+        lines.append("    required sample size -- the real cost of stopping early), and its rate-matched")
+        lines.append("    uniform baseline and ideal Poisson probe are restricted to it too. Nothing in such")
+        lines.append("    a row mixes statistics from two different windows.")
     lines.append("  * IDC(1RTT)/burst_dur/burst_gap (all-packets table only): burstiness of the all-packets")
     lines.append("    SentTime arrival process -- IDC(1RTT) = Var/Mean of arrival counts in non-overlapping")
     lines.append("    windows one RTT ({:g}ns) wide (1.0 = Poisson-like, >1 = bursty); a burst is consecutive".format(ONE_RTT_NS))
@@ -7265,6 +8793,15 @@ def save_emd_vs_flows_results_text(results, output_path):
     lines.append("    count (a run that found none neither passed nor failed).")
     lines.append("  * mean_diff = switch samples mean delay - packet-side mean delay (ns); this is the signed")
     lines.append("    quantity the consistency check thresholds (abs(mean_diff) <= epsilon bound).")
+    lines.append("  * err_bound = that epsilon bound itself, relative to the switch-side mean delay (see")
+    lines.append("    Utils.delay_consistency_error_bound): MaxEpsilonDelay + eta*e2eStd/(sqrt(n)*mean), at")
+    lines.append("    each family's own realized n. The minimum required sample size is *defined* as the n")
+    lines.append("    that brings this to exactly the configured guarantee{}, so a family holding".format(
+        " ({:.0%})".format(results['delay_consistency_guarantee'])
+        if results.get('delay_consistency_guarantee') else ""))
+    lines.append("    exactly the minimum lands exactly there; anything below it holds more samples than")
+    lines.append("    the minimum (or hit the MINIMUM_E2E_SAMPLE_SIZE floor) and so is claiming a tighter")
+    lines.append("    guarantee than configured. Nothing should be above it.")
     if percentiles:
         lines.append("  * Percentile-error section at the end: signed ground-truth p_q minus family p_q, so")
         lines.append("    POSITIVE means the family understates that percentile (missing tail delay the ground")
@@ -7277,9 +8814,10 @@ def save_emd_vs_flows_results_text(results, output_path):
 
     lines.append("All packets of the considered flows:")
     burstiness_all = results.get('burstiness_all_packets') or {}
-    header = "{:>3} | {:>24} | {:>24} | {:>9} | {:>24} | {:>10} | {:>14} | {:>14}".format(
+    bound_all_by_run = results.get('error_bound_all_packets_by_run') or []
+    header = "{:>3} | {:>24} | {:>24} | {:>9} | {:>24} | {:>22} | {:>10} | {:>14} | {:>14}".format(
         "k", "EMD(all) [ns]", "relEMD(all)", "pass(all)", "mean_diff(all) [ns]",
-        "IDC(1RTT)", "burst_dur[ns]", "burst_gap[ns]")
+        "err_bound(all)", "IDC(1RTT)", "burst_dur[ns]", "burst_gap[ns]")
     lines.append(header)
     lines.append("-" * len(header))
     for i, k in enumerate(num_flows_display):
@@ -7297,9 +8835,10 @@ def save_emd_vs_flows_results_text(results, output_path):
             v = values[i] if i < len(values) else float('nan')
             return "{:.3f}".format(v) if v == v else "n/a"
 
-        lines.append("{:>3} | {:>24} | {:>24} | {:>8.0%} | {:>24} | {:>10} | {:>14} | {:>14}".format(
+        lines.append("{:>3} | {:>24} | {:>24} | {:>8.0%} | {:>24} | {:>22} | {:>10} | {:>14} | {:>14}".format(
             k, emd_all_str, emd_all_norm_str, results['pass_rate_all_packets'][i],
             _stat(results['mean_diff_all_packets_by_run'][i]),
+            _stat(bound_all_by_run[i] if i < len(bound_all_by_run) else [], fmt="{:.4f}"),
             _burst_field('idc_1rtt'), _burst_field('avg_burst_duration_ns'),
             _burst_field('avg_burst_interarrival_ns'),
         ))
@@ -7307,21 +8846,30 @@ def save_emd_vs_flows_results_text(results, output_path):
     emd_sampled_by_run = results['emd_sampled_packets_by_run']
     emd_sampled_by_run_norm = results['emd_sampled_packets_by_run_normalized']
     sizes_sampled = results.get('sample_sizes_sampled_by_run', {})
+    windows_sampled = results.get('window_duration_sampled_by_run', {})
+    bounds_sampled = results.get('error_bound_sampled_by_run', {})
+    bounds_uniform = results.get('error_bound_uniform_by_run', {})
+    bounds_oracle = results.get('error_bound_oracle_by_run', {})
+    n_k = len(results['num_flows'])
     for method in methods:
         lines.append("")
         lines.append("Poisson-adaptive subsample -- {}:".format(method))
-        header = "{:>3} | {:>6} | {:>24} | {:>24} | {:>9} | {:>24} | {:>20}".format(
-            "k", "n_samp", "EMD [ns]", "relEMD", "pass", "mean_diff [ns]", "n_pkts")
+        header = "{:>3} | {:>6} | {:>24} | {:>24} | {:>9} | {:>24} | {:>20} | {:>22} | {:>22}".format(
+            "k", "n_samp", "EMD [ns]", "relEMD", "pass", "mean_diff [ns]", "n_pkts",
+            "err_bound", "monitor_window [ms]")
         lines.append(header)
         lines.append("-" * len(header))
         for i, k in enumerate(num_flows_display):
-            lines.append("{:>3} | {:>6} | {:>24} | {:>24} | {:>8.0%} | {:>24} | {:>20}".format(
+            window_values = windows_sampled.get(method, [[]] * n_k)[i]
+            lines.append("{:>3} | {:>6} | {:>24} | {:>24} | {:>8.0%} | {:>24} | {:>20} | {:>22} | {:>22}".format(
                 k, len(emd_sampled_by_run[method][i]),
                 _stat(emd_sampled_by_run[method][i]),
                 _stat(emd_sampled_by_run_norm[method][i], fmt="{:.4f}"),
                 results['pass_rate_sampled'][method][i],
                 _stat(results['mean_diff_sampled_by_run'][method][i]),
-                _stat(sizes_sampled.get(method, [[]] * len(results['num_flows']))[i], fmt="{:.0f}"),
+                _stat(sizes_sampled.get(method, [[]] * n_k)[i], fmt="{:.0f}"),
+                _stat(bounds_sampled.get(method, [[]] * n_k)[i], fmt="{:.4f}"),
+                _stat(np.asarray(window_values, dtype=float) / 1e6, fmt="{:.2f}"),
             ))
 
     emd_uniform_by_run = results.get('emd_uniform_packets_by_run', {})
@@ -7337,34 +8885,36 @@ def save_emd_vs_flows_results_text(results, output_path):
     for key in oracle_series:
         lines.append("")
         lines.append("{}:".format(_oracle_series_label(key)))
-        header = "{:>3} | {:>6} | {:>24} | {:>24} | {:>9} | {:>24} | {:>20}".format(
-            "k", "n_runs", "EMD [ns]", "relEMD", "pass", "mean_diff [ns]", "n_pkts")
+        header = "{:>3} | {:>6} | {:>24} | {:>24} | {:>9} | {:>24} | {:>20} | {:>22}".format(
+            "k", "n_runs", "EMD [ns]", "relEMD", "pass", "mean_diff [ns]", "n_pkts", "err_bound")
         lines.append(header)
         lines.append("-" * len(header))
         for i, k in enumerate(num_flows_display):
-            lines.append("{:>3} | {:>6} | {:>24} | {:>24} | {:>8.0%} | {:>24} | {:>20}".format(
+            lines.append("{:>3} | {:>6} | {:>24} | {:>24} | {:>8.0%} | {:>24} | {:>20} | {:>22}".format(
                 k, len(emd_oracle_by_run[key][i]),
                 _stat(emd_oracle_by_run[key][i]),
                 _stat(emd_oracle_by_run_norm[key][i], fmt="{:.4f}"),
                 pass_rate_oracle[key][i],
                 _stat(diff_oracle_by_run[key][i]),
                 _stat(sizes_oracle.get(key, [[]] * len(results['num_flows']))[i], fmt="{:.0f}"),
+                _stat(bounds_oracle.get(key, [[]] * len(results['num_flows']))[i], fmt="{:.4f}"),
             ))
     for key in uniform_series:
         lines.append("")
         lines.append("{}:".format(_uniform_series_label(key)))
-        header = "{:>3} | {:>6} | {:>24} | {:>24} | {:>9} | {:>24} | {:>20}".format(
-            "k", "n_samp", "EMD [ns]", "relEMD", "pass", "mean_diff [ns]", "n_pkts")
+        header = "{:>3} | {:>6} | {:>24} | {:>24} | {:>9} | {:>24} | {:>20} | {:>22}".format(
+            "k", "n_samp", "EMD [ns]", "relEMD", "pass", "mean_diff [ns]", "n_pkts", "err_bound")
         lines.append(header)
         lines.append("-" * len(header))
         for i, k in enumerate(num_flows_display):
-            lines.append("{:>3} | {:>6} | {:>24} | {:>24} | {:>8.0%} | {:>24} | {:>20}".format(
+            lines.append("{:>3} | {:>6} | {:>24} | {:>24} | {:>8.0%} | {:>24} | {:>20} | {:>22}".format(
                 k, len(emd_uniform_by_run[key][i]),
                 _stat(emd_uniform_by_run[key][i]),
                 _stat(emd_uniform_by_run_norm[key][i], fmt="{:.4f}"),
                 pass_rate_uniform[key][i],
                 _stat(diff_uniform_by_run[key][i]),
                 _stat(sizes_uniform.get(key, [[]] * len(results['num_flows']))[i], fmt="{:.0f}"),
+                _stat(bounds_uniform.get(key, [[]] * len(results['num_flows']))[i], fmt="{:.4f}"),
             ))
 
     poisson_series = results.get('poisson_test_series') or []
