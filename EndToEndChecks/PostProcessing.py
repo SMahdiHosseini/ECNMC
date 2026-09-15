@@ -16,6 +16,7 @@ import pickle
 import multiprocessing
 import argparse
 import time
+import traceback
 
 # __ns3_path = os.popen('locate "ns-3.41" | grep /ns-3.41$').read().splitlines()[0]
 __ns3_path = "/media/experiments/ns-allinone-3.41/ns-3.41"
@@ -789,6 +790,17 @@ def __main__():
                          "Poisson-adaptive method and every rate-matched uniform baseline. The EMD is a "
                          "single number for the whole distribution and can hide a misplaced tail, which "
                          "is the part delay SLOs are written against. Default p90 and p99.")
+    parser.add_argument("--no-per-experiment-plots",
+                    action="store_false",
+                    dest="write_per_experiment_plots",
+                    help="Skip the per-experiment figures with --emd-vs-flows, writing only each "
+                         "experiment's results pickle and text summary. Rendering those 20-30 PNGs "
+                         "is ~25 of the ~30 seconds an experiment takes (the computation itself is "
+                         "~4s), so on a full sweep -- 5 traffics x 9 loads x 30 experiments = 1350 "
+                         "of them per run -- this is the difference between ~11 hours and ~3. "
+                         "Nothing downstream is lost: --aggregate-emd-vs-flows reads the pickles, so "
+                         "every per-traffic/load and cross-traffic plot is still produced, and the "
+                         "per-experiment PNGs can be re-rendered later from the pickles.")
     parser.add_argument("--delay-consistency-guarantee", dest="delay_consistency_guarantee", type=float,
                     default=DEFAULT_DELAY_CONSISTENCY_GUARANTEE, metavar="FRACTION",
                     help="The relative error the consistency check guarantees: the largest tolerated "
@@ -836,15 +848,15 @@ def __main__():
     steadyEnd = convert_to_float(config.get('Settings', 'steadyEnd')) * 1e9
     # steadyEnd = 0.5 * 1e9
     experiments = int(config.get('Settings', 'experiments'))
-    experiments = 1
+    # experiments = 1
     serviceRateScales = [float(x) for x in config.get('Settings', 'serviceRateScales').split(',')]
     # serviceRateScales = [0.5]
     loads = [float(x) for x in config.get('Settings', 'load').split(',')]
     loads = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.95]
-    loads = [0.8]
+    # loads = [0.1]
     traffics = config.get('Settings', 'traffic').split(',')
     traffics = ["Google_AllRPC", "Fabricated_Heavy_Head", "Fabricated_Heavy_Middle", "Google_SearchRPC", "Facebook_HadoopDist_All"]
-    traffics = ["Google_AllRPC"]
+    # traffics = ["Google_AllRPC"]
     errorRates = [float(x) for x in config.get('Settings', 'errorRate').split(',')]
     # errorRates = [0.1, 0.3, 0.5, 0.7, 0.9]
     # errorRates = [0.1]
@@ -880,7 +892,7 @@ def __main__():
                                           "(subsampling: {}, ground truth: {})".format(
                                               traffic, rate, load, experiment,
                                               ", ".join(args.subsampling_methods), groundtruth_method))
-                                    run_emd_vs_flows_experiment(
+                                    run_emd_vs_flows_experiment_safe(
                                         rate, start, start + int((steadyEnd - steadyStart) / numOfSteadyParts), confidenceValue,
                                         'Results_' + args.dir + "/" + traffic, config, experiment=experiment, ns3_path=__ns3_path, load=load,
                                         flow_name=args.flow_name, path=args.path, num_runs=args.num_runs,
@@ -894,6 +906,7 @@ def __main__():
                                         run_chi_squared_test=args.run_chi_squared_test,
                                         growing_window_step_ns=args.growing_window_step_ms * 1e6,
                                         delay_consistency_guarantee=args.delay_consistency_guarantee,
+                                        write_plots=args.write_per_experiment_plots,
                                         output_suffix=args.output_suffix,
                                     )
                             print("Traffic {} Rate {} {} {} EMD-vs-flows done".format(traffic, rate, load, experiments))
@@ -965,7 +978,7 @@ def __main__():
                                                       traffic, rate, load, fraction, errorRate, flow_name,
                                                       experiment, ", ".join(args.subsampling_methods),
                                                       groundtruth_method))
-                                            run_emd_vs_flows_experiment(
+                                            run_emd_vs_flows_experiment_safe(
                                                 rate, start, window_end, confidenceValue,
                                                 'Results_' + args.dir + "/" + traffic, config,
                                                 experiment=experiment, ns3_path=__ns3_path, load=load,
@@ -981,6 +994,7 @@ def __main__():
                                                 run_chi_squared_test=args.run_chi_squared_test,
                                                 growing_window_step_ns=args.growing_window_step_ms * 1e6,
                                                 delay_consistency_guarantee=args.delay_consistency_guarantee,
+                                                write_plots=args.write_per_experiment_plots,
                                                 output_suffix=args.output_suffix,
                                                 differentiationDelay=fraction, errorRate=errorRate,
                                             )
@@ -998,7 +1012,54 @@ def __main__():
                     print("Rate {} done".format(rate))
                 print("Traffic {} done".format(traffic))
 
-def run_emd_vs_flows_experiment(rate, steadyStart, steadyEnd, confidenceValue, results_folder, config, experiment=0, ns3_path=__ns3_path, load=None, flow_name='R0H0R2H3', queue_names=None, path=0, delay_cdf_sample_interval_ns=90, num_runs=100, num_poisson_observations=9000, pass_threshold=0.9, num_workers=1, emd_y_max=None, mean_diff_y_limit=None, flow_count_step=1, all_flows_only=False, subsampling_methods='find_samples_path', groundtruth_method='simultaneous', delay_percentiles=DEFAULT_DELAY_PERCENTILES, run_chi_squared_test=True, growing_window_step_ns=GROWING_WINDOW_STEP_NS, delay_consistency_guarantee=None, output_suffix='', differentiationDelay=None, errorRate=None):
+# Combinations skipped or failed by run_emd_vs_flows_experiment_safe, reported once at the
+# end of a sweep so an unattended overnight batch's log has a summary rather than only
+# scattered lines.
+_SWEEP_SKIPPED = []
+_SWEEP_FAILED = []
+
+
+def run_emd_vs_flows_experiment_safe(*args, **kwargs):
+    """run_emd_vs_flows_experiment, but a combination that has no data (or that raises for
+    any other reason) is logged and skipped instead of aborting the sweep.
+
+    This exists because the CLI's traffic/load lists are fixed in __main__ while each
+    results tree only holds the combinations its simulation actually produced -- the reverse
+    trees, for instance, have 3 traffics and loads 0.6-0.95, so a sweep over the forward
+    lists hits ~70% missing directories -- and because an overnight batch of several sweeps
+    must not lose hours of completed work to one bad combination. Every skip and every
+    failure (with its traceback) goes to the log, and sweep_failure_summary() prints the
+    tally at the end."""
+    label = kwargs.get('results_folder') or (args[4] if len(args) > 4 else '?')
+    label = '{} load={} experiment={} flow={}'.format(
+        label, kwargs.get('load'), kwargs.get('experiment'), kwargs.get('flow_name'))
+    try:
+        return run_emd_vs_flows_experiment(*args, **kwargs)
+    except FileNotFoundError as exc:
+        print("SKIPPED (no data): {} -- {}".format(label, exc))
+        _SWEEP_SKIPPED.append(label)
+    except Exception:
+        print("FAILED: {} -- traceback follows, sweep continues".format(label))
+        traceback.print_exc()
+        _SWEEP_FAILED.append(label)
+    return None
+
+
+def sweep_failure_summary():
+    """Print what a sweep skipped or failed on, so the end of an unattended run says plainly
+    whether its output is complete."""
+    if not _SWEEP_SKIPPED and not _SWEEP_FAILED:
+        print("Sweep complete: every combination produced results.")
+        return
+    print("Sweep finished with {} skipped (no data) and {} failed combination(s).".format(
+        len(_SWEEP_SKIPPED), len(_SWEEP_FAILED)))
+    for label in _SWEEP_FAILED:
+        print("  FAILED: {}".format(label))
+    if _SWEEP_SKIPPED:
+        print("  (skipped combinations are listed above, each where it occurred)")
+
+
+def run_emd_vs_flows_experiment(rate, steadyStart, steadyEnd, confidenceValue, results_folder, config, experiment=0, ns3_path=__ns3_path, load=None, flow_name='R0H0R2H3', queue_names=None, path=0, delay_cdf_sample_interval_ns=90, num_runs=100, num_poisson_observations=9000, pass_threshold=0.9, num_workers=1, emd_y_max=None, mean_diff_y_limit=None, flow_count_step=1, all_flows_only=False, subsampling_methods='find_samples_path', groundtruth_method='simultaneous', delay_percentiles=DEFAULT_DELAY_PERCENTILES, run_chi_squared_test=True, growing_window_step_ns=GROWING_WINDOW_STEP_NS, delay_consistency_guarantee=None, write_plots=True, output_suffix='', differentiationDelay=None, errorRate=None):
     """Reconstruct the network queuing delay CDF once (ground truth), then repeat `num_runs` times: draw
     `num_poisson_observations` fresh Poisson-process observation instants at the path's switches, derive the
     per-segment aggregated delay statistics from them, and grow the set of considered TCP flows of `flow_name`
@@ -1117,6 +1178,18 @@ def run_emd_vs_flows_experiment(rate, steadyStart, steadyEnd, confidenceValue, r
             steady_window_tag(steadyStart, steadyEnd), config_tag, output_suffix)
     os.makedirs(output_dir, exist_ok=True)
     file_prefix = '{}{}_path_{}'.format(output_dir, flow_name, path)
+
+    # Written BEFORE the figures, and the figures are optional: a sweep over thousands of
+    # experiments spends most of its wall time rendering per-experiment PNGs (~20-30 of
+    # them, ~1s each, against ~4s of actual computation), while every aggregation and every
+    # aggregated plot reads the pickle. So an unattended batch can skip them with
+    # write_plots=False and still produce complete, aggregatable results.
+    with open(file_prefix + '_emd_vs_num_flows_results.pkl', 'wb') as f:
+        pickle.dump(results, f)
+    save_emd_vs_flows_results_text(results, file_prefix + '_emd_vs_num_flows_results.txt')
+    if not write_plots:
+        return results
+
     run_desc = '{} runs x {} Poisson obs'.format(num_runs, num_poisson_observations)
     gt_desc = groundtruth_method_label(groundtruth_method)
 
@@ -1138,6 +1211,12 @@ def run_emd_vs_flows_experiment(rate, steadyStart, steadyEnd, confidenceValue, r
         results, file_prefix + '_delay_mean_diff_boxplot.png', pass_threshold=pass_threshold,
         title='Switch vs. packet mean delay difference ({}): {}, path {}'.format(run_desc, flow_name, path),
         y_limit=mean_diff_y_limit,
+    )
+    # The mean queuing delay each family estimates, against the ground truth's own mean --
+    # the absolute level behind every EMD above (and the quantity the check thresholds).
+    plot_delay_value_vs_num_flows(
+        results, file_prefix + '_delay_value_boxplot.png', pass_threshold=pass_threshold,
+        title='Mean queuing delay ({}): {}, path {}\n{}'.format(run_desc, flow_name, path, gt_desc),
     )
     # How many packets each family had, and (for the growing-window methods) how long they
     # had to watch to get them -- the two quantities behind every EMD above.
@@ -1169,7 +1248,8 @@ def run_emd_vs_flows_experiment(rate, steadyStart, steadyEnd, confidenceValue, r
     # (see Utils.PROB_METRICS).
     for metric in PROB_METRIC_KEYS:
         for quantity, quantity_desc in (('prob', prob_metric_label(metric)),
-                                         ('distance', '|estimate - reference|'),
+                                         ('distance', 'EMD to the reference'),
+                                         ('distance_normalized', 'EMD relative to the reference'),
                                          ('log_diff', 'Consistency log-difference')):
             plot_prob_metric_vs_num_flows(
                 results, metric, '{}_{}_{}_boxplot.png'.format(file_prefix, metric, quantity),
@@ -1216,9 +1296,6 @@ def run_emd_vs_flows_experiment(rate, steadyStart, steadyEnd, confidenceValue, r
         results, file_prefix + '_delay_cdf_one_run.png',
         title='Delay CDF comparison, one Poisson realization: {}, path {}\n{}'.format(flow_name, path, gt_desc),
     )
-    with open(file_prefix + '_emd_vs_num_flows_results.pkl', 'wb') as f:
-        pickle.dump(results, f)
-    save_emd_vs_flows_results_text(results, file_prefix + '_emd_vs_num_flows_results.txt')
 
     return results
 
@@ -1573,6 +1650,11 @@ def aggregate_emd_vs_flows_across_experiments(ns3_path, dir_name, traffic, rate,
         title='Switch vs. packet mean delay difference, aggregated ({}): {}, path {}'.format(run_desc, flow_name, path),
         y_limit=mean_diff_y_limit,
     )
+    plot_delay_value_vs_num_flows(
+        aggregated, file_prefix + '_delay_value_boxplot.png', pass_threshold=pass_threshold,
+        title='Mean queuing delay, aggregated ({}): {}, path {}\n{}'.format(
+            run_desc, flow_name, path, gt_desc),
+    )
     plot_sample_sizes_vs_num_flows(
         aggregated, file_prefix + '_sample_size_boxplot.png',
         title='Sample size vs number of TCP flows, aggregated ({}): {}, path {}'.format(
@@ -1595,7 +1677,8 @@ def aggregate_emd_vs_flows_across_experiments(ns3_path, dir_name, traffic, rate,
     )
     for metric in PROB_METRIC_KEYS:
         for quantity, quantity_desc in (('prob', prob_metric_label(metric)),
-                                         ('distance', '|estimate - reference|'),
+                                         ('distance', 'EMD to the reference'),
+                                         ('distance_normalized', 'EMD relative to the reference'),
                                          ('log_diff', 'Consistency log-difference')):
             plot_prob_metric_vs_num_flows(
                 aggregated, metric, '{}_{}_{}_boxplot.png'.format(file_prefix, metric, quantity),
@@ -1733,9 +1816,14 @@ def aggregate_emd_vs_flows_compare_flows(ns3_path, dir_name, traffic, rate, load
                 flow_desc, gt_desc),
             metric='percentile_avg_relerror',
         )
+    plot_emd_vs_num_flows_boxplot_by_flow(
+        results_by_flow, file_prefix + '_delay_value_boxplot.png', pass_threshold=pass_threshold,
+        metric=DELAY_MEAN_METRIC,
+        title='Mean queuing delay vs number of TCP flows, {}\n{}'.format(flow_desc, gt_desc),
+    )
     # Loss / ECN marking, the same two-flow comparison as the delay metrics above.
     for prob_metric in PROB_METRIC_KEYS:
-        for quantity in ('prob', 'distance', 'log_diff'):
+        for quantity in ('prob', 'distance', 'distance_normalized', 'log_diff'):
             plot_emd_vs_num_flows_boxplot_by_flow(
                 results_by_flow, '{}_{}_{}_boxplot.png'.format(file_prefix, prob_metric, quantity),
                 pass_threshold=pass_threshold, metric=prob_plot_metric(prob_metric, quantity),
@@ -2066,12 +2154,19 @@ def aggregate_emd_vs_flows_across_traffics_and_loads(ns3_path, dir_name, traffic
                 title='{} vs load by traffic, all considered flows: {}, path {}, rate {}\n{}\n{}'.format(
                     emd_desc, flow_name, path, rate, kind_desc, gt_desc),
             )
+        # The mean queuing delay itself vs load -- the absolute level behind the EMDs above.
+        plot_emd_vs_load_by_traffic(
+            results_by_traffic_load, 'max', '{}_kmax_delay_mean.png'.format(kind_prefix),
+            pass_threshold=pass_threshold, series_specs=series_specs, metric=DELAY_MEAN_METRIC,
+            title='Mean queuing delay vs load by traffic, all considered flows: {}, path {}, rate {}\n{}\n{}'.format(
+                flow_name, path, rate, kind_desc, gt_desc),
+        )
         # Loss / ECN marking vs load, all available flows only: each metric's own estimate,
         # its distance to the switch-trace reference (the Bernoulli counterpart of the EMD)
         # and the log-space difference its check thresholds. Skipped for a metric these
         # results do not carry (they predate it) or that no family could estimate.
         for prob_metric in PROB_METRIC_KEYS:
-            for quantity in ('prob', 'distance', 'log_diff'):
+            for quantity in ('prob', 'distance', 'distance_normalized', 'log_diff'):
                 plot_emd_vs_load_by_traffic(
                     results_by_traffic_load, 'max',
                     '{}_kmax_{}_{}.png'.format(kind_prefix, prob_metric, quantity),
@@ -2159,8 +2254,16 @@ def aggregate_emd_vs_flows_across_traffics_and_loads(ns3_path, dir_name, traffic
                         emd_desc, BURSTINESS_METRIC_LABELS[burstiness_field], flow_name, path, rate,
                         kind_desc, gt_desc),
                 )
+            plot_emd_vs_burstiness_by_traffic(
+                results_by_traffic_load, 'max', burstiness_field,
+                '{}_kmax_delay_mean.png'.format(kind_prefix),
+                pass_threshold=pass_threshold, series_specs=series_specs, metric=DELAY_MEAN_METRIC,
+                title='Mean queuing delay vs {} by traffic, all considered flows: {}, path {}, rate {}\n{}\n{}'.format(
+                    BURSTINESS_METRIC_LABELS[burstiness_field], flow_name, path, rate,
+                    kind_desc, gt_desc),
+            )
             for prob_metric in PROB_METRIC_KEYS:
-                for quantity in ('prob', 'distance', 'log_diff'):
+                for quantity in ('prob', 'distance', 'distance_normalized', 'log_diff'):
                     plot_emd_vs_burstiness_by_traffic(
                         results_by_traffic_load, 'max', burstiness_field,
                         '{}_kmax_{}_{}.png'.format(kind_prefix, prob_metric, quantity),
@@ -2223,3 +2326,6 @@ def aggregate_emd_vs_flows_across_traffics_and_loads(ns3_path, dir_name, traffic
 
 if __name__ == "__main__":
     __main__()
+    # Says plainly whether the sweep's output is complete -- the last line an unattended
+    # overnight run leaves in its log.
+    sweep_failure_summary()
