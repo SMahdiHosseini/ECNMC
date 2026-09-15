@@ -92,7 +92,7 @@ def check_all_successProbConsistency(endToEnd_statistics, samples_paths_aggregat
                     res['MaxEpsilonIneq'][flow][path][var_method] = check_MaxEpsilon_ineq_successProb(np.log(endToEnd_statistics[flow]['successProb'][var_method][path]), samples_paths_aggregated_statistics[flow][path], number_of_segments)
                 else:
                     # epsp = (endToEnd_statistics[flow]['successProb'][var_method][path][1] * confidenceValue) / (endToEnd_statistics[flow]['successProb'][var_method][path][0]) # using e2e samples std as e2e std
-                    epsp = (samples_paths_aggregated_statistics[flow][path]['e2eSuccessProbStd'] * confidenceValue) / (endToEnd_statistics[flow]['successProb'][var_method][path][0] * np.sqrt(endToEnd_statistics[flow]['sampleSize']['successProb'][path])) # using sum of stds as e2e std
+                    epsp = (samples_paths_aggregated_statistics[flow][path]['e2eSuccessProbStd'] * confidenceValue) / (endToEnd_statistics[flow]['successProb'][var_method][path][0] * np.sqrt(endToEnd_statistics[flow]['sampleSize']['successProb'][path])) # e2e std is the product-rule path std (Utils.path_prob_product_std)
                     if (endToEnd_statistics[flow]['sampleSize']['successProb'][path] < min_sample_size):
                         res['MaxEpsilonIneq'][flow][path][var_method] = False
                         continue
@@ -115,7 +115,7 @@ def check_all_nonMarkingProbConsistency(endToEnd_statistics, samples_paths_aggre
                     res['MaxEpsilonIneq'][flow][path][var_method] = check_MaxEpsilon_ineq_nonMarkingProb(np.log(endToEnd_statistics[flow]['nonMarkingProb'][var_method][path]), samples_paths_aggregated_statistics[flow][path], number_of_segments)
                 else:
                     # epsp = (endToEnd_statistics[flow]['nonMarkingProb'][var_method][path][1] * confidenceValue) / (endToEnd_statistics[flow]['nonMarkingProb'][var_method][path][0]) # using e2e samples std as e2e std
-                    epsp = (samples_paths_aggregated_statistics[flow][path]['e2eNonMarkingProbStd'] * confidenceValue) / (endToEnd_statistics[flow]['nonMarkingProb'][var_method][path][0] * np.sqrt(endToEnd_statistics[flow]['sampleSize']['nonMarkingProb'][path])) # using sum of stds as e2e std
+                    epsp = (samples_paths_aggregated_statistics[flow][path]['e2eNonMarkingProbStd'] * confidenceValue) / (endToEnd_statistics[flow]['nonMarkingProb'][var_method][path][0] * np.sqrt(endToEnd_statistics[flow]['sampleSize']['nonMarkingProb'][path])) # e2e std is the product-rule path std (Utils.path_prob_product_std)
                     if (endToEnd_statistics[flow]['sampleSize']['nonMarkingProb'][path] < min_sample_size):
                         res['MaxEpsilonIneq'][flow][path][var_method] = False
                         continue
@@ -386,10 +386,16 @@ def analyze_single_experiment(return_dict, rate, queues_names, confidenceValue, 
             samples_paths_aggregated_statistics[flow][path]['MaxEpsilonSuccessProb'] = max([calc_epsilon_loss(confidenceValue, samples_dfs['T' + flow[1] + 'A' + str(path)]),
                                                                                      calc_epsilon_loss(confidenceValue, samples_dfs['A' + str(path) + 'T' + flow[5]]),
                                                                                      calc_epsilon_loss(confidenceValue, samples_dfs['T' + flow[5] + 'H' + flow[7]])])
-            ## TODO: fix the variance calculation for probabilities
-            samples_paths_aggregated_statistics[flow][path]['e2eSuccessProbStd'] = sum([samples_dfs['T' + flow[1] + 'A' + str(path)]['SuccessProbStd'],
-                                                                                        samples_dfs['A' + str(path) + 'T' + flow[5]]['SuccessProbStd'],
-                                                                                        samples_dfs['T' + flow[5] + 'H' + flow[7]]['SuccessProbStd']])
+            # A path probability is the PRODUCT of its segments', so its variance follows the
+            # product rule for independent variables, not the summed-std convention the
+            # delay side uses for a sum (see Utils.path_prob_product_std).
+            samples_paths_aggregated_statistics[flow][path]['e2eSuccessProbStd'] = path_prob_product_std(
+                [samples_dfs['T' + flow[1] + 'A' + str(path)]['SuccessProbMean'],
+                 samples_dfs['A' + str(path) + 'T' + flow[5]]['SuccessProbMean'],
+                 samples_dfs['T' + flow[5] + 'H' + flow[7]]['SuccessProbMean']],
+                [samples_dfs['T' + flow[1] + 'A' + str(path)]['SuccessProbStd'],
+                 samples_dfs['A' + str(path) + 'T' + flow[5]]['SuccessProbStd'],
+                 samples_dfs['T' + flow[5] + 'H' + flow[7]]['SuccessProbStd']])
             samples_paths_aggregated_statistics[flow][path]['MinimumE2ESampleSizeSuccessProb'] = calc_min_e2e_samples_prob(confidenceValue, DelayConsistencyGaurantee, samples_paths_aggregated_statistics[flow][path], number_of_segments, metric='SuccessProb')
             # print(flow, path, samples_paths_aggregated_statistics[flow][path]['SuccessProbMean'], samples_paths_aggregated_statistics[flow][path]['MaxEpsilonSuccessProb'])
 
@@ -399,9 +405,13 @@ def analyze_single_experiment(return_dict, rate, queues_names, confidenceValue, 
             samples_paths_aggregated_statistics[flow][path]['MaxEpsilonNonMarkingProb'] = max([calc_epsilon_marking(confidenceValue, samples_dfs['T' + flow[1] + 'A' + str(path)]),
                                                                                                calc_epsilon_marking(confidenceValue, samples_dfs['A' + str(path) + 'T' + flow[5]]),
                                                                                                calc_epsilon_marking(confidenceValue, samples_dfs['T' + flow[5] + 'H' + flow[7]])])
-            samples_paths_aggregated_statistics[flow][path]['e2eNonMarkingProbStd'] = sum([samples_dfs['T' + flow[1] + 'A' + str(path)]['NonMarkingProbStd'],
-                                                                                           samples_dfs['A' + str(path) + 'T' + flow[5]]['NonMarkingProbStd'],
-                                                                                           samples_dfs['T' + flow[5] + 'H' + flow[7]]['NonMarkingProbStd']])
+            samples_paths_aggregated_statistics[flow][path]['e2eNonMarkingProbStd'] = path_prob_product_std(
+                [samples_dfs['T' + flow[1] + 'A' + str(path)]['NonMarkingProbMean'],
+                 samples_dfs['A' + str(path) + 'T' + flow[5]]['NonMarkingProbMean'],
+                 samples_dfs['T' + flow[5] + 'H' + flow[7]]['NonMarkingProbMean']],
+                [samples_dfs['T' + flow[1] + 'A' + str(path)]['NonMarkingProbStd'],
+                 samples_dfs['A' + str(path) + 'T' + flow[5]]['NonMarkingProbStd'],
+                 samples_dfs['T' + flow[5] + 'H' + flow[7]]['NonMarkingProbStd']])
             samples_paths_aggregated_statistics[flow][path]['MinimumE2ESampleSizeNonMarkingProb'] = calc_min_e2e_samples_prob(confidenceValue, DelayConsistencyGaurantee, samples_paths_aggregated_statistics[flow][path], number_of_segments, metric='NonMarkingProb')
             # print(flow, path, samples_paths_aggregated_statistics[flow][path]['NonMarkingProbMean'], samples_paths_aggregated_statistics[flow][path]['MaxEpsilonNonMarkingProb'])
     delay_bias_results = {}
@@ -1152,6 +1162,19 @@ def run_emd_vs_flows_experiment(rate, steadyStart, steadyEnd, confidenceValue, r
         title='Consistency-check error bound in ns ({}): {}, path {}'.format(
             run_desc, flow_name, path),
     )
+    # Loss and ECN marking, over the same packets/window/families as the delay plots: each
+    # family's own estimate against the switch-trace reference, its distance to it (the
+    # Bernoulli counterpart of the EMD), and the log-space difference the check thresholds
+    # against its own acceptance band. Skipped per metric when the traces make it untestable
+    # (see Utils.PROB_METRICS).
+    for metric in PROB_METRIC_KEYS:
+        for quantity, quantity_desc in (('prob', prob_metric_label(metric)),
+                                         ('distance', '|estimate - reference|'),
+                                         ('log_diff', 'Consistency log-difference')):
+            plot_prob_metric_vs_num_flows(
+                results, metric, '{}_{}_{}_boxplot.png'.format(file_prefix, metric, quantity),
+                quantity=quantity, pass_threshold=pass_threshold,
+                title='{} ({}): {}, path {}'.format(quantity_desc, run_desc, flow_name, path))
     # Mean absolute relative percentile error (percentile_avg_relative_error): evaluated on
     # a dense percentile grid independent of delay_percentiles. Same visual treatment as the
     # real EMD (pass/fail coloring, family styles, burstiness annotations), since it measures
@@ -1570,6 +1593,15 @@ def aggregate_emd_vs_flows_across_experiments(ns3_path, dir_name, traffic, rate,
         title='Consistency-check error bound in ns, aggregated ({}): {}, path {}'.format(
             run_desc, flow_name, path),
     )
+    for metric in PROB_METRIC_KEYS:
+        for quantity, quantity_desc in (('prob', prob_metric_label(metric)),
+                                         ('distance', '|estimate - reference|'),
+                                         ('log_diff', 'Consistency log-difference')):
+            plot_prob_metric_vs_num_flows(
+                aggregated, metric, '{}_{}_{}_boxplot.png'.format(file_prefix, metric, quantity),
+                quantity=quantity, pass_threshold=pass_threshold,
+                title='{}, aggregated ({}): {}, path {}'.format(
+                    quantity_desc, run_desc, flow_name, path))
     if aggregated.get('percentile_avg_relerror_all_packets'):
         plot_emd_vs_num_flows_boxplot(
             aggregated, file_prefix + '_percentile_avg_relerror_boxplot.png', pass_threshold=pass_threshold,
@@ -1701,6 +1733,18 @@ def aggregate_emd_vs_flows_compare_flows(ns3_path, dir_name, traffic, rate, load
                 flow_desc, gt_desc),
             metric='percentile_avg_relerror',
         )
+    # Loss / ECN marking, the same two-flow comparison as the delay metrics above.
+    for prob_metric in PROB_METRIC_KEYS:
+        for quantity in ('prob', 'distance', 'log_diff'):
+            plot_emd_vs_num_flows_boxplot_by_flow(
+                results_by_flow, '{}_{}_{}_boxplot.png'.format(file_prefix, prob_metric, quantity),
+                pass_threshold=pass_threshold, metric=prob_plot_metric(prob_metric, quantity),
+                title='{} vs number of TCP flows, {}\n{}'.format(
+                    prob_metric_label(prob_metric) if quantity == 'prob'
+                    else '{}, {}'.format(PROB_PLOT_QUANTITIES[quantity],
+                                          prob_metric_label(prob_metric).lower()),
+                    flow_desc, gt_desc),
+            )
     percentiles = sorted(set().union(*(set(r.get('delay_percentiles') or []) for r in results_by_flow.values())))
     for q in percentiles:
         plot_emd_vs_num_flows_boxplot_by_flow(
@@ -2022,6 +2066,23 @@ def aggregate_emd_vs_flows_across_traffics_and_loads(ns3_path, dir_name, traffic
                 title='{} vs load by traffic, all considered flows: {}, path {}, rate {}\n{}\n{}'.format(
                     emd_desc, flow_name, path, rate, kind_desc, gt_desc),
             )
+        # Loss / ECN marking vs load, all available flows only: each metric's own estimate,
+        # its distance to the switch-trace reference (the Bernoulli counterpart of the EMD)
+        # and the log-space difference its check thresholds. Skipped for a metric these
+        # results do not carry (they predate it) or that no family could estimate.
+        for prob_metric in PROB_METRIC_KEYS:
+            for quantity in ('prob', 'distance', 'log_diff'):
+                plot_emd_vs_load_by_traffic(
+                    results_by_traffic_load, 'max',
+                    '{}_kmax_{}_{}.png'.format(kind_prefix, prob_metric, quantity),
+                    pass_threshold=pass_threshold, series_specs=series_specs,
+                    metric=prob_plot_metric(prob_metric, quantity),
+                    title='{} vs load by traffic, all considered flows: {}, path {}, rate {}\n{}\n{}'.format(
+                        prob_metric_label(prob_metric) if quantity == 'prob'
+                        else '{}, {}'.format(PROB_PLOT_QUANTITIES[quantity],
+                                              prob_metric_label(prob_metric).lower()),
+                        flow_name, path, rate, kind_desc, gt_desc),
+                )
         # Percentile (tail-shape) error vs load, all available flows only.
         for q in percentiles:
             for kind, kind_suffix, desc in (
@@ -2051,6 +2112,17 @@ def aggregate_emd_vs_flows_across_traffics_and_loads(ns3_path, dir_name, traffic
             title='Consistency pass rate vs load by traffic, all considered flows: {}, path {}, rate {}\n{}\n{}'.format(
                 flow_name, path, rate, method, gt_desc),
         )
+        # The loss/marking checks have their own verdicts over the same subsample, so their
+        # pass rates get the same view (out of the runs that were testable at all).
+        for prob_metric in PROB_METRIC_KEYS:
+            plot_pass_rate_vs_load_by_traffic(
+                results_by_traffic_load, 'max',
+                '{}_kmax_{}.png'.format(pass_rate_prefix, prob_metric),
+                series_key=('sampled', method), pass_threshold=pass_threshold,
+                metric=prob_plot_metric(prob_metric),
+                title='{} consistency pass rate vs load by traffic, all considered flows: {}, path {}, rate {}\n{}\n{}'.format(
+                    prob_metric_label(prob_metric), flow_name, path, rate, method, gt_desc),
+            )
 
     # Same plots again, but with each burstiness metric of the all-packets arrival process
     # (IDC(1RTT), mean burst duration, mean inter-burst gap -- see BURSTINESS_METRIC_LABELS)
@@ -2087,6 +2159,20 @@ def aggregate_emd_vs_flows_across_traffics_and_loads(ns3_path, dir_name, traffic
                         emd_desc, BURSTINESS_METRIC_LABELS[burstiness_field], flow_name, path, rate,
                         kind_desc, gt_desc),
                 )
+            for prob_metric in PROB_METRIC_KEYS:
+                for quantity in ('prob', 'distance', 'log_diff'):
+                    plot_emd_vs_burstiness_by_traffic(
+                        results_by_traffic_load, 'max', burstiness_field,
+                        '{}_kmax_{}_{}.png'.format(kind_prefix, prob_metric, quantity),
+                        pass_threshold=pass_threshold, series_specs=series_specs,
+                        metric=prob_plot_metric(prob_metric, quantity),
+                        title='{} vs {} by traffic, all considered flows: {}, path {}, rate {}\n{}\n{}'.format(
+                            prob_metric_label(prob_metric) if quantity == 'prob'
+                            else '{}, {}'.format(PROB_PLOT_QUANTITIES[quantity],
+                                                  prob_metric_label(prob_metric).lower()),
+                            BURSTINESS_METRIC_LABELS[burstiness_field], flow_name, path, rate,
+                            kind_desc, gt_desc),
+                    )
             for q in percentiles:
                 for kind, kind_suffix, desc in (
                         ('percentile_diff', '_p{}_diff'.format(q), 'p{} error (ns)'.format(q)),
@@ -2121,10 +2207,15 @@ def aggregate_emd_vs_flows_across_traffics_and_loads(ns3_path, dir_name, traffic
 
     print("Saved {} cross-traffic/load plot kinds x {} EMD variants x {} k values (plus one all-flows plot each), "
           "plus {} percentile-error plots per kind ({} percentile(s) x absolute/relative, all-flows only), "
-          "plus {} pass-rate-vs-load plots per method x {} method(s) (plus one all-flows plot each), "
-          "plus the same EMD/percentile plots again vs each of {} burstiness metrics instead of load, "
+          "plus {} probability plots per kind ({} metric(s) x estimate/distance/log-difference, "
+          "all-flows only), "
+          "plus {} pass-rate-vs-load plots per method x {} method(s) (plus one all-flows plot each, "
+          "and one more per probability metric), "
+          "plus the same EMD/percentile/probability plots again vs each of {} burstiness metrics "
+          "instead of load, "
           "plus {} burstiness-metric-vs-load plots per metric (plus one all-flows plot each), to {}".format(
         len(plot_kinds), len(emd_variants), len(fixed_k_values), 2 * len(percentiles), len(percentiles),
+        3 * len(PROB_METRIC_KEYS), len(PROB_METRIC_KEYS),
         len(fixed_k_values), len(subsampling_methods), len(BURSTINESS_METRIC_LABELS),
         len(fixed_k_values), rate_dir))
     return results_by_traffic_load

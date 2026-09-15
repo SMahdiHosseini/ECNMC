@@ -7,7 +7,7 @@ import pandas as pd
 import glob
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator, PercentFormatter
-from matplotlib.patches import Patch
+from matplotlib.patches import Patch, Rectangle
 from matplotlib.lines import Line2D
 from enum import Enum
 import seaborn as sns
@@ -2586,13 +2586,25 @@ def remove_nan_samples(times, queue_sizes, queue_ECN_samples, queue_delay_sample
 
 @lru_cache(maxsize=12)
 def _load_queue_trace(file_path):
-    """Load all queue events plus enqueue times partitioned by source rack."""
+    """Load all queue events plus enqueue times partitioned by source rack.
+
+    Also carries RED's own per-event DropProb/MarkingProb, in the same event order as the
+    queue sizes, so the loss/marking side of the consistency check can be sampled at
+    arbitrary instants (sample_queue_probs) the way the queue size already is. Those two
+    columns are deliberately the reference used for the probability metrics rather than a
+    reconstruction from the queue size (sample_ECN_marking / sample_drop_probability): they
+    are the switch's own marking/drop probability at that instant, and they are what
+    calculate_offline_computations_DC -- and hence the per-segment
+    SuccessProbMean/NonMarkingProbMean the existing consistency check compares against --
+    has always used."""
     full_df = pd.read_csv(
         file_path,
-        usecols=['Time', 'TotalQueueSize', 'Label', 'Action'],
+        usecols=['Time', 'TotalQueueSize', 'Label', 'Action', 'DropProb', 'MarkingProb'],
     )
     times = full_df['Time'].to_numpy(dtype=float)
     queue_sizes = full_df['TotalQueueSize'].to_numpy(dtype=float)
+    drop_probs = full_df['DropProb'].to_numpy(dtype=float)
+    marking_probs = full_df['MarkingProb'].to_numpy(dtype=float)
     order = np.lexsort((-queue_sizes, times))
 
     enqueue_df = full_df[full_df['Action'] == 'E']
@@ -2606,11 +2618,12 @@ def _load_queue_trace(file_path):
     }
 
     # Queue sampling uses every event. Only packets_of_interest is rack-filtered.
-    return times[order], queue_sizes[order], enqueue_times_by_rack
+    return (times[order], queue_sizes[order], enqueue_times_by_rack,
+            drop_probs[order], marking_probs[order])
 
 
 def total_packets_of_interest(file_path, start_time, end_time, source_rack):
-    _, _, enqueue_times_by_rack = _load_queue_trace(file_path)
+    _, _, enqueue_times_by_rack, _, _ = _load_queue_trace(file_path)
     interest_times = enqueue_times_by_rack.get(source_rack, np.array([], dtype=float))
     return int(np.count_nonzero(
         (interest_times >= start_time) & (interest_times <= end_time)
@@ -2618,7 +2631,7 @@ def total_packets_of_interest(file_path, start_time, end_time, source_rack):
 
 def sample_queue_size(times, file_path, link_rate):
     # print(f"Sampling total queue size from {file_path} with link rate {link_rate} bpns")
-    df_times, df_queue_sizes, _ = _load_queue_trace(file_path)
+    df_times, df_queue_sizes, _, _, _ = _load_queue_trace(file_path)
     # queue_name = file_path.split('/')[-1].split('_')[0]
     # exp = file_path.split('/')[-2]
     # # if "T0A0" in queue_name or "A0T2" in queue_name:
@@ -2665,6 +2678,29 @@ def sample_queue_size(times, file_path, link_rate):
     #         print(f"percentage of 10.4 : {Fore.RED} {temp_10_4/temp_total:.2%} {Fore.RESET} expected around {Fore.BLUE} 25% {Fore.RESET}. Number of packets: {temp_10_4}")
     sample_times = np.asarray(times, dtype=float)
     return find_queue_size_at_time(df_times, df_queue_sizes, sample_times, link_rate)
+
+def sample_queue_probs(times, file_path):
+    """RED's own drop and marking probability in force at each instant of `times`, as
+    (drop_probs, marking_probs) -- the loss/marking counterpart of sample_queue_size, read
+    from the same cached queue trace (_load_queue_trace) and looked up with the same
+    last-event-at-or-before-t step convention find_queue_size_at_time uses for the size.
+
+    Instants outside the trace's span yield NaN, exactly as the queue-size sampler does, so
+    a caller can drop them with the same isfinite mask."""
+    df_times, _, _, df_drop, df_marking = _load_queue_trace(file_path)
+    sample_times = np.asarray(times, dtype=float)
+    if df_times.size == 0:
+        nan = np.full(sample_times.shape, np.nan)
+        return nan, nan.copy()
+    positions = np.searchsorted(df_times, sample_times, side='right') - 1
+    invalid = (positions < 0) | (positions >= df_times.size - 1)
+    positions = np.clip(positions, 0, df_times.size - 1)
+    drop = df_drop[positions].astype(float)
+    marking = df_marking[positions].astype(float)
+    drop[invalid] = np.nan
+    marking[invalid] = np.nan
+    return drop, marking
+
 
 def sample_ECN_marking(queue_size_samples, queue_size_trsh):
     return (queue_size_samples >= queue_size_trsh).astype(int)
@@ -3174,6 +3210,34 @@ def construct_path_delay_distribution(
     return total_delay[valid]
 
 
+def construct_path_prob_ground_truth(queue_names, dir_prefix, steady_start, steady_end,
+                                      link_delays, link_rates, sample_interval_ns=10):
+    """The path's true success and non-marking probabilities over [steady_start,
+    steady_end], as {metric: probability} -- the probability counterpart of
+    construct_path_delay_distribution, and the reference every family's own estimate is
+    scored against.
+
+    Same construction as the delay ground truth: one Poisson realization dense enough to
+    give `(steady_end - steady_start) / sample_interval_ns` observations, every path queue
+    observed at those instants, per-segment probabilities formed from RED's own
+    drop/marking probability there, and the path probability taken as their product (see
+    sample_path_prob_stats). Being a product of means rather than a distribution, this is a
+    single number per metric -- a Bernoulli has nothing else to describe -- which is why the
+    delay pipeline's EMD becomes a plain |p_ground_truth - p_family| here.
+
+    The confidence value only affects the per-segment epsilons, which a ground truth at this
+    rate does not use, so it is fixed at 1.96 for the call."""
+    if not queue_names:
+        return {metric: np.nan for metric in PROB_METRIC_KEYS}
+    num_observations = max(2, int((steady_end - steady_start) / sample_interval_ns))
+    sample_times = generate_poisson_observation_times(steady_start, steady_end, num_observations)
+    prefix = str(dir_prefix)
+    if not prefix.endswith("/"):
+        prefix += "/"
+    stats = sample_path_prob_stats(sample_times, queue_names, prefix, link_delays, link_rates, 1.96)
+    return {metric: stats[metric + 'PathProb'] for metric in PROB_METRIC_KEYS}
+
+
 def construct_path_delay_distribution_path_observation(
     queue_names,
     dir_prefix,
@@ -3345,6 +3409,335 @@ def plot_delay_distribution_cdfs(
     plt.close(fig)
     return output_path
 
+
+# ---------------------------------------------------------------------------------------
+# Probability metrics (loss / ECN marking) alongside delay
+# ---------------------------------------------------------------------------------------
+# The consistency check exists for three e2e quantities, not one: the path's mean queuing
+# delay, its success (non-drop) probability and its non-marking probability. The delay side
+# compares a MEAN against a per-segment SUM; both probabilities compare a PRODUCT against a
+# per-segment product, which the check does in log space (see PostProcessing's
+# check_all_successProbConsistency / check_all_nonMarkingProbConsistency, whose
+# 'event_poisson_eventAvg' branch is what prob_consistency_band below reproduces).
+#
+# Three facts about these two metrics shape everything here, all measured on
+# Results_forward_DCW_DC24Servers_WOIncast/Google_AllRPC 0.5/0.7:
+#
+# 1. A per-packet outcome is BERNOULLI, so its "distribution" is one number. The
+#    Wasserstein distance between two Bernoullis is exactly |p1 - p2|, so the EMD of the
+#    delay pipeline collapses to an absolute probability difference here -- reported as
+#    such rather than dressed up as a distribution distance -- and percentiles/CDFs of a
+#    0/1 variable carry no information at all, so they are not produced.
+# 2. Marking is well posed on both sides: RED's own per-instant MarkingProb gives a path
+#    non-marking probability of 0.9226 (product over the three path queues) against 0.9121
+#    observed end to end (every sent packet, dropped ones counted as marked). The
+#    alternative "queue >= 15% of capacity" reconstruction gives 0.835, which does not
+#    match, so RED's own column is the reference used. Note the residual asymmetry the
+#    missing drop information leaves: the e2e side counts a dropped packet as not having
+#    passed unmarked, while the switch side -- which sees no drops at all (point 3) -- has
+#    no way to. That biases the e2e estimate low by the loss rate, 0.26% here.
+# 3. Loss is NOT well posed on the switch side of these traces: RED's DropProb is
+#    identically 0 at every event of every path queue, and the queue never comes within one
+#    packet of capacity (P(queue > 90% of capacity) <= 1e-4), so the reconstruction
+#    sample_drop_probability yields exactly 0 too. The 0.26% of packets that never arrive
+#    are therefore not attributable to these three queues at all. The success-probability
+#    machinery below is complete and will work on a trace that records drops, but on this
+#    data its reference is p=1 with zero variance, which makes its check uninformative --
+#    see the warning the text summary prints.
+PROB_METRIC_KEYS = ('success_prob', 'non_marking_prob')
+
+PROB_METRICS = {
+    'success_prob': {
+        'label': 'Success probability',
+        'short': 'P(success)',
+        # Per-packet outcome: did the packet arrive at all. Defined on every SENT packet --
+        # restricting it to received packets would make the estimate 1 by construction.
+        'packet_column': 'Success',
+        'received_only': False,
+        'queue_column': 'drop',
+        'mean_key': 'SuccessProbMean',
+        'epsilon_key': 'MaxEpsilonSuccessProb',
+        'std_key': 'e2eSuccessProbStd',
+    },
+    'non_marking_prob': {
+        'label': 'Non-marking probability',
+        'short': 'P(not marked)',
+        # Per-packet outcome: did the packet get through unmarked. Over every SENT packet,
+        # with a dropped packet counting as MARKED -- a packet dropped by a full queue was
+        # necessarily past the ECN marking threshold on its way in, so semantically its ECN
+        # is 1. That matters for matching the switch side: the per-segment
+        # 1 - mean(MarkingProb) product is the unconditional probability of passing a queue
+        # unmarked, so the e2e estimate must be unconditional too. Excluding dropped
+        # packets (an earlier version of this) biases the estimate upward instead.
+        'packet_column': 'NonMarked',
+        'received_only': False,
+        'queue_column': 'marking',
+        'mean_key': 'NonMarkingProbMean',
+        'epsilon_key': 'MaxEpsilonNonMarkingProb',
+        'std_key': 'e2eNonMarkingProbStd',
+    },
+}
+
+
+def path_prob_product_std(segment_probs, segment_stds):
+    """Standard deviation of the PATH probability P = P1*P2*...*Pm, given each segment's own
+    mean and standard deviation and assuming the segments are independent:
+
+        Var(prod Pi) = prod(sigma_i^2 + mu_i^2) - prod(mu_i^2)
+
+    (each factor's second moment multiplied out, minus the square of the product of means --
+    the exact variance of a product of independent variables).
+
+    This is deliberately NOT the sum of the per-segment stds. That convention belongs to the
+    delay side, where the path quantity is a SUM of per-segment delays and summing stds is a
+    deliberately conservative bound (Var of a sum would be sqrt(sum of variances) under
+    independence; summing stds is the comonotonic worst case). A probability is a PRODUCT,
+    so summing its segments' stds has no interpretation at all and badly overstates the
+    spread: on the marking data measured here it gives 0.428 where the product rule gives
+    0.276, which widens the consistency band by ~55% and makes the check correspondingly
+    too permissive.
+
+    Returns NaN unless every segment contributes a finite mean and std."""
+    probs = np.asarray(segment_probs, dtype=float)
+    stds = np.asarray(segment_stds, dtype=float)
+    if probs.size == 0 or probs.size != stds.size:
+        return np.nan
+    if not (np.all(np.isfinite(probs)) and np.all(np.isfinite(stds))):
+        return np.nan
+    variance = float(np.prod(stds ** 2 + probs ** 2) - np.prod(probs ** 2))
+    # Mathematically non-negative; clamp the floating-point residue when every segment is
+    # deterministic (all stds 0), where the two products are equal.
+    return float(np.sqrt(max(variance, 0.0)))
+
+
+def received_rows(packet_df):
+    """The rows of a packet frame whose packets actually arrived -- the set on which a
+    DELAY is observable at all. The frame itself holds every SENT packet (see
+    prepare_emd_vs_flows_data), because neither probability metric may condition on
+    receipt: the success probability would then be 1 by construction, and the non-marking
+    probability would drop the dropped packets that must count as marked."""
+    return packet_df[packet_df['IsReceived'] == 1]
+
+
+def prob_metric_values(packet_df, metric):
+    """One probability metric's per-packet 0/1 outcomes from a packet frame. Both metrics
+    are defined over every SENT packet (see PROB_METRICS): a dropped packet is a failure for
+    the success probability and counts as marked for the non-marking one. NaNs are dropped,
+    so the length of the result is the sample size that metric's estimate rests on."""
+    spec = PROB_METRICS[metric]
+    rows = received_rows(packet_df) if spec['received_only'] else packet_df
+    values = np.asarray(rows[spec['packet_column']].values, dtype=float)
+    return values[np.isfinite(values)]
+
+
+def prob_metric_label(metric):
+    """Human-readable name of a probability metric (a PROB_METRICS key)."""
+    return (PROB_METRICS.get(metric) or {}).get('label', str(metric))
+
+
+def sample_path_prob_stats(times, queue_names, dir_prefix, linkDelays, linkRates,
+                            confidenceValue):
+    """Per-segment loss/marking statistics of the path, as seen by a probe observing every
+    queue at the instants `times` -- the probability counterpart of the delay half of
+    compute_poisson_agg_stats.
+
+    For each queue this takes RED's own drop and marking probability in force at those
+    instants (sample_queue_probs) and forms, exactly as calculate_offline_computations_DC
+    always has, `1 - mean(prob)` and `std(prob)`. It then aggregates them the way
+    analyze_single_experiment does for the consistency check:
+
+      - '<metric>Mean'   = SUM of log(per-segment probability) -- a path probability is the
+                           product of its segments', so the check works in log space;
+      - 'MaxEpsilon<..>' = the LARGEST per-segment relative confidence interval
+                           (calc_epsilon_loss / calc_epsilon_marking), the same
+                           worst-segment convention MaxEpsilonDelay uses;
+      - 'e2e<..>Std'     = the std of the PATH probability under segment independence,
+                           sqrt(prod(sigma_i^2+mu_i^2) - prod(mu_i^2)) -- see
+                           path_prob_product_std. NOT the sum of the per-segment stds: a
+                           path probability is a product, so its variance follows the
+                           product rule, unlike the delay side where the path quantity is a
+                           sum and summing stds is the conservative convention.
+
+    Returns a dict carrying those three keys per probability metric plus the per-segment
+    probabilities themselves ('<metric>PerSegment') for reporting."""
+    ordered_queues, _, _ = sort_queues_by_path(queue_names, linkDelays, linkRates)
+    stats = {}
+    per_segment = {metric: [] for metric in PROB_METRIC_KEYS}
+    per_queue_stats = {metric: [] for metric in PROB_METRIC_KEYS}
+    for queue_name in ordered_queues:
+        drop, marking = sample_queue_probs(times, dir_prefix + queue_name + '_PoissonSampler_queueSize.csv')
+        for metric in PROB_METRIC_KEYS:
+            raw = drop if PROB_METRICS[metric]['queue_column'] == 'drop' else marking
+            raw = raw[np.isfinite(raw)]
+            prob = float(1 - np.mean(raw)) if raw.size else np.nan
+            std = float(np.std(raw)) if raw.size else np.nan
+            per_segment[metric].append(prob)
+            per_queue_stats[metric].append({'prob': prob, 'std': std, 'sampleSize': int(raw.size)})
+
+    for metric in PROB_METRIC_KEYS:
+        spec = PROB_METRICS[metric]
+        queues = per_queue_stats[metric]
+        probs = np.array([q['prob'] for q in queues], dtype=float)
+        stds = np.array([q['std'] for q in queues], dtype=float)
+        sizes = np.array([max(q['sampleSize'], 1) for q in queues], dtype=float)
+        with np.errstate(divide='ignore', invalid='ignore'):
+            # log(0) would mean a segment that drops/marks everything; NaN is the honest
+            # answer there rather than -inf propagating through the whole check.
+            log_probs = np.where(probs > 0, np.log(np.clip(probs, 1e-300, None)), np.nan)
+            epsilons = np.where(probs > 0, confidenceValue * stds / (np.sqrt(sizes) * probs), np.nan)
+        stats[spec['mean_key']] = float(np.sum(log_probs)) if np.all(np.isfinite(log_probs)) else np.nan
+        stats[spec['epsilon_key']] = float(np.max(epsilons)) if np.all(np.isfinite(epsilons)) else np.nan
+        stats[spec['std_key']] = path_prob_product_std(probs, stds)
+        stats[metric + 'PerSegment'] = [float(p) for p in probs]
+        # The path probability itself, for reporting next to an e2e estimate of the same
+        # thing (the log-space sum above is what the check consumes).
+        stats[metric + 'PathProb'] = float(np.exp(stats[spec['mean_key']])) if np.isfinite(
+            stats[spec['mean_key']]) else np.nan
+    return stats
+
+
+def prob_consistency_band(agg_stats, metric, sample_size, confidenceValue, e2e_prob,
+                           number_of_segments=3):
+    """The acceptance band the probability consistency check applies, as
+    (log_diff, lower, upper): the check passes exactly when
+    `lower <= log_diff <= upper`, where
+
+        log_diff = log(e2e probability) - SUM of log(per-segment probability)
+        upper    =  m * log(1 + MaxEpsilon) - log(1 - epsp)
+        lower    =  m * log(1 - MaxEpsilon) - log(1 + epsp)
+        epsp     =  eta * e2eStd / (e2e probability * sqrt(n))
+
+    i.e. the switch side's own worst-segment relative error compounded over the m segments,
+    widened by the e2e side's own relative error at n samples. `e2eStd` here is the path
+    probability's std under segment independence (path_prob_product_std), since a path
+    probability is a product of its segments' -- not the sum of their stds, which is the
+    delay side's convention for a quantity that really is a sum. This is
+    check_all_successProbConsistency / check_all_nonMarkingProbConsistency's
+    'event_poisson_eventAvg' branch, lifted out so the band can be reported and plotted
+    rather than only applied.
+
+    Unlike the delay bound this band is **asymmetric** (a multiplicative band is symmetric
+    in ratio, not in difference) and it is in log space, which is why the two are reported
+    separately rather than squeezed into one "+/- bound" column.
+
+    Returns (nan, nan, nan) when there is nothing to test -- no samples, a degenerate e2e
+    probability, or switch statistics that carry no information about this metric."""
+    spec = PROB_METRICS[metric]
+    if agg_stats is None or not sample_size or sample_size <= 0:
+        return np.nan, np.nan, np.nan
+    switch_log = agg_stats.get(spec['mean_key'], np.nan)
+    max_eps = agg_stats.get(spec['epsilon_key'], np.nan)
+    switch_std = agg_stats.get(spec['std_key'], np.nan)
+    if not (np.isfinite(switch_log) and np.isfinite(max_eps) and np.isfinite(switch_std)):
+        return np.nan, np.nan, np.nan
+    if not np.isfinite(e2e_prob) or e2e_prob <= 0:
+        return np.nan, np.nan, np.nan
+    epsp = confidenceValue * switch_std / (e2e_prob * np.sqrt(sample_size))
+    if max_eps >= 1 or epsp >= 1:
+        return np.nan, np.nan, np.nan
+    log_diff = float(np.log(e2e_prob) - switch_log)
+    upper = float(number_of_segments * np.log(1 + max_eps) - np.log(1 - epsp))
+    lower = float(number_of_segments * np.log(1 - max_eps) - np.log(1 + epsp))
+    if upper - lower <= 0:
+        # A zero-width band means neither side of the comparison carries any variance: on
+        # these traces that is exactly what the success probability looks like (RED reports
+        # no drop probability anywhere, and the flow loses no packets on the path), and the
+        # metric's "verdict" would then be decided by whether two numbers that are both
+        # exactly 1 differ in the last floating-point bit. That is not a test, so it is
+        # reported as untestable (NaN band) rather than as a pass.
+        return log_diff, np.nan, np.nan
+    return log_diff, lower, upper
+
+
+def prob_consistency_check(agg_stats, metric, values, confidenceValue, min_sample_size,
+                            number_of_segments=3):
+    """Whether a family's per-packet 0/1 outcomes are consistent with the switch-side
+    per-segment probabilities, by the band in prob_consistency_band. Returns
+    (passed, e2e_prob, sample_size, log_diff, lower, upper); `passed` is None when no test
+    could be made (too few samples, or no usable statistics) rather than False, so a
+    "could not test" run is never counted as a failure -- the same convention the
+    Poisson-adaptive families' delay checks use."""
+    values = np.asarray(values, dtype=float)
+    values = values[np.isfinite(values)]
+    sample_size = int(values.size)
+    if sample_size < min_sample_size:
+        return None, np.nan, sample_size, np.nan, np.nan, np.nan
+    e2e_prob = float(np.mean(values))
+    log_diff, lower, upper = prob_consistency_band(
+        agg_stats, metric, sample_size, confidenceValue, e2e_prob, number_of_segments)
+    if not (np.isfinite(log_diff) and np.isfinite(lower) and np.isfinite(upper)):
+        return None, e2e_prob, sample_size, log_diff, lower, upper
+    return bool(lower <= log_diff <= upper), e2e_prob, sample_size, log_diff, lower, upper
+
+
+# The per-family record one probability metric produces, in the order the text summary
+# and the plots read it.
+PROB_FAMILY_FIELDS = ('prob', 'distance', 'consistency_pass', 'log_diff',
+                       'band_lower', 'band_upper', 'sample_size')
+
+
+def _prob_pass_rates(pass_counts, verdicts_by_k):
+    """Pass rate per flow count for one probability family: passes over the runs that could
+    actually be tested (a verdict of None means the band was untestable -- see
+    prob_consistency_band -- and such a run neither passed nor failed), the same
+    denominator convention pass_rate_sampled uses for the delay families."""
+    rates = []
+    for count, verdicts in zip(pass_counts, verdicts_by_k):
+        testable = sum(1 for v in verdicts if v is not None)
+        rates.append((count / testable) if testable else 0.0)
+    return rates
+
+
+def evaluate_prob_estimate(e2e_prob, sample_size, groundtruth_prob, agg_stats, metric,
+                            confidenceValue, min_sample_size, number_of_segments=3):
+    """Score one already-formed probability estimate against the switch side and the ground
+    truth -- the probability counterpart of _evaluate_delay_family, used both for families
+    estimated from packets (evaluate_prob_family) and for the ideal Poisson probe, whose
+    estimate comes from the switch trace rather than from packets.
+
+    `distance` is |ground truth - estimate|, which for a two-point (Bernoulli) distribution
+    IS the Wasserstein distance the delay side reports as EMD -- there is nothing else to a
+    0/1 variable's distribution, so no percentile or CDF counterpart is produced."""
+    if sample_size < min_sample_size or not np.isfinite(e2e_prob):
+        return {'prob': e2e_prob, 'distance': np.nan, 'consistency_pass': None,
+                'log_diff': np.nan, 'band_lower': np.nan, 'band_upper': np.nan,
+                'sample_size': int(sample_size)}
+    log_diff, lower, upper = prob_consistency_band(
+        agg_stats, metric, sample_size, confidenceValue, e2e_prob, number_of_segments)
+    passed = (bool(lower <= log_diff <= upper)
+               if np.isfinite(log_diff) and np.isfinite(lower) and np.isfinite(upper) else None)
+    distance = (abs(float(groundtruth_prob) - e2e_prob)
+                 if np.isfinite(groundtruth_prob) else np.nan)
+    return {'prob': e2e_prob, 'distance': distance, 'consistency_pass': passed,
+            'log_diff': log_diff, 'band_lower': lower, 'band_upper': upper,
+            'sample_size': int(sample_size)}
+
+
+def evaluate_prob_family(values, groundtruth_prob, agg_stats, metric, confidenceValue,
+                          min_sample_size, number_of_segments=3):
+    """Score one family's per-packet 0/1 outcomes for one probability metric: the estimate
+    is their mean and the sample size is how many of them there were. See
+    evaluate_prob_estimate for what comes back."""
+    values = np.asarray(values, dtype=float)
+    values = values[np.isfinite(values)]
+    e2e_prob = float(np.mean(values)) if values.size else np.nan
+    return evaluate_prob_estimate(e2e_prob, int(values.size), groundtruth_prob, agg_stats,
+                                   metric, confidenceValue, min_sample_size, number_of_segments)
+
+
+def construct_oracle_path_probs(queue_names, dir_prefix, steady_start, steady_end,
+                                 link_delays, link_rates, target_count):
+    """The path probabilities an **ideal Poisson probe** with about `target_count`
+    observations would report -- the probability counterpart of
+    construct_oracle_poisson_delays, and the same ceiling argument: its instants are a
+    genuine Poisson process independent of queue state, so its only error is finite-sample
+    noise. Returns {metric: probability}."""
+    target_count = int(target_count)
+    if target_count <= 0 or steady_end <= steady_start:
+        return {metric: np.nan for metric in PROB_METRIC_KEYS}
+    return construct_path_prob_ground_truth(
+        queue_names, dir_prefix, steady_start, steady_end, link_delays, link_rates,
+        sample_interval_ns=(steady_end - steady_start) / target_count)
 
 def _delay_consistency_check(values, agg_stats, confidenceValue, min_sample_size):
     """Maximum-Epsilon inequality delay consistency check (same formula used
@@ -3671,6 +4064,12 @@ def compute_poisson_agg_stats(dir_prefix, queue_names, linkDelays, linkRates, st
     agg_stats['MaxEpsilonDelay'] = max(calc_epsilon(confidenceValue, queue_stats[q]) for q in ordered_queues)
     agg_stats['e2eDelayStd'] = sum(queue_stats[q]['DelayStd'] for q in ordered_queues)
     agg_stats['MinimumE2ESampleSizeDelay'] = calc_min_e2e_samples(confidenceValue, DelayConsistencyGaurantee, agg_stats, metric='Delay')
+    # The same probe instants also carry the loss/marking side of the check
+    # (sample_path_prob_stats). Deliberately no separate minimum sample size for those: the
+    # delay figure above is the one every family is sized by, since a 0/1 outcome varies far
+    # less than a delay and the delay-derived count is the conservative choice.
+    agg_stats.update(sample_path_prob_stats(
+        times, queue_names, dir_prefix, linkDelays, linkRates, confidenceValue))
     return agg_stats
 
 
@@ -4058,9 +4457,23 @@ def prepare_emd_vs_flows_data(
     full_df = pd.read_csv(file_path)
     full_df = addRemoveTransmission_data(full_df, linkDelays, linkRates)
     full_df = prune_data(full_df, 'SentTime', steadyStart, steadyEnd)
-    full_df = full_df[full_df['IsReceived'] == 1]
     full_df = full_df[full_df['Path'] == path].copy()
     full_df = full_df.sort_values(by='SentTime').reset_index(drop=True)
+    # Every SENT packet is kept, not only the received ones, because the success
+    # probability cannot be estimated from received packets alone -- the estimate would be 1
+    # by construction. The sampled stream is therefore the sender's, by SentTime, which is
+    # also what the non-EMD path has always sampled (calculate_offline_computations_DC is
+    # called with 'SentTime' and IsReceived as the outcome). Delay and marking are only
+    # observable on packets that arrived, so those two families take the received subset of
+    # whatever was selected (see received_rows); on this data that is 99.74% of it.
+    full_df['Success'] = full_df['IsReceived'].astype(float)
+    # A dropped packet counts as marked (NonMarked = 0), regardless of what its ECN column
+    # says: every DC24Servers trace checked records ECN=0 on dropped packets (70/70, 23/23,
+    # 8/8 across three traffic/load combinations), which if taken literally would count
+    # them as having passed *unmarked* and bias the non-marking probability upward. A
+    # packet dropped by a full queue was necessarily above the ECN threshold, so the
+    # semantically correct value is 1 (marked) and it is forced here rather than read.
+    full_df['NonMarked'] = np.where(full_df['IsReceived'] == 1, 1.0 - full_df['ECN'], 0.0)
 
     full_df['FlowKey'] = list(zip(full_df['SourceIp'], full_df['SourcePort'], full_df['DestinationIp'], full_df['DestinationPort']))
     flow_first_seen = full_df.groupby('FlowKey')['SentTime'].min().sort_values()
@@ -4090,8 +4503,20 @@ def prepare_emd_vs_flows_data(
     poisson_tests_all = {'ad_pass': [], 'ad_pvalue': [], 'chi_pass': [], 'chi_reject_fraction': []}
     burst_gap = burst_gap_threshold_ns(linkRates[0])
     burstiness_all_packets = {field: [] for field in BURSTINESS_METRIC_LABELS}
+    groundtruth_probs = construct_path_prob_ground_truth(
+        queue_names, dir_prefix, steadyStart, steadyEnd, linkDelays, linkRates,
+        sample_interval_ns=delay_cdf_sample_interval_ns)
+    prob_all_packets = {metric: [] for metric in PROB_METRIC_KEYS}
+    prob_all_packet_sizes = {metric: [] for metric in PROB_METRIC_KEYS}
+
     for k in num_flows:
-        considered = full_df[full_df['FlowRank'] <= k]
+        considered_sent = full_df[full_df['FlowRank'] <= k]
+        considered = received_rows(considered_sent)
+        for metric in PROB_METRIC_KEYS:
+            metric_values = prob_metric_values(considered_sent, metric)
+            prob_all_packets[metric].append(
+                float(np.mean(metric_values)) if len(metric_values) else np.nan)
+            prob_all_packet_sizes[metric].append(int(len(metric_values)))
         all_values = considered['Delay'].values
         all_packet_sizes.append(len(all_values))
         tests = poisson_process_tests(
@@ -4114,6 +4539,13 @@ def prepare_emd_vs_flows_data(
     return {
         'dir_prefix': dir_prefix,
         'full_df': full_df,
+        # The path's true success / non-marking probability over the whole steady window,
+        # and the all-packets estimate of each per flow count (see
+        # construct_path_prob_ground_truth). A windowed run rebuilds both over its own
+        # window instead.
+        'groundtruth_probs': groundtruth_probs,
+        'prob_all_packets': prob_all_packets,
+        'prob_all_packet_sizes': prob_all_packet_sizes,
         'flow_order': flow_order,
         'num_flows': num_flows,
         'groundtruth_method': groundtruth_method,
@@ -4356,7 +4788,8 @@ def windowed_groundtruth(window_ctx, window_end):
     the same construction (GROUNDTRUTH_METHODS) and the same sampling interval
     prepare_emd_vs_flows_data used for the full steady window, just restricted to the
     window a growing-window method actually stopped at. Returns
-    (values, percentiles, mean).
+    (values, percentiles, mean, path_probabilities) -- the last being the window's own
+    success / non-marking probability reference (construct_path_prob_ground_truth).
 
     This exists because a consistency check or an EMD must never mix windows: a subsample
     drawn from the first 5 ms of the steady period compared against a ground truth averaged
@@ -4375,9 +4808,16 @@ def windowed_groundtruth(window_ctx, window_end):
             window_ctx['queue_names'], window_ctx['dir_prefix'], window_ctx['steady_start'],
             float(window_end), window_ctx['link_delays'], window_ctx['link_rates'],
             sample_interval_ns=window_ctx['delay_cdf_sample_interval_ns'])
+        # The loss/marking reference for the same window, at the same dense rate -- so the
+        # probability metrics are scored against their own window too, not the full period.
+        probs = construct_path_prob_ground_truth(
+            window_ctx['queue_names'], window_ctx['dir_prefix'], window_ctx['steady_start'],
+            float(window_end), window_ctx['link_delays'], window_ctx['link_rates'],
+            sample_interval_ns=window_ctx['delay_cdf_sample_interval_ns'])
         entry = (values,
                  compute_delay_percentiles(values, window_ctx['delay_percentiles']),
-                 float(np.mean(values)) if len(values) else np.nan)
+                 float(np.mean(values)) if len(values) else np.nan,
+                 probs)
         _WINDOWED_GROUNDTRUTH_CACHE[key] = entry
         while len(_WINDOWED_GROUNDTRUTH_CACHE) > _WINDOWED_GROUNDTRUTH_CACHE_MAX:
             _WINDOWED_GROUNDTRUTH_CACHE.popitem(last=False)
@@ -4634,6 +5074,8 @@ def compute_emd_vs_num_tcp_flows_run(prepared, agg_stats, confidenceValue, min_s
     steady_start = prepared.get('steady_start')
     steady_end = prepared.get('steady_end')
     burst_gap = prepared.get('burst_gap_threshold_ns')
+    groundtruth_probs = prepared.get('groundtruth_probs') or {
+        metric: np.nan for metric in PROB_METRIC_KEYS}
 
     num_flows_list = []
     consistency_all_list, mean_diff_all_list = [], []
@@ -4692,6 +5134,27 @@ def compute_emd_vs_num_tcp_flows_run(prepared, agg_stats, confidenceValue, min_s
     uniform_test_split = {name: {'emd': [], 'emd_normalized': [], 'mean_diff': [],
                                   'ad_pass': [], 'chi_pass': []}
                            for name in subsampling_methods}
+    # The loss/marking side of the check, for exactly the same families over exactly the
+    # same packets and window as the delay side above (see PROB_METRICS).
+    prob_results = {
+        metric: {
+            'groundtruth_prob': [],
+            'all_packets': {field: [] for field in PROB_FAMILY_FIELDS},
+            'sampled': {name: {field: [] for field in PROB_FAMILY_FIELDS}
+                         for name in subsampling_methods},
+            'uniform': {name: {field: [] for field in PROB_FAMILY_FIELDS}
+                         for name in subsampling_methods},
+            'oracle': {key: {field: [] for field in PROB_FAMILY_FIELDS}
+                        for key in oracle_series},
+        } for metric in PROB_METRIC_KEYS}
+
+    def _record_prob(store, metric, rows, gt_probs, stats):
+        """Evaluate one probability metric for one family's packets and append the record."""
+        result = evaluate_prob_family(
+            prob_metric_values(rows, metric), gt_probs.get(metric, np.nan), stats, metric,
+            confidenceValue, min_sample_size)
+        for field in PROB_FAMILY_FIELDS:
+            store[field].append(result[field])
 
     def _reldiff(absolute_diff, reference_percentiles, q):
         """One percentile's error as a fraction of the reference percentile it was measured
@@ -4717,7 +5180,7 @@ def compute_emd_vs_num_tcp_flows_run(prepared, agg_stats, confidenceValue, min_s
             run_min_samples = found['min_samples'] if certified else None
             if certified:
                 run_subset = subset[subset['SentTime'] <= window_end]
-                run_gt_values, run_gt_percentiles, run_gt_mean = windowed_groundtruth(
+                run_gt_values, run_gt_percentiles, run_gt_mean, run_gt_probs = windowed_groundtruth(
                     window_ctx, float(window_end))
             else:
                 # No window could supply the samples the check needs, so this run certified
@@ -4728,14 +5191,18 @@ def compute_emd_vs_num_tcp_flows_run(prepared, agg_stats, confidenceValue, min_s
                 run_subset = subset.iloc[0:0]
                 run_gt_values, run_gt_mean = np.array([]), np.nan
                 run_gt_percentiles = {q: np.nan for q in delay_percentiles}
+                run_gt_probs = {metric: np.nan for metric in PROB_METRIC_KEYS}
         else:
             certified = True
             window_end = steady_end
             run_agg_stats, run_min_samples, run_subset = agg_stats, min_samples, subset
             run_gt_values, run_gt_percentiles, run_gt_mean = (
                 groundtruth_values, groundtruth_percentiles, groundtruth_mean)
+            run_gt_probs = groundtruth_probs
 
-        all_values = run_subset['Delay'].values
+        # Delay is only observable on packets that arrived; the frame holds every sent
+        # packet so the success probability can be estimated at all (see received_rows).
+        all_values = received_rows(run_subset)['Delay'].values
 
         # ------------------------------------------------------------------- all packets
         if len(all_values) and run_agg_stats is not None:
@@ -4749,6 +5216,10 @@ def compute_emd_vs_num_tcp_flows_run(prepared, agg_stats, confidenceValue, min_s
             run_agg_stats, len(all_values), confidenceValue)
         bound_all_list.append(bound_rel)
         bound_ns_all_list.append(bound_ns)
+        for metric in PROB_METRIC_KEYS:
+            prob_results[metric]['groundtruth_prob'].append(run_gt_probs.get(metric, np.nan))
+            _record_prob(prob_results[metric]['all_packets'], metric, run_subset,
+                          run_gt_probs, run_agg_stats)
         if windowed_method is not None:
             # Only a windowed run computes these here: the all-packets family is a different
             # packet set every run because every run's window differs. An ordinary run's
@@ -4802,8 +5273,10 @@ def compute_emd_vs_num_tcp_flows_run(prepared, agg_stats, confidenceValue, min_s
                 sampled_mean_diff[name].append(np.nan)
                 sampled_size = 0
                 sample_values = np.array([])
+                selected_rows = run_subset.iloc[0:0]
             else:
-                sample_values = run_subset[run_subset['SentTime'].isin(samples_times)]['Delay'].values
+                selected_rows = run_subset[run_subset['SentTime'].isin(samples_times)]
+                sample_values = received_rows(selected_rows)['Delay'].values
                 emd, consistency_pass, mean_diff, sampled_size = _evaluate_delay_family(
                     sample_values, run_gt_values, run_agg_stats, confidenceValue, min_sample_size)
                 sampled_emd[name].append(emd)
@@ -4822,6 +5295,9 @@ def compute_emd_vs_num_tcp_flows_run(prepared, agg_stats, confidenceValue, min_s
                     _reldiff(sampled_diffs[q], run_gt_percentiles, q))
             sampled_percentile_avg_relerror[name].append(
                 percentile_avg_relative_error(run_gt_values, sample_values))
+            for metric in PROB_METRIC_KEYS:
+                _record_prob(prob_results[metric]['sampled'][name], metric, selected_rows,
+                              run_gt_probs, run_agg_stats)
 
             # Spend exactly this method's sample budget on a blind uniform subsample,
             # so the two differ only in *which* packets they pick, not how many. With no
@@ -4840,7 +5316,7 @@ def compute_emd_vs_num_tcp_flows_run(prepared, agg_stats, confidenceValue, min_s
             else:
                 target_count = matched_uniform_target_count(sampled_size, run_min_samples)
                 uniform_rows = sample_uniform_count(run_subset, target_count)
-                uniform_values = uniform_rows['Delay'].values
+                uniform_values = received_rows(uniform_rows)['Delay'].values
                 emd, consistency_pass, mean_diff, uniform_size = _evaluate_delay_family(
                     uniform_values, run_gt_values, run_agg_stats, confidenceValue, min_sample_size)
                 uniform_emd[name].append(emd)
@@ -4859,6 +5335,10 @@ def compute_emd_vs_num_tcp_flows_run(prepared, agg_stats, confidenceValue, min_s
                     _reldiff(uniform_diffs[q], run_gt_percentiles, q))
             uniform_percentile_avg_relerror[name].append(
                 percentile_avg_relative_error(run_gt_values, uniform_values))
+            for metric in PROB_METRIC_KEYS:
+                _record_prob(prob_results[metric]['uniform'][name], metric,
+                              uniform_rows if certified else run_subset.iloc[0:0],
+                              run_gt_probs, run_agg_stats)
 
             uniform_tests = poisson_process_tests(
                 uniform_rows['SentTime'].values, steady_start, window_end,
@@ -4908,6 +5388,21 @@ def compute_emd_vs_num_tcp_flows_run(prepared, agg_stats, confidenceValue, min_s
                     _reldiff(oracle_diffs[q], run_gt_percentiles, q))
             oracle_percentile_avg_relerror[key].append(
                 percentile_avg_relative_error(run_gt_values, oracle_values))
+            # The probe's loss/marking estimate is not a packet subsample at all: it is the
+            # same switch-side construction as the reference, run at this family's budget --
+            # so it carries only finite-sample noise, the same ceiling argument the delay
+            # probe rests on.
+            probe_probs = (construct_oracle_path_probs(
+                prepared['queue_names'], prepared['dir_prefix'], steady_start, window_end,
+                prepared['link_delays'], prepared['link_rates'], targets[key])
+                if certified else {metric: np.nan for metric in PROB_METRIC_KEYS})
+            for metric in PROB_METRIC_KEYS:
+                result = evaluate_prob_estimate(
+                    probe_probs.get(metric, np.nan), targets[key],
+                    run_gt_probs.get(metric, np.nan), run_agg_stats, metric,
+                    confidenceValue, min_sample_size)
+                for field in PROB_FAMILY_FIELDS:
+                    prob_results[metric]['oracle'][key][field].append(result[field])
 
     return {
         'num_flows': num_flows_list,
@@ -4958,6 +5453,7 @@ def compute_emd_vs_num_tcp_flows_run(prepared, agg_stats, confidenceValue, min_s
         'oracle_percentile_reldiff': oracle_percentile_reldiff,
         'oracle_percentile_avg_relerror': oracle_percentile_avg_relerror,
         'uniform_test_split': uniform_test_split,
+        'prob_metrics': prob_results,
     }
 
 
@@ -5217,7 +5713,7 @@ def upgrade_emd_vs_flows_results_schema(results):
             and 'poisson_test_series' in results
             and 'percentile_avg_relerror_all_packets' in results
             and 'window_duration_sampled_by_run' in results and 'all_packet_sizes' in results
-            and 'error_bound_sampled_by_run' in results
+            and 'error_bound_sampled_by_run' in results and 'prob_metrics' in results
             and isinstance(results.get('emd_sampled_packets_by_run'), dict)):
         return results
 
@@ -5318,6 +5814,10 @@ def upgrade_emd_vs_flows_results_schema(results):
     # too. They are derivable in principle (bound = f(agg_stats, n)) but the per-run
     # agg_stats were never stored, so an old result carries empty placeholders and the
     # error-bound plot/columns are skipped for it rather than faked.
+    # The loss/marking metrics postdate these pickles and cannot be recovered from what was
+    # stored (they need the per-run packet outcomes and switch probabilities), so an old
+    # result simply carries none and every probability table/plot is skipped for it.
+    upgraded.setdefault('prob_metrics', {})
     for prefix in ('error_bound_', 'error_bound_ns_'):
         upgraded.setdefault(prefix + 'all_packets_by_run', [[] for _ in range(n_k)])
         upgraded.setdefault(prefix + 'sampled_by_run',
@@ -5754,6 +6254,65 @@ def aggregate_emd_vs_flows_results(results_list):
             bounds_oracle[key].append(oracle_bound_vals[key])
             bounds_ns_oracle[key].append(oracle_bound_ns_vals[key])
 
+    # Probability metrics pool exactly like the delay per-run lists: concatenate every
+    # experiment's per-run values at each k, and re-derive the pass rates from pooled
+    # pass/testable counts rather than averaging rates (an experiment with fewer testable
+    # runs must not weigh the same as one with more).
+    agg_prob = {}
+    for metric in PROB_METRIC_KEYS:
+        blocks = [(r.get('prob_metrics') or {}).get(metric) for r in results_list]
+        if not any(blocks):
+            continue
+        metric_out = {'groundtruth_prob_by_run': []}
+        family_specs = ([('all_packets_by_run', 'pass_rate_all_packets', [None])]
+                         + [('sampled_by_run', 'pass_rate_sampled', methods)]
+                         + [('uniform_by_run', 'pass_rate_uniform', uniform_series)]
+                         + [('oracle_by_run', 'pass_rate_oracle', oracle_series)])
+        for family_key, rate_key, keys in family_specs:
+            if keys == [None]:
+                metric_out[family_key] = {field: [] for field in PROB_FAMILY_FIELDS}
+                metric_out[rate_key] = []
+            else:
+                metric_out[family_key] = {key: {field: [] for field in PROB_FAMILY_FIELDS}
+                                           for key in keys}
+                metric_out[rate_key] = {key: [] for key in keys}
+        for k in all_k:
+            gt_vals = []
+            for r, block in zip(results_list, blocks):
+                if block is None or k not in r['num_flows']:
+                    continue
+                i = r['num_flows'].index(k)
+                gt_vals.extend((block.get('groundtruth_prob_by_run') or [[]] * len(r['num_flows']))[i])
+            metric_out['groundtruth_prob_by_run'].append(gt_vals)
+            for family_key, rate_key, keys in family_specs:
+                for key in keys:
+                    pooled = {field: [] for field in PROB_FAMILY_FIELDS}
+                    passes = testable = 0
+                    for r, block in zip(results_list, blocks):
+                        if block is None or k not in r['num_flows']:
+                            continue
+                        i = r['num_flows'].index(k)
+                        family = block.get(family_key) or {}
+                        family = family if key is None else (family.get(key) or {})
+                        if not family:
+                            continue
+                        n_k_r = len(r['num_flows'])
+                        for field in PROB_FAMILY_FIELDS:
+                            pooled[field].extend((family.get(field) or [[]] * n_k_r)[i])
+                        verdicts = (family.get('consistency_pass') or [[]] * n_k_r)[i]
+                        passes += sum(1 for v in verdicts if v is True)
+                        testable += sum(1 for v in verdicts if v is not None)
+                    target = (metric_out[family_key] if key is None
+                               else metric_out[family_key][key])
+                    for field in PROB_FAMILY_FIELDS:
+                        target[field].append(pooled[field])
+                    rate = (passes / testable) if testable else 0.0
+                    if key is None:
+                        metric_out[rate_key].append(rate)
+                    else:
+                        metric_out[rate_key][key].append(rate)
+        agg_prob[metric] = metric_out
+
     groundtruth_values = np.concatenate(
         [np.asarray(r['groundtruth_values'], dtype=float) for r in results_list])
 
@@ -5876,6 +6435,7 @@ def aggregate_emd_vs_flows_results(results_list):
         'mean_diff_sampled_by_run': mean_diff_sampled,
         'sample_sizes_sampled_by_run': sample_sizes_sampled,
         'window_duration_sampled_by_run': window_durations_sampled,
+        'prob_metrics': agg_prob,
         'error_bound_all_packets_by_run': bound_all,
         'error_bound_ns_all_packets_by_run': bound_ns_all,
         'error_bound_sampled_by_run': bounds_sampled,
@@ -6120,6 +6680,25 @@ def compute_emd_vs_num_tcp_flows_multi_run(
     per_k_pdiff_oracle = _empty_percentile_structure(delay_percentiles, oracle_series, len(num_flows))
     per_k_preldiff_oracle = _empty_percentile_structure(delay_percentiles, oracle_series, len(num_flows))
     per_k_pctrelerr_oracle = {key: [[] for _ in num_flows] for key in oracle_series}
+    # The loss/marking metrics, pooled across runs exactly like every delay quantity: one
+    # list per flow count per family, plus the per-run reference probability (which in a
+    # windowed run is that run's own window's).
+    per_k_prob = {
+        metric: {
+            'groundtruth_prob': [[] for _ in num_flows],
+            'all_packets': {field: [[] for _ in num_flows] for field in PROB_FAMILY_FIELDS},
+            'sampled': {m: {field: [[] for _ in num_flows] for field in PROB_FAMILY_FIELDS}
+                         for m in subsampling_methods},
+            'uniform': {m: {field: [[] for _ in num_flows] for field in PROB_FAMILY_FIELDS}
+                         for m in subsampling_methods},
+            'oracle': {key: {field: [[] for _ in num_flows] for field in PROB_FAMILY_FIELDS}
+                        for key in oracle_series},
+            'pass_count': {'all_packets': [0] * len(num_flows),
+                            'sampled': {m: [0] * len(num_flows) for m in subsampling_methods},
+                            'uniform': {m: [0] * len(num_flows) for m in subsampling_methods},
+                            'oracle': {key: [0] * len(num_flows) for key in oracle_series}},
+        } for metric in PROB_METRIC_KEYS}
+
     # Aligned per-run records for the Poisson-ness split: value and verdict appended
     # together, so index j of every list below belongs to the same run.
     split_fields = ('emd', 'emd_normalized', 'mean_diff', 'ad_pass', 'chi_pass')
@@ -6218,6 +6797,34 @@ def compute_emd_vs_num_tcp_flows_multi_run(
                 uniform_relerr = run_result['uniform_percentile_avg_relerror'][m][i]
                 if np.isfinite(uniform_relerr):
                     per_k_pctrelerr_uniform[m][i].append(uniform_relerr)
+
+            for metric in PROB_METRIC_KEYS:
+                run_prob = run_result['prob_metrics'][metric]
+                store = per_k_prob[metric]
+                store['groundtruth_prob'][i].append(run_prob['groundtruth_prob'][i])
+                for family, keys in (('all_packets', [None]),
+                                      ('sampled', subsampling_methods),
+                                      ('uniform', subsampling_methods),
+                                      ('oracle', oracle_series)):
+                    for key in keys:
+                        run_family = run_prob[family] if key is None else run_prob[family][key]
+                        target = store[family] if key is None else store[family][key]
+                        # A family with no usable estimate at this k contributes nothing,
+                        # so every list stays in lockstep with the runs that did produce
+                        # one -- the denominator convention the delay families use.
+                        if not np.isfinite(run_family['prob'][i]):
+                            continue
+                        for field in PROB_FAMILY_FIELDS:
+                            value = run_family[field][i]
+                            if field == 'consistency_pass':
+                                if value is True:
+                                    if key is None:
+                                        store['pass_count'][family][i] += 1
+                                    else:
+                                        store['pass_count'][family][key][i] += 1
+                                continue
+                            target[field][i].append(value)
+                        target['consistency_pass'][i].append(run_family['consistency_pass'][i])
 
             for key in oracle_series:
                 if np.isfinite(run_result['oracle_emd'][key][i]):
@@ -6411,6 +7018,37 @@ def compute_emd_vs_num_tcp_flows_multi_run(
         'mean_diff_oracle_by_run': per_k_mean_diff_oracle,
         'sample_sizes_oracle_by_run': per_k_sample_sizes_oracle,
         'one_run_delay_cdfs': one_run_delay_cdfs,
+        # Loss and ECN-marking, over the same packets, families and window as the delay
+        # results above. Per metric: the reference probability, and per family the per-run
+        # estimate, its distance to that reference (|dp|, which for a 0/1 outcome is the
+        # Wasserstein distance the delay side calls EMD), the log-space difference and
+        # acceptance band the check applied, the sample size, and the pass rate out of the
+        # runs that could be tested at all. See PROB_METRICS for why there are no
+        # percentile or CDF counterparts, and why the success probability is degenerate on
+        # traces that record no drops.
+        'prob_metrics': {
+            metric: {
+                'groundtruth_prob_by_run': per_k_prob[metric]['groundtruth_prob'],
+                'all_packets_by_run': per_k_prob[metric]['all_packets'],
+                'sampled_by_run': per_k_prob[metric]['sampled'],
+                'uniform_by_run': per_k_prob[metric]['uniform'],
+                'oracle_by_run': per_k_prob[metric]['oracle'],
+                'pass_rate_all_packets': _prob_pass_rates(
+                    per_k_prob[metric]['pass_count']['all_packets'],
+                    per_k_prob[metric]['all_packets']['consistency_pass']),
+                'pass_rate_sampled': {m: _prob_pass_rates(
+                    per_k_prob[metric]['pass_count']['sampled'][m],
+                    per_k_prob[metric]['sampled'][m]['consistency_pass'])
+                    for m in subsampling_methods},
+                'pass_rate_uniform': {m: _prob_pass_rates(
+                    per_k_prob[metric]['pass_count']['uniform'][m],
+                    per_k_prob[metric]['uniform'][m]['consistency_pass'])
+                    for m in subsampling_methods},
+                'pass_rate_oracle': {key: _prob_pass_rates(
+                    per_k_prob[metric]['pass_count']['oracle'][key],
+                    per_k_prob[metric]['oracle'][key]['consistency_pass'])
+                    for key in oracle_series},
+            } for metric in PROB_METRIC_KEYS},
         # The all-packets family: full-window and fixed per flow count in an ordinary run,
         # per-run and inside each run's own window in a windowed one (see above).
         **all_packets_results,
@@ -6826,6 +7464,12 @@ def _metric_result_keys(metric, normalized):
                 '{}_uniform_by_run'.format(name),
                 '{}_oracle_by_run'.format(name),
                 label)
+    prob_spec = _metric_prob_spec(metric)
+    if prob_spec is not None:
+        metric_name, quantity = prob_spec
+        label = ('{} ({})'.format(PROB_PLOT_QUANTITIES[quantity], prob_metric_label(metric_name).lower())
+                  if quantity != 'prob' else prob_metric_label(metric_name))
+        return (None, None, None, None, None, label)
     if metric == 'percentile_avg_relerror':
         # Mean absolute percentage error over a dense, fixed percentile grid (see
         # percentile_avg_relative_error) -- self-normalized already, so `normalized` does
@@ -6849,6 +7493,64 @@ def _metric_percentile(metric):
     return None
 
 
+# The quantities a probability metric can be plotted as, with the axis label each gets.
+PROB_PLOT_QUANTITIES = {
+    'prob': 'estimate',
+    'distance': '|estimate - reference|',
+    'log_diff': 'log(estimate) - SUM log(segment probability)',
+}
+
+
+def prob_plot_metric(metric_name, quantity='distance'):
+    """The `metric` identifier that selects one probability metric's quantity in the
+    cross-traffic load/burstiness plots: ('prob', <PROB_METRICS key>, <PROB_PLOT_QUANTITIES
+    key>). Delay metrics stay exactly as they were ('emd', ('percentile_diff', q), ...), so
+    nothing about the existing plots changes."""
+    if metric_name not in PROB_METRICS:
+        raise ValueError("Unknown probability metric {!r}; choose one of {}".format(
+            metric_name, list(PROB_METRICS)))
+    if quantity not in PROB_PLOT_QUANTITIES:
+        raise ValueError("Unknown probability quantity {!r}; choose one of {}".format(
+            quantity, list(PROB_PLOT_QUANTITIES)))
+    return ('prob', metric_name, quantity)
+
+
+def _metric_prob_spec(metric):
+    """(metric_name, quantity) when `metric` selects a probability metric, else None."""
+    if (isinstance(metric, tuple) and len(metric) == 3 and metric[0] == 'prob'
+            and metric[1] in PROB_METRICS):
+        return metric[1], metric[2]
+    return None
+
+
+def _prob_plot_series_values(r, i, series_key, metric_name, quantity):
+    """(values, pass_rate) for one comparison series' probability metric at flow-count index
+    `i` -- the probability counterpart of _load_plot_series_values' delay branches, reading
+    the nested per-metric block compute_emd_vs_num_tcp_flows_multi_run stores (see
+    'prob_metrics'). Empty when this result carries no such metric (it predates them) or
+    the series is not one of its families."""
+    block = (r.get('prob_metrics') or {}).get(metric_name)
+    if not block:
+        return [], 0.0
+    n_k = len(r.get('num_flows') or [])
+    if series_key == 'sampled':
+        series_key = ('sampled', r['subsampling_methods'][0])
+    if series_key == 'all_packets':
+        family, rates = block.get('all_packets_by_run') or {}, block.get('pass_rate_all_packets') or []
+    elif isinstance(series_key, tuple) and series_key[0] in ('sampled', 'uniform', 'oracle'):
+        kind, key = series_key
+        family = (block.get(kind + '_by_run') or {}).get(key) or {}
+        rates = (block.get('pass_rate_' + kind) or {}).get(key) or []
+    else:
+        raise ValueError("Unknown series_key: {!r}".format(series_key))
+    if not family:
+        return [], 0.0
+    values = (family.get(quantity) or [[]] * n_k)
+    values = list(values[i]) if i < len(values) else []
+    values = [v for v in values if v == v]  # drop NaN
+    return values, (rates[i] if i < len(rates) else 0.0)
+
+
 def _metric_is_relative(metric, normalized):
     """Whether a plotted (metric, normalized) combination is a fraction/ratio (view-capped at
     +/-100% by default) rather than an absolute ns quantity (capped at 500ns): normalized EMD,
@@ -6858,6 +7560,7 @@ def _metric_is_relative(metric, normalized):
     and plot_emd_vs_num_flows_boxplot_by_flow so a metric added to one is classified the same
     way everywhere, rather than each copy risking its own default-cap misclassification."""
     return (normalized or metric == 'percentile_avg_relerror'
+            or _metric_prob_spec(metric) is not None
             or (isinstance(metric, tuple) and metric[0] == 'percentile_reldiff'))
 
 
@@ -6888,6 +7591,9 @@ def _load_plot_series_values(r, i, series_key, normalized=False, metric='emd'):
     itself is always the same mean-delay test."""
     all_key, all_by_exp_key, sampled_key, uniform_key, oracle_key, _ = _metric_result_keys(
         metric, normalized)
+    prob_spec = _metric_prob_spec(metric)
+    if prob_spec is not None:
+        return _prob_plot_series_values(r, i, series_key, *prob_spec)
     q = _metric_percentile(metric)
     if q is not None and q not in (r.get('delay_percentiles') or []):
         return [], 0.0
@@ -7172,7 +7878,15 @@ def plot_emd_vs_load_by_traffic(results_by_traffic_load, k, output_path, pass_th
     signed = isinstance(metric, tuple)
     default_cap = 1.0 if is_relative else 500.0
     bottom, cap, cap_widened = _adaptive_view_cap(all_plotted_values, default_cap, signed)
-    axis.set_ylim(bottom=bottom, top=cap)
+    # A probability metric's quantities are inherently bounded and small (an estimate and a
+    # distance live in [0,1], a log-difference within a fraction of it), so the +/-100%
+    # default cap would spend the whole axis on empty space rather than resolving the range
+    # the boxes actually occupy -- those axes autoscale. The computed cap is still kept,
+    # since the burstiness-annotation clipping below reads it.
+    if _metric_prob_spec(metric) is not None:
+        axis.autoscale(axis='y')
+    else:
+        axis.set_ylim(bottom=bottom, top=cap)
 
     # Drawn only now that the view is capped: a burstiness label anchored above its box's own
     # whisker top can still land above `cap` (a box can legitimately be taller than the capped
@@ -7321,7 +8035,15 @@ def plot_emd_vs_num_flows_boxplot_by_flow(results_by_flow, output_path, pass_thr
     signed = isinstance(metric, tuple)
     default_cap = 1.0 if is_relative else 500.0
     bottom, cap, cap_widened = _adaptive_view_cap(all_plotted_values, default_cap, signed)
-    axis.set_ylim(bottom=bottom, top=cap)
+    # A probability metric's quantities are inherently bounded and small (an estimate and a
+    # distance live in [0,1], a log-difference within a fraction of it), so the +/-100%
+    # default cap would spend the whole axis on empty space rather than resolving the range
+    # the boxes actually occupy -- those axes autoscale. The computed cap is still kept,
+    # since the burstiness-annotation clipping below reads it.
+    if _metric_prob_spec(metric) is not None:
+        axis.autoscale(axis='y')
+    else:
+        axis.set_ylim(bottom=bottom, top=cap)
 
     # Drawn only now that the view is capped -- see the identical comment in
     # plot_emd_vs_load_by_traffic for why (a whisker top can still exceed a deliberately
@@ -7552,7 +8274,10 @@ def plot_emd_vs_burstiness_by_traffic(results_by_traffic_load, k, burstiness_fie
     signed = isinstance(metric, tuple)
     cap = 1.0 if is_relative else 500.0
     bottom = -cap if signed else 0.0
-    axis.set_ylim(bottom=bottom, top=cap)
+    if _metric_prob_spec(metric) is not None:
+        axis.autoscale(axis='y')   # bounded quantity -- see plot_emd_vs_load_by_traffic
+    else:
+        axis.set_ylim(bottom=bottom, top=cap)
 
     axis.grid(True, alpha=0.35, axis='y')
     axis.legend(handles=legend_handles, fontsize=16, loc='best', ncol=2)
@@ -7570,7 +8295,7 @@ _MIN_PASS_RATE_CHECKS = 100
 
 
 def plot_pass_rate_vs_load_by_traffic(results_by_traffic_load, k, output_path, series_key='sampled',
-                                       pass_threshold=0.9, title=None):
+                                       pass_threshold=0.9, title=None, metric='emd'):
     """Cross-traffic comparison at one fixed flow count `k` of the delay consistency check's
     success rate itself (not the EMD distribution): x-axis is load, y-axis is the pass rate
     (0-100%), one line + markers per traffic, colored per _TRAFFIC_COLORS. Markers are
@@ -7583,6 +8308,11 @@ def plot_pass_rate_vs_load_by_traffic(results_by_traffic_load, k, output_path, s
     any key plot_emd_vs_load_by_traffic's series specs do: ('sampled', method) to pick a
     specific method when several were run in one go, 'all_packets', or
     ('uniform', stride) if a similar success-rate view is ever wanted for those.
+
+    `metric` selects WHICH check's pass rate is drawn: the delay one by default, or a
+    probability metric's via prob_plot_metric(name) -- the loss/marking checks have their
+    own verdicts over the same families (see PROB_METRICS), and their pass rate is out of
+    the runs that were testable at all.
 
     `k` is normally an int looked up exactly in each combination's num_flows; pass 'max' to
     use each combination's own maximum flow count instead (see plot_emd_vs_load_by_traffic).
@@ -7621,7 +8351,7 @@ def plot_pass_rate_vs_load_by_traffic(results_by_traffic_load, k, output_path, s
             if r is None or not r['num_flows'] or (not use_max_k and k not in r['num_flows']):
                 continue
             i = -1 if use_max_k else r['num_flows'].index(k)
-            values, pass_rate = _load_plot_series_values(r, i, series_key)
+            values, pass_rate = _load_plot_series_values(r, i, series_key, metric=metric)
             if len(values) < _MIN_PASS_RATE_CHECKS:
                 continue
             x_vals.append(load)
@@ -8082,6 +8812,149 @@ def plot_sample_sizes_vs_num_flows(results, output_path, title="Sample size vs n
     plt.close(fig)
     return output_path
 
+
+def _prob_family_layout(results):
+    """(families, box_width) for a probability plot: the same comparison families the delay
+    plots draw, each with its offset around the flow-count tick and its border style, as
+    (label, family_key, rate_key, key, offset, style) tuples."""
+    methods = results['subsampling_methods']
+    uniform_series = results.get('uniform_series', [])
+    oracle_series = results.get('oracle_series', [])
+    offset_all, offsets_poisson, offsets_uniform, offsets_oracle, box_width = _subsample_family_layout(
+        methods, uniform_series, oracle_series)
+    families = [('All packets of considered flows', 'all_packets_by_run',
+                  'pass_rate_all_packets', None, offset_all, _ALL_PACKETS_STYLE)]
+    for i, m in enumerate(methods):
+        families.append(('Poisson-adaptive subsample, {}'.format(m), 'sampled_by_run',
+                          'pass_rate_sampled', m, offsets_poisson[m],
+                          family_border_style('sampled', i)))
+    for i, s in enumerate(uniform_series):
+        families.append((_uniform_series_label(s), 'uniform_by_run', 'pass_rate_uniform', s,
+                          offsets_uniform[s], family_border_style('uniform', len(methods) + i)))
+    for i, o in enumerate(oracle_series):
+        families.append((_oracle_series_label(o), 'oracle_by_run', 'pass_rate_oracle', o,
+                          offsets_oracle[o],
+                          family_border_style('oracle', len(methods) + len(uniform_series) + i)))
+    return families, box_width
+
+
+def plot_prob_metric_vs_num_flows(results, metric, output_path, quantity='prob', title=None,
+                                   pass_threshold=0.9):
+    """Plot one probability metric (a PROB_METRICS key -- loss or ECN marking) per flow
+    count, for every comparison family, in one of three views:
+
+      - `quantity='prob'`: each family's own estimate of the path probability, with a
+        dashed reference line at the value the switch traces give at the ground-truth rate.
+        Boxes are coloured by the consistency check, like the delay EMD plot.
+      - `quantity='distance'`: |estimate - reference|, which for a 0/1 outcome IS the
+        Wasserstein distance the delay side reports as EMD (a Bernoulli has nothing else to
+        its distribution). Filled neutrally, since a distance is not what the check judges.
+      - `quantity='log_diff'`: the log-space difference the check actually thresholds,
+        drawn against that family's own acceptance band (the shaded region between the mean
+        lower and upper edge) -- the direct picture of the test passing or failing.
+
+    Returns None without writing anything when the metric carries no testable data at all
+    (see PROB_METRICS: the success probability is degenerate on traces that record no drop
+    probability), rather than an empty axes that would read as a result."""
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    results = upgrade_emd_vs_flows_results_schema(results)
+    block = (results.get('prob_metrics') or {}).get(metric)
+    num_flows = results['num_flows']
+    if not block:
+        print("plot_prob_metric_vs_num_flows: results carry no '{}' metric (they predate it), "
+              "skipping {}".format(metric, output_path))
+        return None
+    families, box_width = _prob_family_layout(results)
+    n_k = len(num_flows)
+
+    def _values(family_key, key, field):
+        family = block.get(family_key) or {}
+        family = family if key is None else (family.get(key) or {})
+        return (family.get(field) or [[] for _ in range(n_k)])
+
+    if not any(len(v) for _, fk, _, key, _, _ in families for v in _values(fk, key, quantity)):
+        print("plot_prob_metric_vs_num_flows: no {} values for '{}' -- nothing to plot, "
+              "skipping {}".format(quantity, metric, output_path))
+        return None
+
+    pass_color, fail_color = 'tab:green', 'tab:red'
+    neutral = '0.85'
+    fill = None if quantity in ('prob', 'log_diff') else neutral
+    fig, axis = plt.subplots(figsize=(30, 15))
+    legend_handles = []
+
+    if quantity == 'prob':
+        reference = [float(np.mean(v)) if len(v) else np.nan
+                      for v in (block.get('groundtruth_prob_by_run') or [[]] * n_k)]
+        x = np.asarray(num_flows, dtype=float)
+        valid = np.isfinite(reference)
+        if np.any(valid):
+            # Markers as well as the line: an all-flows-only result has a single flow count,
+            # and a one-point line draws nothing at all.
+            axis.plot(x[valid], np.asarray(reference)[valid], color='black', linewidth=3,
+                       linestyle='--', marker='D', markersize=14, zorder=1)
+            legend_handles.append(Line2D([0], [0], color='black', linewidth=3, linestyle='--',
+                                          marker='D', markersize=14,
+                                          label='Path {} from the switch traces (reference)'.format(
+                                              prob_metric_label(metric).lower())))
+    elif quantity == 'log_diff':
+        axis.axhline(0, color='black', linewidth=2, linestyle=':', zorder=1)
+
+    for label, family_key, rate_key, key, offset, style in families:
+        values_by_k = _values(family_key, key, quantity)
+        rates = block.get(rate_key) or {}
+        rates = rates if key is None else (rates.get(key) or [0.0] * n_k)
+        if quantity == 'log_diff':
+            # The band is per run; its mean edges are drawn as a shaded strip behind this
+            # family's boxes so "inside the band" is readable at a glance.
+            lowers = _values(family_key, key, 'band_lower')
+            uppers = _values(family_key, key, 'band_upper')
+            for k, lo, hi in zip(num_flows, lowers, uppers):
+                if not len(lo) or not len(hi):
+                    continue
+                lo, hi = np.asarray(lo, dtype=float), np.asarray(hi, dtype=float)
+                lo, hi = lo[np.isfinite(lo)], hi[np.isfinite(hi)]
+                if not lo.size or not hi.size:
+                    continue
+                lo_mean, hi_mean = float(lo.mean()), float(hi.mean())
+                axis.add_patch(Rectangle((k + offset - box_width / 2, lo_mean), box_width,
+                                          hi_mean - lo_mean, facecolor=style['edge_color'],
+                                          alpha=0.12, edgecolor='none', zorder=0))
+        _draw_boxplot_family(axis, num_flows, values_by_k, rates, offset, box_width,
+                             pass_threshold, pass_color if fill is None else fill,
+                             fail_color if fill is None else fill, style, fill_color=fill)
+        legend_handles.append(Patch(facecolor=fill if fill is not None else 'white',
+                                     edgecolor=style['edge_color'], linewidth=4.5,
+                                     linestyle=style['edge_style'], label=label))
+
+    if fill is None:
+        legend_handles = [
+            Patch(facecolor=pass_color, edgecolor='black', alpha=0.85,
+                  label='Consistency check passed (>={:.0f}% of the testable runs)'.format(
+                      pass_threshold * 100)),
+            Patch(facecolor=fail_color, edgecolor='black', alpha=0.85,
+                  label='Consistency check failed (<{:.0f}% of those runs)'.format(
+                      pass_threshold * 100)),
+        ] + legend_handles
+    if quantity == 'log_diff':
+        legend_handles.append(Patch(facecolor='0.6', alpha=0.25, edgecolor='none',
+                                     label='Acceptance band of the check (mean edges, per family)'))
+
+    labels = {'prob': prob_metric_label(metric),
+              'distance': '|estimate - reference| ({})'.format(prob_metric_label(metric).lower()),
+              'log_diff': 'log(estimate) - SUM log(segment probability)'}
+    axis.set_title(title or '{} vs number of TCP flows'.format(prob_metric_label(metric)),
+                    fontsize=34)
+    axis.set_xlabel('Number of TCP flows considered')
+    axis.set_ylabel(labels[quantity])
+    _set_flow_count_xaxis(axis, num_flows)
+    axis.grid(True, alpha=0.35, axis='y')
+    axis.legend(handles=legend_handles, fontsize=18, loc='best')
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=150)
+    plt.close(fig)
+    return output_path
 
 def plot_error_bound_vs_num_flows(results, output_path,
                                    title="Consistency-check error bound vs number of TCP flows",
@@ -8588,6 +9461,97 @@ def plot_poisson_test_split_vs_num_flows(results, output_path, test_name='ad', q
     return output_path
 
 
+def _prob_metric_text_section(results, metric, num_flows_display, stat_fn):
+    """The text-summary block for one probability metric: the reference probability, then one
+    table per comparison family with its estimate, its distance to that reference, the
+    log-space difference and band the check applied, the sample size, and the pass rate.
+
+    `stat_fn` is save_emd_vs_flows_results_text's own mean +/- std formatter, so these
+    tables read exactly like the delay ones."""
+    block = (results.get('prob_metrics') or {}).get(metric)
+    if not block:
+        return []
+    n_k = len(results['num_flows'])
+    methods = results['subsampling_methods']
+    uniform_series = results.get('uniform_series', [])
+    oracle_series = results.get('oracle_series', [])
+    lines = ['', '=' * 70, '{} ({})'.format(prob_metric_label(metric), metric), '=' * 70]
+
+    gt_by_k = block.get('groundtruth_prob_by_run') or [[] for _ in range(n_k)]
+    lines.append("Reference (path probability from the switch traces at the ground-truth rate):")
+    for i, k in enumerate(num_flows_display):
+        lines.append("  k={:<4} {}".format(k, stat_fn(gt_by_k[i], fmt="{:.6f}")))
+
+    # A metric whose switch side carries no variance at all cannot be tested; say so once,
+    # loudly, instead of leaving a reader to wonder why every pass rate is 0%.
+    testable = sum(1 for per_k in (block.get('all_packets_by_run') or {}).get('consistency_pass', [])
+                    for v in per_k if v is not None)
+    if testable == 0:
+        lines.append("")
+        lines.append("!! NOT TESTABLE on these traces: the acceptance band has zero width, which means")
+        lines.append("   neither side of this comparison carries any variance -- for the success")
+        lines.append("   probability that is exactly what happens when the queue traces record no drop")
+        lines.append("   probability anywhere and the flow loses no packets on the path, so both sides")
+        lines.append("   are exactly 1. The estimates below are still reported, but every 'pass' column")
+        lines.append("   is out of zero testable runs and means nothing. See Utils.PROB_METRICS.")
+
+    families = ([('All packets of the considered flows', 'all_packets_by_run', 'pass_rate_all_packets', None)]
+                 + [('Poisson-adaptive subsample -- {}'.format(m), 'sampled_by_run', 'pass_rate_sampled', m)
+                    for m in methods]
+                 + [(_uniform_series_label(s), 'uniform_by_run', 'pass_rate_uniform', s)
+                    for s in uniform_series]
+                 + [(_oracle_series_label(o), 'oracle_by_run', 'pass_rate_oracle', o)
+                    for o in oracle_series])
+    for title, family_key, rate_key, key in families:
+        family = block.get(family_key) or {}
+        family = family if key is None else (family.get(key) or {})
+        rates = block.get(rate_key) or {}
+        rates = rates if key is None else (rates.get(key) or [0.0] * n_k)
+        if not family:
+            continue
+        lines.append("")
+        lines.append("{}:".format(title))
+        header = "{:>3} | {:>6} | {:>22} | {:>22} | {:>22} | {:>22} | {:>9} | {:>14}".format(
+            "k", "n_test", prob_metric_label(metric), "|dp| to reference", "log_diff",
+            "band (lower/upper)", "pass", "n_pkts")
+        lines.append(header)
+        lines.append("-" * len(header))
+        for i, k in enumerate(num_flows_display):
+            verdicts = (family.get('consistency_pass') or [[]] * n_k)[i]
+            n_test = sum(1 for v in verdicts if v is not None)
+            lower = (family.get('band_lower') or [[]] * n_k)[i]
+            upper = (family.get('band_upper') or [[]] * n_k)[i]
+            lower = np.asarray(lower, dtype=float)
+            upper = np.asarray(upper, dtype=float)
+            lower, upper = lower[np.isfinite(lower)], upper[np.isfinite(upper)]
+            band = "n/a"
+            if lower.size and upper.size:
+                band = "{:+.4f} / {:+.4f}".format(float(lower.mean()), float(upper.mean()))
+            lines.append("{:>3} | {:>6} | {:>22} | {:>22} | {:>22} | {:>22} | {:>8.0%} | {:>14}".format(
+                k, n_test,
+                stat_fn((family.get('prob') or [[]] * n_k)[i], fmt="{:.6f}"),
+                stat_fn((family.get('distance') or [[]] * n_k)[i], fmt="{:.6f}"),
+                stat_fn((family.get('log_diff') or [[]] * n_k)[i], fmt="{:+.5f}"),
+                band, rates[i],
+                stat_fn((family.get('sample_size') or [[]] * n_k)[i], fmt="{:.0f}"),
+            ))
+    lines.append("")
+    lines.append("Notes for this metric:")
+    lines.append("  * The per-packet outcome is 0/1, so the whole distribution IS its mean: the")
+    lines.append("    '|dp| to reference' column is the Wasserstein distance the delay tables call EMD,")
+    lines.append("    and there is no percentile or CDF counterpart to report.")
+    lines.append("  * The check is multiplicative (a path probability is the product of its segments'),")
+    lines.append("    so it is applied in log space: it passes when log_diff = log(estimate) -")
+    lines.append("    SUM log(segment probability) falls inside the band, which is the switch side's")
+    lines.append("    worst-segment relative error compounded over the 3 segments, widened by the e2e")
+    lines.append("    side's own error at n_pkts samples. The band is asymmetric, which is why it is")
+    lines.append("    shown as lower/upper rather than as a single +/- bound.")
+    lines.append("  * n_pkts is the same subsample the delay families used -- no separate minimum")
+    lines.append("    sample size is computed for a 0/1 outcome (it varies far less than a delay, so")
+    lines.append("    the delay-derived count is the conservative choice). n_test counts the runs whose")
+    lines.append("    band was testable at all.")
+    return lines
+
 def save_emd_vs_flows_results_text(results, output_path):
     """Write a plain-text, human-readable summary of the per-flow-count
     results from compute_emd_vs_num_tcp_flows_multi_run: run parameters, a
@@ -9041,6 +10005,10 @@ def save_emd_vs_flows_results_text(results, output_path):
                         cell = (fmt + " +/- " + fmt).format(np.mean(values), np.std(values))
                     row += " | {:>18}".format(cell)
                 lines.append(row)
+
+    # Loss and ECN marking get their own sections, with the same family tables as delay.
+    for metric in PROB_METRIC_KEYS:
+        lines.extend(_prob_metric_text_section(results, metric, num_flows_display, _stat))
 
     with open(output_path, 'w') as f:
         f.write("\n".join(lines) + "\n")
