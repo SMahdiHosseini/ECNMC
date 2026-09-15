@@ -777,9 +777,9 @@ def __main__():
     serviceRateScales = [float(x) for x in config.get('Settings', 'serviceRateScales').split(',')]
     # serviceRateScales = [0.5]
     loads = [float(x) for x in config.get('Settings', 'load').split(',')]
-    # loads = [0.5]
+    loads = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.95]
     traffics = config.get('Settings', 'traffic').split(',')
-    # traffics = ["Google_AllRPC", "Google_SearchRPC", "Facebook_HadoopDist_All"]
+    traffics = ["Google_AllRPC", "Fabricated_Heavy_Head", "Fabricated_Heavy_Middle", "Google_SearchRPC", "Facebook_HadoopDist_All"]
     # traffics = ["Google_AllRPC"]
     errorRates = [float(x) for x in config.get('Settings', 'errorRate').split(',')]
     # errorRates = [0.1, 0.3, 0.5, 0.7, 0.9]
@@ -871,6 +871,15 @@ def __main__():
                                             output_suffix=args.output_suffix,
                                             differentiationDelay=fraction, errorRate=errorRate,
                                         )
+                                aggregate_emd_vs_flows_compare_flows_across_traffics_and_loads(
+                                    __ns3_path, args.dir, traffics, rate, loads, start, window_end,
+                                    flow_names, path=args.path,
+                                    subsampling_methods=args.subsampling_methods,
+                                    groundtruth_method=groundtruth_method,
+                                    all_flows_only=args.all_flows_only,
+                                    output_suffix=args.output_suffix,
+                                    differentiationDelay=fraction, errorRate=errorRate,
+                                )
                 continue
             for traffic in traffics:
                 for rate in serviceRateScales:
@@ -1576,6 +1585,127 @@ def aggregate_emd_vs_flows_compare_flows(ns3_path, dir_name, traffic, rate, load
         )
     print("Saved flow-comparison plots ({}) to {}".format(flow_desc, output_dir))
     return results_by_flow
+
+
+def aggregate_emd_vs_flows_compare_flows_across_traffics_and_loads(
+        ns3_path, dir_name, traffics, rate, loads, steadyStart, steadyEnd, flow_names,
+        path=0, pass_threshold=0.9, subsampling_methods='find_samples_path',
+        groundtruth_method='simultaneous', all_flows_only=False, output_suffix='',
+        differentiationDelay=None, errorRate=None):
+    """The cross-traffic/load counterpart of aggregate_emd_vs_flows_compare_flows: for each
+    traffic, aggregate every one of `flow_names` (e.g. ['R0H0R2H3', 'R0H1R2H3']) across every
+    load (each via aggregate_emd_vs_flows_across_experiments, which also writes that
+    (flow, load)'s own per-combination plots as a side effect, same as any other call to
+    it), then build one comparison plot per plotted quantity putting every flow's series
+    side by side across the load axis -- reusing Utils.plot_emd_vs_load_by_traffic exactly
+    as-is, keying its results dict by flow_name where it would normally be keyed by traffic:
+    that function only ever treats its dict's first tuple element as an opaque group label
+    (used for colour and the legend), so passing flow names there instead works unchanged --
+    color identifies the flow, the border identifies the series (all packets vs. each
+    Poisson-adaptive method), same convention as everywhere else.
+
+    This is the missing piece next to aggregate_emd_vs_flows_across_traffics_and_loads
+    (single flow, cross-traffic) and aggregate_emd_vs_flows_compare_flows (both flows, single
+    traffic/load): cross-traffic AND both-flows together didn't exist before.
+
+    Only the headline all_flows_only comparison is built here (k='max', raw+normalized EMD,
+    percentile_avg_relerror, and each percentile in delay_percentiles) -- not the fuller
+    poisson_vs_uniform_vs_ideal/poisson_vs_ideal/all_vs_ideal family of comparisons
+    aggregate_emd_vs_flows_across_traffics_and_loads builds for a single flow, since those
+    are about validating one subsampling method against baselines, not about the two-flow
+    question this is for.
+
+    Pass `differentiationDelay`/`errorRate` for the reverse experiments, forwarded to every
+    (flow, load)'s aggregate_emd_vs_flows_across_experiments call and used to place the
+    comparison plots alongside that fraction's own cross-traffic output (see below).
+
+    Saved under
+    scratch/ECNMC/Results/results_<dir_name><output_suffix>/emd_vs_load_by_traffic/<steady_tag>/<config_tag>/<rate>/
+    [D_<differentiationDelay>/f_<errorRate>/]flow_comparison/<traffic>/, one subfolder per
+    traffic (color is spent on the flow within each), alongside
+    aggregate_emd_vs_flows_across_traffics_and_loads's own all_vs_poisson/ etc. subfolders.
+
+    Returns {traffic: {(flow_name, load): aggregated_results}}, or None if nothing had any
+    results to aggregate.
+    """
+    subsampling_methods = normalize_subsampling_methods(subsampling_methods)
+    steady_tag = steady_window_tag(steadyStart, steadyEnd)
+    config_tag = emd_vs_flows_file_tag(subsampling_methods, groundtruth_method, all_flows_only)
+    if differentiationDelay is not None and errorRate is not None:
+        rate_dir = '{}/scratch/ECNMC/Results/results_{}{}/emd_vs_load_by_traffic/{}/{}/{}/D_{}/f_{}/'.format(
+            ns3_path, dir_name, output_suffix, steady_tag, config_tag, rate, differentiationDelay, errorRate)
+    else:
+        rate_dir = '{}/scratch/ECNMC/Results/results_{}{}/emd_vs_load_by_traffic/{}/{}/{}/'.format(
+            ns3_path, dir_name, output_suffix, steady_tag, config_tag, rate)
+    gt_desc = groundtruth_method_label(groundtruth_method)
+    series_specs = all_packets_vs_sampled_load_plot_series(subsampling_methods)
+    flow_desc = ' vs. '.join(flow_names)
+
+    results_by_traffic = {}
+    for traffic in traffics:
+        results_by_flow_load = {}
+        for flow_name in flow_names:
+            for load in loads:
+                aggregated = aggregate_emd_vs_flows_across_experiments(
+                    ns3_path, dir_name, traffic, rate, load, steadyStart, steadyEnd,
+                    flow_name=flow_name, path=path, pass_threshold=pass_threshold,
+                    subsampling_methods=subsampling_methods, groundtruth_method=groundtruth_method,
+                    all_flows_only=all_flows_only, output_suffix=output_suffix,
+                    differentiationDelay=differentiationDelay, errorRate=errorRate,
+                )
+                if aggregated is not None:
+                    results_by_flow_load[(flow_name, load)] = aggregated
+
+        if not results_by_flow_load:
+            print("No aggregated results available for traffic={} to build "
+                  "flow-comparison-across-loads plots".format(traffic))
+            continue
+        results_by_traffic[traffic] = results_by_flow_load
+
+        output_dir = '{}flow_comparison/{}/'.format(rate_dir, traffic)
+        os.makedirs(output_dir, exist_ok=True)
+        file_prefix = '{}{}_path_{}'.format(output_dir, '+'.join(flow_names), path)
+
+        plot_emd_vs_load_by_traffic(
+            results_by_flow_load, 'max', file_prefix + '_kmax.png', pass_threshold=pass_threshold,
+            series_specs=series_specs,
+            title='EMD vs load, {}, traffic {}, rate {}\n{}\n{}'.format(flow_desc, traffic, rate, gt_desc,
+                                                                          ' vs. '.join(s['label'] for s in series_specs)),
+        )
+        plot_emd_vs_load_by_traffic(
+            results_by_flow_load, 'max', file_prefix + '_kmax_normalized.png', pass_threshold=pass_threshold,
+            series_specs=series_specs, normalized=True,
+            title='EMD relative to mean queuing delay vs load, {}, traffic {}, rate {}\n{}'.format(
+                flow_desc, traffic, rate, gt_desc),
+        )
+        if any(r.get('percentile_avg_relerror_all_packets') for r in results_by_flow_load.values()):
+            plot_emd_vs_load_by_traffic(
+                results_by_flow_load, 'max', file_prefix + '_kmax_percentile_avg_relerror.png',
+                pass_threshold=pass_threshold, series_specs=series_specs, metric='percentile_avg_relerror',
+                title='Mean absolute relative percentile error vs load, {}, traffic {}, rate {}\n{}'.format(
+                    flow_desc, traffic, rate, gt_desc),
+            )
+        percentiles = sorted(set().union(*(set(r.get('delay_percentiles') or [])
+                                            for r in results_by_flow_load.values())))
+        for q in percentiles:
+            plot_emd_vs_load_by_traffic(
+                results_by_flow_load, 'max', '{}_kmax_p{}_diff.png'.format(file_prefix, q),
+                pass_threshold=pass_threshold, series_specs=series_specs, metric=('percentile_diff', q),
+                title='p{} error (ground truth - family) vs load, {}, traffic {}, rate {}\n{}'.format(
+                    q, flow_desc, traffic, rate, gt_desc),
+            )
+            plot_emd_vs_load_by_traffic(
+                results_by_flow_load, 'max', '{}_kmax_p{}_reldiff.png'.format(file_prefix, q),
+                pass_threshold=pass_threshold, series_specs=series_specs, metric=('percentile_reldiff', q),
+                title='Relative p{} error (ground truth - family) vs load, {}, traffic {}, rate {}\n{}'.format(
+                    q, flow_desc, traffic, rate, gt_desc),
+            )
+        print("Saved flow-comparison-across-loads plots ({}, traffic {}) to {}".format(
+            flow_desc, traffic, output_dir))
+
+    if not results_by_traffic:
+        return None
+    return results_by_traffic
 
 
 def aggregate_emd_vs_flows_across_traffics_and_loads(ns3_path, dir_name, traffics, rate, loads,

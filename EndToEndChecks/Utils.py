@@ -6413,6 +6413,13 @@ def plot_emd_vs_burstiness_by_traffic(results_by_traffic_load, k, burstiness_fie
     return output_path
 
 
+# Below this many actual consistency-check attempts (runs that found a valid subsample at
+# all, pooled across every experiment in a combination -- see aggregate_emd_vs_flows_results),
+# a point on plot_pass_rate_vs_load_by_traffic is left out rather than drawn from a pass rate
+# backed by too few attempts to mean anything (e.g. 2 of 50 runs finding a sample at all).
+_MIN_PASS_RATE_CHECKS = 100
+
+
 def plot_pass_rate_vs_load_by_traffic(results_by_traffic_load, k, output_path, series_key='sampled',
                                        pass_threshold=0.9, title=None):
     """Cross-traffic comparison at one fixed flow count `k` of the delay consistency check's
@@ -6431,7 +6438,11 @@ def plot_pass_rate_vs_load_by_traffic(results_by_traffic_load, k, output_path, s
     `k` is normally an int looked up exactly in each combination's num_flows; pass 'max' to
     use each combination's own maximum flow count instead (see plot_emd_vs_load_by_traffic).
     A (traffic, load) combination missing entirely, or with no data at this k, is simply
-    left without a point there (the line breaks across the gap)."""
+    left without a point there (the line breaks across the gap) -- and so is one where the
+    consistency check was actually performed fewer than _MIN_PASS_RATE_CHECKS times (see
+    there): the pass rate there is a ratio of a few actual attempts (e.g. 2 of 50 runs
+    finding a valid subsample at all), not a meaningful success rate, and plotting it as one
+    would be misleading."""
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     use_max_k = (k == 'max')
@@ -6461,7 +6472,9 @@ def plot_pass_rate_vs_load_by_traffic(results_by_traffic_load, k, output_path, s
             if r is None or not r['num_flows'] or (not use_max_k and k not in r['num_flows']):
                 continue
             i = -1 if use_max_k else r['num_flows'].index(k)
-            _, pass_rate = _load_plot_series_values(r, i, series_key)
+            values, pass_rate = _load_plot_series_values(r, i, series_key)
+            if len(values) < _MIN_PASS_RATE_CHECKS:
+                continue
             x_vals.append(load)
             y_vals.append(pass_rate)
 
