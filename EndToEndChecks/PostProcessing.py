@@ -709,6 +709,26 @@ def __main__():
                          "--emd-vs-flows is set (e.g. 3 evaluates k=1,4,7,... instead of every k) -- "
                          "cuts the dominant per-run cost (find_samples_path, called once per k per "
                          "run) roughly by this factor, at the cost of a coarser sweep")
+    parser.add_argument("--skip-existing",
+                    action="store_true",
+                    dest="skip_existing",
+                    help="With --emd-vs-flows, skip any traffic/rate/load/experiment/flow whose "
+                         "results pickle and text summary are already on disk for this exact "
+                         "configuration (subsampling method, ground truth, all-flows, guarantee, "
+                         "steady window, --output-suffix) instead of recomputing it. This makes a "
+                         "sweep resumable: an interrupted batch can be relaunched -- at a different "
+                         "--num-workers, or split by --only-traffic/--only-load across several "
+                         "processes -- and it will only compute what is missing. Nothing already "
+                         "written is read, overwritten or validated beyond existence, so drop a "
+                         "suspect output file to force its recomputation.")
+    parser.add_argument("--only-traffic", dest="only_traffics", nargs='+', default=None, metavar="TRAFFIC",
+                    help="Restrict the sweep (or aggregation) to these traffic pattern(s) instead of "
+                         "all of them -- the natural way to split remaining work across processes, "
+                         "together with --only-load. Unknown names are an error, so a typo cannot "
+                         "silently sweep nothing.")
+    parser.add_argument("--only-load", dest="only_loads", nargs='+', type=float, default=None, metavar="LOAD",
+                    help="Restrict the sweep (or aggregation) to these offered load(s), e.g. "
+                         "--only-load 0.8 0.95. See --only-traffic.")
     parser.add_argument("--aggregate-emd-vs-flows",
                     action="store_true",
                     dest="aggregate_emd_vs_flows",
@@ -844,7 +864,7 @@ def __main__():
     config = configparser.ConfigParser()
     config.read('../Results/results_{}/Parameters.config'.format(args.dir))
     steadyStart = convert_to_float(config.get('Settings', 'steadyStart')) * 1e9
-    # steadyStart = 0.2 * 1e9
+    steadyStart = 0.04 * 1e9
     steadyEnd = convert_to_float(config.get('Settings', 'steadyEnd')) * 1e9
     # steadyEnd = 0.5 * 1e9
     experiments = int(config.get('Settings', 'experiments'))
@@ -856,7 +876,25 @@ def __main__():
     # loads = [0.1]
     traffics = config.get('Settings', 'traffic').split(',')
     traffics = ["Google_AllRPC", "Fabricated_Heavy_Head", "Fabricated_Heavy_Middle", "Google_SearchRPC", "Facebook_HadoopDist_All"]
-    # traffics = ["Google_AllRPC"]
+    traffics = ["Google_SearchRPC"]
+    # --only-traffic / --only-load carve the fixed lists above down to a slice of the sweep,
+    # so several processes can share the remaining work (each with its own --num-workers)
+    # instead of one pool walking the whole grid. An unknown name is fatal rather than an
+    # empty sweep, which would look like a fast success.
+    if args.only_traffics:
+        unknown = [t for t in args.only_traffics if t not in traffics]
+        if unknown:
+            raise SystemExit("--only-traffic: unknown traffic pattern(s) {}; known: {}".format(
+                ", ".join(unknown), ", ".join(traffics)))
+        traffics = [t for t in traffics if t in args.only_traffics]
+    if args.only_loads:
+        unknown = [l for l in args.only_loads if l not in loads]
+        if unknown:
+            raise SystemExit("--only-load: unknown load(s) {}; known: {}".format(
+                ", ".join(str(l) for l in unknown), ", ".join(str(l) for l in loads)))
+        loads = [l for l in loads if l in args.only_loads]
+    if args.only_traffics or args.only_loads:
+        print("Sweep restricted to traffics {} and loads {}".format(traffics, loads))
     errorRates = [float(x) for x in config.get('Settings', 'errorRate').split(',')]
     # errorRates = [0.1, 0.3, 0.5, 0.7, 0.9]
     # errorRates = [0.1]
@@ -908,6 +946,7 @@ def __main__():
                                         delay_consistency_guarantee=args.delay_consistency_guarantee,
                                         write_plots=args.write_per_experiment_plots,
                                         output_suffix=args.output_suffix,
+                                        skip_existing=args.skip_existing,
                                     )
                             print("Traffic {} Rate {} {} {} EMD-vs-flows done".format(traffic, rate, load, experiments))
                         else:
@@ -927,11 +966,16 @@ def __main__():
             window_end = start + int((steadyEnd - steadyStart) / numOfSteadyParts)
             if args.aggregate_emd_vs_flows:
                 for rate in serviceRateScales:
+                    # Each (errorRate, ground truth, flow)'s per-fraction load-axis results are
+                    # kept as they are produced, so the fraction-axis view below is a transpose
+                    # of work already done rather than a second pass over the pickles (see
+                    # aggregate_emd_vs_flows_across_traffics_and_fractions).
+                    fraction_axis_inputs = {}
                     for fraction in tbf_fractions:
                         for errorRate in errorRates:
                             for groundtruth_method in args.groundtruth_methods:
                                 for flow_name in flow_names:
-                                    aggregate_emd_vs_flows_across_traffics_and_loads(
+                                    by_traffic_load = aggregate_emd_vs_flows_across_traffics_and_loads(
                                         __ns3_path, args.dir, traffics, rate, loads, start, window_end,
                                         flow_name=flow_name, path=args.path,
                                         subsampling_methods=args.subsampling_methods,
@@ -941,6 +985,10 @@ def __main__():
                                         output_suffix=args.output_suffix,
                                         differentiationDelay=fraction, errorRate=errorRate,
                                     )
+                                    if by_traffic_load:
+                                        fraction_axis_inputs.setdefault(
+                                            (errorRate, groundtruth_method, flow_name), {}
+                                        )[fraction] = by_traffic_load
                                 for traffic in traffics:
                                     for load in loads:
                                         aggregate_emd_vs_flows_compare_flows(
@@ -963,6 +1011,22 @@ def __main__():
                                     output_suffix=args.output_suffix,
                                     differentiationDelay=fraction, errorRate=errorRate,
                                 )
+                    # Every fraction of this rate is now aggregated, so the same results can
+                    # be shown with the shaping fraction on the x-axis instead of the load --
+                    # the comparison the reverse sweep exists for, and the one no single
+                    # D_<fraction>/ folder can contain. The load-axis plots above are
+                    # untouched; this writes a sibling emd_vs_fraction_by_traffic/ tree.
+                    for (errorRate, groundtruth_method, flow_name), by_fraction in \
+                            sorted(fraction_axis_inputs.items(), key=lambda kv: str(kv[0])):
+                        aggregate_emd_vs_flows_across_traffics_and_fractions(
+                            __ns3_path, args.dir, by_fraction, rate, start, window_end,
+                            flow_name=flow_name, path=args.path,
+                            subsampling_methods=args.subsampling_methods,
+                            groundtruth_method=groundtruth_method,
+                            all_flows_only=args.all_flows_only,
+                            delay_consistency_guarantee=args.delay_consistency_guarantee,
+                            output_suffix=args.output_suffix, errorRate=errorRate,
+                        )
                 continue
             for traffic in traffics:
                 for rate in serviceRateScales:
@@ -996,6 +1060,7 @@ def __main__():
                                                 delay_consistency_guarantee=args.delay_consistency_guarantee,
                                                 write_plots=args.write_per_experiment_plots,
                                                 output_suffix=args.output_suffix,
+                                                skip_existing=args.skip_existing,
                                                 differentiationDelay=fraction, errorRate=errorRate,
                                             )
         else:
@@ -1059,7 +1124,7 @@ def sweep_failure_summary():
         print("  (skipped combinations are listed above, each where it occurred)")
 
 
-def run_emd_vs_flows_experiment(rate, steadyStart, steadyEnd, confidenceValue, results_folder, config, experiment=0, ns3_path=__ns3_path, load=None, flow_name='R0H0R2H3', queue_names=None, path=0, delay_cdf_sample_interval_ns=90, num_runs=100, num_poisson_observations=9000, pass_threshold=0.9, num_workers=1, emd_y_max=None, mean_diff_y_limit=None, flow_count_step=1, all_flows_only=False, subsampling_methods='find_samples_path', groundtruth_method='simultaneous', delay_percentiles=DEFAULT_DELAY_PERCENTILES, run_chi_squared_test=True, growing_window_step_ns=GROWING_WINDOW_STEP_NS, delay_consistency_guarantee=None, write_plots=True, output_suffix='', differentiationDelay=None, errorRate=None):
+def run_emd_vs_flows_experiment(rate, steadyStart, steadyEnd, confidenceValue, results_folder, config, experiment=0, ns3_path=__ns3_path, load=None, flow_name='R0H0R2H3', queue_names=None, path=0, delay_cdf_sample_interval_ns=90, num_runs=100, num_poisson_observations=9000, pass_threshold=0.9, num_workers=1, emd_y_max=None, mean_diff_y_limit=None, flow_count_step=1, all_flows_only=False, subsampling_methods='find_samples_path', groundtruth_method='simultaneous', delay_percentiles=DEFAULT_DELAY_PERCENTILES, run_chi_squared_test=True, growing_window_step_ns=GROWING_WINDOW_STEP_NS, delay_consistency_guarantee=None, write_plots=True, output_suffix='', skip_existing=False, differentiationDelay=None, errorRate=None):
     """Reconstruct the network queuing delay CDF once (ground truth), then repeat `num_runs` times: draw
     `num_poisson_observations` fresh Poisson-process observation instants at the path's switches, derive the
     per-segment aggregated delay statistics from them, and grow the set of considered TCP flows of `flow_name`
@@ -1144,6 +1209,36 @@ def run_emd_vs_flows_experiment(rate, steadyStart, steadyEnd, confidenceValue, r
     # which __main__ has already bound to --delay-consistency-guarantee.
     if delay_consistency_guarantee is None:
         delay_consistency_guarantee = DelayConsistencyGaurantee
+    # Steady window and (subsampling/GT/all-flows/guarantee) config each get their own folder
+    # level instead of a filename infix -- keeps filenames short and lets the same raw
+    # experiment be re-analyzed over a different window, or with a different config, without
+    # collision. Built here, before any work: `skip_existing` needs the output path to decide
+    # whether this combination is already done, and the path depends only on the arguments.
+    config_tag = emd_vs_flows_file_tag(subsampling_methods, groundtruth_method, all_flows_only,
+                                        delay_consistency_guarantee)
+    if differentiationDelay is not None and errorRate is not None:
+        output_dir = '{}/scratch/{}/{}/{}/D_{}/f_{}/{}/{}/{}{}/'.format(
+            ns3_path, results_folder, rate, load, differentiationDelay, errorRate, experiment,
+            steady_window_tag(steadyStart, steadyEnd), config_tag, output_suffix)
+    else:
+        output_dir = '{}/scratch/{}/{}/{}/{}/{}/{}{}/'.format(
+            ns3_path, results_folder, rate, load, experiment,
+            steady_window_tag(steadyStart, steadyEnd), config_tag, output_suffix)
+    file_prefix = '{}{}_path_{}'.format(output_dir, flow_name, path)
+    # Resume: a combination whose pickle AND text summary are both already there was
+    # completed by an earlier sweep (the pickle is written first and the text immediately
+    # after, so requiring both rules out a process killed between the two). Nothing is
+    # recomputed and nothing is overwritten -- what an interrupted batch needs to finish the
+    # rest at a different worker count. The directory is deliberately NOT created here, so a
+    # combination with no raw data leaves no empty folder behind.
+    if skip_existing:
+        done_pkl = file_prefix + '_emd_vs_num_flows_results.pkl'
+        done_txt = file_prefix + '_emd_vs_num_flows_results.txt'
+        if (os.path.exists(done_pkl) and os.path.getsize(done_pkl) > 0
+                and os.path.exists(done_txt)):
+            print("ALREADY DONE (skip-existing): {}".format(done_pkl))
+            return None
+
     hostToTorLinkRate = convert_to_float(config.get('Settings', 'hostToTorLinkRate')) * 1e-3
     torToAggLinkRate = convert_to_float(config.get('Settings', 'torToAggLinkRate')) * rate * 1e-3
     linkDelay = convert_to_float(config.get('Settings', 'hostToTorLinkDelay')) * 1e6
@@ -1162,22 +1257,9 @@ def run_emd_vs_flows_experiment(rate, steadyStart, steadyEnd, confidenceValue, r
         differentiationDelay=differentiationDelay, errorRate=errorRate,
     )
 
-    # Steady window and (subsampling/GT/all-flows) config each get their own folder level
-    # instead of a filename infix -- keeps filenames short and lets the same raw experiment be
-    # re-analyzed over a different window, or with a different config, without collision.
-    config_tag = emd_vs_flows_file_tag(subsampling_methods, groundtruth_method, all_flows_only,
-                                        delay_consistency_guarantee if delay_consistency_guarantee is not None
-                                        else DelayConsistencyGaurantee)
-    if differentiationDelay is not None and errorRate is not None:
-        output_dir = '{}/scratch/{}/{}/{}/D_{}/f_{}/{}/{}/{}{}/'.format(
-            ns3_path, results_folder, rate, load, differentiationDelay, errorRate, experiment,
-            steady_window_tag(steadyStart, steadyEnd), config_tag, output_suffix)
-    else:
-        output_dir = '{}/scratch/{}/{}/{}/{}/{}/{}{}/'.format(
-            ns3_path, results_folder, rate, load, experiment,
-            steady_window_tag(steadyStart, steadyEnd), config_tag, output_suffix)
+    # output_dir/file_prefix were built before the computation (see above); the folder is
+    # created only now, once there is something to write into it.
     os.makedirs(output_dir, exist_ok=True)
-    file_prefix = '{}{}_path_{}'.format(output_dir, flow_name, path)
 
     # Written BEFORE the figures, and the figures are optional: a sweep over thousands of
     # experiments spends most of its wall time rendering per-experiment PNGs (~20-30 of
@@ -1975,6 +2057,141 @@ def aggregate_emd_vs_flows_compare_flows_across_traffics_and_loads(
     return results_by_traffic
 
 
+def _cross_traffic_plot_kinds(subsampling_methods):
+    """The (series_specs, subfolder, description) comparison kinds every cross-traffic plot
+    driver emits, in one place so the load-axis, burstiness-axis and
+    differentiation-fraction-axis views always show the same set of comparisons.
+
+    Shared by aggregate_emd_vs_flows_across_traffics_and_loads and
+    aggregate_emd_vs_flows_across_traffics_and_fractions."""
+    plot_kinds = [(all_packets_vs_sampled_load_plot_series(subsampling_methods), 'all_vs_poisson',
+                    'all packets vs. Poisson-adaptive subsample(s)')]
+    # One three-series plot per method: that method, its rate-matched uniform baseline, and
+    # the ideal Poisson probe, all at ~the same sample count -- so the plot answers both "does
+    # the selection rule beat blind uniform sampling" and "how much of what's left is
+    # finite-sample noise vs. selection bias" together.
+    for method in subsampling_methods:
+        plot_kinds.append((poisson_vs_uniform_vs_ideal_load_plot_series(method),
+                            'poisson_vs_uniform_vs_ideal/{}'.format(method),
+                            '{} vs. its rate-matched uniform baseline vs. the ideal Poisson probe '
+                            '(all ~equal sample size)'.format(method)))
+    # And each method against the ideal Poisson probe at its own sample count alone (plus the
+    # probe at the minimum required sample size): the gap between the method and its own ideal
+    # probe is the part of its error that having few samples does not explain.
+    for method in subsampling_methods:
+        plot_kinds.append((sampled_vs_oracle_load_plot_series(method),
+                            'poisson_vs_ideal/{}'.format(method),
+                            '{} vs. the ideal Poisson probe at the same sample budget'.format(method)))
+    # All packets vs. the ideal Poisson probe: the theoretical ceiling a real sampler could
+    # reach, independent of any particular sampler's own selection-rule imperfections -- reads
+    # alongside the all-packets-vs-Poisson-adaptive plot above to separate "what subsampling
+    # costs in principle" from "what this particular sampler costs beyond that".
+    plot_kinds.append((all_packets_vs_oracle_load_plot_series(subsampling_methods),
+                        'all_vs_ideal',
+                        'all packets vs. the ideal Poisson probe(s)'))
+    # All packets vs. the ideal Poisson probe at ITS OWN rate (no subsampling-method
+    # comparison mixed in) -- isolates what arriving as a real application's traffic costs
+    # relative to an idealized Poisson process at an identical rate.
+    plot_kinds.append((all_packets_vs_own_rate_oracle_load_plot_series(),
+                        'all_vs_ideal_own_rate',
+                        'all packets vs. the ideal Poisson probe at the same rate'))
+    return plot_kinds
+
+
+def aggregate_emd_vs_flows_across_traffics_and_fractions(ns3_path, dir_name, results_by_fraction, rate,
+                                                           steadyStart, steadyEnd,
+                                                           flow_name='R0H0R2H3', path=0, pass_threshold=0.9,
+                                                           subsampling_methods='find_samples_path',
+                                                           groundtruth_method='simultaneous',
+                                                           all_flows_only=False,
+                                                           delay_consistency_guarantee=None, output_suffix='',
+                                                           errorRate=None):
+    """The reverse (TBF-differentiation) counterpart of
+    aggregate_emd_vs_flows_across_traffics_and_loads with the x-axis swapped from the
+    offered load to the shaping fraction: for each load, one plot of EMD vs
+    tbfFlowRedirectFraction, one boxplot cluster per traffic per fraction, coloured by the
+    consistency check's pass rate exactly as the load-axis plots are.
+
+    This is the view the reverse sweep is actually about -- how the error and the verdict
+    move as more of the flow's traffic is redirected through the shaper -- which the
+    load-axis plots cannot show, because each of them is built inside a single
+    `D_<fraction>/` folder and so holds one fraction only. The load-axis plots are
+    unaffected and still written; this is an additional tree.
+
+    `results_by_fraction` is {fraction: {(traffic, load): aggregated_results}} -- exactly
+    what a loop over fractions calling aggregate_emd_vs_flows_across_traffics_and_loads
+    already returns, so nothing is re-read or re-aggregated here: the dicts are transposed
+    to {(traffic, fraction)} per load and handed to the same plotting engine
+    (Utils.plot_emd_vs_load_by_traffic, whose second key is just a number on the x-axis --
+    see its `x_label`).
+
+    Saved under scratch/ECNMC/Results/results_<dir_name><output_suffix>/
+    emd_vs_fraction_by_traffic/<steady_tag>/<config_tag>/<rate>/f_<errorRate>/load_<load>/
+    <comparison kind>/, with the same per-kind subfolders and the same raw/normalized twins
+    as the load-axis tree. Returns the number of plots written."""
+    subsampling_methods = normalize_subsampling_methods(subsampling_methods)
+    by_load = {}
+    for fraction, results_by_traffic_load in (results_by_fraction or {}).items():
+        for (traffic, load), aggregated in (results_by_traffic_load or {}).items():
+            by_load.setdefault(load, {})[(traffic, fraction)] = aggregated
+    # One fraction alone is not a sweep: the x-axis would carry a single tick, which the
+    # load-axis plots already show better. Nothing is written in that case.
+    by_load = {load: d for load, d in by_load.items()
+                if len({fraction for _, fraction in d}) > 1}
+    if not by_load:
+        print("No aggregated results across differentiation fractions for rate={} "
+              "(need at least two fractions) -- no fraction-axis plots written".format(rate))
+        return 0
+
+    steady_tag = steady_window_tag(steadyStart, steadyEnd)
+    config_tag = emd_vs_flows_file_tag(subsampling_methods, groundtruth_method, all_flows_only,
+                                        delay_consistency_guarantee if delay_consistency_guarantee is not None
+                                        else DelayConsistencyGaurantee)
+    gt_desc = groundtruth_method_label(groundtruth_method)
+    plot_kinds = _cross_traffic_plot_kinds(subsampling_methods)
+    emd_variants = [(False, '', 'EMD'), (True, '_normalized', 'EMD relative to mean queuing delay')]
+    written = 0
+
+    for load in sorted(by_load):
+        results_by_traffic_fraction = by_load[load]
+        all_k = sorted(set().union(*(set(r['num_flows']) for r in results_by_traffic_fraction.values())))
+        fixed_k_values = [] if all_flows_only else all_k
+        load_dir = ('{}/scratch/ECNMC/Results/results_{}{}/emd_vs_fraction_by_traffic/{}/{}/{}/'
+                     'f_{}/load_{}/').format(ns3_path, dir_name, output_suffix, steady_tag, config_tag,
+                                              rate, errorRate, load)
+        for series_specs, subfolder, kind_desc in plot_kinds:
+            kind_dir = '{}{}/'.format(load_dir, subfolder)
+            os.makedirs(kind_dir, exist_ok=True)
+            kind_prefix = '{}{}_path_{}'.format(kind_dir, flow_name, path)
+            for normalized, norm_suffix, emd_desc in emd_variants:
+                for k in fixed_k_values:
+                    plot_emd_vs_load_by_traffic(
+                        results_by_traffic_fraction, k,
+                        '{}_k{}{}.png'.format(kind_prefix, k, norm_suffix),
+                        pass_threshold=pass_threshold, series_specs=series_specs,
+                        normalized=normalized, x_label='TBF flow-redirect fraction',
+                        title='{} vs differentiation fraction by traffic, {} considered flows: '
+                              '{}, path {}, rate {}, load {}\n{}\n{}'.format(
+                                  emd_desc, k, flow_name, path, rate, load, kind_desc, gt_desc),
+                    )
+                    written += 1
+                plot_emd_vs_load_by_traffic(
+                    results_by_traffic_fraction, 'max',
+                    '{}_kmax{}.png'.format(kind_prefix, norm_suffix),
+                    pass_threshold=pass_threshold, series_specs=series_specs,
+                    normalized=normalized, x_label='TBF flow-redirect fraction',
+                    title='{} vs differentiation fraction by traffic, all considered flows: '
+                          '{}, path {}, rate {}, load {}\n{}\n{}'.format(
+                              emd_desc, flow_name, path, rate, load, kind_desc, gt_desc),
+                )
+                written += 1
+    print("Saved {} EMD-vs-differentiation-fraction plot(s) ({} load(s) x {} comparison kind(s) x "
+          "raw/normalized) to {}/scratch/ECNMC/Results/results_{}{}/emd_vs_fraction_by_traffic/{}/{}/{}/".format(
+              written, len(by_load), len(plot_kinds), ns3_path, dir_name, output_suffix,
+              steady_tag, config_tag, rate))
+    return written
+
+
 def aggregate_emd_vs_flows_across_traffics_and_loads(ns3_path, dir_name, traffics, rate, loads,
                                                        steadyStart, steadyEnd,
                                                        flow_name='R0H0R2H3', path=0, pass_threshold=0.9,
@@ -2094,37 +2311,7 @@ def aggregate_emd_vs_flows_across_traffics_and_loads(ns3_path, dir_name, traffic
     # Each comparison kind gets its own subfolder under rate_dir (see docstring), so a
     # filename only ever needs '<flow_name>_path_<path>' plus a k/normalized/percentile
     # suffix -- not the whole comparison description as well.
-    plot_kinds = [(all_packets_vs_sampled_load_plot_series(subsampling_methods), 'all_vs_poisson',
-                    'all packets vs. Poisson-adaptive subsample(s)')]
-    # One three-series plot per method: that method, its rate-matched uniform baseline, and
-    # the ideal Poisson probe, all at ~the same sample count -- so the plot answers both "does
-    # the selection rule beat blind uniform sampling" and "how much of what's left is
-    # finite-sample noise vs. selection bias" together.
-    for method in subsampling_methods:
-        plot_kinds.append((poisson_vs_uniform_vs_ideal_load_plot_series(method),
-                            'poisson_vs_uniform_vs_ideal/{}'.format(method),
-                            '{} vs. its rate-matched uniform baseline vs. the ideal Poisson probe '
-                            '(all ~equal sample size)'.format(method)))
-    # And each method against the ideal Poisson probe at its own sample count alone (plus the
-    # probe at the minimum required sample size): the gap between the method and its own ideal
-    # probe is the part of its error that having few samples does not explain.
-    for method in subsampling_methods:
-        plot_kinds.append((sampled_vs_oracle_load_plot_series(method),
-                            'poisson_vs_ideal/{}'.format(method),
-                            '{} vs. the ideal Poisson probe at the same sample budget'.format(method)))
-    # All packets vs. the ideal Poisson probe: the theoretical ceiling a real sampler could
-    # reach, independent of any particular sampler's own selection-rule imperfections -- reads
-    # alongside the all-packets-vs-Poisson-adaptive plot above to separate "what subsampling
-    # costs in principle" from "what this particular sampler costs beyond that".
-    plot_kinds.append((all_packets_vs_oracle_load_plot_series(subsampling_methods),
-                        'all_vs_ideal',
-                        'all packets vs. the ideal Poisson probe(s)'))
-    # All packets vs. the ideal Poisson probe at ITS OWN rate (no subsampling-method
-    # comparison mixed in) -- isolates what arriving as a real application's traffic costs
-    # relative to an idealized Poisson process at an identical rate.
-    plot_kinds.append((all_packets_vs_own_rate_oracle_load_plot_series(),
-                        'all_vs_ideal_own_rate',
-                        'all packets vs. the ideal Poisson probe at the same rate'))
+    plot_kinds = _cross_traffic_plot_kinds(subsampling_methods)
 
     # Raw nanoseconds and the load-comparable normalized twin of every plot below.
     emd_variants = [(False, '', 'EMD'), (True, '_normalized', 'EMD relative to mean queuing delay')]
@@ -2161,6 +2348,23 @@ def aggregate_emd_vs_flows_across_traffics_and_loads(ns3_path, dir_name, traffic
             title='Mean queuing delay vs load by traffic, all considered flows: {}, path {}, rate {}\n{}\n{}'.format(
                 flow_name, path, rate, kind_desc, gt_desc),
         )
+        # How the measurement itself behaved vs load, all available flows only: how many
+        # packets each family retained, how long the growing-window search had to watch to
+        # get them, and how tight the consistency check's own bound was at that sample
+        # size -- the three per-experiment diagnostics (plot_sample_sizes_vs_num_flows,
+        # plot_monitor_window_vs_num_flows, plot_error_bound_vs_num_flows), now on the
+        # cross-traffic axis. A family that does not carry a quantity draws nothing rather
+        # than an empty box (RUNSTAT_METRICS 'families'), and results predating a quantity
+        # are skipped the same way the probability metrics below are.
+        for runstat in RUNSTAT_METRICS:
+            plot_emd_vs_load_by_traffic(
+                results_by_traffic_load, 'max',
+                '{}_kmax_{}.png'.format(kind_prefix, runstat),
+                pass_threshold=pass_threshold, series_specs=series_specs,
+                metric=runstat_plot_metric(runstat),
+                title='{} vs load by traffic, all considered flows: {}, path {}, rate {}\n{}\n{}'.format(
+                    RUNSTAT_METRICS[runstat]['label'], flow_name, path, rate, kind_desc, gt_desc),
+            )
         # Loss / ECN marking vs load, all available flows only: each metric's own estimate,
         # its distance to the switch-trace reference (the Bernoulli counterpart of the EMD)
         # and the log-space difference its check thresholds. Skipped for a metric these
