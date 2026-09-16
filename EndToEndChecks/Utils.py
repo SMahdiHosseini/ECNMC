@@ -7689,6 +7689,9 @@ def _metric_result_keys(metric, normalized):
                 label)
     if _metric_is_delay_mean(metric):
         return (None, None, None, None, None, "Mean queuing delay (ns)")
+    runstat = _metric_runstat_name(metric)
+    if runstat is not None:
+        return (None, None, None, None, None, RUNSTAT_METRICS[runstat]['label'])
     prob_spec = _metric_prob_spec(metric)
     if prob_spec is not None:
         metric_name, quantity = prob_spec
@@ -7746,6 +7749,94 @@ def prob_plot_metric(metric_name, quantity='distance'):
 DELAY_MEAN_METRIC = ('delay', 'mean')
 
 
+# Per-run quantities that are properties of the MEASUREMENT rather than distances to the
+# ground truth: how many packets a family ended up holding, how long the growing-window
+# search had to watch to get them, and how tight the consistency check's own bound was at
+# that sample size. All three are already recorded per run and plotted per experiment
+# (plot_sample_sizes_vs_num_flows, plot_monitor_window_vs_num_flows,
+# plot_error_bound_vs_num_flows); routing them through the same ('runstat', <name>) metric
+# plumbing the probability metrics use makes them available to the cross-traffic
+# load/burstiness/fraction plots too, with no new plotting function.
+#
+# `families` lists which comparison series carry the quantity at all -- only the
+# Poisson-adaptive families settle on a monitoring window, so an all-packets or uniform box
+# would be empty on that plot rather than zero, and is left out instead of drawn empty.
+RUNSTAT_METRICS = OrderedDict((
+    ('sample_size', {
+        'label': 'Retained sample size (packets)',
+        'prefix': 'sample_sizes_',
+        'families': ('all_packets', 'sampled', 'uniform', 'oracle'),
+        'scale': 1.0,
+    }),
+    ('monitor_window', {
+        'label': 'Monitoring window needed (ms)',
+        'prefix': 'window_duration_',
+        'families': ('sampled',),
+        'scale': 1e-6,   # stored in ns
+    }),
+    ('error_bound', {
+        'label': 'Consistency-check error bound (fraction of mean delay)',
+        'prefix': 'error_bound_',
+        'families': ('all_packets', 'sampled', 'uniform', 'oracle'),
+        'scale': 1.0,
+    }),
+))
+
+
+def runstat_plot_metric(name):
+    """The `metric` identifier selecting one per-run measurement property (sample size,
+    monitoring window, relative error bound) in the cross-traffic load/burstiness/fraction
+    plots: ('runstat', <RUNSTAT_METRICS key>)."""
+    if name not in RUNSTAT_METRICS:
+        raise ValueError("Unknown run-statistic metric {!r}; choose one of {}".format(
+            name, list(RUNSTAT_METRICS)))
+    return ('runstat', name)
+
+
+def _metric_runstat_name(metric):
+    """The RUNSTAT_METRICS key when `metric` selects a per-run measurement property, else
+    None."""
+    if (isinstance(metric, tuple) and len(metric) == 2 and metric[0] == 'runstat'
+            and metric[1] in RUNSTAT_METRICS):
+        return metric[1]
+    return None
+
+
+def _runstat_plot_series_values(r, i, series_key, name):
+    """(values, pass_rate) for one comparison series' per-run measurement property at
+    flow-count index `i` -- the RUNSTAT_METRICS counterpart of _prob_plot_series_values.
+    Empty for a series that does not carry the quantity (see RUNSTAT_METRICS['families'])
+    and for results predating its recording, so an older aggregation simply plots nothing
+    rather than failing."""
+    spec = RUNSTAT_METRICS[name]
+    n_k = len(r.get('num_flows') or [])
+    if series_key == 'sampled':
+        series_key = ('sampled', r['subsampling_methods'][0])
+    kind = series_key if isinstance(series_key, str) else series_key[0]
+    if kind not in spec['families']:
+        return [], 0.0
+    if series_key == 'all_packets':
+        if name == 'sample_size':
+            # All packets is not sampled per run: its count is one scalar per flow count
+            # (per experiment, once aggregated), not a per-run distribution.
+            by_experiment = r.get('all_packet_sizes_by_experiment')
+            if by_experiment:
+                values = by_experiment
+            else:
+                scalars = r.get('all_packet_sizes') or []
+                values = [[v] for v in scalars]
+        else:
+            values = r.get(spec['prefix'] + 'all_packets_by_run') or [[]] * n_k
+        rates = r.get('pass_rate_all_packets') or []
+    else:
+        kind, key = series_key
+        values = (r.get(spec['prefix'] + kind + '_by_run') or {}).get(key) or [[]] * n_k
+        rates = (r.get('pass_rate_' + kind) or {}).get(key) or []
+    per_k = list(values[i]) if i < len(values) else []
+    scale = spec['scale']
+    return [float(v) * scale for v in per_k if v == v], (rates[i] if i < len(rates) else 0.0)
+
+
 def _metric_is_delay_mean(metric):
     """Whether `metric` selects the per-family MEAN QUEUING DELAY (DELAY_MEAN_METRIC) rather
     than a distance to the ground truth -- the delay counterpart of a probability metric's
@@ -7778,7 +7869,8 @@ def _metric_autoscales(metric):
     +/-100% / 500ns view cap: true for every probability quantity (all inherently bounded
     and small, so the cap would spend the axis on empty space) and for the mean queuing
     delay (an absolute level, routinely past a 500ns cap built for distances)."""
-    return _metric_prob_spec(metric) is not None or _metric_is_delay_mean(metric)
+    return (_metric_prob_spec(metric) is not None or _metric_is_delay_mean(metric)
+            or _metric_runstat_name(metric) is not None)
 
 
 def _metric_prob_spec(metric):
@@ -7845,6 +7937,16 @@ def _set_flow_count_xaxis(axis, num_flows):
         axis.set_xlim(min(num_flows) - 0.6, max(num_flows) + 0.6)
 
 
+def _per_run_series(series_key):
+    """Whether a series spec's key names a family with one value PER RUN (the
+    Poisson-adaptive subsample, its rate-matched uniform baseline, the ideal Poisson
+    probes) rather than one per experiment ('all_packets', outside a growing-window run).
+    Only the former can be compared against MIN_POISSONIZED_RUNS directly."""
+    if series_key == 'sampled':
+        return True
+    return isinstance(series_key, tuple) and series_key[0] in ('sampled', 'uniform', 'oracle')
+
+
 def _load_plot_series_values(r, i, series_key, normalized=False, metric='emd'):
     """Return (values, pass_rate) for one series spec's `key` at flow-count index `i` of an
     aggregated/single results dict `r` (see plot_emd_vs_load_by_traffic). `series_key` is
@@ -7862,6 +7964,9 @@ def _load_plot_series_values(r, i, series_key, normalized=False, metric='emd'):
         return _prob_plot_series_values(r, i, series_key, *prob_spec)
     if _metric_is_delay_mean(metric):
         return _delay_mean_plot_series_values(r, i, series_key)
+    runstat = _metric_runstat_name(metric)
+    if runstat is not None:
+        return _runstat_plot_series_values(r, i, series_key, runstat)
     q = _metric_percentile(metric)
     if q is not None and q not in (r.get('delay_percentiles') or []):
         return [], 0.0
@@ -7980,7 +8085,8 @@ def _adaptive_view_cap(values_by_series, default_cap, signed):
 
 
 def plot_emd_vs_load_by_traffic(results_by_traffic_load, k, output_path, pass_threshold=0.9, title=None,
-                                 series_specs=None, normalized=False, metric='emd'):
+                                 series_specs=None, normalized=False, metric='emd',
+                                 x_label='Load'):
     """Cross-traffic, cross-load comparison at one fixed flow count `k`: x-axis is load,
     y-axis is EMD to the reconstructed ground-truth delay CDF. Both comparison series are
     drawn together -- by default all packets of the k considered flows, and the
@@ -8003,6 +8109,13 @@ def plot_emd_vs_load_by_traffic(results_by_traffic_load, k, output_path, pass_th
     `series_specs` is a list of {'key', 'edge_style', 'label'} dicts (see
     _load_plot_series_values for valid `key`s); defaults to
     all_packets_vs_sampled_load_plot_series over whichever Poisson-adaptive methods the
+    `x_label` renames the x-axis only. The second key of `results_by_traffic_load` is used
+    purely as a number to place each cluster on that axis, so passing a dict keyed by
+    (traffic, tbfFlowRedirectFraction) together with x_label='Differentiation fraction'
+    yields the same plot over the reverse experiments' shaping fraction instead of the load
+    (see aggregate_emd_vs_flows_across_traffics_and_fractions) -- same boxes, same
+    consistency-pass colouring, same series.
+
     results actually contain. Pass poisson_vs_uniform_load_plot_series(stride, methods)
     instead to compare those methods against a uniform "1-in-stride" subsample the same
     way. Any number of series is supported, not just 2.
@@ -8066,6 +8179,11 @@ def plot_emd_vs_load_by_traffic(results_by_traffic_load, k, output_path, pass_th
     # (x, y-anchor, burstiness dict) for each (traffic, load) where the 'all_packets' series
     # is on this plot -- annotated after the main loop (see _annotate_all_packets_burstiness).
     burstiness_annotations = []
+    # Cells dropped for resting on too few Poissonized runs, reported once after the loop
+    # rather than per series (every series of a dropped cell hits the same condition), and
+    # separately the individual thin families dropped inside cells that were otherwise fine.
+    low_poissonization_cells = {}
+    low_poissonization_series = {}
     for ti, traffic in enumerate(traffics):
         color = _TRAFFIC_COLORS[ti % len(_TRAFFIC_COLORS)]
         legend_handles.append(Patch(facecolor='white', edgecolor=color, linewidth=4.5, label=traffic))
@@ -8080,8 +8198,22 @@ def plot_emd_vs_load_by_traffic(results_by_traffic_load, k, output_path, pass_th
                     pass_rate_by_load.append(0.0)
                     continue
                 i = -1 if use_max_k else r['num_flows'].index(k)
+                # Too few runs ever produced a subsample here for any box in this cell to
+                # mean anything (see MIN_POISSONIZED_RUNS) -- drop the whole cell.
+                n_poisson = poissonized_run_count(r, i)
+                if n_poisson < MIN_POISSONIZED_RUNS:
+                    low_poissonization_cells[(traffic, load)] = n_poisson
+                    values_by_load.append([])
+                    pass_rate_by_load.append(0.0)
+                    continue
                 values, pass_rate = _load_plot_series_values(r, i, series_spec['key'],
                                                              normalized=normalized, metric=metric)
+                # ... and a single per-run family that is itself thin, even in a cell whose
+                # other methods are well populated (e.g. one sampler succeeding in 1500 runs
+                # while another managed 50).
+                if (_per_run_series(series_spec['key']) and 0 < len(values) < MIN_POISSONIZED_RUNS):
+                    low_poissonization_series[(traffic, load, series_spec['label'])] = len(values)
+                    values = []
                 values_by_load.append(values)
                 pass_rate_by_load.append(pass_rate)
                 all_plotted_values.append(values)
@@ -8111,6 +8243,27 @@ def plot_emd_vs_load_by_traffic(results_by_traffic_load, k, output_path, pass_th
                                       linewidth=series_spec.get('edge_width', 3),
                                       label='{} (border)'.format(series_spec['label'])))
 
+    if low_poissonization_cells:
+        print("plot_emd_vs_load_by_traffic: dropped {} traffic/load cell(s) with fewer than {} "
+              "Poissonized runs: {}".format(
+                  len(low_poissonization_cells), MIN_POISSONIZED_RUNS,
+                  ', '.join('{} @ {} ({} run(s))'.format(t, l, n)
+                             for (t, l), n in sorted(low_poissonization_cells.items()))))
+        legend_handles.append(Line2D([0], [0], color='none',
+                                      label='{} traffic/load cell(s) omitted: fewer than {} runs '
+                                            'found a Poissonized subsample'.format(
+                                                len(low_poissonization_cells), MIN_POISSONIZED_RUNS)))
+    if low_poissonization_series:
+        print("plot_emd_vs_load_by_traffic: dropped {} individual series with fewer than {} "
+              "Poissonized runs (their cell had others above it): {}".format(
+                  len(low_poissonization_series), MIN_POISSONIZED_RUNS,
+                  ', '.join('{} @ {} / {} ({} run(s))'.format(t, l, label, n)
+                             for (t, l, label), n in sorted(low_poissonization_series.items()))))
+        legend_handles.append(Line2D([0], [0], color='none',
+                                      label='{} individual box(es) omitted: that family found a '
+                                            'Poissonized subsample in fewer than {} runs'.format(
+                                                len(low_poissonization_series), MIN_POISSONIZED_RUNS)))
+
     if not any_data:
         print("plot_emd_vs_load_by_traffic: no data at k={}, writing empty plot".format(k))
 
@@ -8125,7 +8278,7 @@ def plot_emd_vs_load_by_traffic(results_by_traffic_load, k, output_path, pass_th
     default_title = '{} vs load by traffic ({}), all considered flows (each combination\'s own max)'.format(quantity_name, series_names) if use_max_k \
         else '{} vs load by traffic ({}), k={}'.format(quantity_name, series_names, k)
     axis.set_title(title or default_title, fontsize=34)
-    axis.set_xlabel('Load')
+    axis.set_xlabel(x_label)
     axis.set_ylabel(y_label)
     if quantity_percentile is not None:
         # Zero is "the family's tail matches the ground truth's" -- the reference the whole
@@ -8455,13 +8608,26 @@ def plot_emd_vs_burstiness_by_traffic(results_by_traffic_load, k, burstiness_fie
     # without assuming anything about the scale of this particular metric (IDC is O(1),
     # burst gaps are O(1e3) ns, etc).
     combo_x = {}
+    low_poissonization_cells = {}
     for (traffic, load), r in results_by_traffic_load.items():
         if not r['num_flows'] or (not use_max_k and k not in r['num_flows']):
             continue
         i = -1 if use_max_k else r['num_flows'].index(k)
+        # Same gate as the load-axis plots: a cell whose Poissonization succeeded in too
+        # few runs is not given a position on this axis either (see MIN_POISSONIZED_RUNS).
+        n_poisson = poissonized_run_count(r, i)
+        if n_poisson < MIN_POISSONIZED_RUNS:
+            low_poissonization_cells[(traffic, load)] = n_poisson
+            continue
         values = (r.get('burstiness_all_packets') or {}).get(burstiness_field, [])
         if i < len(values) and np.isfinite(values[i]):
             combo_x[(traffic, load)] = values[i]
+    if low_poissonization_cells:
+        print("plot_emd_vs_burstiness_by_traffic: dropped {} traffic/load cell(s) with fewer than "
+              "{} Poissonized runs: {}".format(
+                  len(low_poissonization_cells), MIN_POISSONIZED_RUNS,
+                  ', '.join('{} @ {} ({} run(s))'.format(t, l, n)
+                             for (t, l), n in sorted(low_poissonization_cells.items()))))
 
     x_label = BURSTINESS_METRIC_LABELS.get(burstiness_field, burstiness_field)
     fig, axis = plt.subplots(figsize=(30, 15))
@@ -8503,6 +8669,8 @@ def plot_emd_vs_burstiness_by_traffic(results_by_traffic_load, k, burstiness_fie
                 style = dict(edge_color=color, edge_style=series_spec['edge_style'])
                 values, pass_rate = _load_plot_series_values(r, i, series_spec['key'],
                                                              normalized=normalized, metric=metric)
+                if (_per_run_series(series_spec['key']) and 0 < len(values) < MIN_POISSONIZED_RUNS):
+                    values = []
                 if len(values):
                     any_data = True
                     all_plotted_values.extend(values)
@@ -8555,11 +8723,45 @@ def plot_emd_vs_burstiness_by_traffic(results_by_traffic_load, k, burstiness_fie
     return output_path
 
 
-# Below this many actual consistency-check attempts (runs that found a valid subsample at
-# all, pooled across every experiment in a combination -- see aggregate_emd_vs_flows_results),
-# a point on plot_pass_rate_vs_load_by_traffic is left out rather than drawn from a pass rate
-# backed by too few attempts to mean anything (e.g. 2 of 50 runs finding a sample at all).
-_MIN_PASS_RATE_CHECKS = 100
+# Below this many runs in which the sampler actually produced a Poissonized subsample
+# (pooled across every experiment of a traffic/load combination -- see
+# aggregate_emd_vs_flows_results), that combination is left out of the cross-traffic
+# comparison plots entirely rather than drawn from a handful of runs.
+#
+# This gates EVERY family's box in the cell, not just the Poisson-adaptive one, because in
+# a growing-window run nothing in the cell is independent of it: the window each run
+# settles on is the analysis window for that run's ground truth, its all-packets family,
+# its uniform baseline and its ideal probes alike, so a run that certified no window
+# contributes to none of them. Measured case that prompted this: WOIncast,
+# find_samples_path_intensity_growing_window, Facebook_HadoopDist_All at load 0.95 -- 4
+# certified runs out of 30 experiments x 25 runs, with all-packets, sampled, uniform and
+# oracle boxes all resting on those same 4.
+MIN_POISSONIZED_RUNS = 100
+# The pass-rate plots' own threshold is the same quantity under a different name (a
+# consistency-check attempt only happens in a run that found a subsample), so they share
+# one number rather than drifting apart.
+_MIN_PASS_RATE_CHECKS = MIN_POISSONIZED_RUNS
+
+
+def poissonized_run_count(r, i):
+    """How many runs of this results dict produced a Poissonized subsample at flow-count
+    index `i` -- the number of runs every comparison drawn from it ultimately rests on.
+
+    Taken over the result's own subsampling method(s) (their per-run EMD series, one entry
+    per run that found a subsample). A growing-window result carries exactly one method, so
+    this is that method's certified-run count; a result comparing several methods within
+    one run reports the best-supported one, since they share the runs."""
+    counts = [0]
+    by_method = r.get('emd_sampled_packets_by_run') or {}
+    for method in (r.get('subsampling_methods') or []):
+        series = by_method.get(method) or []
+        if not series:
+            continue
+        try:
+            counts.append(len(series[i]))
+        except IndexError:
+            pass
+    return max(counts)
 
 
 def plot_pass_rate_vs_load_by_traffic(results_by_traffic_load, k, output_path, series_key='sampled',
